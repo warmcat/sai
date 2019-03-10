@@ -1,0 +1,41 @@
+{
+	#
+	# where to find the nspawn contexts (scanned at runtime)
+	#
+	"systemd-nspawn": {
+		"path": 	"/home/sai/sai-nspawn",
+		"instances":	3,
+		"timeout":	1800
+	},
+
+	#
+	# physically connected targets, like microconstroller boards
+	#
+	"target":	[
+		{
+			"name":		"optee-hikey-arm64",
+			"timeout":	3600,
+			"consoles":	[
+				{
+					"name":		"dbg",
+					"path":		"/dev/by-id/usb-FTDI_FT232R_USB_UART_A50285BI-if00-port0",
+					"baudrate":	115200,
+					"mode":		"n81"
+				}
+			]
+		}
+	],
+
+	#
+	# masters we will accept jobs from
+	#
+	"masters": [
+		{
+#			"url":		"wss://warmcat.com/builder",
+			"url":		"wss://localhost:443/builder",
+			"selfsigned":	1,
+			"priority":	1
+		}
+	]
+}
+
