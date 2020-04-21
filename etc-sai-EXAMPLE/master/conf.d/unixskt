@@ -1,21 +1,24 @@
-# you should create one file like this per vhost in /etc/sai/conf.d
+# you should create one file like this per vhost in /etc/sai/master/conf.d
 
 {
 	"vhosts": [{
 		# this has no special meaning but needs to be unique
                 "name":              "unixskt",
                 "unix-socket":       1,
+		# this should be owned by sai and allow group access from
+		# whatever group your webserver runs under
+		"unix-socket-perms": "sai:apache",
                 # multiple vhosts can exist with different unix skt names
-		"interface":	     "/var/run/sai-unixskt",
+		"interface":	     "/var/run/sai",
 		# required for avatar cache
                 "enable-client-ssl": "on",
 
 		"mounts": [
 			{
-				# static assets like js, css, fonts
 				"mountpoint":		"/sai",
 				"default":		"index.html",
 				"origin":		"file:///usr/local/share/sai/assets",
+				"origin":		"callback://com-warmcat-sai",
 				"cache-max-age": 	"7200",
 				"cache-reuse":		"1",
 				"cache-revalidate":	"0",
@@ -45,16 +48,33 @@
 		#
 		
 		"headers": [{
-		        "content-security-policy": "default-src 'none'; img-src 'self' data: https://travis-ci.org https://api.travis-ci.org https://ci.appveyor.com https://scan.coverity.com; script-src 'self'; font-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none';",
+		        "content-security-policy": "default-src 'none'; img-src 'self' data:; script-src 'self'; font-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none';",
 		        "x-content-type-options": "nosniff",
 		        "x-xss-protection": "1; mode=block",
-		        "x-frame-options": "deny",
 		        "referrer-policy": "no-referrer"
 		}],
 
 		"ws-protocols": [
-
 		{"com-warmcat-sai": {
+			# this is the lhs of the path to use, not a full filepath
+			# the events go in ...-events.sqlite3 and the related
+			# info for an event goes in its own database file in
+			# ...-event-xxxx.sqlite3 where xxxx is the event uuid.
+			#
+			"database":		"/var/lib/sai/sai-master",
+			#
+			# the push hook notification script creates a JSON
+			# object and signs it with a secret... "notification-
+			# key" should match the secret the notification hook
+			# script has that we're willing to accept.
+			#
+			# It should be a 64-char hex-ascii representation of
+			# a random 32-byte sequence, you can produce a strong
+			# random key in the correct format like this
+			#
+			# dd if=/dev/random bs=32 count=1 | sha256sum | cut -d' ' -f1
+			#
+			"notification-key":	"xxxxxxxxxxxx",
 			# template HTML to use for this vhost.  You'd normally
 			# copy this to gitohashi-vhostname.html and modify it
 			# to show the content, logos, links, fonts, css etc for
@@ -105,8 +125,10 @@
 			# this dir is served via avatar-proxy
 			#
 			"cache-dir": "/var/cache/libjsongit2"
-		}}
+		}
+		}
 		]
 		}
 	]
 }
+

@@ -4,12 +4,13 @@
 	#
 	"systemd-nspawn": {
 		"path": 	"/home/sai/sai-nspawn",
+		"overlaypath": 	"/home/sai/sai-nspawn",
 		"instances":	3,
 		"timeout":	1800
 	},
 
 	#
-	# physically connected targets, like microconstroller boards
+	# physically connected targets, like microcontroller boards
 	#
 	"target":	[
 		{
@@ -31,7 +32,7 @@
 	#
 	"masters": [
 		{
-#			"url":		"wss://warmcat.com/builder",
+#			"url":		"wss://warmcat.com/sai/builder",
 			"url":		"wss://localhost:443/builder",
 			"selfsigned":	1,
 			"priority":	1

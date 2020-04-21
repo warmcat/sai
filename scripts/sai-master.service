@@ -1,0 +1,13 @@
+[Unit]
+Description=Sai Master
+After=syslog.target
+
+[Service]
+ExecStart=/usr/local/bin/sai-master
+ExecReload=/usr/bin/kill -HUP $MAINPID
+ExecStop=/usr/bin/killall sai-master
+
+[Install]
+WantedBy=multi-user.target
+
+

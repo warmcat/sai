@@ -1,0 +1,14 @@
+{
+        "perms":        "sai:nobody",
+        "home":         "/home/sai",
+        "host":         "myhostname",
+
+        "platforms": [
+                {
+                        "name":         "linux-ubuntu-xenial-amd64",
+                        "instances":    1,
+                        "masters": [ "wss://warmcat.com/sai/builder" ]
+                }
+        ]
+}   
+

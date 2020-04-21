@@ -1,0 +1,10 @@
+[Unit]
+Description=Sai Builder
+
+[Service]
+Environment="LWS_NTP_SERVER=192.168.4.1"
+ExecStart=/usr/local/bin/sai-builder
+
+[Install]
+WantedBy=multi-user.target
+

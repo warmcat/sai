@@ -1,61 +1,293 @@
 ![Sai](./assets/sai.svg)
 
 `Sai` (pronouced like 'sigh', "Trial" in Japanese) is a very lightweight
-network-aware remote CI runner.  It knows how to use `systemd-nspawn` and
-`overlayfs` to build remote git repos on a variety of distro versions very
-cheaply.
+network-aware distributed CI builder and coordinating server.  It knows how to
+use `systemd-nspawn` and `overlayfs` to build remote git repos on a variety of
+distro versions very cheaply.
 
 On small targets, it can also build on the host rootfs directly, and can also
 run on an RPi3-class 'buddy' to flash and collect results (eg, over serial, or
 gpio) from even smaller targets.
 
-A self-assembling constellation of Sai Builders make their own connections to a
-master, who then received hook notifications, distributes work concurrently over
-idle builders that have the required environment, and logs results.
+A self-assembling constellation of Sai Builder clients make their own
+connections to one or more Sai Masters, who then receive hook notifications,
+read JSON from the project describing what set of build variations and tests it
+should run on which platforms, and distributes work concurrently over idle
+builders that have the required environment, and logs results at the master
+accessible by a web interface.
+
+![sai overview](./READMEs/sai-overview.png)
 
 ## General approach
 
- - Sai builders for various platforms and scenarios are configured and run
-   independently... they maintain "nailed-up" connections to the master over
-   wss, and announce their capabilities.  The builders do not need any listening
-   ports or other central management this way.
+ - Distributed "builders" run the `sai-builder` daemon from inside the build
+   platform they want to provide builds for (ie, inside a systemd-nspawn or VM).
 
- - When a git repo being monitored is updated, a hook performs a GET notiftying
-   the Sai master.
+ - The `sai-builder` daemons maintain nailed-up outgoing client wss connections
+   to a central `sai-master`, which manages the ad-hoc collection of builders
+   it finds, and provides a web UI (http/2 and wss2).
 
- - The Sai master fetches `.sai.json` from the repo and queues jobs on connected
-   builders that have the platform and OS versions requested for build in
-   the `.sai.json`.
+![sai git flow](./READMEs/sai-ov2.png)
 
- - On the builders, result channels (like stdout, stderr) with logs and
-   results are first listed and then streamed back to the master and the build
-   proceeds.  Discrete files may also be streamed to the master like this.
+ - When a git repo that wants sai tests is updated, a push hook performs a POST
+   notiftying the Sai master of a new push event which creates an entry in an
+   event sqlite3 database.  (The master does not need to access the repo that
+   sends the git notification).  The hook sends the master information about the
+   push and the revision of `.sai.json` from the new commit in the POST body...
+   the master parses that JSON to fill an sqlite3 database with tasks and
+   commandline options for the build on platforms mentioned in `.sai.json`.
+
+ - Builders typically build many variations of the same push, so they use a
+   local git mirror only on the builder to reduce the load on the repo that
+   was updated.  For large trees, being able to already have previous trees
+   as a starting point for git dramatically reduces the time compared to a full
+   git fetch.
+
+ - The master hands out waiting tasks on connected idle builders that offer the
+   requested platforms, which build them concurrently.  The builders may be
+   inside a protected network along with the repos they connect to; both the
+   builders and the repo only make outgoing https or wss connections to the
+   master.
+
+ - On the builders, result channels (like stdout, stderr, eventually others like
+   `/dev/acm0`) with logs and results are streamed back to the master over a wss
+   link as the build proceeds, and are stored in an event-specific sqlite3
+   database for scalability.
+
+ - Builders can run CTest or other tests after the build and collect the
+   results (CTest has the advantages it's lightweight and crossplatform).
 
  - The master makes human readable current and historical results available
-   in realtime over https
+   in realtime over https web interface
 
- - The Sai master node also has a builder integrated.  So to get started you
-   can do it all on one machine.
+ - One `sai-builder` daemon can be configured to offer multiple instances of
+   independent platform build, and multiple platform builds (eg, cross
+   toolchains).
 
-## Creating a selfsigned TLS cert
+## Build flow and support for embedded
 
-You can create a P-521 EC key and self-signed certificate for use with Sai
-master like this:
+![build flow](READMEs/sai-build-test-flow.png)
+ 
+Testing is based around CTest, it can either run on the build host inside the
+container, or run on a separate embedded device.  In the separate case, the flow
+can include steps to flash the image that was built and to observe and drive
+testing via usually USB tty devices.  IO on these additional ttys is logged
+separately than IO from build host subprocess stdout and stderr.
+
+### Sharing embedded devices on the test host
+
+Embedded devices are actually build host-wide assets that may be called upon
+and shared by different containers and different build platforms.  For
+example, a cross-built flash image on Centos8 and another cross-built on
+Ubuntu Bionic for the same platform may want to flash and test on the same
+pool of embedded devices.  Even images from different build platforms for the
+same kind of device may wish to flash the same embedded device, where the
+device can be flashed to completely different OSes.
+
+Devices may be needed by post-build actions, but they are not something
+a sai-builder for a platform can "own" or manage by itself.  Instead they are
+requested from inside the build action by another tool built with `sai-builder`,
+`sai-device`, which reads shared JSON config describing the available devices
+and platforms they are appropriate for.
+
+Rather than reserve the device when the build is spawned, the reservation
+needs to happen only when the build inside the build context has completed.
+That in turn means that a different sai utility has to run at that time from
+inside the build process, in order that it can set things in the already-
+existing subprocess environment.
 
 ```
-$ openssl ecparam -name secp521r1 -genkey -param_enc explicit -out sai-selfsigned-key.pem
-$ echo -e "\n\n\n\n\n\n" | openssl req -new -x509 -key sai-selfsigned-key.pem -out sai-selfsigned-cert.pem
+"devices": [
+        {
+                "name":         "esp32-heltec1",
+                "type":         "esp32",
+                "compatible":   "freertos-esp32",
+                "description":  "ESP32 8MByte SPI flash plus display",
+                "ttys":         [
+                     "/dev/serial/by-path/pci-0000:03:00.3-usb-0:2:1.0-port0"
+                ]
+        }
+]
 ```
 
-There's a helper script `sudo ./scripts/gen-selfsigned-certs.sh` to do this and
-install the results in `/usr/local/share/sai`, you can override the install
-directory by giving it as a commandline argument to the script.
+Devices are logically defined inside a separate conf file
+`/etc/sai/devices/conf` on the host or vm, and containers should bind a ro
+mount of the file at the same place in their /.  This avoids having to maintain
+a bunch of different files every time a new device is added.  For platform
+builders based in a VM, these have a boolean relationship with IO ports, they
+either must wholly own them or are unaware of them: this means they can't
+participate in sharing device pools but must be allocated their own with its
+own config file inside the VM listing those.
 
-Or alternatively you can use your own PEM certificate and key from a trusted
-certifcate vendor, which matches your domain name.
+When the build process wants to acquire an embedded device of a particular type
+for testing, it runs in the building context, eg, `sai-device esp32 ctest`.
 
-Self-signed is secure, but your browser will make you explicitly trust it before
-it will let you use it.  Afterwards, your browser will notice if the certificate
-is different and untrusted for that site and warn you.  Because you must
-generate it after install, your selfsigned cert will be unique.
+This waits until it can flock() all the ttys of one of the given type of
+configured devices ("esp32" in the example), sets up environment vars for each
+`SAI_DEVICE_<ttyname>`, eg,
+`SAI_DEVICE_TTY0=/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0`,
+then executes the given program (`ctest` in the example) as a child process
+inside the build context.  Although it has an fd on the tty so it can flock()
+it, `sai-device` does not read or write on the fd itself.
 
+Baud rate is not considered an attribute of the tty definition but something set
+for each sai-expect.
+
+When the child process or build process ends, the locking is undone and the
+device may be acquired by another waiting `sai-device` instance in the same or
+different platform build context.
+
+The underlying locking is done hostwide using flock() on bind mounts of
+the tty devices, the other containers will observe the locking no matter who
+did it.
+
+Availability of the device node via an environment variable means that CTest
+or other scripts are able to directly write to the device.
+
+### Logging of device tty activity
+
+The `sai-builder` instance opens three local listening Unix Domain Sockets for
+every platform, these accept raw data which is turned into logs on the
+respective logging channel and passed up to the `sai-master` for storage and
+display like the other logs.
+
+The paths of these "log proxy" Unix Domain Sockets are exported as environment
+variables to the child build and test process as follows
+
+Environment Var|Ch#|Meaning|Example
+---|---|---|---
+SAI_LOGPROXY|3|Build progress logging|@com.warmcat.com.saib.logproxy.warmcat_com-freertos-esp32.0
+SAI_LOGPROXY_TTY0|4|Device tty0|@com.warmcat.com.saib.logproxy.warmcat_com-freertos-esp32.0.tty0
+SAI_LOGPROXY_TTY1|5|Optional Device tty1|@com.warmcat.com.saib.logproxy.warmcat_com-freertos-esp32.0.tty1
+
+Because some kinds of device share the same tty for flashing the device, at
+which time nothing else must be reading from the tty, tty activity is only
+captured and proxied during actual user testing by `sai-expect`, which is run at
+will be the CTest script.  In this way, device ttys are only monitored while
+test are ongoing; however the kernel will buffer traffic that nobody has read
+until the next reading consumes it.
+
+### Sai device tty logging
+
+Devices may have multiple ttys defined, for example a device with separate ttys
+and log channels for a main cpu and a coprocessor is supported.
+
+The ttys listed on devices have their own log channel index and are timestamped
+according to when they were read from the tty.  In the event many channels are
+"talking at once", in the web UI the different log channel content appears in
+different css colours and in chunks of 100 bytes or so, which tends to keep
+isolated lines of logging intact.
+
+## Non-Linux: use /home/sai in the main rootfs
+
+For OSX and other cases that doesn't support overlayfs, the same flow occurs
+just in the main rootfs /home/sai instead of the overlayfs /home/sai.
+
+It means things can only be built in the context of the main OS, but since OSX
+doesn't have different distros, which is the main use of the Linux overlayfs
+feature, it's still okay.
+
+## Builder instances
+
+The config JSON for sai-builder can specify the number of build instances for
+each platform.  These instances do not have any relationship about what they
+are building, just they run in the same platform context (and are managed by
+the one `sai-builder` process).  They each check out their own build tree
+independently, so they can be engaged building different versions or different
+trees concurrently inside the platform.
+
+Tests have to take care to disambiguate which instance they are running on,
+since the network namespace is shared between instances that are running in the
+same sai-builder process on the same platform.  An environment var
+`SAI_INSTANCE_IDX` is available inside the each build context set to 0, 1, etc
+according to the builder instance.
+
+For network related tests, `SAI_INSTANCE_IDX` should be referred to when
+choosing, eg, a test server port so it will not conflict with what other
+builders may be doing in parallel.
+
+## Builder git caching
+
+For each `<saimaster-project>`, the builder maintains a local git cache.  This is
+updated once when the new ref appears and then the related tests check out a
+fresh image of their ref from that each time.  This is very fast after the first
+update, because it doesn't even involve the network but fetching from the local
+filesystem. 
+
+## systemd-nspawn support
+
+On Linux, it's recommended to use systemd-nspawn to provide multiple distro
+environments conveniently on one machine.  There are instructions for setting
+up individual virtual ethernet devices managed by nmcli on the host.
+
+`sai-builder` also supports running inside a KVM / QEMU VM transparently as well,
+eg for windows or emulated architecture VMs.
+
+## `sai` builder user
+
+Builds happen using a user `sai` and on the builder, files are only created
+down `/home/sai` or `\Users\sai`.
+
+```
+# useradd -u883 -gnogroup sai -d/home/sai -m -r
+```
+
+## build filesystem layout
+
+ - /home/sai/
+  - git-mirror/
+   - `remote git url`_`project name` -- individual git mirrors
+  - jobs/
+   - `master hostname`-`platform name`-`instance index`/
+    - `project_name`/  - checkouts and builds occur in here
+
+## Build steps
+
+Building sai produces two different apps, `sai-master` and `sai-builder`.
+`sai-master` is a ws and http server that coordinates activities, and
+`sai-builder` is run on each machine that wants to offer build services to
+one or more masters.  By default, both are built, but you can use a cmake
+option `-DSAI_MASTER=0` and `-DSAI_BUILDER=0` to disable one or the other.
+
+First you must build lws with appropriate options.
+
+For redhat type distros, you probably need to add /usr/local/lib to the
+/etc/ld.so.conf before ldconfig can rgister the new libwebsockets.so
+
+```
+$ git clone https://libwebsockets.org/repo/libwebsockets
+$ cd libwebsockets && mkdir build && cd build && \
+  cmake .. -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 \
+   -DLWS_WITH_STRUCT_SQLITE3=1 -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1 \
+   -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1
+$ make -j && sudo make -j install && sudo ldconfig
+```
+
+The actual cmake options needed depends on if you are building sai-master and / or
+sai-builder.
+
+Feature|lws options
+---|---
+either|`-DLWS_WITH_STRUCT_JSON=1` `-DLWS_WITH_SECURE_STREAMS=1`
+master|`-DLWS_UNIX_SOCK=1` `-DLWS_WITH_GENCRYPTO=1` `-DLWS_WITH_STRUCT_SQLITE3=1`
+builder|`-DLWS_WITH_SPAWN=1` `-DLWS_WITH_THREADPOOL=1`
+
+Similarly the two daemons bring in different dependencies
+
+Feature|dependency
+---|---
+either|libwebsockets
+master|libsqlite3
+builder|libgit2 pthreads
+
+#### Linux
+
+```
+$ git clone https://warmcat.com/repo/sai
+$ cd sai && mkdir build && cd build && cmake .. && make && make install
+$ sudo cp ../scripts/sai-builder.service /etc/systemd/system
+$ sudo mkdir -p /etc/sai/builder
+$ sudo cp ../scripts/builder-conf /etc/sai/builder/conf
+$ sudo vim /etc/sai/builder/conf
+$ sudo systemctl enable sai-builder
+```
