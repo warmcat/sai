@@ -1,5 +1,8 @@
 {
         "perms":        "sai:nobody",
+# if you're building RPMs with cpack, you may need to make a path
+# here that is longer than the longest rpm filepath you are generating...
+# this is a restriction of rpmbuild
         "home":         "/home/sai",
         "host":         "myhostname",
 

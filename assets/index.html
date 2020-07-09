@@ -9,21 +9,37 @@
  </head>
 	<body>
 		<div class="summary nailed">
-			<table><tr>
-				<td class="logo">
-					<img src="sai.svg">
-				</td>
-				<td class="builder">
-					<div id="sai_builders"></div>
-				</td>
-				</tr>
-				<tr><td colspan="2"><div id="sai_sticky"></div></td></tr>
-			</table>
-			</div>	
-			<div id="p2" class="undernailed">
+			<div class="logo">
+				<img class="logo" src="sai.svg">
+				<a href="https://warmcat.com/git/sai">Sai git</a>
+			</div>
+
+			<div id="login" class="login">
+				<div id="creds" class="creds hide">
+					 <form class="login" action="login" method="post">
+					  <label for="lname">Name:</label>
+					  <input class="crin" type="text" id="lname" name="lname" autocomplete="username"><br>
+					  <label for="lpass">Password:</label>
+					  <input class="crin" type="password" id="lpass" name="lpass" autocomplete="current-password"><br>
+					  <input class="crinb" type="submit" value="Login">
+					  <input type="hidden" id="success_redir" name="success_redir" value="">
+					</form> 
+				</div>
+				<div id="logout" class="creds hide">
+					<div id="remauth"></div>
+					<input class="crin" type="submit" id="logout" value="Logout">
+				</div>
+			</div>
+
+			<div class="builder">
+				<div id="sai_builders"></div>
+			</div>
+		</div>	
+		<div id="sai_sticky" class="sticky"></div>
+		<div id="p2" class="undernailed">
 
 
-				<td colspan=2 class="summary" id="summary">
+				<td colspan=3 class="summary" id="summary">
       <noscript><span id="noscript" class="noscript">Please enable Javascript</span></noscript>
 					<div id="sai_overview"></div>
 					<div id="sai_task"></div>

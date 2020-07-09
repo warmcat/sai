@@ -61,20 +61,32 @@
 			# info for an event goes in its own database file in
 			# ...-event-xxxx.sqlite3 where xxxx is the event uuid.
 			#
-			"database":		"/var/lib/sai/sai-master",
+			"database":		"/srv/sai/sai-master",
+                        #
+                        # the push hook notification script creates a JSON
+                        # object and signs it with a secret... "notification-
+                        # key" should match the secret the notification hook
+                        # script has that we're willing to accept.
+                        #
+                        # It should be a 64-char hex-ascii representation of
+                        # a random 32-byte sequence, you can produce a strong
+                        # random key in the correct format like this
+                        #
+                        # dd if=/dev/random bs=32 count=1 | sha256sum | cut -d' ' -f1
+                        #
+			"notification-key":	"1234...5678",
+
+			# auth jwk path
+			# You can generate a suitable key like this
 			#
-			# the push hook notification script creates a JSON
-			# object and signs it with a secret... "notification-
-			# key" should match the secret the notification hook
-			# script has that we're willing to accept.
+			# lws-crypto-jwk -t EC -b512 -vP-521 --alg ES512 > mykey.jwk
 			#
-			# It should be a 64-char hex-ascii representation of
-			# a random 32-byte sequence, you can produce a strong
-			# random key in the correct format like this
-			#
-			# dd if=/dev/random bs=32 count=1 | sha256sum | cut -d' ' -f1
-			#
-			"notification-key":	"xxxxxxxxxxxx",
+			"jwt-auth-alg":		"ES512",
+			"jwt-auth-jwk-path":	"/etc/sai/master/auth.jwk",
+
+			"jwt-iss":		"com.warmcat",
+			"jwt-aud":		"https://libwebsockets.org/sai",
+
 			# template HTML to use for this vhost.  You'd normally
 			# copy this to gitohashi-vhostname.html and modify it
 			# to show the content, logos, links, fonts, css etc for
@@ -131,4 +143,3 @@
 		}
 	]
 }
-

@@ -30,6 +30,7 @@ typedef struct sai_platm {
 	struct lws_dll2_owner subs_owner;
 
 	sqlite3 *pdb;
+	sqlite3 *pdb_auth;
 } saim_t;
 
 typedef struct sai_platform {
@@ -117,6 +118,7 @@ struct pss {
 	char			sub_task_uuid[65];
 	char			specific[65];
 	char			specific_project[96];
+	char			auth_user[33];
 
 	sqlite3			*pdb_artifact;
 	sqlite3_blob		*blob_artifact;
@@ -146,6 +148,7 @@ struct pss {
 	int			log_cache_size;
 	int			authorized;
 	int			specificity;
+	unsigned long		expiry_unix_time;
 
 	/* notification hmac information */
 	char			notification_sig[128];
@@ -153,6 +156,7 @@ struct pss {
 	struct lws_genhmac_ctx	hmac;
 	enum lws_genhmac_types	hmac_type;
 	char			our_form;
+	char			login_form;
 
 	uint64_t		first_log_timestamp;
 	uint64_t		artifact_offset;
@@ -191,6 +195,12 @@ struct vhd {
 	/* pss lists */
 	struct lws_dll2_owner browsers;
 	struct lws_dll2_owner builders;
+
+	/* our keys */
+	struct lws_jwk			jwt_jwk_auth;
+	char				jwt_auth_alg[16];
+	const char			*jwt_issuer;
+	const char			*jwt_audience;
 
 	const char *sqlite3_path_lhs;
 

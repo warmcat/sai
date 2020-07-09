@@ -1,0 +1,9 @@
+[Unit]
+Description=Sai JIG
+
+[Service]
+ExecStart=/usr/local/bin/sai-jig
+
+[Install]
+WantedBy=multi-user.target
+

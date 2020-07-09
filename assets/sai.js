@@ -392,7 +392,12 @@ var lang_zhs = "{" +
 	  	"\"%{pf}前创建, 创作时间: %{ct}ms \"" +	   
 "}}";
 
-var logs = "", redpend = 0, gitohashi_integ = 0;
+var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "";
+	
+function expiry()
+{
+	location.reload();
+}
 	
 function san(s)
 {
@@ -471,11 +476,14 @@ function agify(now, secs)
 	
 	if (!secs)
 		return "";
+		
+	if (secs > now)
+		d = secs - now;
 	
 	for (n = 0; n < age_names.length; n++)
 		if (d < age_limit[n] || age_limit[n] === 0)
 			return "<span class='age-" + n + "' ut='" + secs +
-				"'>" + Math.ceil(d / age_div[n]) +
+				"'>" + ((secs > now) ? "in " : "") + Math.ceil(d / age_div[n]) +
 				i18n(age_names[n]) + "</span>";
 }
 
@@ -554,14 +562,15 @@ function sai_taskinfo_render(t, now_ut)
 	
 	s = "<div class=\"taskinfo\"><table><tr class=\"nomar\"><td class=\"atop\"><table>" +
 		sai_event_render(t, now_ut, 0) + "</table></td><td class=\"ti\">" +
-		"<span class=\"ti1\">" + sai_plat_icon(t.t.platform, 2) +
+		"<span class=\"taskstate" + t.t.state + " ti1\">" + sai_plat_icon(t.t.platform, 2) +
 		san(t.t.platform) + "</span>&nbsp;";
-	if (t.t.state != 0 && t.t.state != 3 && t.t.state != 4 && t.t.state != 5)
+	if (authd && t.t.state != 0 && t.t.state != 3 && t.t.state != 4 && t.t.state != 5)
 		s += "<img class=\"rebuild\" alt=\"stop build\" src=\"stop.svg\" " +
 			"id=\"stop-" + san(t.t.uuid) + "\">&nbsp;";
-	s += "<img class=\"rebuild\" alt=\"rebuild\" src=\"rebuild.png\" " +
+	if (authd)
+		s += "<img class=\"rebuild\" alt=\"rebuild\" src=\"rebuild.png\" " +
 			"id=\"rebuild-" + san(t.t.uuid) + "\">&nbsp;" +
-		sai_stateful_taskname(t.t.state, t.t.taskname, 1);
+			sai_stateful_taskname(t.t.state, t.t.taskname, 1);
 		
 	if (t.t.builder_name) {
 		var now_ut = Math.round((new Date().getTime() / 1000));
@@ -606,7 +615,7 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		s += "<div class=\"evr\"><img src=\"/sai/failed.svg\"></div>";
 		
 	s += "</a>";
-	if (reset_all_icon && !gitohashi_integ) {
+	if (reset_all_icon && !gitohashi_integ && authd) {
 		s += "<br><img class=\"rebuild\" alt=\"rebuild all\" src=\"/sai/rebuild.png\" " +
 			"id=\"rebuild-ev-" + san(e.uuid) + "\">&nbsp;";
 		s += "<img class=\"rebuild\" alt=\"delete event\" src=\"/sai/delete.png\" " +
@@ -853,8 +862,11 @@ function ws_open_sai()
 		gitohashi_integ = 1;
 	}
 	
-	sai = new WebSocket(get_appropriate_ws_url() + "/sai/browse" + s,
-			    "com-warmcat-sai");
+	var s1 = get_appropriate_ws_url() + "/sai/browse" + s;
+	if (s1.split("?"))
+	s1 = s1.split("?")[0];
+	console.log(s1);
+	sai = new WebSocket(s1, "com-warmcat-sai");
 
 	try {
 		sai.onopen = function() {
@@ -965,6 +977,30 @@ function ws_open_sai()
 			
 			if (jso.schema == "sai.warmcat.com.overview") {
 				s = "<table>";
+				
+				authd = jso.authorized;
+				if (jso.authorized === 0) {
+					if (document.getElementById("creds"))
+						document.getElementById("creds").classList.remove("hide");
+					if (document.getElementById("logout"))
+						document.getElementById("logout").classList.add("hide");
+				}
+				if (jso.authorized === 1) {
+					if (document.getElementById("creds"))
+						document.getElementById("creds").classList.add("hide");
+					if (document.getElementById("logout"))
+						document.getElementById("logout").classList.remove("hide");
+					if (jso.auth_user)
+						auth_user = jso.auth_user;
+					if (jso.auth_secs) {
+						var now_ut = Math.round((new Date().getTime() / 1000));
+						clearTimeout(exptimer);
+						exptimer = window.setTimeout(expiry, 1000 * jso.auth_secs);
+						if (document.getElementById("remauth"))
+							document.getElementById("remauth").innerHTML =
+								san(auth_user) + " " + agify(now_ut, now_ut + jso.auth_secs);
+					}
+				}
 			
 				if (jso.overview.length)
 					for (n = jso.overview.length - 1; n >= 0; n--)
@@ -1006,6 +1042,31 @@ function ws_open_sai()
 			}
 			
 			if (jso.schema == "com.warmcat.sai.taskinfo") {
+			
+				authd = jso.authorized;
+				if (jso.authorized === 0) {
+					if (document.getElementById("creds"))
+						document.getElementById("creds").classList.remove("hide");
+					if (document.getElementById("logout"))
+						document.getElementById("logout").classList.add("hide");
+				}
+				if (jso.authorized === 1) {
+					if (document.getElementById("creds"))
+						document.getElementById("creds").classList.add("hide");
+					if (document.getElementById("logout"))
+						document.getElementById("logout").classList.remove("hide");
+					if (jso.auth_user)
+						auth_user = jso.auth_user;
+					if (jso.auth_secs) {
+						var now_ut = Math.round((new Date().getTime() / 1000));
+						clearTimeout(exptimer);
+						exptimer = window.setTimeout(expiry, 1000 * jso.auth_secs);
+						if (document.getElementById("remauth"))
+							document.getElementById("remauth").innerHTML =
+								san(auth_user) + " " + agify(now_ut, now_ut + jso.auth_secs);
+					}
+				}
+			
 				s = sai_taskinfo_render(jso);
 						if (document.getElementById("sai_sticky"))
 				document.getElementById("sai_sticky").innerHTML = s;
@@ -1167,6 +1228,11 @@ window.addEventListener("load", function() {
 
 	if (document.getElementById("noscript"))
 		document.getElementById("noscript").display = "none";
+		
+	/* login form hidden success redirect */
+	if (document.getElementById("success_redir"))
+		document.getElementById("success_redir").value =
+			window.location.href;
 	ws_open_sai();
 	aging();
 	

@@ -36,6 +36,9 @@ accessible by a web interface.
    push and the revision of `.sai.json` from the new commit in the POST body...
    the master parses that JSON to fill an sqlite3 database with tasks and
    commandline options for the build on platforms mentioned in `.sai.json`.
+   Pushes to branches beginning with `_` are ignored by Sai, even if they have
+   a valid `.sai.json`; this allows casual sharing of trees via the same git
+   repo during intense development without continually triggering CI builds.
 
  - Builders typically build many variations of the same push, so they use a
    local git mirror only on the builder to reduce the load on the repo that
@@ -64,6 +67,18 @@ accessible by a web interface.
    independent platform build, and multiple platform builds (eg, cross
    toolchains).
 
+ - Embedded test devices that need management by external gpios to select
+   flash or test modes can be wired to an RPi or similar running sai-jig.
+   This listens on a configurable port for requests to perform gpio sequencing
+   specified in a configuration file.  One sai-jig instance can separately
+   manage external gpio sequencing for multiple test targets.
+
+ - Largely the master is automatic, driven by git hook notifications over
+   HTTP and the UI is read-only.  However there are some privileged UI operations
+   like deleting a whole event, or redoing whole events or individual tasks.
+   For these, if the browser has an authentic JWT signed by the master, it can
+   see and operate these privileged controls.
+
 ## Build flow and support for embedded
 
 ![build flow](READMEs/sai-build-test-flow.png)
@@ -89,6 +104,8 @@ a sai-builder for a platform can "own" or manage by itself.  Instead they are
 requested from inside the build action by another tool built with `sai-builder`,
 `sai-device`, which reads shared JSON config describing the available devices
 and platforms they are appropriate for.
+
+![sai-device overview](READMEs/sai-embedded-test.png)
 
 Rather than reserve the device when the build is spawned, the reservation
 needs to happen only when the build inside the build context has completed.
@@ -156,9 +173,9 @@ variables to the child build and test process as follows
 
 Environment Var|Ch#|Meaning|Example
 ---|---|---|---
-SAI_LOGPROXY|3|Build progress logging|@com.warmcat.com.saib.logproxy.warmcat_com-freertos-esp32.0
-SAI_LOGPROXY_TTY0|4|Device tty0|@com.warmcat.com.saib.logproxy.warmcat_com-freertos-esp32.0.tty0
-SAI_LOGPROXY_TTY1|5|Optional Device tty1|@com.warmcat.com.saib.logproxy.warmcat_com-freertos-esp32.0.tty1
+SAI_LOGPROXY|3|Build progress logging|`@com.warmcat.com.saib.logproxy.warmcat_com-freertos-esp32.0`
+SAI_LOGPROXY_TTY0|4|Device tty0|`@com.warmcat.com.saib.logproxy.warmcat_com-freertos-esp32.0.tty0`
+SAI_LOGPROXY_TTY1|5|Optional Device tty1|`@com.warmcat.com.saib.logproxy.warmcat_com-freertos-esp32.0.tty1`
 
 Because some kinds of device share the same tty for flashing the device, at
 which time nothing else must be reading from the tty, tty activity is only
@@ -257,7 +274,7 @@ For redhat type distros, you probably need to add /usr/local/lib to the
 ```
 $ git clone https://libwebsockets.org/repo/libwebsockets
 $ cd libwebsockets && mkdir build && cd build && \
-  cmake .. -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 \
+  cmake .. -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 -DLWS_WITH_JOSE=1 \
    -DLWS_WITH_STRUCT_SQLITE3=1 -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1 \
    -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1
 $ make -j && sudo make -j install && sudo ldconfig
@@ -269,8 +286,8 @@ sai-builder.
 Feature|lws options
 ---|---
 either|`-DLWS_WITH_STRUCT_JSON=1` `-DLWS_WITH_SECURE_STREAMS=1`
-master|`-DLWS_UNIX_SOCK=1` `-DLWS_WITH_GENCRYPTO=1` `-DLWS_WITH_STRUCT_SQLITE3=1`
-builder|`-DLWS_WITH_SPAWN=1` `-DLWS_WITH_THREADPOOL=1`
+master|`-DLWS_UNIX_SOCK=1` `-DLWS_WITH_GENCRYPTO=1` `-DLWS_WITH_STRUCT_SQLITE3=1` `-DLWS_WITH_JOSE=1`
+builder + related|`-DLWS_WITH_SPAWN=1` `-DLWS_WITH_THREADPOOL=1`
 
 Similarly the two daemons bring in different dependencies
 
@@ -279,6 +296,7 @@ Feature|dependency
 either|libwebsockets
 master|libsqlite3
 builder|libgit2 pthreads
+jig|libgpiod
 
 #### Linux
 

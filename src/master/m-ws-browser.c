@@ -101,6 +101,9 @@ enum {
 typedef struct sai_browse_taskreply {
 	const sai_event_t	*event;
 	const sai_task_t	*task;
+	char			auth_user[33];
+	int			authorized;
+	int			auth_secs;
 } sai_browse_taskreply_t;
 
 static lws_struct_map_t lsm_taskreply[] = {
@@ -108,6 +111,9 @@ static lws_struct_map_t lsm_taskreply[] = {
 			 lsm_event, "e"),
 	LSM_CHILD_PTR	(sai_browse_taskreply_t, task,	sai_task_t, NULL,
 			 lsm_task, "t"),
+	LSM_CARRAY	(sai_browse_taskreply_t, auth_user,	"auth_user"),
+	LSM_UNSIGNED	(sai_browse_taskreply_t, authorized,	"authorized"),
+	LSM_UNSIGNED	(sai_browse_taskreply_t, auth_secs,	"auth_secs"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_taskreply[] = {
@@ -119,6 +125,19 @@ enum sai_overview_state {
 	SOS_EVENT,
 	SOS_TASKS,
 };
+
+/* 1 == authorized */
+
+static int
+saim_conn_auth(struct pss *pss)
+{
+	if (!pss->authorized)
+		return 0;
+	if (pss->expiry_unix_time < (unsigned long)lws_now_secs())
+		return 0;
+
+	return 1;
+}
 
 /*
  * Ask for writeable cb on all browser connections subscribed to a particular
@@ -341,6 +360,9 @@ saim_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 	case SAIM_WS_BROWSER_RX_TASKRESET:
 
+		if (!saim_conn_auth(pss))
+			goto soft_error;
+
 		/*
 		 * User is asking us to reset / rebuild this task
 		 */
@@ -358,6 +380,9 @@ saim_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		return 0;
 
 	case SAIM_WS_BROWSER_RX_EVENTRESET:
+
+		if (!saim_conn_auth(pss))
+			goto soft_error;
 
 		/*
 		 * User is asking us to reset / rebuild every task in the event
@@ -419,6 +444,9 @@ saim_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		/*
 		 * User is asking us to delete the whole event
 		 */
+
+		if (!saim_conn_auth(pss))
+			goto soft_error;
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 
@@ -494,6 +522,10 @@ saim_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		goto bail;;
 
 	case SAIM_WS_BROWSER_RX_TASKCANCEL:
+
+		if (!saim_conn_auth(pss))
+			goto soft_error;
+
 		/*
 		 * Browser is informing us of task's STOP button clicked, we
 		 * need to inform any builder that might be building it
@@ -540,7 +572,7 @@ saim_ws_json_tx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 	sai_browse_taskreply_t task_reply;
 	lws_dll2_owner_t task_owner;
 	lws_struct_serialize_t *js;
-	char esc[256], filt[128];
+	char esc[256], esc1[33], filt[128];
 	char event_uuid[33];
 	sqlite3 *pdb = NULL;
 	sai_event_t *e;
@@ -705,8 +737,21 @@ again:
 		p += lws_snprintf((char *)p, end - p,
 			"{\"schema\":\"sai.warmcat.com.overview\","
 			" \"alang\":\"%s\","
+			" \"authorized\": %d,"
+			" \"auth_secs\": %ld,"
+			" \"auth_user\": \"%s\","
 			"\"overview\":[",
-			lws_json_purify(esc, pss->alang, sizeof(esc) - 1, &iu));
+			lws_json_purify(esc, pss->alang, sizeof(esc) - 1, &iu),
+			pss->authorized, pss->expiry_unix_time - lws_now_secs(),
+			lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu)
+			);
+
+		/*
+		 * "authorized" here is used to decide whether to render the
+		 * additional controls clientside.  The events the controls
+		 * cause if used are separately checked for coming from an
+		 * authorized pss when they are received.
+		 */
 
 		if (pss->specificity)
 			pss->walk = lws_dll2_get_head(&pss->query_owner);
@@ -880,8 +925,13 @@ so_finish:
 		p += lws_snprintf((char *)p, end - p,
 			"{\"schema\":\"com.warmcat.sai.builders\","
 			" \"alang\":\"%s\","
-			"\"builders\":[",
-			lws_sql_purify(esc, pss->alang, sizeof(esc) - 1));
+			" \"authorized\":%d,"
+			" \"auth_secs\":%ld,"
+			" \"auth_user\": \"%s\","
+			" \"builders\":[",
+			lws_sql_purify(esc, pss->alang, sizeof(esc) - 1),
+			pss->authorized, pss->expiry_unix_time - lws_now_secs(),
+			lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu));
 
 		pss->walk = lws_dll2_get_head(&vhd->master.builder_owner);
 		pss->subsequent = 0;
@@ -957,6 +1007,10 @@ b_finish:
 
 		task_reply.event = pss->one_event;
 		task_reply.task = pss->one_task;
+		task_reply.auth_secs = pss->expiry_unix_time - lws_now_secs();
+		task_reply.authorized = pss->authorized;
+		lws_strncpy(task_reply.auth_user, pss->auth_user,
+			    sizeof(task_reply.auth_user));
 
 		js = lws_struct_json_serialize_create(lsm_schema_json_map_taskreply,
 				LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply),

@@ -197,14 +197,15 @@ div.taskstate {
 div.nailed {
         position:fixed;
         background: #fff;
-        width:100%;
+        width:auto;
         z-index:1001;
         margin-top:-12px;
 }
 
 div.undernailed {
         position:relative;
-        top: 180px;
+        top: 0px;
+        margin-left: 180px;
 }
 
 
@@ -380,6 +381,46 @@ div.dlogst {
 
 }
 
+div.hide {
+	display: none;
+}
+
+input.crin {
+	font-size: 7pt;
+	width: 60px;
+}
+
+input.crinb {
+	font-size: 7pt;
+	margin-top: 4px;
+}
+
+label {
+	float: left;
+	width: 4.5em;
+	margin-right: 1em;
+}
+
+form.login {
+	width: auto;
+	color:#808080;
+	text-align: right;
+}
+
+div.login {
+	display: block;
+	vertical-align: middle;
+	font-size: 7pt;
+	color:#3d9970;
+	text-align:left;
+	margin: 0px 16px 0px 16px;
+	padding: 2px 3px;
+	border-radius:5px;
+	float: left;
+	width: auto;
+}
+
+
 div.sai_arts {
 	display: inline-flex;
 	vertical-align: middle;
@@ -395,7 +436,7 @@ div.sai_arts {
 span.ti1 {
 	font-weight: normal;
 	font-size: 9pt;
-	background:#d0c0b0;
+	//background:#d0c0b0;
 	color:#000000;
 	padding:3px;
 	border-radius:3px;
@@ -449,29 +490,39 @@ table.summary {
 	margin: 1px;
 }
 
-table.builders {
-	height: 100%;
-	margin-left: 32px;
-}
-
 img.bsvg {
 	height: 50px;
 	width: auto;
 	padding:3px;
 }
 
-td.builder {
-	width: 99%;
+div.builder {
+	display: block;
+	position: absolute;
+	top: 150px;
+}
+
+div.sticky {
+	margin-left: 180px;
 }
 
 
-td.logo {
+div.logo {
 	margin: 3px;
 	margin-right: 4px;
 	padding: 2px;
 	vertical-align: top;
-	z-index: 1000;
+	z-index: 1002;
+	width: 164px;
+	height: auto;
+	font-size: 6pt;
 }
+
+img.logo {
+	width: 158px;
+	height: auto;
+}
+
 td.summary {
 	background: #f8f8f8;
 	width: 100%;
