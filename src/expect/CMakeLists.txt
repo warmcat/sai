@@ -26,6 +26,9 @@ if (requirements AND NOT MSVC)
 	if (APPLE)
 		set_property(TARGET sai-expect PROPERTY MACOSX_RPATH YES)
 	endif()
+	if (SAI_LWS_INC_PATH)
+		target_include_directories("sai-expect" PRIVATE ${SAI_LWS_INC_PATH})
+	endif()
 
 	target_link_libraries("sai-expect" ${SAI_LWS_LIB_PATH})
 	

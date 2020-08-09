@@ -20,6 +20,10 @@ if (requirements)
 		set_property(TARGET sai-device PROPERTY MACOSX_RPATH YES)
 	endif()
 
+	if (SAI_LWS_INC_PATH)
+		target_include_directories("sai-device" PRIVATE ${SAI_LWS_INC_PATH})
+	endif()
+
 	target_link_libraries("sai-device" ${SAI_LWS_LIB_PATH})
 	
 	if (LWS_OPENSSL_LIBRARIES)

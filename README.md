@@ -298,7 +298,7 @@ master|libsqlite3
 builder|libgit2 pthreads
 jig|libgpiod
 
-#### Linux
+#### Unix / Linux
 
 ```
 $ git clone https://warmcat.com/repo/sai
@@ -309,3 +309,17 @@ $ sudo cp ../scripts/builder-conf /etc/sai/builder/conf
 $ sudo vim /etc/sai/builder/conf
 $ sudo systemctl enable sai-builder
 ```
+
+#### Additional steps for freebsd
+
+Freebsd doesn't present many difference from Linux.  Create the sai user via
+`adduser` and set the uid to 883.  Create the builder logproxy socket dir
+one time as root
+
+```
+# mkdir -p /var/run/com.warmcat.com.saib.logproxy
+# chown sai /var/run/com.warmcat.com.saib.logproxy
+```
+
+There's no systemctl, 
+

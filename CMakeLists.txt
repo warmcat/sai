@@ -73,6 +73,10 @@ if (NOT SAI_LWS_INC_PATH)
 		message(FATAL_ERROR "Can't find lws headers")
 	endif()
 endif()
+
+list(APPEND CMAKE_REQUIRED_INCLUDES ${SAI_LWS_INC_PATH})
+message("Required incs: ${CMAKE_REQUIRED_INCLUDES}")
+
 if (NOT SAI_LWS_LIB_PATH)
 	find_library(XSAI_LWS_LIB_PATH NAMES "websockets")
 	set(SAI_LWS_LIB_PATH ${XSAI_LWS_LIB_PATH})
@@ -82,7 +86,7 @@ if (NOT SAI_LWS_LIB_PATH)
 endif()
 
 if (SAI_EXT_PTHREAD_INCLUDE_DIR)
-	set(CMAKE_REQUIRED_INCLUDES ${CMAKE_REQUIRED_INCLUDES};${SAI_EXT_PTHREAD_INCLUDE_DIR})
+	list(APPEND CMAKE_REQUIRED_INCLUDES ${SAI_EXT_PTHREAD_INCLUDE_DIR})
 	include_directories(${SAI_EXT_PTHREAD_INCLUDE_DIR})
 
 	set(CMAKE_REQUIRED_FLAGS ${CMAKE_REQUIRED_FLAGS} " -DHAVE_STRUCT_TIMESPEC=1")
@@ -172,7 +176,7 @@ MACRO(require_lws_config reqconfig _val result)
 	endif()
 ENDMACRO()
 
-set(CMAKE_REQUIRED_INCLUDES ${SAI_LWS_INC_PATH})
+#set(CMAKE_REQUIRED_INCLUDES ${SAI_LWS_INC_PATH})
 
 set(requirements 1)
 require_lws_config(LWS_ROLE_H1				1 requirements)
