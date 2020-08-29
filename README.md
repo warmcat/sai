@@ -312,14 +312,25 @@ $ sudo systemctl enable sai-builder
 
 #### Additional steps for freebsd
 
-Freebsd doesn't present many difference from Linux.  Create the sai user via
-`adduser` and set the uid to 883.  Create the builder logproxy socket dir
-one time as root
+Freebsd presents a few differences from Linux.
+
+1) `pkg install bash` and other prerequisites like git, cmake etc
+
+2) Create the sai user via `adduser` and set the uid to 883.
+
+3) Create the builder logproxy socket dir one time as root
 
 ```
 # mkdir -p /var/run/com.warmcat.com.saib.logproxy
 # chown sai /var/run/com.warmcat.com.saib.logproxy
 ```
 
-There's no systemctl, 
+4) For script portability, `ln -sf /usr/local/bin/bash /bin/bash`
+
+5) As root copy `scripts/etc-rc.d-sai_builder-FreeBSD` to `/etc/rc.d`.
+
+6) As root, edit `/etc/rc.conf` and add a line `sai_builder_enable="YES"`, then,
+`sudo /etc/rc.d/sai_builder start`
+
+7) Create and prepare `/etc/sai/builder/conf` as for Linux
 

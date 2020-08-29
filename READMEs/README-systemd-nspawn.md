@@ -118,7 +118,15 @@ We have to enable the "universe" packageset to get normal things.
 Container # apt update && apt install vim && apt edit-sources && apt update
 ```
 
-add " universe" to the end of the line in the vim session it pops up and save it.
+add " universe" to the end of the line in the vim session it pops up... we also need to enable
+updates so we can maintain the distro image, so add lines similar to this
+
+```
+deb http://archive.ubuntu.com/ubuntu focal-security main universe
+deb http://archive.ubuntu.com/ubuntu focal-updates main universe
+```
+
+and save it.
 
 ### Specific to Xenial
 

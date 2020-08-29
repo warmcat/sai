@@ -1,0 +1,18 @@
+#!/bin/sh
+#
+
+# PROVIDE: sai_builder
+# REQUIRE: FILESYSTEMS NETWORK
+
+. /etc/rc.subr
+
+name="sai_builder"
+desc="Sai CI builder"
+rcvar="sai_builder_enable"
+command="/usr/sbin/daemon"
+pidfile="/var/run/${name}.pid"
+sai_builder_flags="-S /usr/local/bin/sai-builder"
+
+load_rc_config $name
+run_rc_command "$1"
+

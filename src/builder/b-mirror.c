@@ -71,7 +71,7 @@ sai_mirror_local_checkout(struct sai_nspawn *ns)
 	git_checkout_options co_opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_fetch_options opts = GIT_FETCH_OPTIONS_INIT;
 	git_repository *git_repo_build_specific = NULL;
-	char dp[384], spec[96], *paths[] = { spec };
+	char dp[512], spec[256], *paths[] = { spec };
 	git_strarray rfs = { paths, 1 };
 	git_object *treeish;
 	git_remote *remote;

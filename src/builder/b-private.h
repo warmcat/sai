@@ -83,8 +83,8 @@ struct sai_nspawn;
 struct sai_nspawn {
 	lws_dll2_owner_t		chunk_cache;
 
-	char				inp[384];
-	char				path[256];
+	char				inp[512];
+	char				path[384];
 	char				pending_mirror_log[128];
 
 	/* convenient place to store it */

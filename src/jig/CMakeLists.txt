@@ -10,14 +10,16 @@ set(requirements 1)
 require_lws_config(LWS_WITH_CLIENT		1 requirements)
 require_lws_config(LWS_WITH_UNIX_SOCK		1 requirements)
 
+find_path(   GPIOD_INC_PATH NAMES "gpiod.h")
+find_library(GPIOD_LIB_PATH NAMES "gpiod")
+	
+if (NOT GPIOD_INC_PATH OR NOT GPIOD_LIB_PATH)
+	message(" Unable to find libgpiod")
+	set(requirements 0)
+endif()
+
 if (requirements)
 
-	find_path(   GPIOD_INC_PATH NAMES "gpiod.h")
-	find_library(GPIOD_LIB_PATH NAMES "gpiod")
-	
-	if (NOT GPIOD_INC_PATH OR NOT GPIOD_LIB_PATH)
-		message(FATAL_ERROR " Unable to find libgpiod")
-	endif()
 	include_directories(BEFORE "${GPIOD_INC_PATH}")
 
 	add_executable("sai-jig" ${SRCS})
