@@ -1047,15 +1047,21 @@ clean_spa:
 				memcpy(pss->specific, "refs/heads/", 11);
 				pss->specificity = SAIM_SPECIFIC_H;
 			} else
-				if (lws_get_urlarg_by_name(wsi, "id", pss->specific + 8,
-							   sizeof(pss->specific))) {
-					memcpy(pss->specific, "refs/heads/", 11);
+				if (lws_get_urlarg_by_name(wsi, "id",
+							   (char *)buf,
+							   sizeof(buf))) {
+					lws_strncpy(pss->specific,
+							(const char *)buf + 3,
+							sizeof(pss->specific));
 					pss->specificity = SAIM_SPECIFIC_ID;
 				} else {
 					pss->specificity = SAIM_SPECIFIC_H;
-					strncpy(pss->specific, "refs/heads/master",
+					lws_strncpy(pss->specific,
+							"refs/heads/master",
 							sizeof(pss->specific));
 				}
+			lwsl_info("%s: spec %d, '%s'\n", __func__,
+					pss->specificity, pss->specific);
 			break;
 		}
 

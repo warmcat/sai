@@ -779,7 +779,8 @@ again:
 			e = lws_container_of(pss->walk, sai_event_t, list);
 
 			if (pss->specificity) {
-				//lwsl_notice("%s %s %s\n", e->hash, e->ref, pss->specific);
+				lwsl_info("%s: specificity: e->hash: %s, e->ref: %s, pss->specific: %s\n",
+					    __func__, e->hash, e->ref, pss->specific);
 				if (strcmp(e->hash, pss->specific) &&
 				    strcmp(e->ref, pss->specific)) {
 					pss->walk = pss->walk->next;
