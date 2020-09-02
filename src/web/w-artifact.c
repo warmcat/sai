@@ -1,5 +1,5 @@
 /*
- * Sai master
+ * Sai server
  *
  * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
  *
@@ -24,10 +24,17 @@
 #include <signal.h>
 #include <time.h>
 
-#include "m-private.h"
+#include "w-private.h"
+
+void
+sai_task_uuid_to_event_uuid(char *event_uuid33, const char *task_uuid65)
+{
+	memcpy(event_uuid33, task_uuid65, 32);
+	event_uuid33[32] = '\0';
+}
 
 int
-saim_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,
+saiw_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,
 	      sqlite3_blob **blob, uint64_t *length)
 {
 	char task_uuid[66], event_uuid[34], nonce[34], qu[200],
@@ -35,8 +42,8 @@ saim_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,
 	struct lwsac *ac = NULL;
 	lws_dll2_owner_t o;
 	sai_artifact_t *a;
-	const char *p;
 	uint64_t rid = 0;
+	const char *p;
 	int n;
 
 	/*
@@ -76,7 +83,7 @@ saim_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,
 
 	/* open the event-specific database object */
 
-	if (saim_event_db_ensure_open(vhd, event_uuid, 0, pdb)) {
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, pdb)) {
 		lwsl_info("%s: unable to open event-specific database\n",
 				__func__);
 
@@ -136,7 +143,7 @@ saim_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,
 
 fail:
 	lwsac_free(&ac);
-	saim_event_db_close(vhd, pdb);
+	sais_event_db_close(vhd, pdb);
 
 	lwsl_notice("%s: couldn't find blob %s\n", __func__, url);
 

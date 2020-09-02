@@ -19,7 +19,7 @@
  *  MA  02110-1301  USA
  *
  * Sai-builder uses a secure streams template to make the client connections to
- * the masters listed in /etc/sai/builder/conf JSON config.  The URL in the
+ * the servers listed in /etc/sai/builder/conf JSON config.  The URL in the
  * config is substituted for the endpoint URL at runtime.
  *
  * See b-comms.c for the secure stream template and callbacks for this.
@@ -75,7 +75,7 @@ static const char * const default_ss_policy =
 
 	  "\"s\": ["
 		/*
-		 * The main connection to a master carrying events and logs
+		 * The main connection to a server carrying events and logs
 		 */
 		"{\"sai_builder\": {"
 			"\"endpoint\":"		"\"${url}\","
@@ -90,7 +90,7 @@ static const char * const default_ss_policy =
 			"]"
 		"}},"
 		/*
-		 * Ephemeral connections to the same master carrying artifact
+		 * Ephemeral connections to the same server carrying artifact
 		 * JSON + bulk data
 		 */
 		"{\"sai_artifact\": {"
@@ -177,7 +177,7 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 			break;
 
 		/*
-		 * The builder JSON conf listed masters we want to connect to,
+		 * The builder JSON conf listed servers we want to connect to,
 		 * let's collect the config, make a ss for each and add the
 		 * saim into an lws_dll2 list owned by
 		 * builder->builder->sai_plat_owner
@@ -456,12 +456,12 @@ int main(int argc, const char **argv)
 
 bail:
 
-	/* destroy the unique masters */
+	/* destroy the unique servers */
 
 	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
-				   builder.sai_plat_master_owner.head) {
-		struct sai_plat_master *cm = lws_container_of(p,
-					struct sai_plat_master, list);
+				   builder.sai_plat_server_owner.head) {
+		struct sai_plat_server *cm = lws_container_of(p,
+					struct sai_plat_server, list);
 
 		lws_dll2_remove(&cm->list);
 		lws_ss_destroy(&cm->ss);

@@ -18,7 +18,7 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  *  MA  02110-1301  USA
  *
- * structs common to builder and master
+ * structs common to builder and server
  */
 
 //#include <sai_config_private.h>
@@ -40,6 +40,7 @@ typedef enum {
 	SAIES_FAIL				= 4,
 	SAIES_CANCELLED				= 5,
 	SAIES_BEING_BUILT_HAS_FAILURES		= 6,
+	SAIES_DELETED				= 7,
 } sai_event_state_t;
 
 enum {
@@ -50,7 +51,7 @@ enum {
 };
 
 /*
- * Builder is indicating he can't take the task and master should free it up
+ * Builder is indicating he can't take the task and server should free it up
  * and try another builder.
  */
 
@@ -96,7 +97,7 @@ typedef struct {
 
 	struct lwsac		*ac_task_container;
 
-	const char		*master_name; /* used in offer */
+	const char		*server_name; /* used in offer */
 	const char		*repo_name; /* used in offer */
 	const char		*git_ref; /* used in offer */
 	const char		*git_hash; /* used in offer */
@@ -119,7 +120,7 @@ typedef struct sai_event {
 	char				hash[65];
 	char				uuid[65];
 	char				source_ip[32];
-	void				*pdb; /* master only, sqlite3 */
+	void				*pdb; /* server only, sqlite3 */
 	uint64_t			created;
 	uint64_t			last_updated;
 	sai_event_state_t		state;
@@ -160,13 +161,13 @@ typedef struct {
 struct sai_plat;
 
 /*
- * One SS per unique master the builder connects to; one of these as the SS
+ * One SS per unique server the builder connects to; one of these as the SS
  * userdata object
  *
- * May be in use by multiple plats offered by same builder to same master
+ * May be in use by multiple plats offered by same builder to same server
  */
 
-typedef struct sai_plat_master {
+typedef struct sai_plat_server {
 	lws_dll2_t		list;
 
 	lws_dll2_owner_t	rejection_list;
@@ -187,7 +188,7 @@ typedef struct sai_plat_master {
 	int			index;  /* used to create unique build dir path */
 
 	uint16_t		retries;
-} sai_plat_master_t;
+} sai_plat_server_t;
 
 struct sai_env {
 	lws_dll2_t		list;
@@ -196,26 +197,26 @@ struct sai_env {
 	const char		*value;
 };
 
-typedef struct sai_plat_master_ref {
+typedef struct sai_plat_server_ref {
 	lws_dll2_t		list;
-	sai_plat_master_t	*spm;
-} sai_plat_master_ref_t;
+	sai_plat_server_t	*spm;
+} sai_plat_server_ref_t;
 
 /*
  * One of these instantiated per platform instance
  *
- * It lists a sai_plat_master per master / ss that can use the platform
+ * It lists a sai_plat_server per server / ss that can use the platform
  *
  * It contains an nspawn for each platform builder instance
  *
- * It's also used as the object on master side that represents a builder /
+ * It's also used as the object on server side that represents a builder /
  * platform instance and status.
  */
 
 typedef struct sai_plat {
 	lws_dll2_t		sai_plat_list;
 
-	lws_dll2_owner_t	masters; /* list of sai_plat_master_ref_t */
+	lws_dll2_owner_t	servers; /* list of sai_plat_server_ref_t */
 	lws_dll2_owner_t	chunk_cache;
 
 	const char		*name;
@@ -225,7 +226,7 @@ typedef struct sai_plat {
 	lws_dll2_owner_t	nspawn_owner;
 	struct lwsac		*deserialization_ac;
 
-	struct lws		*wsi; /* master side only */
+	struct lws		*wsi; /* server side only */
 
 	lws_dll2_owner_t	env_head;
 
@@ -248,6 +249,17 @@ typedef struct sai_repo {
 typedef enum {
 	SAILOGA_STARTED,
 } sai_log_action_t;
+
+typedef struct sai_browse_rx_evinfo {
+	char		event_hash[65];
+	int		state;
+} sai_browse_rx_evinfo_t;
+
+typedef struct sai_browse_rx_taskinfo {
+	char		task_hash[65];
+	unsigned int	log_start;
+	uint8_t		logs;
+} sai_browse_rx_taskinfo_t;
 
 extern const lws_struct_map_t
 	lsm_schema_json_map_task[],

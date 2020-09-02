@@ -16,18 +16,18 @@
 
 			<div id="login" class="login">
 				<div id="creds" class="creds hide">
-					 <form class="login" action="login" method="post">
+					 <form class="login">
 					  <label for="lname">Name:</label>
 					  <input class="crin" type="text" id="lname" name="lname" autocomplete="username"><br>
 					  <label for="lpass">Password:</label>
 					  <input class="crin" type="password" id="lpass" name="lpass" autocomplete="current-password"><br>
-					  <input class="crinb" type="submit" value="Login">
+					  <input class="crinb" type="button" value="Login" id="login">
 					  <input type="hidden" id="success_redir" name="success_redir" value="">
 					</form> 
 				</div>
 				<div id="logout" class="creds hide">
 					<div id="remauth"></div>
-					<input class="crin" type="submit" id="logout" value="Logout">
+					<input class="crin" type="button" id="logout" value="Logout">
 				</div>
 			</div>
 

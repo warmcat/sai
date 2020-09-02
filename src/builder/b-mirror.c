@@ -415,7 +415,7 @@ saib_mirror_task(void *user, enum lws_threadpool_task_status s)
 				/*
 				 * Leave in NSSTATE_CHECKOUT and come back to
 				 * continue with checking out after we have
-				 * sync'd with comms to master
+				 * sync'd with comms to server
 				 */
 
 				ns->state = NSSTATE_CHECKOUT;

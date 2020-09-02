@@ -512,6 +512,9 @@ function aging()
                 }
         }
 
+	if (next < 5)
+		next = 5;
+
         /*
          * We only need to come back when the age might have changed.
          * Eg, if everything is counted in hours already, once per
@@ -527,7 +530,7 @@ function sai_plat_icon(plat, size)
 	
 	s = plat.split('/');
 	if (s[0]) {
-	console.log("plat " + plat + " plat[0] " + s[0]);
+	// console.log("plat " + plat + " plat[0] " + s[0]);
 	s1 = "<img class=\"ip" + size + " zup\" src=\"/sai/" + san(s[0]) +
 		".svg\">";
 	
@@ -560,7 +563,7 @@ function sai_taskinfo_render(t, now_ut)
 	var now_ut = Math.round((new Date().getTime() / 1000));
 	var s = "";
 	
-	s = "<div class=\"taskinfo\"><table><tr class=\"nomar\"><td class=\"atop\"><table>" +
+	s = "<table><tr class=\"nomar\"><td class=\"atop\"><table>" +
 		sai_event_render(t, now_ut, 0) + "</table></td><td class=\"ti\">" +
 		"<span class=\"ti1\">" + sai_plat_icon(t.t.platform, 2) +
 		san(t.t.platform) + "</span>&nbsp;";
@@ -589,16 +592,53 @@ function sai_taskinfo_render(t, now_ut)
 
 	s += "</td></tr>";
 	
-	s += "</td></tr></table></table></div>";
+	s += "</td></tr></table></table>";
 	
 	return s;
+}
+
+function summarize_build_situation(event_uuid)
+{
+	var good = 0, bad = 0, total = 0,
+		roo = document.getElementById("taskcont-" + event_uuid),
+		same;
+		
+	if (!roo) 
+		return "";
+	
+	same = roo.querySelectorAll(".taskstate");
+	if (same)
+		total = same.length;
+	same = roo.querySelectorAll(".taskstate3");
+	if (same)
+		good = same.length;
+	same = roo.querySelectorAll(".taskstate4");
+	if (same)
+		bad = same.length;
+				
+	if (good == total)
+		return "All " + good + " passed";
+
+	if (bad == total)
+		return "All " + bad + " failed";
+		
+	if (!good && !bad)
+		return total + " pending";
+
+	if (!bad)
+		return good + " passed, " + (total - good) + " pending";
+
+	if (!good)
+		return bad + " failed, " + (total - bad) + " pending";
+
+	return good + " passed, " + bad + " failed, " + (total - good - bad) + " pending";
 }
 
 function sai_event_summary_render(o, now_ut, reset_all_icon)
 {
 	var s, q, ctn = "", wai, s1 = "", n, e = o.e;
 
-	s = "<tr><td class=\"waiting\"><table class=\"comp";
+	s = "<table class=\"comp";
 	if (e.state == 3)
 		s += " comp_pass";
 	if (e.state == 4 || e.state == 6)
@@ -606,13 +646,18 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 
 	s += "\"><tr><td class=\"jumble\"><a href=\"/sai/?event=" + san(e.uuid) +
 		"\"><img src=\"/sai/sai-event.svg\"";
+	if (gitohashi_integ)
+		s += " class=\"saicon\"";
 	if (e.state == 3 || e.state == 4)
 		s += " class=\"deemph\"";
 	s += ">";
+	var cl = "evr";
+	if (gitohashi_integ)
+		cl = "evr_gi";
 	if (e.state == 3)
-		s += "<div class=\"evr\"><img src=\"/sai/passed.svg\"></div>";
+		s += "<div class=\"" + cl + "\"><img src=\"/sai/passed.svg\"></div>";
 	if (e.state == 4)
-		s += "<div class=\"evr\"><img src=\"/sai/failed.svg\"></div>";
+		s += "<div class=\"" + cl + "\"><img src=\"/sai/failed.svg\"></div>";
 		
 	s += "</a>";
 	if (reset_all_icon && !gitohashi_integ && authd) {
@@ -621,30 +666,38 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		s += "<img class=\"rebuild\" alt=\"delete event\" src=\"/sai/delete.png\" " +
 				"id=\"delete-ev-" + san(e.uuid) + "\">";
 	}
-	s += "</td>" +
+	s += "</td>";
+	
+	if (!gitohashi_integ) {
+		s +=
 		"<td><table class=\"nomar\">" +
-		"<tr><td class=\"nomar\" colspan=2><span class=\"e1\">" +
-		san(e.repo_name) +
+		"<tr><td class=\"nomar\" colspan=2>" +
+		"<span class=\"e1\">" + san(e.repo_name) +
 		"</span></td></tr><tr><td class=\"nomar\" colspan=2><span class=\"e2\">";
-
-	if (e.ref.substr(0, 11) === "refs/heads/") {
-		s += "<img class=\"branch\">" +
-			san(e.ref.substr(11));
-	} else
-		if (e.ref.substr(0, 10) === "refs/tags/") {
-			s += "<img class=\"tag\">" +
-				san(e.ref.substr(10));
+	
+		if (e.ref.substr(0, 11) === "refs/heads/") {
+			s += "<img class=\"branch\">" +
+				san(e.ref.substr(11));
 		} else
-			s += san(e.ref);
-
-	s += "</span></td></tr><tr><td class=\"nomar\"><span class=\"e3\">" +
-	        san(e.hash.substr(0, 8)) +
-	     "</span></td><td class=\"e4\" class=\"nomar\">" +
-	     agify(now_ut, e.created) + "</td></tr>";
-	 if (o.t.length > 1)
-	     	s += "<tr><td class=\"nomar\"><span class=\"e3\">" + o.t.length + " builds</span></td><tr>";
-	 s += "</table>" +
-	     "</td></tr></table></td>";
+			if (e.ref.substr(0, 10) === "refs/tags/") {
+				s += "<img class=\"tag\">" +
+					san(e.ref.substr(10));
+			} else
+				s += san(e.ref);
+	
+		s += "</span></td></tr><tr><td class=\"nomar e6\">" +
+		        san(e.hash.substr(0, 8)) +
+		     "</td><td class=\"e6 nomar\">" +
+		     agify(now_ut, e.created) + "</td></tr>";
+		     	s += "<tr><td class=\"nomar e6\" colspan=\"2\" id=\"sumbs-" + e.uuid +"\">" + summarize_build_situation(e.uuid) + "</td><tr>";
+		 s += "</table>" +
+		     "</td>";
+	} else {
+		s +="<td><table><tr><td class=\"e6 nomar\">" + san(e.hash.substr(0, 8)) + " " + agify(now_ut, e.created);
+		     	s += "</td></tr><tr><td class=\"e6 nomar\" id=\"sumbs-" + e.uuid +"\">" + summarize_build_situation(e.uuid);
+		s += "</tr></table></td>"; 
+	}
+	s += "</tr></table>";
 	     
 	return s;
 }
@@ -652,8 +705,11 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 function sai_event_render(o, now_ut, reset_all_icon)
 {
 	var s, q, ctn = "", wai, s1 = "", n, e = o.e;
-
-	s = sai_event_summary_render(o, now_ut, reset_all_icon);
+	
+	s = "<tr><td class=\"waiting\"";
+	if (gitohashi_integ)
+		s += " id=\"gitohashi_sai_icon\"";
+	s += "><div id=\"esr-" + san(e.uuid) + "\"></div></td>";
 
 	if (o.t.length) {
 		var all_good, has_bad, all_done;
@@ -668,7 +724,11 @@ function sai_event_render(o, now_ut, reset_all_icon)
 		 * SAIES_BEING_BUILT_HAS_FAILURES
 		 */
 		
-		s += "<td class=\"tasks\"><table><tr><td class=\"atop\">";
+		s += "<td class=\"tasks\" id=\"taskcont-" + san(e.uuid) + "\">";
+		if (gitohashi_integ)
+			s += "<div class=\"gi_popup\" id=\"gitohashi_sai_details\">";
+
+		s += "<table><tr><td class=\"atop\">";
 
 		for (q = 0; q < o.t.length; q++) {
 			var t = o.t[q];
@@ -683,6 +743,7 @@ function sai_event_render(o, now_ut, reset_all_icon)
 					 */
 
 					s += "<div class=\"";
+					/*
 					if (wai)
 						s += " awaiting";
 					if (all_good === 1) {
@@ -696,12 +757,12 @@ function sai_event_render(o, now_ut, reset_all_icon)
 							if (all_done === 0)
 								s += " ov_dunno";
 					}
+					*/
 
 					s += " ib\"><table class=\"nomar\">" +
-					     "<tr><td class=\"keepline\">" + s1;
-					s += "</td><td class=\"tn\">" +
-						sai_stateful_taskname(st, ctn, 0) +
-						"</td></tr></table></div>";
+					     "<tr><td class=\"tn\">" + ctn +
+					     "</td><td class=\"keepline\">" + s1 +
+					     "</td></tr></table></div>";
 					s1 = "";
 				}
 				all_good = 1;
@@ -718,7 +779,7 @@ function sai_event_render(o, now_ut, reset_all_icon)
 			if (t.state === 4 || t.state == 6)
 				has_bad = 1;
 
-			s1 += "<div class=\"taskstate taskstate" + t.state + "\">";
+			s1 += "<div id=\"taskstate_" + t.uuid + "\" class=\"taskstate taskstate" + t.state + "\">";
 			if (t.state === 0)
 				wai = 1;
 
@@ -732,6 +793,8 @@ function sai_event_render(o, now_ut, reset_all_icon)
 			var st = 0;
 
 			s += "<div class=\"";
+			
+			/*
 			if (wai)
 				s += " awaiting";
 			if (all_good === 1) {
@@ -745,14 +808,17 @@ function sai_event_render(o, now_ut, reset_all_icon)
 					if (all_done === 0)
 						s += " ov_dunno";
 			}
+			*/
 			s += " ib\"><table class=\"nomar\">" +
-				"<tr><td class=\"keepline\">" + s1;
-			s += "</td><td class=\"tn\">" +
-				sai_stateful_taskname(st, ctn, 0) +
-			     		"</td></tr></table></div>";
+				"<tr><td class=\"tn\">" + ctn +
+				"<td class=\"keepline\">" + s1 +
+				"</td></tr></table></div>";
 		}
 
-		s += "</td></tr></table></td>";
+		s += "</td></tr></table>";
+		if (gitohashi_integ)
+			s += "</div>";
+		s += "</td>";
 	}
 
 	s += "</tr>";
@@ -802,7 +868,7 @@ function render_builders(jso)
 			host = sen.split('.')[0];
 			cia = host.split('-')[1];
 			
-			console.log("host " + host + ", cia " + cia);
+			// console.log("host " + host + ", cia " + cia);
 			
 			if ((nc == conts.length && !cia) ||
 			    (cia && cia === conts[nc])) {
@@ -834,6 +900,27 @@ function render_builders(jso)
 	return s;
 }
 
+function refresh_state(task_uuid, task_state)
+{
+	var tsi = document.getElementById("taskstate_" + task_uuid);
+	
+	if (tsi) {
+		tsi.classList.remove("taskstate1");
+		tsi.classList.remove("taskstate2");
+		tsi.classList.remove("taskstate3");
+		tsi.classList.remove("taskstate4");
+		tsi.classList.remove("taskstate5");
+		tsi.classList.remove("taskstate6");
+		tsi.classList.remove("taskstate7");
+		tsi.classList.add("taskstate" + task_state);
+		// console.log("refresh_state  taskstate" + task_state);
+	}
+}
+
+function after_delete() {
+	location.reload();
+}
+
 function ws_open_sai()
 {	
 	var s = "", q, qa, qi, q5, q5s;
@@ -860,6 +947,14 @@ function ws_open_sai()
 			s += "?" + qa[1];
 		console.log(s);
 		gitohashi_integ = 1;
+	}
+	
+	qi = q.indexOf("?task=");
+	if (qi != -1) {
+		/*
+		 * it's a sai task details page
+		 */
+		s += "/specific?task=" + q.substring(qi + 6);
 	}
 	
 	var s1 = get_appropriate_ws_url() + "/sai/browse" + s;
@@ -919,15 +1014,15 @@ function ws_open_sai()
 			 	  "\"com.warmcat.sai.taskinfo\"}");
 		};
 
-		sai.onmessage =function got_packet(msg) {
+		sai.onmessage = function got_packet(msg) {
 			var u, ci, n;
 			var now_ut = Math.round((new Date().getTime() / 1000));
 
-			console.log(msg.data);
+		//	console.log(msg.data);
 		//	if (msg.data.length < 10)
 		//		return;
 			jso = JSON.parse(msg.data);
-			console.log(jso.schema);
+		//	console.log(jso.schema);
 			
 			if (jso.alang) {
 				var a = jso.alang.split(","), n;
@@ -976,6 +1071,11 @@ function ws_open_sai()
 			}
 			
 			if (jso.schema == "sai.warmcat.com.overview") {
+				/*
+				 * Sent with an array of e[] to start, but also
+				 * can send a single e[] if it just changed
+				 * state
+				 */ 
 				s = "<table>";
 				
 				authd = jso.authorized;
@@ -1001,22 +1101,89 @@ function ws_open_sai()
 								san(auth_user) + " " + agify(now_ut, now_ut + jso.auth_secs);
 					}
 				}
+				
+				/*
+				 * Update existing?
+				 */
 			
-				if (jso.overview.length)
-					for (n = jso.overview.length - 1; n >= 0; n--)
-						s += sai_event_render(jso.overview[n], now_ut, 1);
+				// console.log("jso.overview.length " + jso.overview.length);
 				
-				s = s + "</table>";
+				if (jso.overview.length == 1 &&
+				    document.getElementById("esr-" + jso.overview[0].e.uuid)) {
+					/* this is just the summary box, not the tasks */
+					document.getElementById("esr-" + jso.overview[0].e.uuid).innerHTML =
+						sai_event_summary_render(jso.overview[0], now_ut, 1);
+						
+					/* if the task status icons exist, update their state */
+						
+					for (n = jso.overview[0].t.length - 1; n >= 0; n--)
+						refresh_state(jso.overview[0].t[n].uuid, jso.overview[0].t[n].state);
+					
+					var sumbs = document.getElementById("sumbs-" + jso.overview[0].e.uuid);
+					if (sumbs)
+						sumbs.innerHTML = summarize_build_situation(jso.overview[0].e.uuid);
+						
+					aging();
+				} else
+				{
+					/*
+					 * display events wholesale
+					 */
+					if (jso.overview.length) {
+						for (n = jso.overview.length - 1; n >= 0; n--)
+							s += sai_event_render(jso.overview[n], now_ut, 1);
 				
-				if (document.getElementById("sai_sticky"))
-					document.getElementById("sai_sticky").innerHTML = s;
-				aging();
+						s = s + "</table>";
+					
+						if (document.getElementById("sai_sticky"))
+							document.getElementById("sai_sticky").innerHTML = s;
+						
+						for (n = jso.overview.length - 1; n >= 0; n--) {
+							document.getElementById("esr-" + jso.overview[n].e.uuid).innerHTML =
+								sai_event_summary_render(jso.overview[n], now_ut, 1);
+						}
+						
+						if (jso.overview[0] && jso.overview[0].e) {
+							var sumbs = document.getElementById("sumbs-" + jso.overview[0].e.uuid);
+							if (sumbs)
+								sumbs.innerHTML = summarize_build_situation(jso.overview[0].e.uuid);
+						}
+						aging();
+					}
+						
+					if (gitohashi_integ && document.getElementById("gitohashi_sai_icon")) {
+						var integ_state = 0;
+						document.getElementById("gitohashi_sai_icon").addEventListener("mouseenter", function( event ) {
+							document.getElementById("gitohashi_sai_icon").style.zIndex = 1999;  
+							document.getElementById("gitohashi_sai_details").style.zIndex = 2000;
+							document.getElementById("gitohashi_sai_details").style.opacity = 1.0; 
+							integ_state = 1;
+						}, false);
+
+						document.getElementById("gitohashi_sai_details").addEventListener("mouseout", function( event ) {
+							var e = event.toElement || event.relatedTarget;
+							while (e && e.parentNode && e.parentNode != window) {
+							    if (e.parentNode == this ||  e == this) {
+							        if (e.preventDefault)
+									e.preventDefault();
+							        return false;
+							    }
+							    e = e.parentNode;
+							}
+							document.getElementById("gitohashi_sai_details").style.opacity = 0.0;
+							document.getElementById("gitohashi_sai_details").style.zIndex = -1;
+						 	document.getElementById("gitohashi_sai_icon").style.zIndex = 2001;
+						}, true);
+						
+						aging();
+					}
+				}
 				
 				if (jso.overview.length)
 					for (n = jso.overview.length - 1; n >= 0; n--) {
 						if (document.getElementById("rebuild-ev-" + san(jso.overview[n].e.uuid)))
-						document.getElementById("rebuild-ev-" + san(jso.overview[n].e.uuid)).
-					addEventListener("click", function(e) {
+							document.getElementById("rebuild-ev-" + san(jso.overview[n].e.uuid)).
+								addEventListener("click", function(e) {
 					console.log(e);
 						var rs= "{\"schema\":" +
 				 	 	 "\"com.warmcat.sai.eventreset\"," +
@@ -1028,7 +1195,7 @@ function ws_open_sai()
 					});
 					if (document.getElementById("delete-ev-" + san(jso.overview[n].e.uuid)))
 						document.getElementById("delete-ev-" + san(jso.overview[n].e.uuid)).
-					addEventListener("click", function(e) {
+							addEventListener("click", function(e) {
 					console.log(e);
 						var rs= "{\"schema\":" +
 				 	 	 "\"com.warmcat.sai.eventdelete\"," +
@@ -1037,6 +1204,7 @@ function ws_open_sai()
 				 	  	 	
 				 	  	console.log(rs);
 				 	  	sai.send(rs);
+						setTimeout(after_delete, 750);
 					});
 				} 
 			}
@@ -1066,57 +1234,118 @@ function ws_open_sai()
 								san(auth_user) + " " + agify(now_ut, now_ut + jso.auth_secs);
 					}
 				}
-			
-				s = sai_taskinfo_render(jso);
-						if (document.getElementById("sai_sticky"))
-				document.getElementById("sai_sticky").innerHTML = s;
 				
+				/*
+				 * We get told about changes to any task state,
+				 * it's up to us to figure out if the page we
+				 * showed should display the update and in what
+				 * form.
+				 *
+				 * We make sure the div containing the task info
+				 * has a special ID depending on if it's shown
+				 * as a tuple or as extended info
+				 *
+				 * First see if it appears as a tuple, and if
+				 * so, let's just update that
+				 */
 				
-		s = "<table><td colspan=\"3\"><pre><table><tr>" +
-		"<td class=\"atop\">" +
-		"<div id=\"dlogsn\" class=\"dlogsn\">" + lines + "</div></td>" +
-		"<td class=\"atop\">" +
-		"<div id=\"dlogst\" class=\"dlogst\">" + times + "</div></td>" +
-	     "<td class=\"atop\"><div id=\"dlogs\" class=\"dlogs\">" +
-	     "<span id=\"logs\" class=\"nowrap\">" + logs +
-	     	"</span>"+
-		"</div></td></tr></table></pre>";
-				
-				if (document.getElementById("sai_overview"))
-				document.getElementById("sai_overview").innerHTML = s;
+				if (document.getElementById("taskstate_" + jso.t.uuid)) {
+					console.log("found taskstate_" + jso.t.uuid);
+					refresh_state(jso.t.uuid, jso.t.state);
+					
+					var sumbs = document.getElementById("sumbs-" + jso.t.uuid.substring(0, 32));
+					if (sumbs)
+						sumbs.innerHTML = summarize_build_situation(jso.t.uuid.substring(0, 32));
 
-				if (document.getElementById("rebuild-" + san(jso.t.uuid))) {
-					document.getElementById("rebuild-" + san(jso.t.uuid)).
-						addEventListener("click", function(e) {
-							var rs= "{\"schema\":" +
-					 	 	 "\"com.warmcat.sai.taskreset\"," +
-					 	  	 "\"uuid\": " +
-					 	  	 	JSON.stringify(san(e.srcElement.id.substring(8))) + "}";
-					 	  	 	
-					 	  	console.log(rs);
-					 	  	sai.send(rs);
-					 	  	document.getElementById("dlogsn").innerHTML = "";
-					 	  	document.getElementById("dlogst").innerHTML = "";
-					 	  	document.getElementById("logs").innerHTML = "";
-					 	  	lines = times = logs = "";
-					 	  	tfirst = 0;
-					 	  	lli = 1;
-						}); 
-				}
+				} else
 				
-				if (document.getElementById("stop-" + san(jso.t.uuid))) {
-					document.getElementById("stop-" + san(jso.t.uuid)).
-						addEventListener("click", function(e) {
-							var rs= "{\"schema\":" +
-					 	 	 "\"com.warmcat.sai.taskcan\"," +
-					 	  	 "\"task_uuid\": " +
-					 	  	 	JSON.stringify(san(e.srcElement.id.substring(5))) + "}";
-					 	  	 console.log(rs);
-					 	  	sai.send(rs);
-						}); 
-				}
+					/* update task summary if shown anywhere */
+					
+					if (document.getElementById("taskinfo-" + jso.t.uuid)) {
+						console.log("FOUND taskinfo-" + jso.t.uuid);
+						document.getElementById("taskinfo-" + jso.t.uuid).innerHTML = sai_taskinfo_render(jso);
+						if (document.getElementById("esr-" + jso.e.uuid))
+							document.getElementById("esr-" + jso.e.uuid).innerHTML =
+								sai_event_summary_render(jso.e, now_ut, 1);
+					} else {
+						
+						console.log("NO taskinfo- or taskstate_" + jso.t.uuid);
+						
+						/* 
+						 * Last chance if we might be
+						 * on a task-specific page, and
+						 * want to show the task info
+						 * at the top
+						 */
+					
+
+						const urlParams = new URLSearchParams(window.location.search);
+						const url_task_uuid = urlParams.get('task');
+						
+						if (url_task_uuid === jso.t.uuid &&
+						    document.getElementById("sai_sticky"))
+							document.getElementById("sai_sticky").innerHTML =
+								"<div class=\"taskinfo\" id=\"taskinfo-" +
+								san(jso.t.uuid) + "\">" +
+								sai_taskinfo_render(jso) +
+								"</div>";
+					
 				
-				aging();
+						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
+						"<td class=\"atop\">" +
+						"<div id=\"dlogsn\" class=\"dlogsn\">" + lines + "</div></td>" +
+						"<td class=\"atop\">" +
+						"<div id=\"dlogst\" class=\"dlogst\">" + times + "</div></td>" +
+					     "<td class=\"atop\"><div id=\"dlogs\" class=\"dlogs\">" +
+					     "<span id=\"logs\" class=\"nowrap\">" + logs +
+					     	"</span>"+
+						"</div></td></tr></table></pre>";
+					
+					if (document.getElementById("sai_overview")) {
+						document.getElementById("sai_overview").innerHTML = s;
+					
+						if (document.getElementById("esr-" + jso.e.uuid))
+							document.getElementById("esr-" + jso.e.uuid).innerHTML =
+								sai_event_summary_render(jso, now_ut, 1);
+								
+						var sumbs = document.getElementById("sumbs-" + jso.e.uuid);
+						if (sumbs)
+							sumbs.innerHTML = summarize_build_situation(jso.e.uuid);
+					}
+	
+					if (document.getElementById("rebuild-" + san(jso.t.uuid))) {
+						document.getElementById("rebuild-" + san(jso.t.uuid)).
+							addEventListener("click", function(e) {
+								var rs= "{\"schema\":" +
+						 	 	 "\"com.warmcat.sai.taskreset\"," +
+						 	  	 "\"uuid\": " +
+						 	  	 	JSON.stringify(san(e.srcElement.id.substring(8))) + "}";
+						 	  	 	
+						 	  	console.log(rs);
+						 	  	sai.send(rs);
+						 	  	document.getElementById("dlogsn").innerHTML = "";
+						 	  	document.getElementById("dlogst").innerHTML = "";
+						 	  	document.getElementById("logs").innerHTML = "";
+						 	  	lines = times = logs = "";
+						 	  	tfirst = 0;
+						 	  	lli = 1;
+							}); 
+					}
+					
+					if (document.getElementById("stop-" + san(jso.t.uuid))) {
+						document.getElementById("stop-" + san(jso.t.uuid)).
+							addEventListener("click", function(e) {
+								var rs= "{\"schema\":" +
+						 	 	 "\"com.warmcat.sai.taskcan\"," +
+						 	  	 "\"task_uuid\": " +
+						 	  	 	JSON.stringify(san(e.srcElement.id.substring(5))) + "}";
+						 	  	 console.log(rs);
+						 	  	sai.send(rs);
+							}); 
+					}
+									
+					aging();
+				}
 			}
 			
 			
@@ -1222,6 +1451,44 @@ function ws_open_sai()
 	}
 }
 
+function post_login_form()
+{
+	var xhr = new XMLHttpRequest(), s ="", q = window.location.pathname;
+	
+	s = "----boundo\x0d\x0acontent-disposition: form-data; name=\"lname\"\x0d\x0a\x0d\x0a" +
+		document.getElementById("lname").value +
+	    "\x0d\x0a----boundo\x0d\x0acontent-disposition: form-data; name=\"lpass\"\x0d\x0a\x0d\x0a" +
+		document.getElementById("lpass").value + 
+	    "\x0d\x0a----boundo\x0d\x0acontent-disposition: form-data; name=\"success_redir\"\x0d\x0a\x0d\x0a" +
+		document.getElementById("success_redir").value +
+	    "\x0d\x0a----boundo--";
+
+	if (q.length > 10 && q.substring(q.length - 10) == "index.html")
+		q = q.substring(0, q.length - 10);
+	xhr.open("POST", q + "login", true);
+	xhr.setRequestHeader( 'content-type', "multipart/form-data; boundary=--boundo");
+	
+	console.log(s.length +" " + s);
+
+	xhr.onload = function (e) {
+	  if (xhr.readyState === 4) {
+	    if (xhr.status === 200 || xhr.status == 303) {
+	      console.log(xhr.responseText);
+		location.reload();
+	    } else {
+	      console.error(xhr.statusText);
+	    }
+	  }
+	};
+	xhr.onerror = function (e) {
+	  console.error(xhr.statusText);
+	};
+
+	xhr.send(s);
+	
+	return false;
+}
+
 /* stuff that has to be delayed until all the page assets are loaded */
 
 window.addEventListener("load", function() {
@@ -1235,7 +1502,11 @@ window.addEventListener("load", function() {
 			window.location.href;
 	ws_open_sai();
 	aging();
-	
+
+	if (document.getElementById("login")) {
+		document.getElementById("login").addEventListener("click", post_login_form);
+		document.getElementById("logout").addEventListener("click", post_login_form);
+	}
 	
 	setInterval(function() {
 

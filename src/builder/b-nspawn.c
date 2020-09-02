@@ -238,7 +238,7 @@ saib_spawn(struct sai_nspawn *ns)
 		"/bin/ps",
 		NULL
 	};
-	char *env[] = {
+	const char *env[] = {
 		"PATH=/usr/bin:/bin",
 		"LANG=en_US.UTF-8",
 		NULL

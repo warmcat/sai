@@ -81,11 +81,11 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 }
 
 /*
- * update all masters we're connected to about builder status / optional reject
+ * update all servers we're connected to about builder status / optional reject
  */
 
 int
-saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_master *spm,
+saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 				const char *rej_task_uuid)
 {
 	struct sai_rejection *rej;
@@ -164,7 +164,7 @@ saib_task_destroy(struct sai_nspawn *ns)
 		ns->sp->ongoing--;
 
 		/*
-		 * Schedule informing all the masters we're connected to
+		 * Schedule informing all the servers we're connected to
 		 */
 
 		saib_queue_task_status_update(ns->sp, ns->spm, NULL);
@@ -260,7 +260,7 @@ artifact_glob_cb(void *data, const char *path)
 	/*
 	 * We need to set the metadata items for the post urlargs.  spm->url is
 	 * something like "wss://warmcat.com/sai/builder"... we will send JSON
-	 * on this connection first and that will be understood by the master
+	 * on this connection first and that will be understood by the server
 	 * as meaning the bulk data follows.
 	 */
 
@@ -405,7 +405,7 @@ saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 }
 
 int
-saib_ws_json_rx_builder(struct sai_plat_master *spm, const void *in, size_t len)
+saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 {
 	struct lws_threadpool_create_args tca;
 	struct lws_threadpool_task_args tpa;
@@ -453,7 +453,7 @@ saib_ws_json_rx_builder(struct sai_plat_master *spm, const void *in, size_t len)
 		 * Master is requesting that a platform adopt a task...
 		 *
 		 * Multiple platforms may be using this connection to a given
-		 * master so we have to disambiguate which platform he's
+		 * server so we have to disambiguate which platform he's
 		 * tasking first.
 		 */
 
@@ -483,9 +483,9 @@ saib_ws_json_rx_builder(struct sai_plat_master *spm, const void *in, size_t len)
 		/*
 		 * Look for a spare nspawn...
 		 *
-		 * We may connect to multiple masters and it's asynchronous
-		 * which master may have tasked us first, so it's not that
-		 * unusual to reject a task the master thought we could have
+		 * We may connect to multiple servers and it's asynchronous
+		 * which server may have tasked us first, so it's not that
+		 * unusual to reject a task the server thought we could have
 		 * taken
 		 */
 
@@ -508,7 +508,7 @@ saib_ws_json_rx_builder(struct sai_plat_master *spm, const void *in, size_t len)
 
 			/*
 			 * Full up... reject the task and update every
-			 * master's model of our task load status
+			 * server's model of our task load status
 			 */
 
 			lwsl_notice("%s: plat '%s': no idle nspawn (of %d), "
@@ -538,10 +538,10 @@ saib_ws_json_rx_builder(struct sai_plat_master *spm, const void *in, size_t len)
 			*p = '_';
 
 		/*
-		 * unique for remote master name ("warmcat"),
+		 * unique for remote server name ("warmcat"),
 		 * project name ("libwebsockets")
 		 */
-		ns->master_name = spm->name;
+		ns->server_name = spm->name;
 		ns->project_name = task->repo_name;
 		if (!strncmp(task->git_ref, "refs/heads/", 11))
 			ns->ref = task->git_ref + 11;
@@ -574,7 +574,7 @@ saib_ws_json_rx_builder(struct sai_plat_master *spm, const void *in, size_t len)
 		lws_snprintf(ns->fsm.ovname, sizeof(ns->fsm.ovname), "%d-%d.%d",
 			     spm->index, ns->sp->index, ns->instance_idx);
 
-		lwsl_notice("%s: master %s\n", __func__, ns->master_name);
+		lwsl_notice("%s: server %s\n", __func__, ns->server_name);
 		lwsl_notice("%s: project %s\n", __func__, ns->project_name);
 		lwsl_notice("%s: ref %s\n", __func__, ns->ref);
 		lwsl_notice("%s: hash %s\n", __func__, ns->hash);
@@ -682,7 +682,7 @@ saib_ws_json_rx_builder(struct sai_plat_master *spm, const void *in, size_t len)
 		 * after that needs to adjust sp->ongoing accordingly
 		 */
 
-		lwsl_warn("%s: enqueued mirror thread\n", __func__);
+		lwsl_warn("%s: enqueued mirror thread, ns->tp_task %p\n", __func__, ns->tp_task);
 
 		lwsl_notice("%s: ongoing %d -> %d\n", __func__, sp->ongoing,
 			    sp->ongoing + 1);
@@ -692,7 +692,7 @@ saib_ws_json_rx_builder(struct sai_plat_master *spm, const void *in, size_t len)
 		/*
 		 * Let the mirror thread get on with things...
 		 *
-		 * When we took on a task, we should inform any masters we're
+		 * When we took on a task, we should inform any servers we're
 		 * connected to about our change in task load status
 		 */
 

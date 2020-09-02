@@ -1,11 +1,11 @@
 [Unit]
-Description=Sai Master
+Description=Sai Server
 After=syslog.target
 
 [Service]
-ExecStart=/usr/local/bin/sai-master
+ExecStart=/usr/local/bin/sai-server
 ExecReload=/usr/bin/kill -HUP $MAINPID
-ExecStop=/usr/bin/killall sai-master
+ExecStop=/usr/bin/killall sai-server
 
 [Install]
 WantedBy=multi-user.target

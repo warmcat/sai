@@ -1,5 +1,5 @@
 /*
- * Sai master - ./src/master/ws-json-rx.c
+ * Sai server - ./src/server/ws-json-rx.c
  *
  * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
  *
@@ -27,18 +27,18 @@
 #include <signal.h>
 #include <time.h>
 
-#include "m-private.h"
+#include "s-private.h"
 
 enum sai_overview_state {
 	SOS_EVENT,
 	SOS_TASKS,
 };
 
-typedef struct saim_logcache_pertask {
+typedef struct sais_logcache_pertask {
 	lws_dll2_t		list; /* vhd->tasklog_cache is the owner */
 	char			uuid[65];
 	lws_dll2_owner_t	cache; /* sai_log_t */
-} saim_logcache_pertask_t;
+} sais_logcache_pertask_t;
 
 /*
  * The Schema that may be sent to us by a builder
@@ -67,14 +67,15 @@ enum {
 };
 
 static void
-saim_dump_logs_to_db(lws_sorted_usec_list_t *sul)
+sais_dump_logs_to_db(lws_sorted_usec_list_t *sul)
 {
 	struct vhd *vhd = lws_container_of(sul, struct vhd, sul_logcache);
-	saim_logcache_pertask_t *lcpt;
-	char event_uuid[33];
+	sais_logcache_pertask_t *lcpt;
+	char event_uuid[33], sw[192];
 	sqlite3 *pdb = NULL;
 	sai_log_t *hlog;
 	char *err;
+	int n;
 
 	/*
 	 * for each task that acquired logs in the interval
@@ -82,11 +83,11 @@ saim_dump_logs_to_db(lws_sorted_usec_list_t *sul)
 
 	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
 				   vhd->tasklog_cache.head) {
-		lcpt = lws_container_of(p, saim_logcache_pertask_t, list);
+		lcpt = lws_container_of(p, sais_logcache_pertask_t, list);
 
 		sai_task_uuid_to_event_uuid(event_uuid, lcpt->uuid);
 
-		if (!saim_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+		if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
 
 			/*
 			 * Empty the task-specific log cache into the event-
@@ -95,12 +96,16 @@ saim_dump_logs_to_db(lws_sorted_usec_list_t *sul)
 			 */
 
 			sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
+			if (err)
+				sqlite3_free(err);
 
 			lws_struct_sq3_serialize(pdb, lsm_schema_sq3_map_log,
 					 &lcpt->cache, 0);
 
 			sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
-			saim_event_db_close(vhd, &pdb);
+			if (err)
+				sqlite3_free(err);
+			sais_event_db_close(vhd, &pdb);
 
 		} else
 			lwsl_err("%s: unable to open event-specific database\n",
@@ -119,9 +124,12 @@ saim_dump_logs_to_db(lws_sorted_usec_list_t *sul)
 
 		/*
 		 * Inform anybody who's looking at this task's logs that
-		 * something changed
+		 * something changed (event_hash is actually the task hash)
 		 */
-		saim_subs_request_writeable(vhd, lcpt->uuid);
+
+		n = lws_snprintf(sw, sizeof(sw), "{\"schema\":\"sai-tasklogs\","
+				 "\"event_hash\":\"%s\"}", lcpt->uuid);
+		sais_websrv_broadcast(vhd->h_ss_websrv, sw, n);
 
 		/*
 		 * Destroy the whole task-specific cache, it will regenerate
@@ -141,9 +149,9 @@ saim_dump_logs_to_db(lws_sorted_usec_list_t *sul)
  */
 
 static void
-saim_log_to_db(struct vhd *vhd, sai_log_t *log)
+sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 {
-	saim_logcache_pertask_t *lcpt = NULL;
+	sais_logcache_pertask_t *lcpt = NULL;
 	sai_log_t *hlog;
 
 	/*
@@ -151,7 +159,7 @@ saim_log_to_db(struct vhd *vhd, sai_log_t *log)
 	 */
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->tasklog_cache.head) {
-		lcpt = lws_container_of(p, saim_logcache_pertask_t, list);
+		lcpt = lws_container_of(p, sais_logcache_pertask_t, list);
 
 		if (!strcmp(lcpt->uuid, log->task_uuid))
 			break;
@@ -188,14 +196,14 @@ saim_log_to_db(struct vhd *vhd, sai_log_t *log)
 		/* if not already scheduled, schedule it for 250ms */
 
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_logcache,
-				 saim_dump_logs_to_db, 250 * LWS_US_PER_MS);
+				 sais_dump_logs_to_db, 250 * LWS_US_PER_MS);
 }
 
 static sai_plat_t *
-saim_builder_from_uuid(struct vhd *vhd, const char *hostname)
+sais_builder_from_uuid(struct vhd *vhd, const char *hostname)
 {
 	lws_start_foreach_dll(struct lws_dll2 *, p,
-			      vhd->master.builder_owner.head) {
+			      vhd->server.builder_owner.head) {
 		sai_plat_t *cb = lws_container_of(p, sai_plat_t,
 				sai_plat_list);
 
@@ -222,7 +230,7 @@ sai_sql3_get_uint64_cb(void *user, int cols, char **values, char **name)
  */
 
 int
-saim_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
+sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 {
 	char event_uuid[33], s[128], esc[96];
 	struct lwsac *ac = NULL;
@@ -271,6 +279,7 @@ saim_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 		lwsl_err("%s: rx JSON decode failed '%s', %d, %s, %s, %d\n",
 			    __func__, lejp_error_to_string(m), m,
 			    pss->ctx.path, pss->ctx.buf, pss->ctx.npos);
+		lwsac_free(&pss->a.ac);
 		return 1;
 	}
 
@@ -280,6 +289,7 @@ saim_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 	}
 
 	if (!pss->a.dest) {
+		lwsac_free(&pss->a.ac);
 		lwsl_err("%s: json decode didn't make an object\n", __func__);
 		return 1;
 	}
@@ -288,7 +298,7 @@ handle:
 	switch (pss->a.top_schema_index) {
 	case SAIM_WSSCH_BUILDER_PLATS:
 
-		lwsl_hexdump_notice(buf, bl);
+		// lwsl_hexdump_notice(buf, bl);
 
 		/*
 		 * builder is sending us an array of platforms it provides us
@@ -309,7 +319,7 @@ handle:
 			 * ... so is this one a new guy?
 			 */
 
-			cb = saim_builder_from_uuid(vhd, build->name);
+			cb = sais_builder_from_uuid(vhd, build->name);
 			if (!cb) {
 				char *cp;
 
@@ -350,10 +360,10 @@ handle:
 
 				cb->wsi = pss->wsi;
 
-				/* Then attach the copy to the master in the vhd
+				/* Then attach the copy to the server in the vhd
 				 */
 				lws_dll2_add_tail(&cb->sai_plat_list,
-						  &vhd->master.builder_owner);
+						  &vhd->server.builder_owner);
 			}
 
 			/*
@@ -371,13 +381,19 @@ handle:
 
 		lwsac_free(&pss->a.ac);
 
+
 		/*
 		 * look if we should offer the builder a task, given the
 		 * platforms he's offering
 		 */
 
-		if (saim_allocate_task(vhd, pss, cb, cb->platform) < 0)
+		if (sais_allocate_task(vhd, pss, cb, cb->platform) < 0)
 			goto bail;
+
+		/*
+		 * If we did allocate a task in pss->a.ac, responsibility of
+		 * callback_on_writable handler to empty it
+		 */
 
 		break;
 
@@ -391,12 +407,12 @@ bail:
 		 */
 
 		log = (sai_log_t *)pss->a.dest;
-		saim_log_to_db(vhd, log);
+		sais_log_to_db(vhd, log);
 
 		if (pss->mark_started) {
 			pss->mark_started = 0;
 			pss->first_log_timestamp = log->timestamp;
-			if (saim_set_task_state(vhd, NULL, NULL, log->task_uuid,
+			if (sais_set_task_state(vhd, NULL, NULL, log->task_uuid,
 						SAIES_BEING_BUILT, 0, 0))
 				goto bail;
 		}
@@ -419,7 +435,7 @@ bail:
 				else
 					n = SAIES_FAIL;
 
-			if (saim_set_task_state(vhd, NULL, NULL, log->task_uuid,
+			if (sais_set_task_state(vhd, NULL, NULL, log->task_uuid,
 						n, 0, log->timestamp -
 						      pss->first_log_timestamp))
 				goto bail;
@@ -438,10 +454,11 @@ bail:
 
 		rej = (sai_rejection_t *)pss->a.dest;
 
-		cb = saim_builder_from_uuid(vhd, rej->host_platform);
+		cb = sais_builder_from_uuid(vhd, rej->host_platform);
 		if (!cb) {
 			lwsl_info("%s: unknown builder %s rejecting\n",
 				 __func__, rej->host_platform);
+			lwsac_free(&pss->a.ac);
 			break;
 		}
 
@@ -455,8 +472,9 @@ bail:
 			    rej->task_uuid[0] ? rej->task_uuid : "none");
 
 		if (rej->task_uuid[0])
-			saim_task_reset(vhd, rej->task_uuid);
+			sais_task_reset(vhd, rej->task_uuid);
 
+		lwsac_free(&pss->a.ac);
 		break;
 
 	case SAIM_WSSCH_BUILDER_ARTIFACT:
@@ -482,11 +500,12 @@ bail:
 			 * reason.
 			 */
 
-			if (saim_event_db_ensure_open(pss->vhd, event_uuid, 0,
+			if (sais_event_db_ensure_open(pss->vhd, event_uuid, 0,
 						      &pss->pdb_artifact)) {
 				lwsl_err("%s: unable to open event-specific "
 					 "database\n", __func__);
 
+				lwsac_free(&pss->a.ac);
 				return -1;
 			}
 
@@ -500,8 +519,9 @@ bail:
 						       NULL, lsm_schema_sq3_map_task,
 						       &o, &ac, 0, 1);
 			if (n < 0 || !o.head) {
-				saim_event_db_close(vhd, &pss->pdb_artifact);
+				sais_event_db_close(vhd, &pss->pdb_artifact);
 				lwsl_notice("%s: no task of that id\n", __func__);
+				lwsac_free(&pss->a.ac);
 				return -1;
 			}
 
@@ -574,8 +594,7 @@ bail:
 				     (unsigned long long)rid);
 
 			if (sqlite3_exec((sqlite3 *)pss->pdb_artifact, s,
-					 NULL, NULL, NULL) !=
-								 SQLITE_OK) {
+					 NULL, NULL, NULL) != SQLITE_OK) {
 				lwsl_err("%s: %s: %s: fail\n", __func__, s,
 					 sqlite3_errmsg(pss->pdb_artifact));
 				goto afail;
@@ -631,7 +650,8 @@ bail:
 
 afail:
 	lwsac_free(&ac);
-	saim_event_db_close(vhd, &pss->pdb_artifact);
+	lwsac_free(&pss->a.ac);
+	sais_event_db_close(vhd, &pss->pdb_artifact);
 
 	return -1;
 }
@@ -641,7 +661,7 @@ afail:
  */
 
 int
-saim_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
+sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			size_t bl)
 {
 	uint8_t *start = buf + LWS_PRE, *p = start, *end = p + bl - LWS_PRE - 1;
@@ -678,11 +698,11 @@ saim_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		return 0; /* nothing to send */
 
 	/*
-	 * We're sending a browser the specific task info that he
-	 * asked for.
+	 * We're sending a builder specific task info that has been bound to the
+	 * builder.
 	 *
-	 * We already got the task struct out of the db in .one_task
-	 * (all in .query_ac)
+	 * We already got the task struct out of the db in .one_event
+	 * (all in .ac)
 	 */
 
 	task = lws_container_of(pss->issue_task_owner.head, sai_task_t,
@@ -697,6 +717,8 @@ saim_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 	n = lws_struct_json_serialize(js, p, end - p, &w);
 	lws_struct_json_serialize_destroy(&js);
+	pss->one_event = NULL;
+	lwsac_free(&task->ac_task_container);
 
 	first = 1;
 	pss->walk = NULL;
@@ -717,7 +739,7 @@ send_json:
 
 	flags = lws_write_ws_flags(LWS_WRITE_TEXT, first, !pss->walk);
 
-	lwsl_hexdump_notice(start, p - start);
+	// lwsl_hexdump_notice(start, p - start);
 
 	if (lws_write(pss->wsi, start, p - start, flags) < 0)
 		return -1;

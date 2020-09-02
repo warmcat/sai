@@ -1,5 +1,5 @@
 /*
- * Sai master - src/master/notification.c
+ * Sai server - src/server/notification.c
  *
  * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
  *
@@ -23,7 +23,7 @@
  */
 
 #include <libwebsockets.h>
-#include "m-private.h"
+#include "s-private.h"
 
 /* starts from +1 of sai_notification_action_t */
 
@@ -263,6 +263,7 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 	    ctx->path_match - 1 == LEJPNSAIF_CONFIGURATIONS_NAME &&
 	    sn->t.taskname[0]) {
 		lws_dll2_owner_t owner;
+		char *err;
 
 		/*
 		 * We're at the testname part of "testname" : { }
@@ -324,8 +325,8 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 					if (ts.e != LWS_TOKZE_TOKEN)
 						continue;
 
-					lwsl_notice("%s: check %.*s\n", __func__,
-						    (int)ts.token_len, ts.token);
+			//		lwsl_notice("%s: check %.*s\n", __func__,
+			//			    (int)ts.token_len, ts.token);
 
 					if (!strncmp(ts.token, "none",
 						     ts.token_len)) {
@@ -386,10 +387,14 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 		 * configuration's tasks for each platform
 		 */
 
-		if (saim_event_db_ensure_open(pss->vhd, pss->sn.e.uuid, 1, &pdb)) {
+		if (sais_event_db_ensure_open(pss->vhd, pss->sn.e.uuid, 1, &pdb)) {
 			lwsl_err("%s: unable to open event-specific db\n", __func__);
 			return -1;
 		}
+
+		sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
+		if (err)
+			sqlite3_free(err);
 
 		lws_start_foreach_dll(struct lws_dll2 *, p,
 					   pss->platform_owner.head) {
@@ -436,8 +441,8 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 					if (ts.e != LWS_TOKZE_TOKEN)
 						continue;
 
-					lwsl_notice("%s: check %.*s\n", __func__,
-						    (int)ts.token_len, ts.token);
+			//		lwsl_notice("%s: check %.*s\n", __func__,
+			//			    (int)ts.token_len, ts.token);
 
 					if (!strncmp(ts.token, "none",
 						     ts.token_len)) {
@@ -477,7 +482,10 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 					lwsl_notice("%s: strsubst failed %s %s\n",
 						    __func__, pl->build,
 						    sn->t.cmake);
-					saim_event_db_close(pss->vhd, &pdb);
+					sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
+					if (err)
+						sqlite3_free(err);
+					sais_event_db_close(pss->vhd, &pdb);
 					return -1;
 				}
 
@@ -532,10 +540,14 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 		} lws_end_foreach_dll(p);
 
-		saim_event_db_close(pss->vhd, &pdb);
+		sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
+		if (err)
+			sqlite3_free(err);
 
-		lwsl_notice("%s: New test '%s', '%s', '%s'\n", __func__,
-			    sn->t.taskname, sn->t.cmake, sn->t.packages);
+		sais_event_db_close(pss->vhd, &pdb);
+
+//		lwsl_notice("%s: New test '%s', '%s', '%s'\n", __func__,
+//			    sn->t.taskname, sn->t.cmake, sn->t.packages);
 
 		sn->t.taskname[0] = '\0';
 		return 0;
@@ -596,8 +608,8 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 		lws_dll2_add_head(&pl->list, &pss->platform_owner);
 
-		lwsl_notice("%s: New platform '%s', build '%s', notdefault %d\n",
-			    __func__, pl->name, pl->build, pl->nondefault);
+//		lwsl_notice("%s: New platform '%s', build '%s', notdefault %d\n",
+//			    __func__, pl->name, pl->build, pl->nondefault);
 
 		sn->platbuild[0] = '\0';
 		return 0;
@@ -748,8 +760,12 @@ sai_notification_lejp_cb(struct lejp_ctx *ctx, char reason)
 		sn->saifile = malloc(sn->saifile_out_len);
 		if (!sn->saifile) {
 			lwsl_err("%s: OOM\n", __func__);
+
 			return -1;
 		}
+		/*
+		 * Caller must take responsibility for sn->saifile allocation
+		 */
 		sn->saifile_in_seen = sn->saifile_out_pos = 0;
 		lws_b64_decode_state_init(&sn->b64);
 		break;
@@ -843,7 +859,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		}
 		lwsl_notice("%s: hmac OK\n", __func__);
 
-				/*
+		/*
 		 * We have the notification metadata JSON parsed into pss->sn.e,
 		 * eg, pss->sn->e.hash ... since it's common to, eg, push a tree
 		 * in a branch and then later tag the same commit, we don't want
@@ -859,7 +875,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 						     "where hash='%s'",
 						     pss->sn.e.hash);
 
-			if (sqlite3_exec(pss->vhd->master.pdb, qu,
+			if (sqlite3_exec(pss->vhd->server.pdb, qu,
 					 sai_sql3_get_uint64_cb,
 					 &rid, NULL) == SQLITE_OK && rid) {
 				/* it already exists */
@@ -870,7 +886,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 				return 0;
 			}
 		}
-	
+
 		if (!pss->sn.saifile)
 			return -1;
 
@@ -889,12 +905,12 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		 */
 
 		sai_uuid16_create(lws_get_context(pss->wsi), pss->sn.e.uuid);
-		if (saim_event_db_ensure_open(pss->vhd, pss->sn.e.uuid, 1,
+		if (sais_event_db_ensure_open(pss->vhd, pss->sn.e.uuid, 1,
 					      (sqlite3 **)&pss->sn.e.pdb)) {
 			lwsl_err("%s: unable to open event-specific database\n",
 					__func__);
 
-			return -1;
+			goto saifile_bail;
 		}
 
 		pss->dry = 1;
@@ -902,11 +918,11 @@ sai_notification_file_upload_cb(void *data, const char *name,
 			       LWS_ARRAY_SIZE(saifile_paths));
 		m = lejp_parse(&saictx, (uint8_t *)pss->sn.saifile,
 			       pss->sn.saifile_out_pos);
-		saim_event_db_close(pss->vhd, (sqlite3 **)&pss->sn.e.pdb);
+		sais_event_db_close(pss->vhd, (sqlite3 **)&pss->sn.e.pdb);
 		if (m < 0) {
 			lwsl_notice("%s: saifile JSON decode failed '%s' (%d)\n",
 				    __func__, lejp_error_to_string(m), m);
-			return m;
+			goto saifile_bail;
 		}
 
 		/* ... then add the 32-char event object in the database ... */
@@ -922,7 +938,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		 * This is our new event going into the event database...
 		 */
 
-		lws_struct_sq3_serialize(pss->vhd->master.pdb,
+		lws_struct_sq3_serialize(pss->vhd->server.pdb,
 					 lsm_schema_sq3_map_event, &owner, 0);
 
 		/*
@@ -936,14 +952,13 @@ sai_notification_file_upload_cb(void *data, const char *name,
 			       LWS_ARRAY_SIZE(saifile_paths));
 		m = lejp_parse(&saictx, (uint8_t *)pss->sn.saifile,
 			       pss->sn.saifile_out_pos);
+		free(pss->sn.saifile);
+		pss->sn.saifile = NULL;
 		if (m < 0) {
 			lwsl_notice("%s: saifile JSON decode failed '%s' (%d)\n",
 				    __func__, lejp_error_to_string(m), m);
 			return m;
 		}
-
-		free(pss->sn.saifile);
-		pss->sn.saifile = NULL;
 
 		lwsl_notice("%s: notification inserted into db\n", __func__);
 
@@ -952,10 +967,15 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		 */
 
 		lws_sul_schedule(pss->vhd->context, 0, &pss->vhd->sul_central,
-				 saim_central_cb, 1);
+				 sais_central_cb, 1);
 
 		return 0;
 
+saifile_bail:
+		free(pss->sn.saifile);
+		pss->sn.saifile = NULL;
+
+		return -1;
 
 	case LWS_UFS_CLOSE:
 		// lwsl_info("%s: LWS_UFS_CLOSE\n", __func__);

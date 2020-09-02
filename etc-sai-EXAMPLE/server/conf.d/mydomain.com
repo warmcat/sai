@@ -1,17 +1,15 @@
-# you should create one file like this per vhost in /etc/sai/master/conf.d
+# you should create one file like this per vhost in /etc/sai/server/conf.d
 
 {
 	"vhosts": [{
-		# this has no special meaning but needs to be unique
-                "name":              "unixskt",
-                "unix-socket":       1,
-		# this should be owned by sai and allow group access from
-		# whatever group your webserver runs under
-		"unix-socket-perms": "sai:apache",
-                # multiple vhosts can exist with different unix skt names
-		"interface":	     "/var/run/sai",
-		# required for avatar cache
-                "enable-client-ssl": "on",
+		"name": "mydomain.com",
+		"port": "4444",
+		"host-ssl-key":  "/etc/letsencrypt/live/libwebsockets.org/privkey.pem",
+		"host-ssl-cert": "/etc/letsencrypt/live/libwebsockets.org/fullchain.pem",
+		"access-log": "/var/log/sai-server-access-log",
+		"disable-no-protocol-ws-upgrades": "on",
+		"enable-client-ssl": "on",
+		"allow-non-tls": "1",
 
 		"mounts": [
 			{
@@ -74,7 +72,7 @@
                         #
                         # dd if=/dev/random bs=32 count=1 | sha256sum | cut -d' ' -f1
                         #
-			"notification-key":	"1234...5678",
+			"notification-key":	"51b3ee2f06ef2a893cfe901972bd13065d7dbae4cf087b396ee38e7bf78f79a6",
 
 			# auth jwk path
 			# You can generate a suitable key like this
@@ -82,10 +80,10 @@
 			# lws-crypto-jwk -t EC -b512 -vP-521 --alg ES512 > mykey.jwk
 			#
 			"jwt-auth-alg":		"ES512",
-			"jwt-auth-jwk-path":	"/etc/sai/master/auth.jwk",
+			"jwt-auth-jwk-path":	"/etc/sai/web/auth.jwk",
 
 			"jwt-iss":		"com.warmcat",
-			"jwt-aud":		"https://libwebsockets.org/sai",
+			"jwt-aud":		"https://mydomain.com/sai",
 
 			# template HTML to use for this vhost.  You'd normally
 			# copy this to gitohashi-vhostname.html and modify it
@@ -110,11 +108,11 @@
 			# "/git/" so URLs we generate referring to our own pages
 			# can work.
 			#
-			"vpath":	 "/sai/",
+			"vpath":	 "/sais/",
 			#
 			# url mountpoint for the avatar cache
 			#
-			"avatar-url":	 "/sai/avatar/",
+			"avatar-url":	 "/sais/avatar/",
 			#
 			# libjsgit2 JSON cache... this
 			# should not be directly served

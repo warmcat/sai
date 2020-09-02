@@ -1,18 +1,15 @@
-set(SUB "sai-master")
+set(SUB "sai-web")
 
-set(CPACK_DEBIAN_MASTER_PACKAGE_NAME ${SUB})
+set(CPACK_DEBIAN_SERVER_PACKAGE_NAME ${SUB})
 
 set(SRCS
-	m-sai.c
-	m-conf.c
-	m-notification.c
-	m-comms.c
-	m-ws-builder.c
-	m-task.c
-	m-central.c
-	m-artifact.c
-	m-overview.c
-	m-ws-browser.c
+	w-sai.c
+	w-conf.c
+	w-comms.c
+	w-central.c
+	w-artifact.c
+	w-ws-browser.c
+	w-websrv.c
 )
 
 set(requirements 1)
@@ -24,24 +21,22 @@ require_lws_config(LWS_WITH_UNIX_SOCK		1 requirements)
 if (requirements)
 	add_executable(${SUB} ${SRCS})
 	if (APPLE)
-		set_property(TARGET sai-master PROPERTY MACOSX_RPATH YES)
+		set_property(TARGET sai-web PROPERTY MACOSX_RPATH YES)
 	endif()
 
 	#
-	# sqlite3 paths (master)
+	# sqlite3 paths (web)
 	#
-	if (SAI_MASTER)
-		find_path(   SQLITE3_INC_PATH NAMES "sqlite3.h")
-		find_library(SQLITE3_LIB_PATH NAMES "sqlite3")
+	find_path(   SQLITE3_INC_PATH NAMES "sqlite3.h")
+	find_library(SQLITE3_LIB_PATH NAMES "sqlite3")
 	
-		if (SQLITE3_INC_PATH AND SQLITE3_LIB_PATH)
-			include_directories(BEFORE "${SQLITE3_INC_PATH}")
-		else()
-			message(FATAL_ERROR " Unable to find sqlite3")
-		endif()
-
-		target_link_libraries(${SUB} ${SQLITE3_LIB_PATH})
+	if (SQLITE3_INC_PATH AND SQLITE3_LIB_PATH)
+		include_directories(BEFORE "${SQLITE3_INC_PATH}")
+	else()
+		message(FATAL_ERROR " Unable to find sqlite3")
 	endif()
+
+	target_link_libraries(${SUB} ${SQLITE3_LIB_PATH})
 
        	include_directories(BEFORE "${SAI_LWS_INC_PATH}")
 
@@ -52,7 +47,7 @@ if (requirements)
 		find_library(CAP_LIB_PATH NAMES "cap")
 	endif()
 
-	target_link_libraries(${SUB} ${SAI_LWS_LIB_PATH})
+	target_link_libraries(${SUB} websockets ${SAI_LWS_LIB_PATH})
 	
 	if (LWS_OPENSSL_LIBRARIES)
 		target_link_libraries(${SUB} ${LWS_OPENSSL_LIBRARIES})
@@ -71,7 +66,7 @@ if (requirements)
 	endif()
 	
 	install(TARGETS ${SUB}
-		RUNTIME DESTINATION "${BIN_DIR}" COMPONENT master)
+		RUNTIME DESTINATION "${BIN_DIR}" COMPONENT web)
 	install(
 		FILES ../../assets/index.html
 		      ../../assets/OpenSans-Light.ttf
@@ -136,6 +131,6 @@ if (requirements)
 			../../assets/windows-10.svg
 
 		DESTINATION "${DATA_DIR}/sai/assets"
-		COMPONENT master)
+		COMPONENT web)
 
 endif(requirements)

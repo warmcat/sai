@@ -1,7 +1,7 @@
 /*
- * Sai master definitions src/master/private.h
+ * Sai server definitions src/server/private.h
  *
- * Copyright (C) 2019 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -23,6 +23,9 @@
 #include <sqlite3.h>
 #include <sys/stat.h>
 
+#define SAI_EVENTID_LEN 32
+#define SAI_TASKID_LEN 64
+
 struct sai_plat;
 
 typedef struct sai_platm {
@@ -31,7 +34,7 @@ typedef struct sai_platm {
 
 	sqlite3 *pdb;
 	sqlite3 *pdb_auth;
-} saim_t;
+} sais_t;
 
 typedef struct sai_platform {
 	struct lws_dll2		list;
@@ -73,11 +76,6 @@ typedef struct {
 } sai_notification_t;
 
 typedef enum {
-	SWT_BUILDER,
-	SWT_BROWSE
-} ws_type;
-
-typedef enum {
 	WSS_IDLE,
 	WSS_PREPARE_OVERVIEW,
 	WSS_SEND_OVERVIEW,
@@ -92,16 +90,10 @@ typedef enum {
 } ws_state;
 
 typedef struct sai_builder {
-	saim_t c;
+	sais_t c;
 } saib_t;
 
 struct vhd;
-
-enum {
-	SAIM_NOT_SPECIFIC,
-	SAIM_SPECIFIC_H,
-	SAIM_SPECIFIC_ID
-};
 
 struct pss {
 	struct vhd		*vhd;
@@ -132,10 +124,9 @@ struct pss {
 		sai_plat_t	*b;
 		sai_plat_owner_t *o;
 	} u;
-	const char		*master_name;
+	const char		*server_name;
 
 	struct lwsac		*query_ac;
-	struct lwsac		*task_ac;	/* tasks for an event */
 	struct lwsac		*logs_ac;
 	lws_dll2_owner_t	issue_task_owner; /* list of sai_task_t */
 	const sai_task_t	*one_task; /* only for browser */
@@ -162,15 +153,11 @@ struct pss {
 	uint64_t		artifact_offset;
 	uint64_t		artifact_length;
 
-	ws_type			type;
 	ws_state		send_state;
-
-	uint32_t		pending; /* bitmap of things that need sending */
 
 	unsigned int		spa_failed:1;
 	unsigned int		subsequent:1; /* for individual JSON */
 	unsigned int		dry:1;
-	unsigned int		query_already_done:1;
 	unsigned int		frag:1;
 	unsigned int		mark_started:1;
 	unsigned int		wants_event_updates:1;
@@ -180,31 +167,28 @@ struct pss {
 	uint8_t			ovstate; /* SOS_ substate when doing overview */
 };
 
-typedef struct saim_sqlite_cache {
+typedef struct sais_sqlite_cache {
 	lws_dll2_t	list;
 	char		uuid[65];
 	sqlite3		*pdb;
 	lws_usec_t	idle_since;
 	int		refcount;
-} saim_sqlite_cache_t;
+} sais_sqlite_cache_t;
 
 struct vhd {
 	struct lws_context *context;
 	struct lws_vhost *vhost;
 
-	/* pss lists */
-	struct lws_dll2_owner browsers;
-	struct lws_dll2_owner builders;
+	struct lws_ss_handle		*h_ss_websrv; /* server */
 
-	/* our keys */
-	struct lws_jwk			jwt_jwk_auth;
-	char				jwt_auth_alg[16];
-	const char			*jwt_issuer;
-	const char			*jwt_audience;
+	char				json_builders[8192];
+
+	/* pss lists */
+	struct lws_dll2_owner builders;
 
 	const char *sqlite3_path_lhs;
 
-	lws_dll2_owner_t sqlite3_cache; /* saim_sqlite_cache_t */
+	lws_dll2_owner_t sqlite3_cache; /* sais_sqlite_cache_t */
 	lws_dll2_owner_t tasklog_cache;
 	lws_sorted_usec_list_t sul_logcache;
 	lws_sorted_usec_list_t sul_central; /* background task allocation sul */
@@ -213,13 +197,14 @@ struct vhd {
 
 	const char *notification_key;
 
-	saim_t master;
+	sais_t server;
 };
 
 extern struct lws_context *
 sai_lws_context_from_json(const char *config_dir,
 			  struct lws_context_creation_info *info,
-			  const struct lws_protocols **pprotocols);
+			  const struct lws_protocols **pprotocols,
+			  const char *jpol);
 extern const struct lws_protocols protocol_ws;
 
 int
@@ -234,13 +219,16 @@ int
 sai_uuid16_create(struct lws_context *context, char *dest33);
 
 int
-saim_event_db_ensure_open(struct vhd *vhd, const char *event_uuid, char can_create, sqlite3 **ppdb);
+sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid, char can_create, sqlite3 **ppdb);
 
 void
-saim_event_db_close(struct vhd *vhd, sqlite3 **ppdb);
+sais_event_db_close(struct vhd *vhd, sqlite3 **ppdb);
 
 int
-saim_event_db_delete_database(struct vhd *vhd, const char *event_uuid);
+sais_event_db_delete_database(struct vhd *vhd, const char *event_uuid);
+
+int
+sais_event_db_close_all_now(struct vhd *vhd);
 
 int
 sai_sq3_event_lookup(sqlite3 *pdb, uint64_t start, lws_struct_args_cb cb, void *ca);
@@ -249,48 +237,49 @@ int
 sai_sql3_get_uint64_cb(void *user, int cols, char **values, char **name);
 
 int
-saim_ws_json_tx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
+saiw_ws_json_tx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
 
 int
-saim_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
+sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
+
+int
+sais_list_builders(struct vhd *vhd);
+
+void
+sais_eventchange(struct lws_ss_handle *h, const char *event_uuid, int state);
+
+void
+sais_taskchange(struct lws_ss_handle *h, const char *task_uuid, int state);
 
 int
 lws_struct_map_set(const lws_struct_map_t *map, char *u);
-
-int
-saim_ws_json_rx_browser(struct vhd *vhd, struct pss *pss,
-			     uint8_t *buf, size_t bl);
 
 void
 sai_task_uuid_to_event_uuid(char *event_uuid33, const char *task_uuid65);
 
 int
-saim_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
+sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
+
+int
+sais_subs_request_writeable(struct vhd *vhd, const char *task_uuid);
 
 void
-mark_pending(struct pss *pss, ws_state state);
+sais_central_cb(lws_sorted_usec_list_t *sul);
 
 int
-saim_subs_request_writeable(struct vhd *vhd, const char *task_uuid);
-
-void
-saim_central_cb(lws_sorted_usec_list_t *sul);
+sais_task_reset(struct vhd *vhd, const char *task_uuid);
 
 int
-saim_task_reset(struct vhd *vhd, const char *task_uuid);
+sais_task_cancel(struct vhd *vhd, const char *task_uuid);
 
 int
-saim_task_cancel(struct vhd *vhd, const char *task_uuid);
-
-int
-saim_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
+sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		   const char *cns_name);
 
 int
-saim_set_task_state(struct vhd *vhd, const char *builder_name,
+sais_set_task_state(struct vhd *vhd, const char *builder_name,
 		    const char *builder_uuid, const char *task_uuid, int state,
 		    uint64_t started, uint64_t duration);
 
-int
-saim_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,
-	      sqlite3_blob **blob, uint64_t *length);
+void
+sais_websrv_broadcast(struct lws_ss_handle *hsrv, const char *str, size_t len);

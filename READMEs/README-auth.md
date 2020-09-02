@@ -7,14 +7,14 @@ Sai uses signed JWTs
 There's no UI at the moment for creating authorized users, everything except
 event deletion and task restart works without authorization.
 
-## sai-master configuration for auth
+## sai-server configuration for auth
 
 In the `vhosts|ws-protocols|com-warmcat-sai` section of the config JSON, the
 following entries define the authorization operation
 
 ```
            "jwt-auth-alg":         "ES512",
-           "jwt-auth-jwk-path":    "/etc/sai/master/auth.jwk",
+           "jwt-auth-jwk-path":    "/etc/sai/server/auth.jwk",
            "jwt-iss":              "com.warmcat",
            "jwt-aud":              "https://libwebsockets.org/sai",
 ```
@@ -34,20 +34,20 @@ Use this as below to create the server JWK used for signing and validation,
 for ES512 algorithm in our case
 
 ```
-$ sudo ./bin/lws-crypto-jwk -t EC -b512 -vP-521 --alg ES512 > /etc/sai/master/auth.jwk
+$ sudo ./bin/lws-crypto-jwk -t EC -b512 -vP-521 --alg ES512 > /etc/sai/server/auth.jwk
 ```
 
 ## Defining an authorized user
 
-Sai-master creates a separate auth database and prepares the table schema in
-it on startup if not already existing.  So you using sai-master at all already
+Sai-server creates a separate auth database and prepares the table schema in
+it on startup if not already existing.  So you using sai-server at all already
 did most of the work.
 
 To create a user that can login via his browser and see and use the UI for the
 additional actions, currently you can create the user by hand on the server:
 
 ```
-# sqlite3 /home/srv/sai/sai-master-auth.sqlite3
+# sqlite3 /home/srv/sai/sai-server-auth.sqlite3
 SQLite version 3.32.3 2020-06-18 14:00:33
 Enter ".help" for usage hints.
 sqlite> .schema

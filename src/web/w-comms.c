@@ -1,5 +1,5 @@
 /*
- * Sai master
+ * Sai server
  *
  * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
  *
@@ -21,7 +21,7 @@
  * The same ws interface is connected-to by builders (on path /builder), and
  * provides the query transport for browsers (on path /browse).
  *
- * There's a single master slite3 database containing events, and a separate
+ * There's a single server slite3 database containing events, and a separate
  * sqlite3 database file for each event, it only contains tasks and logs for
  * the event and can be deleted when the event record associated with it is
  * deleted.  This is to keep is scalable when there may be thousands of events
@@ -35,7 +35,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 
-#include "m-private.h"
+#include "w-private.h"
 
 #include "../common/struct-metadata.c"
 
@@ -83,23 +83,6 @@ const lws_struct_map_t lsm_schema_sq3_map_auth[] = {
 
 extern const lws_struct_map_t lsm_schema_sq3_map_event[];
 
-static int
-sai_destroy_builder(struct lws_dll2 *d, void *user)
-{
-//	saib_t *b = lws_container_of(d, saib_t, c.builder_list);
-
-	lws_dll2_remove(d);
-
-	return 0;
-}
-
-static void
-saim_master_destroy(saim_t *master)
-{
-	lws_dll2_foreach_safe(&master->builder_owner, NULL, sai_destroy_builder);
-
-	lws_struct_sq3_close(&master->pdb);
-}
 
 /* len is typically 16 (event uuid is 32 chars + NUL)
  * But eg, task uuid is concatenated 32-char eventid and 32-char taskid
@@ -128,9 +111,14 @@ sai_sqlite3_statement(sqlite3 *pdb, const char *cmd, const char *desc)
 	sqlite3_reset(sm);
 	sqlite3_finalize(sm);
 	if (n != SQLITE_DONE) {
+		n = sqlite3_extended_errcode(pdb);
+		if (!n) {
+			lwsl_info("%s: failed '%s'\n", __func__, cmd);
+			return 0;
+		}
+
 		lwsl_err("%s: %d: Unable to perform \"%s\": %s\n", __func__,
-			 sqlite3_extended_errcode(pdb), desc,
-			 sqlite3_errmsg(pdb));
+			 n, desc, sqlite3_errmsg(pdb));
 		puts(cmd);
 
 		return 1;
@@ -140,11 +128,11 @@ sai_sqlite3_statement(sqlite3 *pdb, const char *cmd, const char *desc)
 }
 
 int
-saim_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
+sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
 			  char create_if_needed, sqlite3 **ppdb)
 {
 	char filepath[256], saf[33];
-	saim_sqlite_cache_t *sc;
+	sais_sqlite_cache_t *sc;
 
 	if (*ppdb)
 		return 0;
@@ -152,7 +140,7 @@ saim_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
 	/* do we have this guy cached? */
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->sqlite3_cache.head) {
-		sc = lws_container_of(p, saim_sqlite_cache_t, list);
+		sc = lws_container_of(p, sais_sqlite_cache_t, list);
 
 		if (!strcmp(event_uuid, sc->uuid)) {
 			sc->refcount++;
@@ -207,9 +195,9 @@ saim_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
 }
 
 void
-saim_event_db_close(struct vhd *vhd, sqlite3 **ppdb)
+sais_event_db_close(struct vhd *vhd, sqlite3 **ppdb)
 {
-	saim_sqlite_cache_t *sc;
+	sais_sqlite_cache_t *sc;
 
 	if (!*ppdb)
 		return;
@@ -217,7 +205,7 @@ saim_event_db_close(struct vhd *vhd, sqlite3 **ppdb)
 	/* look for him in the cache */
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->sqlite3_cache.head) {
-		sc = lws_container_of(p, saim_sqlite_cache_t, list);
+		sc = lws_container_of(p, sais_sqlite_cache_t, list);
 
 		if (sc->pdb == *ppdb) {
 			*ppdb = NULL;
@@ -242,7 +230,7 @@ saim_event_db_close(struct vhd *vhd, sqlite3 **ppdb)
 }
 
 int
-saim_event_db_delete_database(struct vhd *vhd, const char *event_uuid)
+sais_event_db_delete_database(struct vhd *vhd, const char *event_uuid)
 {
 	char filepath[256], saf[33];
 
@@ -258,7 +246,7 @@ saim_event_db_delete_database(struct vhd *vhd, const char *event_uuid)
 
 #if 0
 static void
-saim_all_browser_on_writable(struct vhd *vhd)
+sais_all_browser_on_writable(struct vhd *vhd)
 {
 	lws_start_foreach_dll(struct lws_dll2 *, mp, vhd->browsers.head) {
 		struct pss *pss = lws_container_of(mp, struct pss, same);
@@ -285,26 +273,27 @@ static const char * const well_known[] = {
 	"/login"
 };
 
-static const char *hmac_names[] = {
-	"sai sha256=",
-	"sai sha384=",
-	"sai sha512="
-};
-
-void
-mark_pending(struct pss *pss, ws_state state)
+int
+saiw_task_cancel(struct vhd *vhd, const char *task_uuid)
 {
-	pss->pending |= 1 << state;
-	lws_callback_on_writable(pss->wsi);
+	sai_cancel_t *can = malloc(sizeof(*can));
+
+	memset(can, 0, sizeof(*can));
+
+	lws_strncpy(can->task_uuid, task_uuid, sizeof(can->task_uuid));
+
+	lws_dll2_add_tail(&can->list, &vhd->web_to_srv_owner);
+
+
+	return 0;
 }
 
-static int
-browser_upd(struct lws_dll2 *d, void *user)
+int
+saiw_sched_destroy(struct lws_dll2 *d, void *user)
 {
-	struct pss *pss = lws_container_of(d, struct pss, same);
-	ws_state state = (ws_state)(intptr_t)user;
+	saiw_scheduled_t *sch = lws_container_of(d, saiw_scheduled_t, list);
 
-	mark_pending(pss, state);
+	saiw_dealloc_sched(sch);
 
 	return 0;
 }
@@ -317,8 +306,9 @@ sai_get_head_status(struct vhd *vhd, const char *projname)
 	sai_event_t *e;
 	int state;
 
-	if (lws_struct_sq3_deserialize(vhd->master.pdb, NULL, "created ",
-			lsm_schema_sq3_map_event, &o, &ac, 0, -1))
+	if (lws_struct_sq3_deserialize(vhd->pdb, NULL, "created ",
+				       lsm_schema_sq3_map_event,
+				       &o, &ac, 0, -1))
 		return -1;
 
 	if (!o.head)
@@ -337,6 +327,7 @@ static int
 sai_login_cb(void *data, const char *name, const char *filename,
 	     char *buf, int len, enum lws_spa_fileupload_states state)
 {
+	lwsl_notice("%s: name '%s'\n", __func__, name);
 	return 0;
 }
 
@@ -351,6 +342,24 @@ enum enum_param_names {
 	EPN_LPASS,
 	EPN_SUCCESS_REDIR,
 };
+
+static int
+saiw_event_db_close_all_now(struct vhd *vhd)
+{
+	sais_sqlite_cache_t *sc;
+
+	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
+				   vhd->sqlite3_cache.head) {
+		sc = lws_container_of(p, sais_sqlite_cache_t, list);
+
+		lws_struct_sq3_close(&sc->pdb);
+		lws_dll2_remove(&sc->list);
+		free(sc);
+
+	} lws_end_foreach_dll_safe(p, p1);
+
+	return 0;
+}
 
 static int
 callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
@@ -382,12 +391,6 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		vhd->context = lws_get_context(wsi);
 		vhd->vhost = lws_get_vhost(wsi);
 
-		if (lws_pvo_get_str(in, "notification-key",
-				    &vhd->notification_key)) {
-			lwsl_err("%s: notification_key pvo required\n", __func__);
-			return -1;
-		}
-
 		if (lws_pvo_get_str(in, "database", &vhd->sqlite3_path_lhs)) {
 			lwsl_err("%s: database pvo required\n", __func__);
 			return -1;
@@ -396,19 +399,18 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		lws_snprintf((char *)buf, sizeof(buf), "%s-events.sqlite3",
 				vhd->sqlite3_path_lhs);
 
-		if (lws_struct_sq3_open(vhd->context, (char *)buf, 1,
-					&vhd->master.pdb)) {
+		if (lws_struct_sq3_open(vhd->context, (char *)buf, 1, &vhd->pdb)) {
 			lwsl_err("%s: Unable to open session db %s: %s\n",
 				 __func__, vhd->sqlite3_path_lhs, sqlite3_errmsg(
-						 vhd->master.pdb));
+						 vhd->pdb));
 
 			return -1;
 		}
 
-		sai_sqlite3_statement(vhd->master.pdb,
+		sai_sqlite3_statement(vhd->pdb,
 				      "PRAGMA journal_mode=WAL;", "set WAL");
 
-		if (lws_struct_sq3_create_table(vhd->master.pdb,
+		if (lws_struct_sq3_create_table(vhd->pdb,
 						lsm_schema_sq3_map_event)) {
 			lwsl_err("%s: unable to create event table\n", __func__);
 			return -1;
@@ -420,15 +422,15 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				vhd->sqlite3_path_lhs);
 
 		if (lws_struct_sq3_open(vhd->context, (char *)buf, 1,
-					&vhd->master.pdb_auth)) {
+					&vhd->pdb_auth)) {
 			lwsl_err("%s: Unable to open auth db %s: %s\n",
 				 __func__, vhd->sqlite3_path_lhs, sqlite3_errmsg(
-						 vhd->master.pdb));
+						 vhd->pdb_auth));
 
 			return -1;
 		}
 
-		if (lws_struct_sq3_create_table(vhd->master.pdb_auth,
+		if (lws_struct_sq3_create_table(vhd->pdb_auth,
 						lsm_schema_sq3_map_auth)) {
 			lwsl_err("%s: unable to create auth table\n", __func__);
 			return -1;
@@ -494,12 +496,31 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 						vhd->jwt_jwk_auth.kty);
 
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_central,
-				 saim_central_cb, 500 * LWS_US_PER_MS);
+				 saiw_central_cb, 500 * LWS_US_PER_MS);
+
+		/*
+		 * Reach out to the sai-server part over the SS ws websrv link
+		 */
+
+		if (lws_ss_create(lws_get_context(wsi), 0, &ssi_saiw_websrv, vhd,
+				  &vhd->h_ss_websrv, NULL, NULL)) {
+			lwsl_err("%s: failed to create SS for websrv\n",
+					__func__);
+
+			return 1;
+		}
+
+		lws_ss_set_metadata(vhd->h_ss_websrv, "sockpath",
+				    "@com.warmcat.sai-websrv", 23);
+		lws_ss_client_connect(vhd->h_ss_websrv);
 
 		break;
 
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
-		saim_master_destroy(&vhd->master);
+		saiw_event_db_close_all_now(vhd);
+		lws_struct_sq3_close(&vhd->pdb);
+		lws_struct_sq3_close(&vhd->pdb_auth);
+		lws_jwk_destroy(&vhd->jwt_jwk_auth);
 		goto passthru;
 
 	/*
@@ -507,6 +528,8 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	 */
 
 	case LWS_CALLBACK_HTTP:
+
+		// lwsl_notice("%s: HTTP\n", __func__);
 
 		resp = HTTP_STATUS_FORBIDDEN;
 		pss->vhd = vhd;
@@ -536,7 +559,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				lws_strncpy(pss->auth_user, ck.sub,
 					    sizeof(pss->auth_user));
 		} else
-			lwsl_err("%s: cookie rejected\n", __func__);
+			lwsl_info("%s: cookie rejected\n", __func__);
 
 		for (n = 0; n < (int)LWS_ARRAY_SIZE(well_known); n++)
 			if (!strncmp((const char *)in, well_known[n],
@@ -547,7 +570,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		pss->our_form = 0;
 
-		lwsl_notice("%s: HTTP: xmu = %d\n", __func__, n);
+		// lwsl_notice("%s: HTTP: '%s' mu = %d\n", __func__, (const char *)in, n);
 
 		switch (mu) {
 
@@ -571,7 +594,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				projname[n++] = *cp++;
 			projname[n] = '\0';
 
-			lwsl_notice("%s: status %s\n", __func__, projname);
+			// lwsl_notice("%s: status %s\n", __func__, projname);
 
 			r = sai_get_head_status(vhd, projname);
 			if (r < 2)
@@ -599,7 +622,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			 */
 			lwsl_notice("%s: SHMUT_ARTIFACTS\n", __func__);
 			pss->artifact_offset = 0;
-			if (saim_get_blob(vhd, (const char *)in + 11,
+			if (saiw_get_blob(vhd, (const char *)in + 11,
 					  &pss->pdb_artifact,
 					  &pss->blob_artifact,
 					  &pss->artifact_length)) {
@@ -654,7 +677,7 @@ http_resp:
 
 	case LWS_CALLBACK_HTTP_WRITEABLE:
 
-		lwsl_notice("%s: HTTP_WRITEABLE\n", __func__);
+		// lwsl_notice("%s: HTTP_WRITEABLE\n", __func__);
 
 		if (!pss || !pss->blob_artifact)
 			break;
@@ -687,6 +710,8 @@ http_resp:
 
 	case LWS_CALLBACK_HTTP_BODY:
 
+		// lwsl_notice("%s: HTTP_BODY\n", __func__);
+
 		if (pss->login_form) {
 
 			if (!pss->spa) {
@@ -699,83 +724,22 @@ http_resp:
 				}
 			}
 
-			goto spa_process;
+			/* let it parse the POST data */
 
-		}
+			lwsl_hexdump_notice(in, len);
 
-		if (!pss->our_form) {
-			lwsl_notice("%s: not our form\n", __func__);
-			goto passthru;
-		}
+			if (!pss->spa_failed &&
+			    lws_spa_process(pss->spa, in, (int)len)) {
 
-		lwsl_user("LWS_CALLBACK_HTTP_BODY: %d\n", (int)len);
-		/* create the POST argument parser if not already existing */
+				lwsl_notice("%s: spa failed\n", __func__);
 
-		if (!pss->spa) {
-			pss->wsi = wsi;
-			if (lws_hdr_copy(wsi, pss->notification_sig,
-					 sizeof(pss->notification_sig),
-					 WSI_TOKEN_HTTP_AUTHORIZATION) < 0) {
-				lwsl_err("%s: failed to get signature hdr\n",
-					 __func__);
-				return -1;
-			}
-
-			if (lws_hdr_copy(wsi, pss->sn.e.source_ip,
-					 sizeof(pss->sn.e.source_ip),
-					 WSI_TOKEN_X_FORWARDED_FOR) < 0)
-				lws_get_peer_simple(wsi, pss->sn.e.source_ip,
-						sizeof(pss->sn.e.source_ip));
-
-			pss->spa = lws_spa_create(wsi, NULL, 0, 1024,
-					sai_notification_file_upload_cb, pss);
-			if (!pss->spa) {
-				lwsl_err("failed to create spa\n");
-				return -1;
-			}
-
-			/* find out the hmac used to sign it */
-
-			pss->hmac_type = LWS_GENHMAC_TYPE_UNKNOWN;
-			for (n = 0; n < (int)LWS_ARRAY_SIZE(hmac_names); n++)
-				if (!strncmp(pss->notification_sig,
-					     hmac_names[n],
-					     strlen(hmac_names[n]))) {
-					pss->hmac_type = n + 1;
-					break;
-				}
-
-			if (pss->hmac_type == LWS_GENHMAC_TYPE_UNKNOWN) {
-				lwsl_notice("%s: unknown sig hash type\n",
-						__func__);
-				return -1;
-			}
-
-			/* convert it to binary */
-
-			n = lws_hex_to_byte_array(
-				pss->notification_sig + strlen(hmac_names[n]),
-				(uint8_t *)pss->notification_sig, 64);
-
-			if (n != (int)lws_genhmac_size(pss->hmac_type)) {
-				lwsl_notice("%s: notifcation hash bad length\n",
-						__func__);
-
-				return -1;
+				/*
+				 * mark it as failed, and continue taking body until
+				 * completion, and return error there
+				 */
+				pss->spa_failed = 1;
 			}
 		}
-
-spa_process:
-
-		/* let it parse the POST data */
-
-		if (!pss->spa_failed &&
-		    lws_spa_process(pss->spa, in, (int)len))
-			/*
-			 * mark it as failed, and continue taking body until
-			 * completion, and return error there
-			 */
-			pss->spa_failed = 1;
 
 		break;
 
@@ -806,17 +770,43 @@ spa_process:
 			if (pss->spa_failed)
 				goto final;
 
+			if (pss->authorized) {
+
+				char temp[128];
+				/*
+				 * It means, logout then
+				 */
+
+				n = lws_snprintf(temp, sizeof(temp), "__Host-sai_jwt=deleted;"
+						 "HttpOnly;"
+						 "Secure;"
+						 "SameSite=strict;"
+						 "Path=/;"
+						 "expires=Sun, 06 Nov 1994 08:49:37 GMT;");
+
+				sr = "x/..";
+
+				if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_SET_COOKIE,
+								 (uint8_t *)temp, n, &p, end)) {
+					lwsl_err("%s: failed to add JWT cookie header\n", __func__);
+					return 1;
+				}
+
+				goto back;
+			}
+
 			un = lws_spa_get_string(pss->spa, EPN_LNAME);
 			pw = lws_spa_get_string(pss->spa, EPN_LPASS);
 			sr = lws_spa_get_string(pss->spa, EPN_SUCCESS_REDIR);
 
 			if (!un || !pw || !sr) {
+				lwsl_notice("%s: missing form args %p %p %p\n",__func__, un, pw, sr);
 				pss->spa_failed = 1;
 				goto final;
 			}
 
-			lwsl_notice("%s: login attempt %s %s %s\n",
-					__func__, un, pw, sr);
+			// lwsl_notice("%s: login attempt %s %s %s\n", __func__,
+			//	    un, pw, sr);
 
 			/*
 			 * Try to look up his credentials
@@ -829,15 +819,15 @@ spa_process:
 					(const char *)buf + 512,
 					(const char *)buf + 768);
 			lws_dll2_owner_clear(&o);
-			n = lws_struct_sq3_deserialize(pss->vhd->master.pdb_auth,
+			n = lws_struct_sq3_deserialize(pss->vhd->pdb_auth,
 						       (const char *)buf + 256,
 						       NULL,
 						       lsm_schema_sq3_map_auth,
 						       &o, &ac, 0, 1);
 			if (n < 0 || !o.head) {
 				/* no results, failed */
-				lwsl_notice("%s: login attempt %s failed %d\n",
-						__func__, (const char *)buf, n);
+				// lwsl_notice("%s: login attempt %s failed %d\n",
+				//		__func__, (const char *)buf, n);
 				lwsac_free(&ac);
 				pss->spa_failed = 1;
 				goto final;
@@ -865,11 +855,12 @@ spa_process:
 			ck.aud = vhd->jwt_audience;
 			ck.cookie_name = "sai_jwt";
 			ck.extra_json = "\"authorized\": 1";
-			ck.expiry_unix_time = 20 * 60;
+			ck.expiry_unix_time = 2 * 60 * 60; /* 2 days */
 
 			if (lws_jwt_sign_token_set_http_cookie(wsi, &ck, &p, end))
 				goto clean_spa;
 
+back:
 			/*
 			 * Auth succeeded, go to the page the form was on
 			 */
@@ -890,11 +881,12 @@ spa_process:
 			if (lws_finalize_write_http_header(wsi, start, &p, end))
 				goto bail;
 
-			lwsl_notice("%s: setting cookie OK\n", __func__);
-			lwsl_hexdump_notice(start, lws_ptr_diff(p, start));
+			lwsl_notice("%s: set / delete cookie OK\n", __func__);
+			// lwsl_hexdump_notice(start, lws_ptr_diff(p, start));
 			return 0;
 
 final:
+			lwsl_notice("%s: auth failed, login_form %d\n", __func__, pss->login_form);
 			/*
 			 * Auth failed, go back to /
 			 */
@@ -915,17 +907,7 @@ final:
 		}
 
 		if (pss->spa_failed)
-			lwsl_notice("%s: notification failed\n", __func__);
-		else {
-			lwsl_notice("%s: notification: %d %s %s %s\n", __func__,
-				    pss->sn.action, pss->sn.e.hash,
-				    pss->sn.e.ref, pss->sn.e.repo_name);
-
-			/* update connected browsers */
-
-			lws_dll2_foreach_safe(&vhd->browsers,
-				(void *)WSS_PREPARE_OVERVIEW, browser_upd);
-		}
+			lwsl_notice("%s: POST failed\n", __func__);
 
 		if (lws_return_http_status(wsi,
 				pss->spa_failed ? HTTP_STATUS_FORBIDDEN :
@@ -976,6 +958,9 @@ clean_spa:
 
 	case LWS_CALLBACK_ESTABLISHED:
 
+		if (!vhd)
+			return -1;
+
 		/*
 		 * What's the situation with a JWT cookie?  Normal users won't
 		 * have any, but privileged users will have one, and we should
@@ -989,6 +974,8 @@ clean_spa:
 		ck.aud = vhd->jwt_audience;
 		ck.cookie_name = "__Host-sai_jwt";
 
+		lws_dll2_add_head(&pss->same, &vhd->browsers);
+
 		cml = sizeof(buf);
 		if (!lws_jwt_get_http_cookie_validate_jwt(wsi, &ck,
 							  (char *)buf, &cml) &&
@@ -1001,7 +988,7 @@ clean_spa:
 			lws_strncpy(pss->auth_user, ck.sub,
 				    sizeof(pss->auth_user));
 		} else
-			lwsl_err("%s: cookie rejected\n", __func__);
+			lwsl_info("%s: cookie rejected\n", __func__);
 		pss->wsi = wsi;
 		pss->vhd = vhd;
 		pss->alang[0] = '\0';
@@ -1027,11 +1014,10 @@ clean_spa:
 			const char *spe;
 
 			lwsl_info("%s: ESTABLISHED: browser (specific)\n", __func__);
-			pss->type = SWT_BROWSE;
 			pss->wsi = wsi;
 			pss->specific_project[0] = '\0';
 			spe = (const char *)start + 16;
-			while(*spe == '/')
+			while (*spe == '/')
 				spe++;
 			n = 0;
 			while(*spe && *spe != '/' &&
@@ -1040,45 +1026,39 @@ clean_spa:
 
 			pss->specific_project[n] = '\0';
 
-			strncpy(pss->specific, "refs/heads/",
-					sizeof(pss->specific));
-			if (lws_get_urlarg_by_name(wsi, "h", pss->specific + 9,
-						   sizeof(pss->specific) - 9)) {
-				memcpy(pss->specific, "refs/heads/", 11);
+			pss->specific_task[0] = '\0';
+			pss->specific_ref[0] = '\0';
+			if (lws_get_urlarg_by_name(wsi, "h", pss->specific_ref + 9,
+						   sizeof(pss->specific_ref) - 9)) {
+				memcpy(pss->specific_ref, "refs/heads/", 11);
 				pss->specificity = SAIM_SPECIFIC_H;
 			} else
 				if (lws_get_urlarg_by_name(wsi, "id", (char *)buf,
 							   sizeof(buf))) {
-					lws_strncpy(pss->specific, (const char *)buf + 3,
-							sizeof(pss->specific));
+					lws_strncpy(pss->specific_ref, (const char *)buf + 3,
+							sizeof(pss->specific_ref));
 					pss->specificity = SAIM_SPECIFIC_ID;
 				} else {
-					pss->specificity = SAIM_SPECIFIC_H;
-					lws_strncpy(pss->specific,
+					if (lws_get_urlarg_by_name(wsi, "task",
+						(char *)pss->specific_task,
+						sizeof(pss->specific_task))) {
+						pss->specificity = SAIM_SPECIFIC_TASK;
+					} else {
+						pss->specificity = SAIM_SPECIFIC_H;
+						lws_strncpy(pss->specific_ref,
 							"refs/heads/master",
-							sizeof(pss->specific));
+							sizeof(pss->specific_ref));
+					}
 				}
 
 				//lwsl_notice("%s: spec %d, '%s'\n", __func__,
-				//	pss->specificity, pss->specific);
+				//	pss->specificity, pss->specific_ref);
 			break;
 		}
 
 		if (!strcmp((char *)start, "/browse")) {
 			lwsl_info("%s: ESTABLISHED: browser\n", __func__);
-			pss->type = SWT_BROWSE;
 			pss->wsi = wsi;
-			break;
-		}
-		if (!strcmp((char *)start, "/builder")) {
-			lwsl_info("%s: ESTABLISHED: builder\n", __func__);
-			pss->type = SWT_BUILDER;
-			pss->wsi = wsi;
-			/*
-			 * this adds our pss part, but not the logical builder
-			 * yet, until we get the ws rx
-			 */
-			lws_dll2_add_head(&pss->same, &vhd->builders);
 			break;
 		}
 
@@ -1087,60 +1067,14 @@ clean_spa:
 		return -1;
 
 	case LWS_CALLBACK_CLOSED:
-		lwsac_free(&pss->query_ac);
-		switch (pss->type) {
-		case SWT_BROWSE:
-			lwsl_info("%s: CLOSED browse conn\n", __func__);
-			lws_dll2_remove(&pss->same);
-			lws_dll2_remove(&pss->subs_list);
-			lwsac_free(&pss->task_ac);
-			lwsac_free(&pss->logs_ac);
-			break;
 
-		case SWT_BUILDER:
-			lwsl_user("%s: CLOSED builder conn\n", __func__);
-			/* remove pss from vhd->builders */
-			lws_dll2_remove(&pss->same);
+		lwsl_info("%s: CLOSED browse conn\n", __func__);
+		lws_dll2_remove(&pss->same);
+		lws_dll2_remove(&pss->subs_list);
 
-			/*
-			 * Destroy any the builder-tracking objects that
-			 * were using this departing connection
-			 */
+		lws_dll2_foreach_safe(&pss->sched, NULL, saiw_sched_destroy);
+		lwsac_free(&pss->logs_ac);
 
-			lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
-					      vhd->master.builder_owner.head) {
-				sai_plat_t *cb = lws_container_of(p, sai_plat_t,
-								      sai_plat_list);
-
-				if (cb->wsi == wsi) {
-					/* remove builder object itself from master list */
-					cb->wsi = NULL;
-					lws_dll2_remove(&cb->sai_plat_list);
-					/*
-					 * free the deserialized builder object,
-					 * everything he pointed to was overallocated
-					 * when his deep copy was made
-					 */
-					free(cb);
-				}
-
-			} lws_end_foreach_dll_safe(p, p1);
-
-			if (pss->blob_artifact) {
-				sqlite3_blob_close(pss->blob_artifact);
-				pss->blob_artifact = NULL;
-			}
-
-			if (pss->pdb_artifact) {
-				saim_event_db_close(pss->vhd, &pss->pdb_artifact);
-				pss->pdb_artifact = NULL;
-			}
-
-			/* update the browsers about the builder removal */
-			lws_dll2_foreach_safe(&vhd->browsers,
-				(void *)WSS_PREPARE_BUILDER_SUMMARY, browser_upd);
-			break;
-		}
 		break;
 
 	case LWS_CALLBACK_RECEIVE:
@@ -1148,34 +1082,13 @@ clean_spa:
 		if (!pss->vhd)
 			pss->vhd = vhd;
 
-		switch (pss->type) {
-		case SWT_BROWSE:
-			// lwsl_user("SWT_BROWSE RX: %d\n", (int)len);
-			/*
-			 * Browser UI sent us something on websockets
-			 */
-			if (saim_ws_json_rx_browser(vhd, pss, in, len))
-				return -1;
-			break;
+		// lwsl_user("SWT_BROWSE RX: %d\n", (int)len);
+		/*
+		 * Browser UI sent us something on websockets
+		 */
+		if (saiw_ws_json_rx_browser(vhd, pss, in, len))
+			return -1;
 
-		case SWT_BUILDER:
-			lwsl_info("SWT_BUILDER RX: %d\n", (int)len);
-			/*
-			 * Builder sent us something on websockets
-			 */
-			pss->wsi = wsi;
-			if (saim_ws_json_rx_builder(vhd, pss, in, len))
-				return -1;
-			if (!pss->announced) {
-				lws_dll2_foreach_safe(&vhd->browsers,
-						(void *)WSS_PREPARE_BUILDER_SUMMARY,
-						browser_upd);
-				pss->announced = 1;
-			}
-			break;
-		default:
-			break;
-		}
 		break;
 
 	case LWS_CALLBACK_SERVER_WRITEABLE:
@@ -1183,18 +1096,8 @@ clean_spa:
 			lwsl_notice("%s: no vhd\n", __func__);
 			break;
 		}
-		switch (pss->type) {
-		case SWT_BROWSE:
-			return saim_ws_json_tx_browser(vhd, pss, buf, sizeof(buf));
-			break;
 
-		case SWT_BUILDER:
-			return saim_ws_json_tx_builder(vhd, pss, buf, sizeof(buf));
-			break;
-		default:
-			break;
-		}
-		break;
+		return saiw_ws_json_tx_browser(vhd, pss, buf, sizeof(buf));
 
 	default:
 passthru:

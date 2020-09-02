@@ -1,5 +1,5 @@
 /*
- * Sai master src/master/conf.c
+ * Sai server src/server/conf.c
  *
  * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
  *
@@ -28,7 +28,8 @@
 struct lws_context *
 sai_lws_context_from_json(const char *config_dir,
 			  struct lws_context_creation_info *info,
-			  const struct lws_protocols **pprotocols)
+			  const struct lws_protocols **pprotocols,
+			  const char *pol)
 {
 	int cs_len = SAI_CONFIG_STRING_SIZE - 1;
 	struct lws_context *context;
@@ -49,6 +50,7 @@ sai_lws_context_from_json(const char *config_dir,
 		       LWS_SERVER_OPTION_EXPLICIT_VHOSTS |
 		       LWS_SERVER_OPTION_HTTP_HEADERS_SECURITY_BEST_PRACTICES_ENFORCE |
 		       LWS_SERVER_OPTION_VALIDATE_UTF8;
+	info->pss_policies_json = pol;
 
 	lwsl_notice("Using config dir: \"%s\"\n", config_dir);
 

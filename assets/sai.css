@@ -85,6 +85,16 @@ td.waiting {
 	border-radius:5px;
 }
 
+td.waiting_gi {
+	vertical-align:top;
+	text-align:left;
+	color:#000000; 
+	padding:0px;
+	font-size: 9pt;
+	font-weight: bold;
+	border-radius:2px;
+}
+
 table.comp {
 	border-radius:7px;
 }
@@ -148,6 +158,12 @@ td.jumble {
 	white-space: nowrap;
 }
 
+img.saicon {
+	width: 24px;
+	height:24px;
+	padding-right:3px;
+}
+
 span.group2 {
 	vertical-align:middle;
 	text-align:center;
@@ -183,6 +199,17 @@ span.nowrap {
 
 div.taskinfo {
 	vertical-align: top;
+	position: fixed;
+	background: #fff;
+	z-index: 2002;
+	border-style: solid;
+	border-width: 16px 16px 0px 16px;
+	border-color: #fff;
+	margin-top: -16px;
+}
+
+table.scrollogs {
+	margin-top: 64px;
 }
 
 div.taskstate {
@@ -214,7 +241,23 @@ div.evr {
 	top: 16px;
 	left: 16px;
 }
+div.evr_gi {
+	display: inline-block;
+	width: 16px;
+	height: 16px;
+}
 
+div.gi_popup {
+	box-shadow: 3px 5px 5px 0px #444;
+	left: 0px;
+	z-index: -2;
+	background: #ffe;
+	opacity: 0.0;
+	transition: opacity 1s ease;
+	display: block;
+	position: absolute;
+	margin-top: 35px
+}
 
 .taskstate0 {
 	color:#000000;
@@ -274,42 +317,24 @@ img.bico {
 }
 
 .taskstate1 {
-	background:#a0a0a0;
+	background: #d0d0d0;
 	color:#000000;
-	opacity:0.75;
-	animation-name: stretch;
-	animation-duration: 2s; 
-	animation-timing-function: ease-out; 
-	animation-delay: 0s;
-	animation-direction: alternate;
-	animation-iteration-count: infinite;
-	animation-fill-mode: none;
-	animation-play-state: running; 
+	opacity:1;
+	transition: background-color 500ms linear;
 }
 
 .taskstate2 {
 	background:#a0a0a0;
 	color:#000000;
-	opacity:0.75;
-	animation-name: stretch;
-	animation-duration: 1s; 
-	animation-timing-function: ease-out; 
-	animation-delay: 0s;
-	animation-direction: alternate;
-	animation-iteration-count: infinite;
-	animation-fill-mode: none;
-	animation-play-state: running; 
+	opacity:1;
+	transition: background-color 500ms linear;
 }
 
 .taskstate3 {
 	background:#01ff70;
 	color:#003000;
 	opacity:1;
-	/*
-	animation-name: fadeInOpacity;
-	animation-iteration-count: 1;
-	animation-timing-function: ease-in;
-	animation-duration: 2s; */
+	transition: background-color 500ms linear;
 }
 
 @keyframes fadeInOpacity {
@@ -320,26 +345,32 @@ img.bico {
 		opacity: 1;
 	}
 }
-}
+
 
 .taskstate4 {
 	background:#ff851b;
 	color:#300000;
 	opacity:1;
+	transition: background-color 500ms linear;
 }
 
 .taskstate5 {
 	background:#808080;
 	color:#202020;
 	opacity:1;
+	transition: background-color 500ms linear;
 }
 
 .taskstate6 {
 	background:#df3030;
 	color:#300000;
 	opacity:1;
+	transition: background-color 500ms linear;
 }
 
+div.stats_hidden {
+	display: none;
+}
 
 div.dlogs {
 	vertical-align: top;
@@ -382,6 +413,10 @@ div.dlogst {
 }
 
 div.hide {
+	display: none;
+}
+
+td.hide {
 	display: none;
 }
 
@@ -483,6 +518,11 @@ td.e4 {
 	text-align: right;
 }
 
+td.e6 {
+	font-weight: normal;
+	font-size: 6pt;
+	text-align: right;
+}
 	
 table.summary {
 	width: 100%;

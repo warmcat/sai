@@ -10,7 +10,7 @@
                 {
                         "name":         "linux-debian-buster/x86_64-amd/gcc",
                         "instances":    1,
-                        "masters": [ "wss://warmcat.com/sai/builder" ]
+                        "servers": [ "wss://warmcat.com:4444/sai/builder" ]
                 }
         ]
 }   

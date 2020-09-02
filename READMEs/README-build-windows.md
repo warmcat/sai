@@ -15,7 +15,7 @@ also used in the next steps here.
 For windows + sai-builder, the following lws cmake config is suitable
 
 ```
-> cmake .. -DLWS_HAVE_PTHREAD_H=1 -DLWS_EXT_PTHREAD_INCLUDE_DIR="C:\Program Files (x86)\pthreads\include" -DLWS_EXT_PTHREAD_LIBRARIES="C:\Program Files (x86)\pthreads\lib\x64\libpthreadGC2.a" -DLWS_WITH_MINIMAL_EXAMPLES=1 -DLWS_WITH_THREADPOOL=1 -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 -DLWS_WITH_SPAWN=1 -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_DIR=1  
+> cmake .. -DLWS_WITH_JOSE=1 -DLWS_HAVE_PTHREAD_H=1 -DLWS_EXT_PTHREAD_INCLUDE_DIR="C:\Program Files (x86)\pthreads\include" -DLWS_EXT_PTHREAD_LIBRARIES="C:\Program Files (x86)\pthreads\lib\x64\libpthreadGC2.a" -DLWS_WITH_MINIMAL_EXAMPLES=1 -DLWS_WITH_THREADPOOL=1 -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 -DLWS_WITH_SPAWN=1 -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_DIR=1  
 ```
 
 ## Building libgit2

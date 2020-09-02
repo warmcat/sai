@@ -1,0 +1,9 @@
+{
+  "global": {
+   "username": "sai", # sai
+   "groupname": "nobody", # nobody
+   "server-string": "sai",
+   "rlimit-nofile": "10000",
+   "init-ssl": "yes"
+ }
+}

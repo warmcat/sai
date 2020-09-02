@@ -1,5 +1,5 @@
 /*
- * Sai master - ./src/master/struct-metadata.c
+ * Sai server - ./src/server/struct-metadata.c
  *
  * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
  *
@@ -18,7 +18,7 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  *  MA  02110-1301  USA
  *
- * lws_struct metadata for structs common to builder and master
+ * lws_struct metadata for structs common to builder and server
  */
 
 static const lws_struct_map_t lsm_plat[] = {
@@ -87,7 +87,7 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_CARRAY	(sai_task_t, event_uuid,	"event_uuid"),
 	LSM_CARRAY	(sai_task_t, uuid,		"uuid"),
 	LSM_CARRAY	(sai_task_t, builder_name,	"builder_name"),
-	LSM_STRING_PTR	(sai_task_t, master_name,	"master_name"),
+	LSM_STRING_PTR	(sai_task_t, server_name,	"server_name"),
 	LSM_STRING_PTR	(sai_task_t, repo_name,		"repo_name"),
 	LSM_STRING_PTR	(sai_task_t, git_ref,		"git_ref"),
 	LSM_STRING_PTR	(sai_task_t, git_hash,		"git_hash"),
@@ -103,7 +103,7 @@ const lws_struct_map_t lsm_schema_sq3_map_task[] = {
 	LSM_SCHEMA_DLL2	(sai_task_t, list, NULL, lsm_task,	"tasks"),
 };
 
-/* builder -> master */
+/* builder -> server */
 
 const lws_struct_map_t lsm_task_rej[] = {
 	LSM_CARRAY	(sai_rejection_t, host_platform, "host_platform"),
@@ -117,7 +117,7 @@ const lws_struct_map_t lsm_schema_json_task_rej[] = {
 						     "com.warmcat.sai.taskrej")
 };
 
-/* master -> builder */
+/* server -> builder */
 
 const lws_struct_map_t lsm_task_cancel[] = {
 	LSM_CARRAY	(sai_cancel_t, task_uuid,	 "task_uuid"),
@@ -173,9 +173,9 @@ const lws_struct_map_t lsm_artifact[] = {
 	LSM_UNSIGNED	(sai_artifact_t, uid,			"uid"),
 	LSM_CARRAY	(sai_artifact_t, task_uuid,		"task_uuid"),
 	LSM_CARRAY	(sai_artifact_t, blob_filename,		"blob_filename"),
-	/* created master-side, sent back with valid upload, checked at master */
+	/* created server-side, sent back with valid upload, checked at server */
 	LSM_CARRAY	(sai_artifact_t, artifact_up_nonce,	"artifact_up_nonce"),
-	/* created master-side (not sent to builder), used in artifact links we generate */
+	/* created server-side (not sent to builder), used in artifact links we generate */
 	LSM_CARRAY	(sai_artifact_t, artifact_down_nonce,	"artifact_down_nonce"),
 	LSM_BLOB_PTR	(sai_artifact_t, blob,			"blob"),
 	LSM_UNSIGNED	(sai_artifact_t, timestamp,		"timestamp"),

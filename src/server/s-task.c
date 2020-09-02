@@ -1,5 +1,5 @@
 /*
- * Sai master
+ * Sai server
  *
  * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
  *
@@ -25,25 +25,15 @@
 #include <time.h>
 #include <assert.h>
 
-#include "m-private.h"
+#include "s-private.h"
 
-static int
-browser_upd(struct lws_dll2 *d, void *user)
-{
-	struct pss *pss = lws_container_of(d, struct pss, same);
-	ws_state state = (ws_state)(intptr_t)user;
-
-	mark_pending(pss, state);
-
-	return 0;
-}
 
 static int
 sql3_get_integer_cb(void *user, int cols, char **values, char **name)
 {
 	unsigned int *pui = (unsigned int *)user;
 
-	lwsl_warn("%s: values[0] '%s'\n", __func__, values[0]);
+	// lwsl_warn("%s: values[0] '%s'\n", __func__, values[0]);
 	*pui = atoi(values[0]);
 
 	return 0;
@@ -57,7 +47,7 @@ sai_task_uuid_to_event_uuid(char *event_uuid33, const char *task_uuid65)
 }
 
 int
-saim_set_task_state(struct vhd *vhd, const char *builder_name,
+sais_set_task_state(struct vhd *vhd, const char *builder_name,
 		    const char *builder_uuid, const char *task_uuid, int state,
 		    uint64_t started, uint64_t duration)
 {
@@ -68,7 +58,7 @@ saim_set_task_state(struct vhd *vhd, const char *builder_name,
 	struct lwsac *ac = NULL;
 	sai_event_t *e = NULL;
 	lws_dll2_owner_t o;
-	int n;
+	int n, task_ostate;
 
 	/*
 	 * Extract the event uuid from the task uuid
@@ -83,7 +73,7 @@ saim_set_task_state(struct vhd *vhd, const char *builder_name,
 	lws_dll2_owner_clear(&o);
 	lws_sql_purify(esc1, event_uuid, sizeof(esc1));
 	lws_snprintf(esc2, sizeof(esc2), " and uuid='%s'", esc1);
-	n = lws_struct_sq3_deserialize(vhd->master.pdb, esc2, NULL,
+	n = lws_struct_sq3_deserialize(vhd->server.pdb, esc2, NULL,
 				       lsm_schema_sq3_map_event, &o, &ac, 0, 1);
 	if (n < 0 || !o.head) {
 		lwsl_err("%s: failed to get task_uuid %s\n", __func__, esc1);
@@ -97,7 +87,7 @@ saim_set_task_state(struct vhd *vhd, const char *builder_name,
 	 * Open the event-specific database on the temporary event object
 	 */
 
-	if (saim_event_db_ensure_open(vhd, event_uuid, 0, (sqlite3 **)&e->pdb)) {
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, (sqlite3 **)&e->pdb)) {
 		lwsl_err("%s: unable to open event-specific database\n",
 				__func__);
 
@@ -116,6 +106,18 @@ saim_set_task_state(struct vhd *vhd, const char *builder_name,
 	lws_sql_purify(esc2, task_uuid, sizeof(esc2));
 
 	esc3[0] = esc4[0] = '\0';
+
+	/*
+	 * grab the current state of it for seeing if it changed
+	 */
+	lws_snprintf(update, sizeof(update),
+		     "select state from tasks where uuid='%s'", esc2);
+	if (sqlite3_exec((sqlite3 *)e->pdb, update,
+			 sql3_get_integer_cb, &task_ostate, NULL) != SQLITE_OK) {
+		lwsl_err("%s: %s: %s: fail\n", __func__, update,
+			 sqlite3_errmsg(vhd->server.pdb));
+		goto bail;
+	}
 
 	if (started) {
 		if (started == 1)
@@ -146,98 +148,105 @@ saim_set_task_state(struct vhd *vhd, const char *builder_name,
 
 	if (sqlite3_exec((sqlite3 *)e->pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
 		lwsl_err("%s: %s: %s: fail\n", __func__, update,
-			 sqlite3_errmsg(vhd->master.pdb));
+			 sqlite3_errmsg(vhd->server.pdb));
 		goto bail;
 	}
 
 	/*
-	 * So, how many tasks for this event?
+	 * We tell interested parties about logs separately.  So there's only
+	 * something to tell about change to task state if he literally changed
+	 * the state
 	 */
 
-	if (sqlite3_exec((sqlite3 *)e->pdb, "select count(state) from tasks",
-			 sql3_get_integer_cb, &count, NULL) != SQLITE_OK) {
-		lwsl_err("%s: %s: %s: fail\n", __func__, update,
-			 sqlite3_errmsg(vhd->master.pdb));
-		goto bail;
-	}
+	if (state != task_ostate) {
 
-	/*
-	 * ... how many completed well?
-	 */
+		lwsl_notice("%s: seen task %s %d -> %d\n", __func__,
+				task_uuid, task_ostate, state);
 
-	if (sqlite3_exec((sqlite3 *)e->pdb, "select count(state) from tasks where state == 3",
-			 sql3_get_integer_cb, &count_good, NULL) != SQLITE_OK) {
-		lwsl_err("%s: %s: %s: fail\n", __func__, update,
-			 sqlite3_errmsg(vhd->master.pdb));
-		goto bail;
-	}
+		sais_taskchange(vhd->h_ss_websrv, task_uuid, state);
 
-	/*
-	 * ... how many failed?
-	 */
+		/*
+		 * So, how many tasks for this event?
+		 */
 
-	if (sqlite3_exec((sqlite3 *)e->pdb, "select count(state) from tasks where state == 4",
-			 sql3_get_integer_cb, &count_bad, NULL) != SQLITE_OK) {
-		lwsl_err("%s: %s: %s: fail\n", __func__, update,
-			 sqlite3_errmsg(vhd->master.pdb));
-		goto bail;
-	}
+		if (sqlite3_exec((sqlite3 *)e->pdb, "select count(state) from tasks",
+				 sql3_get_integer_cb, &count, NULL) != SQLITE_OK) {
+			lwsl_err("%s: %s: %s: fail\n", __func__, update,
+				 sqlite3_errmsg(vhd->server.pdb));
+			goto bail;
+		}
 
-	/*
-	 * Decide how to set the event state based on that
-	 */
+		/*
+		 * ... how many completed well?
+		 */
 
-	lwsl_warn("%s: ev %s, count %u, count_good %u, count_bad %u\n",
-		  __func__, event_uuid, count, count_good, count_bad);
+		if (sqlite3_exec((sqlite3 *)e->pdb, "select count(state) from tasks where state == 3",
+				 sql3_get_integer_cb, &count_good, NULL) != SQLITE_OK) {
+			lwsl_err("%s: %s: %s: fail\n", __func__, update,
+				 sqlite3_errmsg(vhd->server.pdb));
+			goto bail;
+		}
 
-	sta = SAIES_BEING_BUILT;
+		/*
+		 * ... how many failed?
+		 */
 
-	if (count) {
-		if (count == count_good)
-			sta = SAIES_SUCCESS;
-		else
-			if (count == count_bad)
-				sta = SAIES_FAIL;
+		if (sqlite3_exec((sqlite3 *)e->pdb, "select count(state) from tasks where state == 4",
+				 sql3_get_integer_cb, &count_bad, NULL) != SQLITE_OK) {
+			lwsl_err("%s: %s: %s: fail\n", __func__, update,
+				 sqlite3_errmsg(vhd->server.pdb));
+			goto bail;
+		}
+
+		/*
+		 * Decide how to set the event state based on that
+		 */
+
+		lwsl_notice("%s: ev %s, count %u, count_good %u, count_bad %u\n",
+			    __func__, event_uuid, count, count_good, count_bad);
+
+		sta = SAIES_BEING_BUILT;
+
+		if (count) {
+			if (count == count_good)
+				sta = SAIES_SUCCESS;
 			else
-				if (count_bad)
-					sta = SAIES_BEING_BUILT_HAS_FAILURES;
+				if (count == count_bad)
+					sta = SAIES_FAIL;
+				else
+					if (count_bad)
+						sta = SAIES_BEING_BUILT_HAS_FAILURES;
+		}
+
+		if (sta != oes) {
+			lwsl_notice("%s: event state changed\n", __func__);
+
+			/*
+			 * Update the event
+			 */
+
+			lws_sql_purify(esc1, event_uuid, sizeof(esc1));
+			lws_snprintf(update, sizeof(update),
+				"update events set state=%d where uuid='%s'", sta, esc1);
+
+			if (sqlite3_exec(vhd->server.pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
+				lwsl_err("%s: %s: %s: fail\n", __func__, update,
+					 sqlite3_errmsg(vhd->server.pdb));
+				goto bail;
+			}
+
+			sais_eventchange(vhd->h_ss_websrv, event_uuid, sta);
+		}
 	}
 
-	if (sta != oes) {
-		lwsl_notice("%s: event state changed\n", __func__);
-	}
-
-	/*
-	 * Update the event
-	 */
-
-	lws_sql_purify(esc1, event_uuid, sizeof(esc1));
-	lws_snprintf(update, sizeof(update),
-		"update events set state=%d where uuid='%s'", sta, esc1);
-
-	if (sqlite3_exec(vhd->master.pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
-		lwsl_err("%s: %s: %s: fail\n", __func__, update,
-			 sqlite3_errmsg(vhd->master.pdb));
-		goto bail;
-	}
-
-	saim_event_db_close(vhd, (sqlite3 **)&e->pdb);
-
-	/*
-	 * We need to schedule sending an event info update to anyone
-	 * subscribing to the task...
-	 */
-
-	lws_dll2_foreach_safe(&vhd->browsers,
-		(void *)WSS_PREPARE_OVERVIEW, browser_upd);
-
+	sais_event_db_close(vhd, (sqlite3 **)&e->pdb);
 	lwsac_free(&ac);
 
 	return 0;
 
 bail:
 	if (e)
-		saim_event_db_close(vhd, (sqlite3 **)&e->pdb);
+		sais_event_db_close(vhd, (sqlite3 **)&e->pdb);
 	lwsac_free(&ac);
 
 	return 1;
@@ -247,10 +256,11 @@ bail:
  * Find the most recent task that still needs doing for platform, on any event
  *
  * If any, the task pointed-to lives inside *pac, along with its strings etc
+ * and is the responsibility of the caller to free
  */
 
 static const sai_task_t *
-saim_task_pending(struct vhd *vhd, struct lwsac **pac, const char *platform)
+sais_task_pending(struct vhd *vhd, struct lwsac **pac, const char *platform)
 {
 	struct lwsac *ac = NULL;
 	char esc[96], pf[96];
@@ -269,7 +279,7 @@ saim_task_pending(struct vhd *vhd, struct lwsac **pac, const char *platform)
 	 * scope whether we find something or not
 	 */
 
-	n = lws_struct_sq3_deserialize(vhd->master.pdb,
+	n = lws_struct_sq3_deserialize(vhd->server.pdb,
 				       " and (state != 3 and state != 4 and state != 5)",
 				       "created desc ", lsm_schema_sq3_map_event, &o,
 				       &ac, 0, 10);
@@ -289,16 +299,17 @@ saim_task_pending(struct vhd *vhd, struct lwsac **pac, const char *platform)
 		lws_dll2_owner_t ot;
 		sqlite3 *pdb = NULL;
 
-		if (!saim_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
+		if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
 			lws_snprintf(pf, sizeof(pf),
 				     " and state=0 and platform='%s'", esc);
 			n = lws_struct_sq3_deserialize(pdb, pf, NULL,
 						       lsm_schema_sq3_map_task,
 						       &ot, pac, 0, 1);
-			saim_event_db_close(vhd, &pdb);
+			sais_event_db_close(vhd, &pdb);
 			if (ot.count) {
 
-				lwsl_notice("%s: found task for %s\n", __func__, esc);
+				lwsl_notice("%s: found task for %s\n",
+						__func__, esc);
 
 				lwsac_free(&ac);
 
@@ -318,7 +329,7 @@ bail:
 }
 
 int
-saim_task_cancel(struct vhd *vhd, const char *task_uuid)
+sais_task_cancel(struct vhd *vhd, const char *task_uuid)
 {
 	sai_cancel_t *can;
 
@@ -345,6 +356,8 @@ saim_task_cancel(struct vhd *vhd, const char *task_uuid)
 
 	} lws_end_foreach_dll(p);
 
+	sais_taskchange(vhd->h_ss_websrv, task_uuid, SAIES_CANCELLED);
+
 	return 0;
 }
 
@@ -354,7 +367,7 @@ saim_task_cancel(struct vhd *vhd, const char *task_uuid)
  */
 
 int
-saim_task_reset(struct vhd *vhd, const char *task_uuid)
+sais_task_reset(struct vhd *vhd, const char *task_uuid)
 {
 	char esc[96], cmd[256], event_uuid[33];
 	sqlite3 *pdb = NULL;
@@ -366,7 +379,7 @@ saim_task_reset(struct vhd *vhd, const char *task_uuid)
 
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
-	if (saim_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
 		lwsl_err("%s: unable to open event-specific database\n",
 				__func__);
 
@@ -378,36 +391,37 @@ saim_task_reset(struct vhd *vhd, const char *task_uuid)
 		     esc);
 
 	if (sqlite3_exec(pdb, cmd, NULL, NULL, NULL) != SQLITE_OK) {
-		saim_event_db_close(vhd, &pdb);
+		sais_event_db_close(vhd, &pdb);
 		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
-			 sqlite3_errmsg(vhd->master.pdb));
+			 sqlite3_errmsg(vhd->server.pdb));
 		return 1;
 	}
 	lws_snprintf(cmd, sizeof(cmd), "delete from artifacts where task_uuid='%s'",
 		     esc);
 
 	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
-	saim_event_db_close(vhd, &pdb);
+	sais_event_db_close(vhd, &pdb);
 
-	saim_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
+	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
 
-	saim_task_cancel(vhd, task_uuid);
+	sais_task_cancel(vhd, task_uuid);
 
 	/*
 	 * Reassess now if there's a builder we can match to a pending task
 	 */
 
-	lws_sul_schedule(vhd->context, 0, &vhd->sul_central, saim_central_cb, 1);
+	lws_sul_schedule(vhd->context, 0, &vhd->sul_central, sais_central_cb, 1);
 
 	return 0;
 }
 
 /*
- * Look for any task on any event that needs building on platform_name
+ * Look for any task on any event that needs building on platform_name, if found
+ * the caller must take responsibility to free pss->a.ac
  */
 
 int
-saim_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
+sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		   const char *platform_name)
 {
 	char esc1[96], esc2[96];
@@ -422,8 +436,7 @@ saim_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	 * Look for a task for this platform, on any event that needs building
 	 */
 
-	task = (sai_task_t *)saim_task_pending(vhd, &pss->a.ac, platform_name);
-
+	task = (sai_task_t *)sais_task_pending(vhd, &pss->a.ac, platform_name);
 	if (!task)
 		return 1;
 
@@ -431,9 +444,9 @@ saim_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 
 	/* yes, we will offer it to him */
 
-	if (saim_set_task_state(vhd, cb->name, cb->name, task->uuid,
+	if (sais_set_task_state(vhd, cb->name, cb->name, task->uuid,
 				SAIES_PASSED_TO_BUILDER, lws_now_secs(), 0))
-		return -1;
+		goto bail;
 
 	/* advance the task state first time we get logs */
 	pss->mark_started = 1;
@@ -442,26 +455,40 @@ saim_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 
 	lws_sql_purify(esc1, task->event_uuid, sizeof(esc1));
 	lws_snprintf(esc2, sizeof(esc2), " and uuid='%s'", esc1);
-	n = lws_struct_sq3_deserialize(vhd->master.pdb, esc2, NULL,
-				       lsm_schema_sq3_map_event, &o, &pss->a.ac,
-				       0, 1);
+	n = lws_struct_sq3_deserialize(vhd->server.pdb, esc2, NULL,
+				       lsm_schema_sq3_map_event, &o,
+				       &pss->a.ac, 0, 1);
 	if (n < 0 || !o.head)
-		return -1;
+		goto bail;
 
 	task->one_event = lws_container_of(o.head, sai_event_t, list);
 
-	task->master_name	= pss->master_name;
+	task->server_name	= pss->server_name;
 	task->repo_name		= task->one_event->repo_name;
 	task->git_ref		= task->one_event->ref;
 	task->git_hash		= task->one_event->hash;
+	task->ac_task_container = pss->a.ac;
 
 	/*
-	 * add to master's estimate of builder's ongoing tasks...
+	 * add to server's estimate of builder's ongoing tasks...
 	 */
 	cb->ongoing++;
 
 	lws_dll2_add_tail(&task->pending_assign_list, &pss->issue_task_owner);
 	lws_callback_on_writable(pss->wsi);
 
+	pss->a.ac = NULL;
+
+	/*
+	 * We are going to leave here with a live pss->a.ac (pointed into by
+	 * task->one_event) that the caller has to take responsibility to
+	 * clean up pss->a.ac
+	 */
+
 	return 0;
+
+bail:
+	lwsac_free(&pss->a.ac);
+
+	return -1;
 }

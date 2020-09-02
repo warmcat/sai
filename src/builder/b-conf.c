@@ -49,7 +49,7 @@ static const char * const paths[] = {
 	"platforms[].instances",
 	"platforms[].env[].*",
 	"platforms[].env[]",
-	"platforms[].masters",
+	"platforms[].servers",
 	"platforms[]",
 };
 
@@ -59,7 +59,7 @@ enum enum_paths {
 	LEJPM_PLATFORMS_INSTANCES,
 	LEJPM_PLATFORMS_ENV_ITEM,
 	LEJPM_PLATFORMS_ENV,
-	LEJPM_PLATFORMS_MASTERS,
+	LEJPM_PLATFORMS_SERVERS,
 	LEJPM_PLATFORMS,
 };
 
@@ -71,7 +71,7 @@ struct jpargs {
 
 	struct sai_platform	*pl;
 
-	int			next_master_index;
+	int			next_server_index;
 	int			next_plat_index;
 };
 
@@ -79,8 +79,8 @@ static signed char
 saib_conf_cb(struct lejp_ctx *ctx, char reason)
 {
 	struct jpargs *a = (struct jpargs *)ctx->user;
-	sai_plat_master_ref_t *mref;
-	struct sai_plat_master *cm;
+	sai_plat_server_ref_t *mref;
+	struct sai_plat_server *cm;
 	struct lws_ss_handle *h;
 	const char **pp, *pq;
 	char temp[65];
@@ -175,41 +175,41 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 		a->sai_plat->index = a->next_plat_index++;
 		break;
 
-	case LEJPM_PLATFORMS_MASTERS:
+	case LEJPM_PLATFORMS_SERVERS:
 
 		mref = lwsac_use_zero(&a->builder->conf_head, sizeof(*mref),
 					512);
 
 		/*
 		 * The builder as a whole maintains only one SS connection to
-		 * each master.  If there are multiple platforms supported by
-		 * the builder that want to accept tasks from the same master,
-		 * only the first platform creates the SS to the master, and
+		 * each server.  If there are multiple platforms supported by
+		 * the builder that want to accept tasks from the same server,
+		 * only the first platform creates the SS to the server, and
 		 * the others just use that.
 		 *
-		 * The sai_plat_master is instantiated as the ss userdata.
+		 * The sai_plat_server is instantiated as the ss userdata.
 		 *
 		 * So let's see if we already have the connection created
-		 * for this master...
+		 * for this server...
 		 */
 
 		lws_start_foreach_dll(struct lws_dll2 *, p,
-				      a->builder->sai_plat_master_owner.head) {
-			cm = lws_container_of(p, sai_plat_master_t, list);
+				      a->builder->sai_plat_server_owner.head) {
+			cm = lws_container_of(p, sai_plat_server_t, list);
 
 			if (!strncmp(ctx->buf, cm->url, ctx->npos)) {
 				/* we already have a logical connection... */
 				mref->spm = cm;
 				cm->refcount++;
 				lws_dll2_add_tail(&mref->list,
-						  &a->sai_plat->masters);
+						  &a->sai_plat->servers);
 
 				return 0;
 			}
 		} lws_end_foreach_dll(p);
 
 		/*
-		 * This is the first plat that wants to talk to this master,
+		 * This is the first plat that wants to talk to this server,
 		 * we need to create the logical SS connection
 		 */
 
@@ -220,10 +220,10 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 			return -1;
 		}
 
-		cm = lws_ss_to_user_object(h); /* the sai_plat_master object */
-		cm->index = a->next_master_index++;
+		cm = lws_ss_to_user_object(h); /* the sai_plat_server object */
+		cm->index = a->next_server_index++;
 
-		/* hook the ss up to the master url */
+		/* hook the ss up to the server url */
 
 		cm->url = lwsac_use(&a->builder->conf_head,
 				    2 *(ctx->npos + 1), 512);
@@ -256,13 +256,13 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 		while (strchr(cm->name, '/'))
 			*strchr(cm->name, '/') = '_';
 
-		/* add us to the builder list of unique masters */
-		lws_dll2_add_head(&cm->list, &a->builder->sai_plat_master_owner);
+		/* add us to the builder list of unique servers */
+		lws_dll2_add_head(&cm->list, &a->builder->sai_plat_server_owner);
 
-		/* add us to this platforms's list of masters it accepts */
+		/* add us to this platforms's list of servers it accepts */
 		mref->spm = cm;
 		cm->refcount++;
-		lws_dll2_add_tail(&mref->list, &a->sai_plat->masters);
+		lws_dll2_add_tail(&mref->list, &a->sai_plat->servers);
 
 		lws_ss_client_connect(h);
 

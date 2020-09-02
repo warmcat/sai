@@ -1,6 +1,9 @@
 project(sai C)
 cmake_minimum_required(VERSION 2.8)
+find_package(libwebsockets CONFIG REQUIRED)
+list(APPEND CMAKE_MODULE_PATH ${LWS_CMAKE_DIR})
 include(CheckCSourceCompiles)
+include(LwsCheckRequirements)
 
 set(CMAKE_SKIP_RPATH 1)
 
@@ -43,16 +46,16 @@ set(CPACK_DEB_COMPONENT_INSTALL 1)
 set(CPACK_DEBIAN_FILE_NAME "DEB-DEFAULT")
 set(CPACK_DEBIAN_PACKAGE_COMPONENT 1)
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
-set(CPACK_DEBIAN_MASTER_PACKAGE_NAME "sai-master")
+set(CPACK_DEBIAN_SERVER_PACKAGE_NAME "sai-server")
 set(CPACK_DEBIAN_BUILDER_PACKAGE_NAME "sai-builder")
 
-option(SAI_MASTER "Build the master / server part" ON)
-option(SAI_BUILDER "Build the builder / client part" ON)
+option(SAI_SERVER "Build the server + web part" ON)
+option(SAI_BUILDER "Build the builder part" ON)
 
 set(LWS_OPENSSL_LIBRARIES CACHE PATH "Path to the OpenSSL library")
 set(LWS_OPENSSL_INCLUDE_DIRS CACHE PATH "Path to the OpenSSL include directory")
 
-if (NOT SAI_MASTER AND NOT SAI_BUILDER)
+if (NOT SAI_SERVER AND NOT SAI_BUILDER)
 	message(FATAL_ERROR "Have to build both or one or the other")
 endif()
 
@@ -118,69 +121,10 @@ CHECK_C_SOURCE_COMPILES("#include <libwebsockets.h>\nint
 		0;\n#else\n fail;\n#endif\n return 0;\n}\n" HAS_LIBCAP)
 
 
-# If we are being built as part of lws, confirm current build config supports
-# reqconfig, else skip building ourselves.
-#
-# If we are being built externally, confirm installed lws was configured to
-# support reqconfig, else error out with a helpful message about the problem.
-#
-MACRO(require_lws_config reqconfig _val result)
-
-	if (DEFINED ${reqconfig})
-	if (${reqconfig})
-		set (rq 1)
-	else()
-		set (rq 0)
-	endif()
-	else()
-		set(rq 0)
-	endif()
-
-	if (${_val} EQUAL ${rq})
-		set(SAME 1)
-	else()
-		set(SAME 0)
-	endif()
-
-	if (LWS_WITH_MINIMAL_EXAMPLES AND NOT ${SAME})
-		if (${_val})
-			message("${SAMP}: skipping as lws being built without ${reqconfig}")
-		else()
-			message("${SAMP}: skipping as lws built with ${reqconfig}")
-		endif()
-		set(${result} 0)
-	else()
-		if (LWS_WITH_MINIMAL_EXAMPLES)
-			set(MET ${SAME})
-		else()
-			CHECK_C_SOURCE_COMPILES("#include <libwebsockets.h>\nint main(void) {\n#if defined(${reqconfig})\n return 0;\n#else\n fail;\n#endif\n return 0;\n}\n" HAS_${reqconfig})
-			if (NOT DEFINED HAS_${reqconfig} OR NOT HAS_${reqconfig})
-				set(HAS_${reqconfig} 0)
-			else()
-				set(HAS_${reqconfig} 1)
-			endif()
-			if ((HAS_${reqconfig} AND ${_val}) OR (NOT HAS_${reqconfig} AND NOT ${_val}))
-				set(MET 1)
-			else()
-				set(MET 0)
-			endif()
-		endif()
-		if (NOT MET)
-			if (${_val})
-				message(FATAL_ERROR "This project requires lws must have been configured with ${reqconfig}")
-			else()
-				message(FATAL_ERROR "Lws configuration of ${reqconfig} is incompatible with this project")
-			endif()
-		endif()
-	
-	endif()
-ENDMACRO()
-
-#set(CMAKE_REQUIRED_INCLUDES ${SAI_LWS_INC_PATH})
-
 set(requirements 1)
 require_lws_config(LWS_ROLE_H1				1 requirements)
 require_lws_config(LWS_ROLE_WS				1 requirements)
+require_lws_config(LWS_WITH_JOSE			1 requirements)
 
 if (requirements)
 
@@ -191,8 +135,9 @@ if (requirements)
 		set(CMAKE_C_FLAGS "-Wall -Wsign-compare -Wignored-qualifiers -Wtype-limits -Wuninitialized -Werror -Wundef ${CMAKE_C_FLAGS}" )
 	endif()
 
-	if (SAI_MASTER)
-		add_subdirectory(src/master)
+	if (SAI_SERVER)
+		add_subdirectory(src/server)
+		add_subdirectory(src/web)
 	endif()
 	if (SAI_BUILDER)
 		add_subdirectory(src/builder)

@@ -25,7 +25,7 @@
  *
  * Sai-expect opportunistically opens ttys exported by sai-device in the
  * environment, proxies logs to sai-builder (which forwards them to the sai-
- * master that is storing them with the task), and parses the received tty
+ * server that is storing them with the task), and parses the received tty
  * data and emits strings as requested by its arguments.
  */
 

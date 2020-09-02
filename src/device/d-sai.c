@@ -52,6 +52,8 @@
 #if defined(__linux__)
 #include <sys/prctl.h>
 #endif
+#include <sys/types.h>
+#include <sys/wait.h>
 
 #include "d-private.h"
 

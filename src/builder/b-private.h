@@ -105,13 +105,13 @@ struct sai_nspawn {
 	lws_sorted_usec_list_t		sul_task_cancel;
 
 	sai_plat_t			*sp; /* the sai_plat */
-	struct sai_plat_master		*spm; /* the sai plat / master with the ss / wsi */
+	struct sai_plat_server		*spm; /* the sai plat / server with the ss / wsi */
 
 	size_t				chunk_cache_size;
 
-	const char			*master_name;	/* sai-master name who triggered this, eg, 'warmcat' */
+	const char			*server_name;	/* sai-server name who triggered this, eg, 'warmcat' */
 	const char			*project_name;	/* name of the git project, eg, 'libwebsockets' */
-	const char			*ref;		/* remote refname, eg 'master' */
+	const char			*ref;		/* remote refname, eg 'server' */
 	const char			*hash;		/* remote hash */
 	const char			*git_repo_url;
 
@@ -148,7 +148,7 @@ typedef struct sai_mirror_instance {
 
 struct sai_builder {
 	lws_dll2_owner_t	sai_plat_owner; /* list of platforms we offer */
-	lws_dll2_owner_t	sai_plat_master_owner; /* masters we connect to */
+	lws_dll2_owner_t	sai_plat_server_owner; /* servers we connect to */
 	lws_dll2_owner_t	devices_owner; /* sai_serial_t */
 
 	struct lwsac		*conf_head;
@@ -195,7 +195,7 @@ int
 saib_prepare_mount(struct sai_builder *b, struct sai_nspawn *ns);
 
 int
-saib_ws_json_rx_builder(struct sai_plat_master *spm, const void *in, size_t len);
+saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len);
 
 int
 saib_generate(struct sai_plat *sp, char *buf, int len);
@@ -216,7 +216,7 @@ struct ws_capture_chunk *
 saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel);
 
 int
-saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_master *spm,
+saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 				const char *rej_task_uuid);
 
 int

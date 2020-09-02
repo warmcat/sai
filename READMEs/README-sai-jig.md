@@ -3,7 +3,7 @@
 ## Introduction
 
 Sai-jig is a standalone daemon that normally doesn't run on the builder or
-master machines, but on a smaller helper close to embedded targets and
+server machines, but on a smaller helper close to embedded targets and
 physically wired to, eg, the reset button or flash config GPIO on them.
 The helper is typically an RPi or similar machine that has networking,
 Linux and convenient GPIO.

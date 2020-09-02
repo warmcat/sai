@@ -219,7 +219,7 @@ $ sudo git init
 $ sudo git add *
 $ sudo git commit -m "initial commit"
 $ sudo git remote add origin ssh://git@example.com/linux-ubuntu-xenial-amd64+base
-$ sudo git push origin +master:master
+$ sudo git push origin +server:server
 ```
 
 

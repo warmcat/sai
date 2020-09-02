@@ -30,7 +30,7 @@
 static lws_ss_state_return_t
 saib_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
-	struct sai_plat_master *spm = (struct sai_plat_master *)userobj;
+	struct sai_plat_server *spm = (struct sai_plat_server *)userobj;
 	//struct sai_plat *sp = (struct sai_plat *)spm->sai_plat;
 
 	lwsl_info("%s: len %d, flags: %d\n", __func__, (int)len, flags);
@@ -50,7 +50,7 @@ static int
 tp_sync_check(struct lws_dll2 *d, void *user)
 {
 	sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);
-	struct sai_plat_master *spm = (struct sai_plat_master *)user;
+	struct sai_plat_server *spm = (struct sai_plat_server *)user;
 	struct sai_nspawn *ns;
 	int n, soe;
 	void *vp;
@@ -66,7 +66,7 @@ tp_sync_check(struct lws_dll2 *d, void *user)
 		soe = ns->state;
 
 		/*
-		 * We can't deal with nspawns bound to a different master or
+		 * We can't deal with nspawns bound to a different server or
 		 * nspawns not with an active threadpool task
 		 */
 
@@ -199,7 +199,7 @@ next:
 
 /*
  * We cover requested tx for any instance of a platform that can takes tasks
- * from the same master... it means just by coming here, no particular
+ * from the same server... it means just by coming here, no particular
  * platform / sai_plat is implied...
  */
 
@@ -207,7 +207,7 @@ static lws_ss_state_return_t
 saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	  int *flags)
 {
-	struct sai_plat_master *spm = (struct sai_plat_master *)userobj;
+	struct sai_plat_server *spm = (struct sai_plat_server *)userobj;
 	uint8_t *start = buf, *end = buf + (*len) - 1, *p = start;
 	struct ws_capture_chunk *chunk;
 	struct sai_plat *sp = NULL;
@@ -219,7 +219,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 
 	/*
 	 * We are the ss / wsi that any threadpool instances on any platform
-	 * with tasks for this master are trying to sync to.  We need to handle
+	 * with tasks for this server are trying to sync to.  We need to handle
 	 * and resume them all.
 	 */
 
@@ -265,7 +265,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	default:
 
 		/*
-		 * Update master with platform status
+		 * Update server with platform status
 		 */
 
 		js = lws_struct_json_serialize_create(lsm_schema_map_plat,
@@ -301,7 +301,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 
 	/*
 	 * Yes somebody has some logs... since we handle all logs on any
-	 * platform doing tasks for the same master, we have to take care not
+	 * platform doing tasks for the same server, we have to take care not
 	 * to favour draining logs for any busy tasks over letting others
 	 * getting a chance at the mic.  If we just scan for guys with logs
 	 * from the start of the list each time, we will never deal with guys
@@ -316,7 +316,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	 *                 =                          =
 	 *    spm->last_logging_platform : spm->last_logging_nspawn
 	 *
-	 * ... filtered for nspawns associated with our spm / master SS link.
+	 * ... filtered for nspawns associated with our spm / server SS link.
 	 *
 	 * The platforms and nspawns are allocated at conf-time statically.
 	 */
@@ -448,7 +448,7 @@ sendify:
 static int
 cleanup_on_ss_destroy(struct lws_dll2 *d, void *user)
 {
-	struct sai_plat_master *spm = (struct sai_plat_master *)user;
+	struct sai_plat_server *spm = (struct sai_plat_server *)user;
 	sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);
 
 	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
@@ -471,7 +471,7 @@ cleanup_on_ss_destroy(struct lws_dll2 *d, void *user)
 static int
 cleanup_on_ss_disconnect(struct lws_dll2 *d, void *user)
 {
-	struct sai_plat_master *spm = (struct sai_plat_master *)user;
+	struct sai_plat_server *spm = (struct sai_plat_server *)user;
 	sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);
 	struct ws_capture_chunk *cc;
 
@@ -512,7 +512,7 @@ static lws_ss_state_return_t
 saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 	     lws_ss_tx_ordinal_t ack)
 {
-	struct sai_plat_master *spm = (struct sai_plat_master *)userobj;
+	struct sai_plat_server *spm = (struct sai_plat_server *)userobj;
 
 	lwsl_user("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
 		  (unsigned int)ack);
@@ -522,7 +522,7 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 		/*
 		 * If the logical SS itself is going down, every platform that
-		 * used us to connect to their master and has nspawns are also
+		 * used us to connect to their server and has nspawns are also
 		 * going down
 		 */
 		lws_dll2_foreach_safe(&builder.sai_plat_owner, spm,
@@ -561,11 +561,11 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 }
 
 const lws_ss_info_t ssi_sai_builder = {
-	.handle_offset = offsetof(struct sai_plat_master, ss),
-	.opaque_user_data_offset = offsetof(struct sai_plat_master, opaque_data),
+	.handle_offset = offsetof(struct sai_plat_server, ss),
+	.opaque_user_data_offset = offsetof(struct sai_plat_server, opaque_data),
 	.rx = saib_m_rx,
 	.tx = saib_m_tx,
 	.state = saib_m_state,
-	.user_alloc = sizeof(struct sai_plat_master),
+	.user_alloc = sizeof(struct sai_plat_server),
 	.streamtype = "sai_builder"
 };

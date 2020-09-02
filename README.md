@@ -10,11 +10,12 @@ run on an RPi3-class 'buddy' to flash and collect results (eg, over serial, or
 gpio) from even smaller targets.
 
 A self-assembling constellation of Sai Builder clients make their own
-connections to one or more Sai Masters, who then receive hook notifications,
+connections to one or more Sai Servers, who then receive hook notifications,
 read JSON from the project describing what set of build variations and tests it
 should run on which platforms, and distributes work concurrently over idle
-builders that have the required environment, and logs results at the master
-accessible by a web interface.
+builders that have the required environment.  A parallel Sai-web server is
+available usually on :443 or via a proxy to provide a live web / websockets
+interface with synamic updates and realtime build logs.
 
 ![sai overview](./READMEs/sai-overview.png)
 
@@ -24,17 +25,17 @@ accessible by a web interface.
    platform they want to provide builds for (ie, inside a systemd-nspawn or VM).
 
  - The `sai-builder` daemons maintain nailed-up outgoing client wss connections
-   to a central `sai-master`, which manages the ad-hoc collection of builders
+   to a central `sai-server`, which manages the ad-hoc collection of builders
    it finds, and provides a web UI (http/2 and wss2).
 
 ![sai git flow](./READMEs/sai-ov2.png)
 
  - When a git repo that wants sai tests is updated, a push hook performs a POST
-   notiftying the Sai master of a new push event which creates an entry in an
-   event sqlite3 database.  (The master does not need to access the repo that
-   sends the git notification).  The hook sends the master information about the
+   notiftying the Sai server of a new push event which creates an entry in an
+   event sqlite3 database.  (The server does not need to access the repo that
+   sends the git notification).  The hook sends the server information about the
    push and the revision of `.sai.json` from the new commit in the POST body...
-   the master parses that JSON to fill an sqlite3 database with tasks and
+   the server parses that JSON to fill an sqlite3 database with tasks and
    commandline options for the build on platforms mentioned in `.sai.json`.
    Pushes to branches beginning with `_` are ignored by Sai, even if they have
    a valid `.sai.json`; this allows casual sharing of trees via the same git
@@ -46,21 +47,21 @@ accessible by a web interface.
    as a starting point for git dramatically reduces the time compared to a full
    git fetch.
 
- - The master hands out waiting tasks on connected idle builders that offer the
+ - The server hands out waiting tasks on connected idle builders that offer the
    requested platforms, which build them concurrently.  The builders may be
    inside a protected network along with the repos they connect to; both the
    builders and the repo only make outgoing https or wss connections to the
-   master.
+   server.
 
  - On the builders, result channels (like stdout, stderr, eventually others like
-   `/dev/acm0`) with logs and results are streamed back to the master over a wss
+   `/dev/acm0`) with logs and results are streamed back to the server over a wss
    link as the build proceeds, and are stored in an event-specific sqlite3
    database for scalability.
 
  - Builders can run CTest or other tests after the build and collect the
    results (CTest has the advantages it's lightweight and crossplatform).
 
- - The master makes human readable current and historical results available
+ - The server makes human readable current and historical results available
    in realtime over https web interface
 
  - One `sai-builder` daemon can be configured to offer multiple instances of
@@ -73,10 +74,10 @@ accessible by a web interface.
    specified in a configuration file.  One sai-jig instance can separately
    manage external gpio sequencing for multiple test targets.
 
- - Largely the master is automatic, driven by git hook notifications over
+ - Largely the server is automatic, driven by git hook notifications over
    HTTP and the UI is read-only.  However there are some privileged UI operations
    like deleting a whole event, or redoing whole events or individual tasks.
-   For these, if the browser has an authentic JWT signed by the master, it can
+   For these, if the browser has an authentic JWT signed by the server, it can
    see and operate these privileged controls.
 
 ## Build flow and support for embedded
@@ -165,7 +166,7 @@ or other scripts are able to directly write to the device.
 
 The `sai-builder` instance opens three local listening Unix Domain Sockets for
 every platform, these accept raw data which is turned into logs on the
-respective logging channel and passed up to the `sai-master` for storage and
+respective logging channel and passed up to the `sai-server` for storage and
 display like the other logs.
 
 The paths of these "log proxy" Unix Domain Sockets are exported as environment
@@ -225,7 +226,7 @@ builders may be doing in parallel.
 
 ## Builder git caching
 
-For each `<saimaster-project>`, the builder maintains a local git cache.  This is
+For each `<saiserver-project>`, the builder maintains a local git cache.  This is
 updated once when the new ref appears and then the related tests check out a
 fresh image of their ref from that each time.  This is very fast after the first
 update, because it doesn't even involve the network but fetching from the local
@@ -255,16 +256,29 @@ down `/home/sai` or `\Users\sai`.
   - git-mirror/
    - `remote git url`_`project name` -- individual git mirrors
   - jobs/
-   - `master hostname`-`platform name`-`instance index`/
+   - `server hostname`-`platform name`-`instance index`/
     - `project_name`/  - checkouts and builds occur in here
 
 ## Build steps
 
-Building sai produces two different apps, `sai-master` and `sai-builder`.
-`sai-master` is a ws and http server that coordinates activities, and
-`sai-builder` is run on each machine that wants to offer build services to
-one or more masters.  By default, both are built, but you can use a cmake
-option `-DSAI_MASTER=0` and `-DSAI_BUILDER=0` to disable one or the other.
+Building sai produces two different sets of apps and daemons by default, for
+running on a the server that coordinates the builds and for running on machines
+that offer the actual builds for particular platforms to one or more servers.
+
+You can use cmake options `-DSAI_MASTER=0` and `-DSAI_BUILDER=0` to disable one
+or the other.
+
+Server executables|Function
+---|---
+sai-server|The server that builders connect to
+sai-web|The server that browsers connect to
+
+Builder executables|Function
+---|---
+sai-builder|The daemon that connects to sai-server and runs builds
+sai-device|Helper that coordinates which builds wants and can use specific embedded hardware
+sai-expect|Helper run by embedded build flow to capture serial traffic and react to keywords
+sai-jig|Helper for embedded devices that lets another device control its buttons, reset etc as part of the embedded build flow
 
 First you must build lws with appropriate options.
 
@@ -280,13 +294,13 @@ $ cd libwebsockets && mkdir build && cd build && \
 $ make -j && sudo make -j install && sudo ldconfig
 ```
 
-The actual cmake options needed depends on if you are building sai-master and / or
+The actual cmake options needed depends on if you are building sai-server and / or
 sai-builder.
 
 Feature|lws options
 ---|---
 either|`-DLWS_WITH_STRUCT_JSON=1` `-DLWS_WITH_SECURE_STREAMS=1`
-master|`-DLWS_UNIX_SOCK=1` `-DLWS_WITH_GENCRYPTO=1` `-DLWS_WITH_STRUCT_SQLITE3=1` `-DLWS_WITH_JOSE=1`
+server|`-DLWS_UNIX_SOCK=1` `-DLWS_WITH_GENCRYPTO=1` `-DLWS_WITH_STRUCT_SQLITE3=1` `-DLWS_WITH_JOSE=1`
 builder + related|`-DLWS_WITH_SPAWN=1` `-DLWS_WITH_THREADPOOL=1`
 
 Similarly the two daemons bring in different dependencies
@@ -294,9 +308,9 @@ Similarly the two daemons bring in different dependencies
 Feature|dependency
 ---|---
 either|libwebsockets
-master|libsqlite3
+server|libsqlite3
 builder|libgit2 pthreads
-jig|libgpiod
+jig (linux only)|libgpiod
 
 #### Unix / Linux
 

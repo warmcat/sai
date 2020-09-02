@@ -1,0 +1,13 @@
+[Unit]
+Description=Sai Web
+After=syslog.target
+
+[Service]
+ExecStart=/usr/local/bin/sai-web
+ExecReload=/usr/bin/kill -HUP $MAINPID
+ExecStop=/usr/bin/killall sai-web
+
+[Install]
+WantedBy=multi-user.target
+
+

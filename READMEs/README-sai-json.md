@@ -4,7 +4,7 @@ Projects can inform Sai of what build and test variations they want to run
 on push using a `.sai.json` file in the top level dir of the project.
 
 The git push hook isolated this file from the pushed tree and passes it to
-the sai-master along with the rest of the push notification information in
+the sai-server along with the rest of the push notification information in
 a signed JSON structure.
 
 ## Simple .sai.json file
@@ -47,7 +47,7 @@ platform builder with the arguments
 
 In the top level `"platforms"` section you describe the different build
 platforms you want to build and test on... the specified platforms must have
-builders that have connected themselves to the sai-master.
+builders that have connected themselves to the sai-server.
 
 If you don't give a `"default": false` entry in the platform definition, the
 platform is assumed to apply to all the configurations listed afterwards.  If
@@ -92,5 +92,5 @@ or to disable all default platforms and just use the specified ones:
 #### artifacts
 
 You can also give a comma-separated list of build artifacts, these are
-arbitrary binary files which will be uploaded to sai-master and made available
+arbitrary binary files which will be uploaded to sai-server and made available
 for download over https.

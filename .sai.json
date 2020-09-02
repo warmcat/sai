@@ -22,13 +22,13 @@
 	},
 
 	"configurations": {
-		"master+builder": {
+		"server+builder": {
 			"cmake":	"",
 			"cpack":        "&& cpack -C DEBUG $SAI_CPACK",
 			"artifacts":	"build/sai-*.deb, build/sai-*.rpm"
 		},
 		"builder-only": {
-			"cmake":	"-DSAI_MASTER=0 ",
+			"cmake":	"-DSAI_SERVER=0 ",
 			"platforms":	"windows-10/x86_64-amd/msvc, netbsd-OSX-catalina/x86_64-intel-i3/llvm",
 			"cpack":        "&& cpack -C DEBUG $SAI_CPACK",
 			"artifacts":	"build/sai-*.deb, build/sai-*.rpm, build/sai-*.7z"

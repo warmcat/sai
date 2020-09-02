@@ -18,7 +18,7 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  *  MA  02110-1301  USA
  *
- * This deals with POSTing artifacts to the related sai-master, using a secret
+ * This deals with POSTing artifacts to the related sai-server, using a secret
  * that was passed to the builder as part of the task that was allocated
  */
 

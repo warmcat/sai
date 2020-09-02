@@ -1,7 +1,7 @@
 # Setting up and administering systemd-nspawn containers
 
 Sai's approach is to run `sai-builder` from inside the environment it will do
-builds from.  It reaches out to the sai-master instance and git repos, and
+builds from.  It reaches out to the sai-server instance and git repos, and
 otherwise there is no ingress into the container or VM from outside.
 
 So with `systemd-nspawn`, it means the containers should start on the host at
@@ -319,7 +319,7 @@ For redhat type distros, you probably need to add /usr/local/lib to the
 ```
 Container # git clone https://libwebsockets.org/repo/libwebsockets
 Container # cd libwebsockets && mkdir build && cd build && \
-  cmake .. -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 \
+  cmake .. -DLWS_WITH_JOSE=1 -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 \
    -DLWS_WITH_STRUCT_SQLITE3=1 -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1 \
    -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1 -DLWS_WITH_JOSE=1
 Container # make -j && make -j install && ldconfig
@@ -408,6 +408,8 @@ Make sai-builder run as a daemon, create the file `/Library/LaunchDaemons/com.wa
     </array>
     <key>RunAtLoad</key>
     <true/>
+    <key>StandardErrorPath</key>
+    <string>/var/log/sai-builder.log</string>
 </dict>
 </plist>
 ```
