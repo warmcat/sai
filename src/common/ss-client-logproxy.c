@@ -121,13 +121,13 @@ saicom_lp_callback_on_drain(saicom_drain_cb _cb, void *_opaque)
 	return 0;
 }
 
-static int
+static lws_ss_state_return_t
 saicom_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
 	return 0;
 }
 
-static int
+static lws_ss_state_return_t
 saicom_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	     int *flags)
 {
@@ -162,7 +162,7 @@ saicom_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	return 0;
 }
 
-static int
+static lws_ss_state_return_t
 saicom_lp_state(void *userobj, void *sh, lws_ss_constate_t state,
 	        lws_ss_tx_ordinal_t ack)
 {

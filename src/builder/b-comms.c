@@ -27,7 +27,7 @@
 
 #include "../common/struct-metadata.c"
 
-static int
+static lws_ss_state_return_t
 saib_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
 	struct sai_plat_master *spm = (struct sai_plat_master *)userobj;
@@ -203,7 +203,7 @@ next:
  * platform / sai_plat is implied...
  */
 
-static int
+static lws_ss_state_return_t
 saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	  int *flags)
 {
@@ -508,7 +508,7 @@ cleanup_on_ss_disconnect(struct lws_dll2 *d, void *user)
 	return 0;
 }
 
-static int
+static lws_ss_state_return_t
 saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 	     lws_ss_tx_ordinal_t ack)
 {

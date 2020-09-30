@@ -35,7 +35,7 @@
 #pragma warning(disable:4996)
 #endif
 
-static int
+static lws_ss_state_return_t
 saib_artifact_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
 	// sai_artifact_t *ap = (sai_artifact_t *)userobj;
@@ -43,7 +43,7 @@ saib_artifact_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	return 0;
 }
 
-static int
+static lws_ss_state_return_t
 saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 		 size_t *len, int *flags)
 {
@@ -112,7 +112,7 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	return 0;
 }
 
-static int
+static lws_ss_state_return_t
 saib_artifact_state(void *userobj, void *sh, lws_ss_constate_t state,
 		    lws_ss_tx_ordinal_t ack)
 {
