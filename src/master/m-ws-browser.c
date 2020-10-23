@@ -779,15 +779,22 @@ again:
 			e = lws_container_of(pss->walk, sai_event_t, list);
 
 			if (pss->specificity) {
-				lwsl_info("%s: specificity: e->hash: %s, e->ref: %s, pss->specific: %s\n",
-					    __func__, e->hash, e->ref, pss->specific);
-				if (strcmp(e->hash, pss->specific) &&
-				    strcmp(e->ref, pss->specific)) {
-					pss->walk = pss->walk->next;
-					continue;
+				lwsl_notice("%s: Specificity: e->hash: %s, e->ref: '%s', pss->specific: '%s'\n",
+						__func__, e->hash, e->ref, pss->specific);
+
+				if (!strcmp(pss->specific, "refs/heads/master") && !strcmp(e->ref, "refs/heads/main")) {
+					lwsl_notice("master->main\n");
+					any = 1;
+				} else {
+
+					if (strcmp(e->hash, pss->specific) &&
+					    strcmp(e->ref, pss->specific)) {
+						pss->walk = pss->walk->next;
+						continue;
+					}
+					//lwsl_notice("%s: match\n", __func__);
+					any = 1;
 				}
-				//lwsl_notice("%s: match\n", __func__);
-				any = 1;
 			}
 
 			js = lws_struct_json_serialize_create(

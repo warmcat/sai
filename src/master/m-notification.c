@@ -828,6 +828,8 @@ sai_notification_file_upload_cb(void *data, const char *name,
 			return m;
 		}
 
+		lwsl_notice("%s: m = %d\n", __func__, m);
+
 		if (m != 1)
 			break;
 
@@ -841,6 +843,34 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		}
 		lwsl_notice("%s: hmac OK\n", __func__);
 
+				/*
+		 * We have the notification metadata JSON parsed into pss->sn.e,
+		 * eg, pss->sn->e.hash ... since it's common to, eg, push a tree
+		 * in a branch and then later tag the same commit, we don't want
+		 * to pointlessly repeat CI for the same tree multiple times,
+		 * and need to basically dedupe.
+		 */
+
+		{
+			uint64_t rid = 0;
+			char qu[192];
+
+			lws_snprintf(qu, sizeof(qu), "select rowid from events "
+						     "where hash='%s'",
+						     pss->sn.e.hash);
+
+			if (sqlite3_exec(pss->vhd->master.pdb, qu,
+					 sai_sql3_get_uint64_cb,
+					 &rid, NULL) == SQLITE_OK && rid) {
+				/* it already exists */
+				lwsl_notice("%s: ignoring notification as "
+					    "tree hash event exists\n",
+					    __func__);
+
+				return 0;
+			}
+		}
+	
 		if (!pss->sn.saifile)
 			return -1;
 

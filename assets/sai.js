@@ -562,7 +562,7 @@ function sai_taskinfo_render(t, now_ut)
 	
 	s = "<div class=\"taskinfo\"><table><tr class=\"nomar\"><td class=\"atop\"><table>" +
 		sai_event_render(t, now_ut, 0) + "</table></td><td class=\"ti\">" +
-		"<span class=\"taskstate" + t.t.state + " ti1\">" + sai_plat_icon(t.t.platform, 2) +
+		"<span class=\"ti1\">" + sai_plat_icon(t.t.platform, 2) +
 		san(t.t.platform) + "</span>&nbsp;";
 	if (authd && t.t.state != 0 && t.t.state != 3 && t.t.state != 4 && t.t.state != 5)
 		s += "<img class=\"rebuild\" alt=\"stop build\" src=\"stop.svg\" " +
@@ -863,8 +863,8 @@ function ws_open_sai()
 	}
 	
 	var s1 = get_appropriate_ws_url() + "/sai/browse" + s;
-	if (s1.split("?"))
-	s1 = s1.split("?")[0];
+//	if (s1.split("?"))
+//	s1 = s1.split("?")[0];
 	console.log(s1);
 	sai = new WebSocket(s1, "com-warmcat-sai");
 
