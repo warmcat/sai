@@ -8,7 +8,7 @@
 
         "platforms": [
                 {
-                        "name":         "linux-ubuntu-xenial-amd64",
+                        "name":         "linux-debian-buster/x86_64-amd/gcc",
                         "instances":    1,
                         "masters": [ "wss://warmcat.com/sai/builder" ]
                 }

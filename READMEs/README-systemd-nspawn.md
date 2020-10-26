@@ -110,6 +110,14 @@ root@myhost:~# useradd -u883 -gnogroup sai -d/home/sai -m -r
 
 For redhat type systems, use `-gnobody` instead
 
+### Specific to Debian Buster / Sid
+
+If a 32-bit install, leave out libc6-i386
+
+```
+Container # apt install sudo make git gcc cmake net-tools libssl-dev vim libc6-i386 dbus systemd-container libmbedtls-dev libev4 libev-dev libuv1 libuv1-dev libmount-dev libsqlite0-dev libgit2-dev inetutils-ping psmisc libgit2-27 libmbedcrypto3 libmbedtls12 libmbedx509-0 libmbedtls-dev libevent-2.1-6 libevent-dev libglib2.0-0 libsqlite3-0 libsqlite3-dev pkg-config libglib2.0-dev libglib2.0-0 libdbus-1-dev libdbus-1-3 g++
+```
+
 ### Specific to Ubuntu
 
 We have to enable the "universe" packageset to get normal things.
@@ -137,13 +145,13 @@ Container # apt install sudo make git gcc cmake net-tools libssl-dev vim libc6-i
 ### Specific to Bionic
 
 ```
-apt install sudo make git gcc cmake net-tools libssl-dev vim libc6-i386 dbus systemd-container libmbedtls-dev libev4 libev-dev libuv1 libuv1-dev libmount-dev libsqlite0-dev libgit2-dev inetutils-ping psmisc libgit2-26 libmbedcrypto1 libmbedtls10 libmbedx509-0 libmbedtls-dev libevent-2.1-6 libevent-dev libglib2.0-0 libsqlite3-0 libsqlite3-dev pkg-config libglib2.0-dev libglib2.0-0 libdbus-1-dev libdbus-1-3
+Container # apt install sudo make git gcc cmake net-tools libssl-dev vim libc6-i386 dbus systemd-container libmbedtls-dev libev4 libev-dev libuv1 libuv1-dev libmount-dev libsqlite0-dev libgit2-dev inetutils-ping psmisc libgit2-26 libmbedcrypto1 libmbedtls10 libmbedx509-0 libmbedtls-dev libevent-2.1-6 libevent-dev libglib2.0-0 libsqlite3-0 libsqlite3-dev pkg-config libglib2.0-dev libglib2.0-0 libdbus-1-dev libdbus-1-3
 ```
 
 ### Specific to Focal
 
 ```
-apt install sudo make git gcc cmake net-tools libssl-dev vim libc6-i386 dbus systemd-container libmbedtls-dev libevent-2.1-7 libev4 libev-dev libuv1 libuv1-dev libmount-dev libsqlite0-dev libgit2-dev inetutils-ping psmisc libgit2-28 libmbedcrypto3 libmbedtls12 libmbedx509-0 libmbedtls-dev libev4 libev-dev libevent-2.1-7 libevent-dev libglib2.0-0 libsqlite3-0 libsqlite3-dev pkg-config libglib2.0-dev libglib2.0-0
+Container # apt install sudo make git gcc cmake net-tools libssl-dev vim libc6-i386 dbus systemd-container libmbedtls-dev libevent-2.1-7 libev4 libev-dev libuv1 libuv1-dev libmount-dev libsqlite0-dev libgit2-dev inetutils-ping psmisc libgit2-28 libmbedcrypto3 libmbedtls12 libmbedx509-0 libmbedtls-dev libev4 libev-dev libevent-2.1-7 libevent-dev libglib2.0-0 libsqlite3-0 libsqlite3-dev pkg-config libglib2.0-dev libglib2.0-0
 ```
 
 ### Specific to Fedora
@@ -243,12 +251,12 @@ will get networking services cleanly.
 We will call the related NetworkManager connection `nm-...`
 
 ```
-Host # nmcli c add type ethernet autoconnect no con-name nm-ve-xenial ifname ve-xenial-amd64
-Host # nmcli c m nm-ve-xenial ipv4.method shared
-Host # nmcli c m nm-ve-xenial ipv4.addresses 192.168.80.1/24
-Host # nmcli c m nm-ve-xenial connection.zone vm
-Host # nmcli c m nm-ve-xenial connection.autoconnect true
-Host # nmcli c down nm-ve-xenial ; nmcli c up nm-ve-xenial
+Host # export NMNAME=ve-xenial ; nmcli c add type ethernet autoconnect no con-name nm-$NMNAME ifname $NMNAME ;\
+  nmcli c m nm-$NMNAME ipv4.method shared ; \
+  nmcli c m nm-$NMNAME ipv4.addresses 192.168.80.1/24 ; \
+  nmcli c m nm-$NMNAME connection.zone vm ; \
+  nmcli c m nm-$NMNAME connection.autoconnect true ; \
+  nmcli c down nm-$NMNAME ; nmcli c up nm-$NMNAME
 ```
 
 ## Step 6: Restart the container
@@ -313,7 +321,7 @@ Container # git clone https://libwebsockets.org/repo/libwebsockets
 Container # cd libwebsockets && mkdir build && cd build && \
   cmake .. -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 \
    -DLWS_WITH_STRUCT_SQLITE3=1 -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1 \
-   -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1
+   -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1 -DLWS_WITH_JOSE=1
 Container # make -j && make -j install && ldconfig
 ```
 

@@ -21,6 +21,8 @@
  * structs common to builder and master
  */
 
+//#include <sai_config_private.h>
+
 #if defined(__linux__)
 #define UDS_PATHNAME_LOGPROXY "@com.warmcat.com.saib.logproxy"
 #else

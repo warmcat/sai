@@ -300,7 +300,7 @@ saib_spawn(struct sai_nspawn *ns)
 
 	memset(&info, 0, sizeof(info));
 	info.vh = builder.vhost;
-	info.env_array = env;
+	info.env_array = (const char **)env;
 	info.exec_array = cmd;
 	info.protocol_name = "sai-stdxxx";
 	info.max_log_lines = 10000;

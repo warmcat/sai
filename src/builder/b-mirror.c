@@ -137,6 +137,10 @@ sai_mirror_local_checkout(struct sai_nspawn *ns)
 	 * This may take an open-ended amount of time
 	 */
 
+#if defined(LIBGIT2_HAVE_GIT_PROXY_OPTIONS_INIT)
+	git_proxy_options_init(&opts.proxy_opts, GIT_PROXY_OPTIONS_VERSION);
+#endif
+
 	n = git_remote_fetch(remote, &rfs, &opts, "fetch");
 	git_remote_free(remote);
 	if (n) {

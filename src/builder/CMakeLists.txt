@@ -55,7 +55,25 @@ if (requirements)
         if (SAI_HAVE_LIBGIT2_GIT_ERROR)
         	set(CMAKE_C_FLAGS "-DSAI_HAVE_LIBGIT2_GIT_ERROR ${CMAKE_C_FLAGS}")
         endif()
-	
+
+	CHECK_C_SOURCE_COMPILES("
+                #include <git2.h>
+		int main(int argc, char **argv) {
+			git_proxy_options o;
+			git_proxy_options_init(&o, GIT_PROXY_OPTIONS_VERSION);
+			return 0;
+	}" LIBGIT2_HAVE_GIT_PROXY_OPTIONS_INIT)
+
+	if (LIBGIT2_HAVE_GIT_PROXY_OPTIONS_INIT)
+        	set(CMAKE_C_FLAGS "-DLIBGIT2_HAVE_GIT_PROXY_OPTIONS_INIT ${CMAKE_C_FLAGS}")
+        endif()
+
+	#configure_file("${PROJECT_SOURCE_DIR}/cmake/sai_config_private.h.in"
+	#	       "${PROJECT_BINARY_DIR}/sai_config_private.h")
+	#
+	#target_include_directories("sai-builder" PRIVATE "${PROJECT_BINARY_DIR}")
+
+
 
 	if (SAI_LWS_INC_PATH)
 		target_include_directories("sai-builder" PRIVATE ${SAI_LWS_INC_PATH})
