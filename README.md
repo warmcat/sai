@@ -1,13 +1,13 @@
 ![Sai](./assets/sai.svg)
 
-`Sai` (pronouced like 'sigh', "Trial" in Japanese) is a very lightweight
-network-aware distributed CI builder and coordinating server.  It knows how to
-use `systemd-nspawn` and `overlayfs` to build remote git repos on a variety of
-distro versions very cheaply.
+[![CI status](https://warmcat.com/sai/status/sai)](https://warmcat.com/git/sai)
 
-On small targets, it can also build on the host rootfs directly, and can also
-run on an RPi3-class 'buddy' to flash and collect results (eg, over serial, or
-gpio) from even smaller targets.
+`Sai` (pronouced like 'sigh', "Trial" in Japanese) is a very lightweight
+network-aware distributed CI builder and coordinating server.  You can run the
+sai-builder daemon on any number of devices to offer builds for that platform...
+builders can run on native boxes, inside systemd-nspawn contexts, inside VMs
+(eg, via qemu) for non-native arches, or on connected embedded devices which can
+be flashed and run the built results, controlled by gpio and serial.
 
 A self-assembling constellation of Sai Builder clients make their own
 connections to one or more Sai Servers, who then receive hook notifications,
