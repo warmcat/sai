@@ -28,7 +28,7 @@
 #include "s-private.h"
 
 
-static int
+int
 sql3_get_integer_cb(void *user, int cols, char **values, char **name)
 {
 	unsigned int *pui = (unsigned int *)user;

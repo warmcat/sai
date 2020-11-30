@@ -121,6 +121,7 @@ typedef struct saiw_scheduled {
 
 	uint8_t			subsequent:1; /* for individual JSON */
 	uint8_t			ov_db_done:1; /* for individual JSON */
+	uint8_t			logsub:1; /* for individual JSON */
 
 } saiw_scheduled_t;
 

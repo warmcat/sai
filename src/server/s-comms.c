@@ -290,17 +290,11 @@ typedef enum {
 	SHMUT_NONE = -1,
 	SHMUT_HOOK,
 	SHMUT_BROWSE,
-	SHMUT_STATUS,
-	SHMUT_ARTIFACTS,
-	SHMUT_LOGIN
 } sai_http_murl_t;
 
 static const char * const well_known[] = {
 	"/update-hook",
 	"/sai/browse",
-	"/status",
-	"/artifacts/", /* HTTP api for accessing build artifacts */
-	"/login"
 };
 
 static const char *hmac_names[] = {
@@ -332,26 +326,6 @@ sai_get_head_status(struct vhd *vhd, const char *projname)
 	return state;
 }
 
-
-static int
-sai_login_cb(void *data, const char *name, const char *filename,
-	     char *buf, int len, enum lws_spa_fileupload_states state)
-{
-	return 0;
-}
-
-static const char * const auth_param_names[] = {
-	"lname",
-	"lpass",
-	"success_redir",
-};
-
-enum enum_param_names {
-	EPN_LNAME,
-	EPN_LPASS,
-	EPN_SUCCESS_REDIR,
-};
-
 static int
 callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	    void *in, size_t len)
@@ -362,9 +336,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		*end = &buf[sizeof(buf) - LWS_PRE - 1];
 	struct pss *pss = (struct pss *)user;
 	sai_http_murl_t mu = SHMUT_NONE;
-	char projname[64];
-	int n, resp, r;
-	const char *cp;
+	int n, resp;
 
 	(void)end;
 	(void)p;
@@ -460,33 +432,6 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			lwsl_notice("LWS_CALLBACK_HTTP: sees hook\n");
 			return 0;
 
-		case SHMUT_STATUS:
-			/*
-			 * in is a string like /libwebsockets/status.svg
-			 */
-			cp = ((const char *)in) + 7;
-			while (*cp == '/')
-				cp++;
-			n = 0;
-			while (*cp != '/' && *cp && (size_t)n < sizeof(projname) - 1)
-				projname[n++] = *cp++;
-			projname[n] = '\0';
-
-			// lwsl_notice("%s: status %s\n", __func__, projname);
-
-			r = sai_get_head_status(vhd, projname);
-			if (r < 2)
-				r = 2;
-			n = lws_snprintf(projname, sizeof(projname),
-				     "../decal-%d.svg", r);
-
-			if (lws_http_redirect(wsi, 307,
-					      (unsigned char *)projname, n,
-					      &p, end) < 0)
-				return -1;
-
-			goto passthru;
-
 		default:
 			lwsl_notice("%s: DEFAULT!!!\n", __func__);
 			return 0;
@@ -502,57 +447,11 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			goto bail;
 		goto try_to_reuse;
 
-
-	case LWS_CALLBACK_HTTP_WRITEABLE:
-
-		lwsl_notice("%s: HTTP_WRITEABLE\n", __func__);
-
-		if (!pss || !pss->blob_artifact)
-			break;
-
-		n = lws_ptr_diff(end, start);
-		if ((int)(pss->artifact_length - pss->artifact_offset) < n)
-			n = (int)(pss->artifact_length - pss->artifact_offset);
-
-		if (sqlite3_blob_read(pss->blob_artifact, start, n,
-				      pss->artifact_offset)) {
-			lwsl_err("%s: blob read failed\n", __func__);
-			return -1;
-		}
-
-		pss->artifact_offset += n;
-
-		if (lws_write(wsi, start, n,
-				pss->artifact_offset != pss->artifact_length ?
-					LWS_WRITE_HTTP : LWS_WRITE_HTTP_FINAL) != n)
-			return -1;
-
-		if (pss->artifact_offset != pss->artifact_length)
-			lws_callback_on_writable(wsi);
-
-		break;
-
 	/*
 	 * Notifcation POSTs
 	 */
 
 	case LWS_CALLBACK_HTTP_BODY:
-
-		if (pss->login_form) {
-
-			if (!pss->spa) {
-				pss->spa = lws_spa_create(wsi, auth_param_names,
-						LWS_ARRAY_SIZE(auth_param_names),
-						1024, sai_login_cb, pss);
-				if (!pss->spa) {
-					lwsl_err("failed to create spa\n");
-					return -1;
-				}
-			}
-
-			goto spa_process;
-
-		}
 
 		if (!pss->our_form) {
 			lwsl_notice("%s: not our form\n", __func__);
@@ -616,8 +515,6 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			}
 		}
 
-spa_process:
-
 		/* let it parse the POST data */
 
 		if (!pss->spa_failed &&
@@ -634,7 +531,7 @@ spa_process:
 		lwsl_user("%s: LWS_CALLBACK_HTTP_BODY_COMPLETION: %d\n",
 			  __func__, (int)len);
 
-		if (!pss->our_form && !pss->login_form) {
+		if (!pss->our_form) {
 			lwsl_user("%s: no sai form\n", __func__);
 			goto passthru;
 		}
@@ -670,25 +567,10 @@ spa_process:
 		return 0;
 
 	/*
-	 * ws connections from builders and browsers
+	 * ws connections from builders
 	 */
 
 	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
-		n = lws_hdr_copy(wsi, (char *)buf, sizeof(buf) - 1,
-				 WSI_TOKEN_GET_URI);
-		if (!n)
-			buf[0] = '\0';
-		//lwsl_notice("%s: checking with lwsgs for ws conn: %s\n",
-		//	    __func__, (const char *)buf);
-
-		/*
-		 * Builders don't authenticate using sessions...
-		 */
-
-		if (n >= 8 && !strncmp((const char *)buf + n - 8,
-					"/builder", 8))
-			return 0;
-
 		return 0;
 
 	case LWS_CALLBACK_ESTABLISHED:
@@ -696,9 +578,6 @@ spa_process:
 		pss->vhd = vhd;
 		if (!vhd)
 			return -1;
-		pss->alang[0] = '\0';
-		lws_hdr_copy(wsi, pss->alang, sizeof(pss->alang),
-			     WSI_TOKEN_HTTP_ACCEPT_LANGUAGE);
 
 		if (lws_hdr_total_length(wsi, WSI_TOKEN_GET_URI)) {
 			if (lws_hdr_copy(wsi, (char *)start, 64,
@@ -793,8 +672,8 @@ spa_process:
 		if (!pss->announced) {
 
 			/*
-			 * Update the sai-webs about the builder removal, so they
-			 * can update their connected browsers
+			 * Update the sai-webs about the builder removal, so
+			 * they can update their connected browsers
 			 */
 			sais_list_builders(vhd);
 
@@ -812,10 +691,7 @@ spa_process:
 
 	default:
 passthru:
-	//	if (!pss || !vhd)
 			break;
-
-	//	return vhd->gsp->callback(wsi, reason, pss->pss_gs, in, len);
 	}
 
 	return lws_callback_http_dummy(wsi, reason, user, in, len);

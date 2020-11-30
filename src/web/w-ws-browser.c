@@ -324,17 +324,7 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 		goto bail;
 	}
 
-	/* does he want to subscribe to logs? */
-	if (logsub) {
-		strcpy(pss->sub_task_uuid, sch->one_task->uuid);
-		lws_dll2_add_head(&pss->subs_list, &pss->vhd->subs_owner);
-		pss->sub_timestamp = 0; /* where we got up to */
-		lws_callback_on_writable(pss->wsi);
-
-		lwsl_notice("%s: subscribed to logs for %s\n", __func__,
-			    pss->sub_task_uuid);
-	}
-
+	sch->logsub = logsub;
 	sch->one_event = lws_container_of(o.head, sai_event_t, list);
 
 	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
@@ -1033,6 +1023,8 @@ b_finish:
 		 * (all in .query_ac)
 		 */
 
+		lwsl_info("%s: PREPARE_TASKINFO: one_task %p\n", __func__, sch->one_task);
+
 		task_reply.event = sch->one_event;
 		task_reply.task = sch->one_task;
 		task_reply.auth_secs = pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0;
@@ -1089,8 +1081,9 @@ b_finish:
 			lwsl_debug("%s: ---------------- no artifacts\n", __func__);
 			/* there's no artifact stuff to do */
 			endo = 1;
-		}
-		sch->one_task = NULL;
+		} else
+			lwsl_debug("%s: WSS_PREPARE_TASKINFO: planning on artifacts\n", __func__);
+		// sch->one_task = NULL;
 		if (n == LSJS_RESULT_ERROR) {
 			lwsl_notice("%s: taskinfo: error generating json\n", __func__);
 			return 1;
@@ -1105,6 +1098,8 @@ b_finish:
 	case WSS_SEND_ARTIFACT_INFO:
 		if (sch->owner.head) {
 			sai_artifact_t *aft = (sai_artifact_t *)sch->owner.head;
+
+			lwsl_info("%s: WSS_SEND_ARTIFACT_INFO: consuming artifact\n", __func__);
 
 			lws_dll2_remove(&aft->list);
 
@@ -1142,21 +1137,28 @@ b_finish:
 send_it:
 	flags = lws_write_ws_flags(LWS_WRITE_TEXT, first, endo || lg || !sch->walk);
 
-	if (lg || !sch->walk || endo) {
+	if (lg || endo ||
+	    (pss->send_state != WSS_SEND_ARTIFACT_INFO && !sch->walk) ||
+	    (pss->send_state == WSS_SEND_ARTIFACT_INFO &&
+	     (!sch || !sch->owner.head))) {
+
+		/* does he want to subscribe to logs? */
+		if (sch && sch->logsub && sch->one_task) {
+			strcpy(pss->sub_task_uuid, sch->one_task->uuid);
+			lws_dll2_add_head(&pss->subs_list, &pss->vhd->subs_owner);
+			pss->sub_timestamp = 0; /* where we got up to */
+			lws_callback_on_writable(pss->wsi);
+
+			lwsl_info("%s: subscribed to logs for %s\n", __func__,
+				    pss->sub_task_uuid);
+		}
+
 		pss->send_state = WSS_IDLE;
 		saiw_dealloc_sched(sch);
 	}
 
 	if (lws_write(pss->wsi, start, p - start, flags) < 0)
 		return -1;
-
-	/*
-	 * We get a bad ratio of reads to write when the builder spams us
-	 * with rx... we have to try to clear as much as we can in one go.
-	 */
-
-//	if (!lws_send_pipe_choked(pss->wsi))
-//		goto again;
 
 	lws_callback_on_writable(pss->wsi);
 

@@ -1022,7 +1022,7 @@ function ws_open_sai()
 		//	if (msg.data.length < 10)
 		//		return;
 			jso = JSON.parse(msg.data);
-		//	console.log(jso.schema);
+			console.log(jso.schema);
 			
 			if (jso.alang) {
 				var a = jso.alang.split(","), n;

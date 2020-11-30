@@ -40,7 +40,7 @@ saib_artifact_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
 	// sai_artifact_t *ap = (sai_artifact_t *)userobj;
 
-	return 0;
+	return LWSSSSRET_OK;
 }
 
 static lws_ss_state_return_t
@@ -62,7 +62,7 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 			        LWS_ARRAY_SIZE(lsm_schema_json_map_artifact),
 			        0, ap);
 		if (!js)
-			return -1;
+			return LWSSSSRET_DESTROY_ME;
 
 		lws_struct_json_serialize(js, buf, *len, &w);
 		*len = w;
@@ -71,11 +71,13 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 		lws_ss_request_tx(ap->ss);
 		lwsl_notice("%s: sent JSON %s\n", __func__, (const char *)buf);
 
-		return 0;
+		return LWSSSSRET_OK;
 	}
 
-	if (ap->fd == -1)
-		return 1; /* nothing to send */
+	if (ap->fd == -1) {
+		lwsl_info("%s: completion with fd = -1\n", __func__);
+		lws_ss_start_timeout(ap->ss, 5 * LWS_US_PER_SEC);
+	}
 
 	n = read(ap->fd, buf,
 #if defined(WIN32)
@@ -88,16 +90,16 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 		*len = 0;
 		close(ap->fd);
 		ap->fd = -1;
-		return -1;
+		return LWSSSSRET_DESTROY_ME;
 	}
 	if (!n) {
 		lwsl_notice("%s: file EOF\n", __func__);
-		return 1; /* nothing to send */
+		return LWSSSSRET_TX_DONT_SEND; /* nothing to send */
 	}
 
 	ap->ofs += n;
-	lwsl_debug("%s: %p: writing %d at +%llu / %llu\n", __func__, ap->ss, n,
-			(unsigned long long)ap->ofs, (unsigned long long)ap->len);
+	lwsl_info("%s: %p: writing %d at +%llu / %llu (0x%02X)\n", __func__, ap->ss, n,
+			(unsigned long long)ap->ofs, (unsigned long long)ap->len, buf[0]);
 	*len = (size_t)n;
 	if (ap->ofs == ap->len) {
 		lwsl_notice("%s: reached logical end of artifact\n", __func__);
@@ -109,7 +111,7 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	/* even if we finished, we want to come back to close */
 	lws_ss_request_tx(ap->ss);
 
-	return 0;
+	return LWSSSSRET_OK;
 }
 
 static lws_ss_state_return_t
@@ -160,16 +162,20 @@ saib_artifact_state(void *userobj, void *sh, lws_ss_constate_t state,
 		lws_ss_request_tx_len(ap->ss, (unsigned long)ap->len);
 		break;
 
+	case LWSSSCS_TIMEOUT:
+		lwsl_info("%s: timeout\n", __func__);
+		return LWSSSSRET_DESTROY_ME;
+
 	case LWSSSCS_DISCONNECTED:
 		// lwsl_notice("%s: LWSSSCS_DISCONNECTED\n", __func__);
 		/* don't retry */
-		return -1;
+		return LWSSSSRET_DESTROY_ME;
 
 	default:
 		break;
 	}
 
-	return 0;
+	return LWSSSSRET_OK;
 }
 
 const lws_ss_info_t ssi_sai_artifact = {

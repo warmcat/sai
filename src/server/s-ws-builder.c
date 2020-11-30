@@ -243,6 +243,12 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 	uint64_t rid;
 	int n, m;
 
+	if (pss->bulk_binary_data) {
+		lwsl_info("%s: bulk %d\n", __func__, (int)bl);
+		m = bl;
+		goto handle;
+	}
+
 	/*
 	 * use the schema name on the incoming JSON to decide what kind of
 	 * structure to instantiate
@@ -253,9 +259,6 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 	 *
 	 *  - received the JSON and be handling appeneded blob data
 	 */
-
-	if (pss->bulk_binary_data)
-		goto handle;
 
 	if (!pss->frag) {
 		memset(&pss->a, 0, sizeof(pss->a));
@@ -479,6 +482,8 @@ bail:
 
 	case SAIM_WSSCH_BUILDER_ARTIFACT:
 		/*
+		 * Builder wants to send us an artifact.
+		 *
 		 * We get sent a JSON object immediately followed by binary
 		 * data for the artifact.
 		 *
@@ -486,9 +491,11 @@ bail:
 		 * artifact table.
 		 */
 
-		lwsl_debug("%s: SAIM_WSSCH_BUILDER_ARTIFACT\n", __func__);
+		lwsl_info("%s: SAIM_WSSCH_BUILDER_ARTIFACT: m = %d, bl = %d\n", __func__, m, (int)bl);
 
 		if (!pss->bulk_binary_data) {
+
+			lwsl_info("%s: BUILDER_ARTIFACT: blob start, m = %d\n", __func__, m);
 
 			ap = (sai_artifact_t *)pss->a.dest;
 
@@ -496,7 +503,7 @@ bail:
 
 			/*
 			 * Open the event-specific database object... the
-			 * handle is closed when the stream closes for whatever
+			 * handle is closed when the stream closes, for whatever
 			 * reason.
 			 */
 
@@ -619,14 +626,16 @@ bail:
 			 */
 			pss->bulk_binary_data = 1;
 			pss->artifact_length = ap->len;
-		} else
+		} else {
 			m = bl;
+			lwsl_info("%s: BUILDER_ARTIFACT: blob bulk\n", __func__);
+		}
 
 		if (m) {
-			lwsl_notice("%s: blob write +%d, ofs %llu / %llu, len %d\n",
+			lwsl_info("%s: blob write +%d, ofs %llu / %llu, len %d (0x%02x)\n",
 				    __func__, (int)(bl - m),
 				    (unsigned long long)pss->artifact_offset,
-				    (unsigned long long)pss->artifact_length, m);
+				    (unsigned long long)pss->artifact_length, m, buf[0]);
 			if (sqlite3_blob_write(pss->blob_artifact,
 					   (uint8_t *)buf + (bl - m), (int)m,
 					   pss->artifact_offset)) {
@@ -636,10 +645,29 @@ bail:
 
 			lws_set_timeout(pss->wsi, PENDING_TIMEOUT_HTTP_CONTENT, 5);
 			pss->artifact_offset += (int)m;
-		}
+		} else
+			lwsl_info("%s: no m\n", __func__);
+
+		lwsl_info("%s: ofs %d, len %d\n", __func__, (int)pss->artifact_offset, (int)pss->artifact_length);
 
 		if (pss->artifact_offset == pss->artifact_length) {
+			int state;
+
 			lwsl_notice("%s: blob upload finished\n", __func__);
+			pss->bulk_binary_data = 0;
+
+			ap = (sai_artifact_t *)pss->a.dest;
+
+			lws_sql_purify(esc, ap->task_uuid, sizeof(esc));
+			lws_snprintf(s, sizeof(s)," select state from tasks where uuid == \"%s\"", esc);
+			if (sqlite3_exec((sqlite3 *)pss->pdb_artifact, s,
+					 sql3_get_integer_cb, &state, NULL) != SQLITE_OK) {
+				lwsl_err("%s: %s: %s: fail\n", __func__, s,
+					 sqlite3_errmsg(pss->pdb_artifact));
+				goto bail;
+			}
+
+			sais_taskchange(pss->vhd->h_ss_websrv, ap->task_uuid, state);
 
 			goto afail;
 		}

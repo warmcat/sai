@@ -101,6 +101,7 @@ static const char * const default_ss_policy =
 			"\"http_url\":"		"\"\"," /* filled in by url */
 			"\"tls\":"		"true,"
 			"\"opportunistic\":"	"true,"
+			"\"ws_binary\":"	"true," /* we're sending binary */
 			"\"retry\":"		"\"default\","
 			"\"metadata\": ["
 				"{\"url\": \"\"}"

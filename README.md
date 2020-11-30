@@ -3,19 +3,25 @@
 [![CI status](https://warmcat.com/sai/status/sai)](https://warmcat.com/git/sai)
 
 `Sai` (pronouced like 'sigh', "Trial" in Japanese) is a very lightweight
-network-aware distributed CI builder and coordinating server.  You can run the
-sai-builder daemon on any number of devices to offer builds for that platform...
-builders can run on native boxes, inside systemd-nspawn contexts, inside VMs
-(eg, via qemu) for non-native arches, or on connected embedded devices which can
-be flashed and run the built results, controlled by gpio and serial.
+lws-based network-aware distributed CI builder and coordinating server.
+You can run the sai-builder daemon on any number of devices ad-hoc without
+central registration or inbound internet access, to offer builds for those
+platforms... builders can run:
 
-A self-assembling constellation of Sai Builder clients make their own
-connections to one or more Sai Servers, who then receive hook notifications,
-read JSON from the project describing what set of build variations and tests it
-should run on which platforms, and distributes work concurrently over idle
-builders that have the required environment.  A parallel Sai-web server is
-available usually on :443 or via a proxy to provide a live web / websockets
-interface with synamic updates and realtime build logs.
+ - on native boxes,
+ - inside systemd-nspawn contexts,
+ - inside VMs (eg, via qemu) for native and non-native arches, or
+ - cross-build against connected embedded devices which can be flashed and run the build
+   results, controlled by gpio and serial.
+
+A sai-server daemon runs on a server to receive wss connections from the builders,
+git update hooks POST signed JSON job matrices from configured git servers, and
+sai-server coordinates dispatching concurrent jobs to dynamically availabe remote
+builders of the correct platforms, collecting logs and results.
+
+A sai-web server daemon is also available usually on :443 or via a proxy to provide
+a live web / websockets interface with synamic updates and realtime build logs in
+the browser, with JWT-authentication for manual job control.
 
 ![sai overview](./READMEs/sai-overview.png)
 

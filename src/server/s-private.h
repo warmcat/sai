@@ -75,19 +75,6 @@ typedef struct {
 	uint8_t				nondefault;
 } sai_notification_t;
 
-typedef enum {
-	WSS_IDLE,
-	WSS_PREPARE_OVERVIEW,
-	WSS_SEND_OVERVIEW,
-	WSS_PREPARE_BUILDER_SUMMARY,
-	WSS_SEND_BUILDER_SUMMARY,
-
-	WSS_PREPARE_TASKINFO,
-	WSS_SEND_ARTIFACT_INFO,
-
-	WSS_PREPARE_EVENTINFO,
-	WSS_SEND_EVENTINFO,
-} ws_state;
 
 typedef struct sai_builder {
 	sais_t c;
@@ -103,14 +90,6 @@ struct pss {
 	struct lejp_ctx		ctx;
 	sai_notification_t	sn;
 	struct lws_dll2		same; /* owner: vhd.builders */
-
-	struct lws_dll2		subs_list;
-
-	uint64_t		sub_timestamp;
-	char			sub_task_uuid[65];
-	char			specific[65];
-	char			specific_project[96];
-	char			auth_user[33];
 
 	sqlite3			*pdb_artifact;
 	sqlite3_blob		*blob_artifact;
@@ -143,17 +122,13 @@ struct pss {
 
 	/* notification hmac information */
 	char			notification_sig[128];
-	char			alang[128];
 	struct lws_genhmac_ctx	hmac;
 	enum lws_genhmac_types	hmac_type;
 	char			our_form;
-	char			login_form;
 
 	uint64_t		first_log_timestamp;
 	uint64_t		artifact_offset;
 	uint64_t		artifact_length;
-
-	ws_state		send_state;
 
 	unsigned int		spa_failed:1;
 	unsigned int		subsequent:1; /* for individual JSON */
@@ -283,3 +258,6 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 
 void
 sais_websrv_broadcast(struct lws_ss_handle *hsrv, const char *str, size_t len);
+
+int
+sql3_get_integer_cb(void *user, int cols, char **values, char **name);
