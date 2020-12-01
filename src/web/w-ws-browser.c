@@ -302,7 +302,7 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 		m += lws_snprintf(qu + m, sizeof(qu) - m, " and repo_name='%s'", esc2);
 	}
 
-	if (pss->specific_ref[0]) {
+	if (pss->specific_ref[0] && pss->specificity != SAIM_SPECIFIC_TASK) {
 		lws_sql_purify(esc2, pss->specific_ref, sizeof(esc2));
 		if (pss->specific_ref[0] == 'r') {
 			/* check event ref against, eg, ref/heads/xxx */
@@ -320,7 +320,7 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 				       lsm_schema_sq3_map_event, &o,
 				       &sch->query_ac, 0, 1);
 	if (n < 0 || !o.head) {
-		lwsl_notice("%s: no result\n", __func__);
+		// lwsl_notice("%s: no result\n", __func__);
 		goto bail;
 	}
 

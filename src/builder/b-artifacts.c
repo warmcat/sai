@@ -77,6 +77,7 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	if (ap->fd == -1) {
 		lwsl_info("%s: completion with fd = -1\n", __func__);
 		lws_ss_start_timeout(ap->ss, 5 * LWS_US_PER_SEC);
+		return LWSSSSRET_OK;
 	}
 
 	n = read(ap->fd, buf,

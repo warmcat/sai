@@ -1028,31 +1028,40 @@ clean_spa:
 
 			pss->specific_task[0] = '\0';
 			pss->specific_ref[0] = '\0';
-			if (lws_get_urlarg_by_name(wsi, "h", pss->specific_ref + 9,
-						   sizeof(pss->specific_ref) - 9)) {
-				memcpy(pss->specific_ref, "refs/heads/", 11);
-				pss->specificity = SAIM_SPECIFIC_H;
-			} else
-				if (lws_get_urlarg_by_name(wsi, "id", (char *)buf,
-							   sizeof(buf))) {
-					lws_strncpy(pss->specific_ref, (const char *)buf + 3,
-							sizeof(pss->specific_ref));
-					pss->specificity = SAIM_SPECIFIC_ID;
-				} else {
-					if (lws_get_urlarg_by_name(wsi, "task",
-						(char *)pss->specific_task,
-						sizeof(pss->specific_task))) {
+
+			{
+				int r = 0;
+				char tbuf[96];
+				while (1) {
+					if (lws_hdr_copy_fragment(wsi, tbuf, sizeof(tbuf), WSI_TOKEN_HTTP_URI_ARGS, r++) <0)
+						break;
+					lwsl_info("%s:    '%s'\n", __func__, tbuf);
+					if (!strncmp(tbuf, "task=", 5)) {
+						lws_strncpy(pss->specific_task, tbuf + 5, sizeof(pss->specific_task));
 						pss->specificity = SAIM_SPECIFIC_TASK;
-					} else {
+					}
+					if (!strncmp(tbuf, "h=", 2)) {
+						memcpy(pss->specific_ref, "refs/heads/", 11);
+						lws_strncpy(pss->specific_ref + 11, tbuf + 2,  sizeof(pss->specific_ref) - 11);
 						pss->specificity = SAIM_SPECIFIC_H;
-						lws_strncpy(pss->specific_ref,
-							"refs/heads/master",
-							sizeof(pss->specific_ref));
+					}
+					if (!strncmp(tbuf, "id=", 3)) {
+						memcpy(pss->specific_ref, "refs/heads/", 11);
+						lws_strncpy(pss->specific_ref + 11, tbuf + 3,  sizeof(pss->specific_ref) - 11);
+						pss->specificity = SAIM_SPECIFIC_ID;
 					}
 				}
+			}
 
-				//lwsl_notice("%s: spec %d, '%s'\n", __func__,
-				//	pss->specificity, pss->specific_ref);
+			if (!pss->specificity) {
+				pss->specificity = SAIM_SPECIFIC_H;
+					lws_strncpy(pss->specific_ref,
+						"refs/heads/master",
+						sizeof(pss->specific_ref));
+			}
+
+			lwsl_info("%s: spec %d, ref '%s', task '%s' \n", __func__,
+					pss->specificity, pss->specific_ref, pss->specific_task);
 			break;
 		}
 

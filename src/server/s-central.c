@@ -54,7 +54,7 @@ sais_central_clean_abandoned(struct vhd *vhd)
 
 		if (!sc->refcount &&
 		    (now - sc->idle_since) > (60 * LWS_USEC_PER_SEC)) {
-			lwsl_notice("%s: delayed db pool clean %s\n", __func__,
+			lwsl_info("%s: delayed db pool clean %s\n", __func__,
 					sc->uuid);
 			lws_struct_sq3_close(&sc->pdb);
 			lws_dll2_remove(&sc->list);
