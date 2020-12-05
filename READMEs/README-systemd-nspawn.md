@@ -327,6 +327,14 @@ Container # make -j && make -j install && ldconfig
 
 For OSX, you'll need to add something like `-DLWS_OPENSSL_INCLUDE_DIRS=/usr/local/opt/openssl@1.1/include -DLWS_OPENSSL_LIBRARIES="/usr/local/opt/openssl/lib/libssl.dylib;/usr/local/opt/openssl/lib/libcrypto.dylib"` to the cmake line
 
+For newer M1 based OSX
+
+```
+cmake .. -DLWS_OPENSSL_INCLUDE_DIRS=/opt/homebrew/Cellar/openssl@1.1/1.1.1h/include '-DLWS_OPENSSL_LIBRARIES=/opt/homebrew/Cellar/openssl@1.1/1.1.1h/lib/libssl.dylib;/opt/homebrew/Cellar/openssl@1.1/1.1.1h/lib/libcrypto.dylib' -DLWS_WITH_MINIMAL_EXAMPLES=0 -DLWS_WITH_JOSE=1 -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 \
+    -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1 \
+   -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1 -DLWS_WITH_JOSE=1
+```
+
 ### Windows: build libgit2
 
 For Windows, after following the way to build lws in
@@ -388,7 +396,15 @@ Also in the Administrator window, copy and edit the sai-builder config
 
 For OSX, you'll need to adapt the cmake to something like
 
+```
 cmake .. -DLWS_OPENSSL_INCLUDE_DIRS=/usr/local/opt/openssl@1.1/include -DLWS_OPENSSL_LIBRARIES="/usr/local/opt/openssl/lib/libssl.dylib;/usr/local/opt/openssl/lib/libcrypto.dylib"
+```
+
+On the newer M1 OSX, honebrew has to be teleported in /opt, the following worked
+
+```
+cmake .. -DSAI_SERVER=0 -DSAI_GIT2_INC_PATH=/opt/homebrew/Cellar/libgit2/1.1.0/include -DSAI_GIT2_LIB_PATH=/opt/homebrew/Cellar/libgit2/1.1.0/lib/libgit2.dylib -DLWS_OPENSSL_INCLUDE_DIRS=/opt/homebrew/Cellar/openssl@1.1/1.1.1h/include '-DLWS_OPENSSL_LIBRARIES=/opt/homebrew/Cellar/openssl@1.1/1.1.1h/lib/libssl.dylib;/opt/homebrew/Cellar/openssl@1.1/1.1.1h/lib/libcrypto.dylib'
+```
 
 Make sai-builder run as a daemon, create the file `/Library/LaunchDaemons/com.warmcat.sai-builder.plist`
 

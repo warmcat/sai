@@ -210,7 +210,7 @@ static const char * const runscript =
 static const char * const runscript =
 	"#!/bin/bash -x\n"
 #if defined(__APPLE__)
-	"export PATH=/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
+	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
 #endif
 	"export SAI_OVN=%s\n"
 	"export SAI_PROJECT=%s\n"
