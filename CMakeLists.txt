@@ -5,7 +5,11 @@ list(APPEND CMAKE_MODULE_PATH ${LWS_CMAKE_DIR})
 include(CheckCSourceCompiles)
 include(LwsCheckRequirements)
 
-set(CMAKE_SKIP_RPATH 1)
+if (CMAKE_HOST_SYSTEM_NAME MATCHES "NetBSD")
+ set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+else()
+ set(CMAKE_SKIP_RPATH 1)
+endif()
 
 find_package(Git)
 if(GIT_EXECUTABLE)

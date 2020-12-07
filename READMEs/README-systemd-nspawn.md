@@ -109,6 +109,7 @@ root@myhost:~# useradd -u883 -gnogroup sai -d/home/sai -m -r
 ```
 
 For redhat type systems, use `-gnobody` instead
+For BSDs, `useradd -u883 -g32766 -d/home/sai -m sai`
 
 ### Specific to Debian Buster / Sid
 

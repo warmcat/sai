@@ -322,6 +322,14 @@ int main(int argc, const char **argv)
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
 
+#if defined(__NetBSD__)
+	if (lws_cmdline_option(argc, argv, "-D")) {
+		if (lws_daemonize("/var/run/sai_builder.pid"))
+			return 1;
+		lws_set_log_level(logs, lwsl_emit_syslog);
+	} else
+#endif
+
 	lws_set_log_level(logs, NULL);
 
 #if defined(WIN32)

@@ -11,10 +11,15 @@
                 "linux-fedora-32/x86_64-amd/gcc": {
                         "build": "mkdir build destdir;cd build;export CCACHE_DISABLE=1;cmake .. ${cmake};make -j;cpack -G RPM"
                 },
-		"netbsd-OSX-catalina/x86_64-intel-i3/llvm": {
+		"netbsd-OSX-bigsur/x86_64-intel-i3/llvm": {
                         "build": "mkdir build destdir; cd build; export SAI_CPACK=\"-G ZIP\";export MACOSX_DEPLOYMENT_TARGET=10.14 ; cmake .. -DCMAKE_MAKE_PROGRAM=/usr/bin/make -DLWS_OPENSSL_INCLUDE_DIRS=/usr/local/opt/openssl@1.1/include -DLWS_OPENSSL_LIBRARIES=\"/usr/local/opt/openssl/lib/libssl.dylib;/usr/local/opt/openssl/lib/libcrypto.dylib\" ${cmake} && make -j && make -j DESTDIR=../destdir install && ctest -j4 --output-on-failure ${cpack}",
 			"default": false
                 },
+                "netbsd/aarch64BE-bcm2837-a53/gcc": {
+                        "build": "mkdir build destdir;cd build;export CCACHE_DISABLE=1;cmake .. ${cmake};make -j4",
+			"default": false
+                },
+
 		"windows-10/x86_64-amd/msvc": {
                         "build": "mkdir build && cd build && set SAI_CPACK=\"-G ZIP\" && cmake .. -DSAI_LWS_INC_PATH=\"C:\\Program Files (x86)\\libwebsockets\\include\" -DSAI_LWS_LIB_PATH=\"C:\\Program Files (x86)\\libwebsockets\\lib\\websockets_static.lib\" -DSAI_EXT_PTHREAD_INCLUDE_DIR=\"C:\\Program Files (x86)\\pthreads\\include\" -DSAI_EXT_PTHREAD_LIBRARIES=\"C:\\Program Files (x86)\\pthreads\\lib\\x64\\libpthreadGC2.a\" -DLWS_OPENSSL_INCLUDE_DIRS=\"C:\\Program Files\\OpenSSL\\include\" -DSAI_GIT2_INC_PATH=\"C:\\Program Files (x86)\\libgit2\\include\" -DSAI_GIT2_LIB_PATH=\"C:\\Program Files (x86)\\libgit2\\lib\\git2.lib\" -DLWS_OPENSSL_LIBRARIES=\"C:\\Program Files\\OpenSSL\\lib\\libcrypto.lib;C:\\Program Files\\OpenSSL\\lib\\libssl.lib\"  ${cmake} && cmake --build . --config DEBUG && set CTEST_OUTPUT_ON_FAILURE=1 && ctest . -C DEBUG -j4 --output-on-failure ${cpack}",
                         "default": false
@@ -29,7 +34,7 @@
 		},
 		"builder-only": {
 			"cmake":	"-DSAI_SERVER=0 ",
-			"platforms":	"windows-10/x86_64-amd/msvc, netbsd-OSX-catalina/x86_64-intel-i3/llvm",
+			"platforms":	"windows-10/x86_64-amd/msvc, netbsd-OSX-bigsur/x86_64-intel-i3/llvm,netbsd/aarch64BE-bcm2837-a53/gcc",
 			"cpack":        "&& cpack -C DEBUG $SAI_CPACK",
 			"artifacts":	"build/sai-*.deb, build/sai-*.rpm, build/sai-*.7z"
 		}
