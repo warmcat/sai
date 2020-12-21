@@ -475,11 +475,11 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		}
 
 		n = open(cp, LWS_O_RDONLY);
-		if (!n) {
+		if (n < 0) {
 			lwsl_err("%s: can't open auth JWK %s\n", __func__, cp);
 			return -1;
 		}
-		r = read(n, buf, sizeof(buf));
+		r = (int)read(n, buf, sizeof(buf));
 		close(n);
 		if (r < 0) {
 			lwsl_err("%s: can't read auth JWK %s\n", __func__, cp);
@@ -487,7 +487,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		}
 
 		if (lws_jwk_import(&vhd->jwt_jwk_auth, NULL, NULL,
-				   (const char *)buf, r)) {
+				   (const char *)buf, (unsigned int)r)) {
 			lwsl_notice("%s: Failed to parse JWK key\n", __func__);
 			return -1;
 		}
@@ -661,12 +661,12 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return 0;
 		}
 
-		resp = HTTP_STATUS_OK;
+//		resp = HTTP_STATUS_OK;
 
-		/* faillthru */
+//		/* faillthru */
 
 http_resp:
-		if (lws_add_http_header_status(wsi, resp, &p, end))
+		if (lws_add_http_header_status(wsi, (unsigned int)resp, &p, end))
 			goto bail;
 		if (lws_add_http_header_content_length(wsi, 0, &p, end))
 			goto bail;
@@ -687,14 +687,14 @@ http_resp:
 			n = (int)(pss->artifact_length - pss->artifact_offset);
 
 		if (sqlite3_blob_read(pss->blob_artifact, start, n,
-				      pss->artifact_offset)) {
+				      (int)pss->artifact_offset)) {
 			lwsl_err("%s: blob read failed\n", __func__);
 			return -1;
 		}
 
-		pss->artifact_offset += n;
+		pss->artifact_offset = pss->artifact_offset + (unsigned int)n;
 
-		if (lws_write(wsi, start, n,
+		if (lws_write(wsi, start, (unsigned int)n,
 				pss->artifact_offset != pss->artifact_length ?
 					LWS_WRITE_HTTP : LWS_WRITE_HTTP_FINAL) != n)
 			return -1;
@@ -868,7 +868,7 @@ back:
 			if (lws_add_http_header_by_token(wsi,
 						WSI_TOKEN_HTTP_LOCATION,
 						(unsigned char *)sr,
-						strlen((const char *)sr),
+						(int)strlen((const char *)sr),
 						&p, end)) {
 				goto clean_spa;
 			}

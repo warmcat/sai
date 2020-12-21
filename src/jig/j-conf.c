@@ -104,7 +104,7 @@ saij_config_global(const char *d)
 	lws_struct_json_init_parse(&ctx, NULL, &a);
 
 	do {
-		n = read(fd, buf, sizeof(buf));
+		n = (int)read(fd, buf, sizeof(buf));
 		if (!n)
 			break;
 
@@ -118,7 +118,7 @@ saij_config_global(const char *d)
 	}
 
 	close(fd);
-	n = ctx.line;
+	n = (int)ctx.line;
 	lejp_destruct(&ctx);
 
 	jig = a.dest;
@@ -152,7 +152,7 @@ saij_config_global(const char *d)
 					goto bail1;
 				}
 				jig->chip[g->chip_idx] =
-					gpiod_chip_open_by_number(g->chip_idx);
+					gpiod_chip_open_by_number((unsigned int)g->chip_idx);
 				if (!jig->chip[g->chip_idx]) {
 					lwsl_err("%s: unable to open chip %d\n",
 						 __func__, g->chip_idx);
@@ -161,7 +161,7 @@ saij_config_global(const char *d)
 			}
 
 			g->line = gpiod_chip_get_line(jig->chip[g->chip_idx],
-							g->offset);
+							(unsigned int)g->offset);
 			if (!g->line) {
 				lwsl_err("%s: unable to get gpio line %d\n",
 						__func__, g->offset);

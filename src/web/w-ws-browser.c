@@ -299,7 +299,7 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	m = lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
 	if (pss->specific_project[0]) {
 		lws_sql_purify(esc2, pss->specific_project, sizeof(esc2));
-		m += lws_snprintf(qu + m, sizeof(qu) - m, " and repo_name='%s'", esc2);
+		m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and repo_name='%s'", esc2);
 	}
 
 	if (pss->specific_ref[0] && pss->specificity != SAIM_SPECIFIC_TASK) {
@@ -307,13 +307,13 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 		if (pss->specific_ref[0] == 'r') {
 			/* check event ref against, eg, ref/heads/xxx */
 			if (!strcmp(pss->specific_ref, "refs/heads/master"))
-				m += lws_snprintf(qu + m, sizeof(qu) - m,
+				m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m,
 					" and (ref='refs/heads/master' or ref='refs/heads/main')");
 			else
-				m += lws_snprintf(qu + m, sizeof(qu) - m, " and ref='%s'", esc2);
+				m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and ref='%s'", esc2);
 		} else
 			/* check event hash against, eg, 12341234abcd... */
-			m += lws_snprintf(qu + m, sizeof(qu) - m, " and hash='%s'", esc2);
+			m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and hash='%s'", esc2);
 	}
 
 	n = lws_struct_sq3_deserialize(pss->vhd->pdb, qu, NULL,
@@ -324,7 +324,7 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 		goto bail;
 	}
 
-	sch->logsub = logsub;
+	sch->logsub = !!logsub;
 	sch->one_event = lws_container_of(o.head, sai_event_t, list);
 
 	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
@@ -404,7 +404,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	a.ac_block_size = 128;
 
 	lws_struct_json_init_parse(&pss->ctx, NULL, &a);
-	m = lejp_parse(&pss->ctx, (uint8_t *)buf, bl);
+	m = lejp_parse(&pss->ctx, (uint8_t *)buf, (int)bl);
 	if (m < 0 || !a.dest) {
 		lwsl_hexdump_notice(buf, bl);
 		lwsl_notice("%s: browser->web JSON decode failed '%s'\n",
@@ -652,7 +652,7 @@ again:
 				}
 
 				pss->log_cache_index = 0;
-				pss->log_cache_size = pss->logs_owner.count;
+				pss->log_cache_size = (int)pss->logs_owner.count;
 			}
 
 			if (pss->log_cache_index < pss->log_cache_size) {
@@ -675,7 +675,7 @@ again:
 					return 0;
 				}
 
-				n = lws_struct_json_serialize(js, p, end - p, &w);
+				n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 				lws_struct_json_serialize_destroy(&js);
 				if (n == LSJS_RESULT_ERROR) {
 					lwsl_notice("%s: json ser error\n", __func__);
@@ -710,6 +710,9 @@ again:
 
 	case WSS_PREPARE_OVERVIEW:
 
+		if (!sch) /* coverity */
+			goto no_sch;
+
 		filt[0] = '\0';
 		if (pss->specific_project[0]) {
 			lws_sql_purify(esc, pss->specific_project, sizeof(esc) - 1);
@@ -736,7 +739,7 @@ again:
 		lwsl_debug("%s: WSS_PREPARE_OVERVIEW: %d results %p\n",
 			    __func__, sch->owner.count, sch->ac);
 
-		p += lws_snprintf((char *)p, end - p,
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
 			"{\"schema\":\"sai.warmcat.com.overview\","
 			" \"alang\":\"%s\","
 			" \"authorized\": %d,"
@@ -770,6 +773,9 @@ again:
 		/* fallthru */
 
 	case WSS_SEND_OVERVIEW:
+
+		if (!sch) /* coverity */
+			goto no_sch;
 
 		if (sch->ovstate == SOS_TASKS)
 			goto enum_tasks;
@@ -813,9 +819,9 @@ again:
 				*p++ = ',';
 			sch->subsequent = 1;
 
-			p += lws_snprintf((char *)p, end - p, "{\"e\":");
+			p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "{\"e\":");
 
-			n = lws_struct_json_serialize(js, p, end - p, &w);
+			n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 			lws_struct_json_serialize_destroy(&js);
 			switch (n) {
 			case LSJS_RESULT_ERROR:
@@ -829,7 +835,7 @@ again:
 				p += w;
 				sch->ovstate = SOS_TASKS;
 				sch->task_index = 0;
-				p += lws_snprintf((char *)p, end - p, ", \"t\":[");
+				p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), ", \"t\":[");
 				goto enum_tasks;
 			}
 		}
@@ -848,6 +854,7 @@ enum_tasks:
 		 */
 
 		e = lws_container_of(sch->walk, sai_event_t, list);
+		lws_dll2_owner_clear(&task_owner);
 
 		do {
 			task_ac = NULL;
@@ -899,7 +906,7 @@ enum_tasks:
 				lsm_schema_json_map_task,
 				LWS_ARRAY_SIZE(lsm_schema_json_map_task), 0, t);
 
-			n = lws_struct_json_serialize(js, p, end - p, &w);
+			n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 			lws_struct_json_serialize_destroy(&js);
 			lwsac_free(&task_ac);
 			p += w;
@@ -913,7 +920,7 @@ enum_tasks:
 
 		/* none left to do, go back up a level */
 
-		p += lws_snprintf((char *)p, end - p, "]}");
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
 
 		sch->ovstate = SOS_EVENT;
 		if (pss->specificity)
@@ -928,13 +935,17 @@ enum_tasks:
 		break;
 
 so_finish:
-		p += lws_snprintf((char *)p, end - p, "]}");
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
 		pss->send_state = WSS_IDLE;
 		endo = 1;
 		break;
 
 	case WSS_PREPARE_BUILDER_SUMMARY:
-		p += lws_snprintf((char *)p, end - p,
+
+		if (!sch) /* coverity */
+			goto no_sch;
+
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
 			"{\"schema\":\"com.warmcat.sai.builders\","
 			" \"alang\":\"%s\","
 			" \"authorized\":%d,"
@@ -956,6 +967,10 @@ so_finish:
 		/* fallthru */
 
 	case WSS_SEND_BUILDER_SUMMARY:
+
+		if (!sch) /* coverity */
+			goto no_sch;
+
 		if (!sch->walk)
 			goto b_finish;
 
@@ -983,7 +998,7 @@ so_finish:
 				*p++ = ',';
 			sch->subsequent = 1;
 
-			switch (lws_struct_json_serialize(js, p, end - p, &w)) {
+			switch (lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w)) {
 			case LSJS_RESULT_ERROR:
 				lws_struct_json_serialize_destroy(&js);
 				pss->send_state = WSS_IDLE;
@@ -1008,13 +1023,17 @@ so_finish:
 		}
 		break;
 b_finish:
-		p += lws_snprintf((char *)p, end - p, "]}");
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
 		lwsac_unreference(&vhd->builders);
 		endo = 1;
 		break;
 
 
 	case WSS_PREPARE_TASKINFO:
+
+		if (!sch) /* coverity */
+			goto no_sch;
+
 		/*
 		 * We're sending a browser the specific task info that he
 		 * asked for.
@@ -1027,7 +1046,7 @@ b_finish:
 
 		task_reply.event = sch->one_event;
 		task_reply.task = sch->one_task;
-		task_reply.auth_secs = pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0;
+		task_reply.auth_secs = (int)(pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0);
 		task_reply.authorized = pss->authorized;
 		lws_strncpy(task_reply.auth_user, pss->auth_user,
 			    sizeof(task_reply.auth_user));
@@ -1040,7 +1059,7 @@ b_finish:
 			return 1;
 		}
 
-		n = lws_struct_json_serialize(js, p, end - p, &w);
+		n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 		lws_struct_json_serialize_destroy(&js);
 
 		/*
@@ -1096,6 +1115,10 @@ b_finish:
 		break;
 
 	case WSS_SEND_ARTIFACT_INFO:
+
+		if (!sch) /* coverity */
+			goto no_sch;
+
 		if (sch->owner.head) {
 			sai_artifact_t *aft = (sai_artifact_t *)sch->owner.head;
 
@@ -1114,7 +1137,7 @@ b_finish:
 				return 1;
 			}
 
-			n = lws_struct_json_serialize(js, p, end - p, &w);
+			n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 			lws_struct_json_serialize_destroy(&js);
 			if (n == LSJS_RESULT_ERROR) {
 				lwsl_notice("%s: taskinfo: ---------- error generating json\n", __func__);
@@ -1135,6 +1158,10 @@ b_finish:
 	}
 
 send_it:
+
+	if (!sch) /* coverity */
+		goto no_sch;
+
 	flags = lws_write_ws_flags(LWS_WRITE_TEXT, first, endo || lg || !sch->walk);
 
 	if (lg || endo ||
@@ -1157,10 +1184,15 @@ send_it:
 		saiw_dealloc_sched(sch);
 	}
 
-	if (lws_write(pss->wsi, start, p - start, flags) < 0)
+	if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start), flags) < 0)
 		return -1;
 
 	lws_callback_on_writable(pss->wsi);
+
+	return 0;
+
+no_sch:
+	pss->send_state = WSS_IDLE;
 
 	return 0;
 }

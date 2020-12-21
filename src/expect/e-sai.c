@@ -97,7 +97,7 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 				goto bail;
 
 		n = lws_snprintf(log, sizeof(log), "sai-expect: starting\n");
-		saicom_lp_add(ssh[0], log, n);
+		saicom_lp_add(ssh[0], log, (unsigned int)n);
 		break;
 	}
 

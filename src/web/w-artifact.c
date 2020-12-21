@@ -127,7 +127,7 @@ saiw_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,
 	 * Get a read-only handle on the blob
 	 */
 
-	if (sqlite3_blob_open(*pdb, "main", "artifacts", "blob", rid, 0, blob) != SQLITE_OK) {
+	if (sqlite3_blob_open(*pdb, "main", "artifacts", "blob", (sqlite3_int64)rid, 0, blob) != SQLITE_OK) {
 		lwsl_err("%s: unable to open blob, rid %d\n", __func__, (int)rid);
 		goto fail;
 	}

@@ -62,12 +62,12 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 	char log[100];
 	int n;
 
-	ns->state = state;
+	ns->state = (uint8_t)state;
 	ns->state_changed = 1;
 
 	n = lws_snprintf(log, sizeof(log), ">saib> %s\n", nsstates[state]);
 
-	saib_log_chunk_create(ns, log, n, 3);
+	saib_log_chunk_create(ns, log, (unsigned int)n, 3);
 
 	if (state == NSSTATE_FAILED) {
 		ns->retcode = SAISPRF_EXIT | 254;
@@ -93,13 +93,13 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 	if (!spm)
 		return -1;
 
+	if (!spm->ss)
+		return 0;
+
 	rej = malloc(sizeof(*rej));
 
 	if (!rej)
 		return -1;
-
-	if (!spm->ss)
-		return 0;
 
 	memset(rej, 0, sizeof(*rej));
 
@@ -252,7 +252,7 @@ artifact_glob_cb(void *data, const char *path)
 	lws_strncpy(ap->artifact_up_nonce, ns->task->art_up_nonce,
 		    sizeof(ap->artifact_up_nonce));
 	lws_strncpy(ap->blob_filename, ph, sizeof(ap->blob_filename));
-	ap->timestamp = lws_now_usecs();
+	ap->timestamp = (uint64_t)lws_now_usecs();
 
 	lwsl_notice("%s: artifact ss created '%s'\n", __func__, ap->path);
 
@@ -316,7 +316,7 @@ saib_task_grace(struct sai_nspawn *ns)
 
 	m = 0;
 	filt[0] = '\0';
-	while ((ts.e = lws_tokenize(&ts)) >= 0) {
+	while ((ts.e = (int8_t)lws_tokenize(&ts)) >= 0) {
 		switch (ts.e) {
 		case LWS_TOKZE_ENDED:
 			if (filt[0])
@@ -330,7 +330,7 @@ saib_task_grace(struct sai_nspawn *ns)
 			break;
 		case LWS_TOKZE_TOKEN:
 			lws_strnncpy(&filt[m], ts.token, ts.token_len,
-				     sizeof(filt) - 1 - m);
+				     sizeof(filt) - 1u - (unsigned int)m);
 			m = (int)strlen(filt);
 			break;
 		}
@@ -352,7 +352,7 @@ scan:
 				if (lws_ptr_diff(p, p1) + 2 <
 					  (int)sizeof(scandir) - m) {
 					memcpy(scandir + m, p1,
-					   lws_ptr_diff(p, p1));
+					   lws_ptr_diff_size_t(p, p1));
 					m += lws_ptr_diff(p, p1);
 					scandir[m] = '\0';
 				} else
@@ -562,7 +562,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			ml = lws_snprintf(mb, sizeof(mb),
 					  ">saib> Sai Builder Version: %s, lws: %s\n",
 					  BUILD_INFO, LWS_BUILD_HASH);
-			saib_log_chunk_create(ns, mb, ml, 3);
+			saib_log_chunk_create(ns, mb, (unsigned int)ml, 3);
 		}
 		saib_set_ns_state(ns, NSSTATE_INIT);
 
@@ -587,19 +587,19 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		n = lws_snprintf(ns->inp, sizeof(ns->inp), "%s%c",
 				 builder.home, csep);
 
-		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - n, "jobs%c",
+		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "jobs%c",
 				csep);
 		lws_filename_purify_inplace(ns->inp);
 		if (mkdir(ns->inp, 0755) && errno != EEXIST)
 			goto ebail;
 
-		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - n, "%s%c",
+		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
 				  ns->fsm.ovname, csep);
 		lws_filename_purify_inplace(ns->inp);
 		if (mkdir(ns->inp, 0755) && errno != EEXIST)
 			goto ebail;
 
-		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - n, "%s%c",
+		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
 				  ns->project_name, csep);
 		lws_filename_purify_inplace(ns->inp);
 		if (mkdir(ns->inp, 0755) && errno != EEXIST)
@@ -609,7 +609,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		 * Create a pending upload dir to mv artifacts into while
 		 * we get on with the next job.
 		 */
-		lws_snprintf(ns->inp + n, sizeof(ns->inp) - n, "../.sai-uploads");
+		lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "../.sai-uploads");
 		if (mkdir(ns->inp, 0755) && errno != EEXIST)
 			goto ebail;
 		/*
@@ -645,7 +645,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 				q++;
 			}
 		}
-		m += lws_snprintf(ns->path + m, sizeof(ns->path) - m, "%c%s",
+		m += lws_snprintf(ns->path + m, sizeof(ns->path) - (unsigned int)m, "%c%s",
 				  csep, url);
 		if (mkdir(ns->path, 0755) && errno != EEXIST) {
 			lwsl_err("%s: unable to create %s\n", __func__,

@@ -373,7 +373,7 @@ Container # systemctl enable sai-builder
 ```
 $ git clone https://warmcat.com/repo/sai
 $ cd sai && mkdir build && cd build
-$ cmake .. -DSAI_MASTER=0 -DSAI_LWS_INC_PATH="C:/Program Files (x86)/libwebsockets/include" -DSAI_LWS_LIB_PATH="C:/Program Files (x86)/libwebsockets/lib/websockets.lib"  -DSAI_EXT_PTHREAD_INCLUDE_DIR="C:\Program Files (x86)\pthreads\include" -DSAI_EXT_PTHREAD_LIBRARIES="C:\Program Files (x86)\pthreads\lib\x64\libpthreadGC2.a" -DLWS_OPENSSL_INCLUDE_DIRS="C:\Program Files\OpenSSL\include" -DLWS_OPENSSL_LIBRARIES="C:\Program Files\OpenSSL\lib\libssl.lib;C:\Program Files\OpenSSL\lib\libcrypto.lib" -DSAI_GIT2_LIB_PATH="C:\Program Files (x86)\libgit2\lib\git2.lib" -DSAI_GIT2_INC_PATH="C:\Program Files (x86)\libgit2\include"
+$ cmake .. -DSAI_SERVER=0 -DSAI_LWS_INC_PATH="C:/Program Files (x86)/libwebsockets/include" -DSAI_LWS_LIB_PATH="C:/Program Files (x86)/libwebsockets/lib/websockets.lib"  -DSAI_EXT_PTHREAD_INCLUDE_DIR="C:\Program Files (x86)\pthreads\include" -DSAI_EXT_PTHREAD_LIBRARIES="C:\Program Files (x86)\pthreads\lib\x64\libpthreadGC2.a" -DLWS_OPENSSL_INCLUDE_DIRS="C:\Program Files\OpenSSL\include" -DLWS_OPENSSL_LIBRARIES="C:\Program Files\OpenSSL\lib\libssl.lib;C:\Program Files\OpenSSL\lib\libcrypto.lib" -DSAI_GIT2_LIB_PATH="C:\Program Files (x86)\libgit2\lib\git2.lib" -DSAI_GIT2_INC_PATH="C:\Program Files (x86)\libgit2\include"
 $ cmake --build . --config DEBUG
 ```
 

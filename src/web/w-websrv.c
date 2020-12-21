@@ -85,7 +85,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lws_struct_json_init_parse(&m->ctx, NULL, &m->a);
 	}
 
-	n = lejp_parse(&m->ctx, (uint8_t *)buf, len);
+	n = lejp_parse(&m->ctx, (uint8_t *)buf, (int)len);
 	if (n < LEJP_CONTINUE || (n >= 0 && !m->a.dest)) {
 		lwsac_free(&m->a.ac);
 		lwsl_hexdump_notice(buf, len);

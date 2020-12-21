@@ -149,8 +149,9 @@ sais_list_builders(struct vhd *vhd)
 	size_t w;
 	int n;
 
-	p += lws_snprintf((char *)p, end - p, "{\"schema\":\"sai-builders\","
-					       "\"platforms\":[");
+	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+					"{\"schema\":\"sai-builders\","
+					"\"platforms\":[");
 
 	while (end - p > 512 && walk) {
 
@@ -167,7 +168,7 @@ sais_list_builders(struct vhd *vhd)
 		subsequent = 1;
 
 		n = lws_struct_json_serialize(js, (unsigned char *)p,
-					      lws_ptr_diff(end, p), &w);
+					      lws_ptr_diff_size_t(end, p), &w);
 		p += w;
 		lws_struct_json_serialize_destroy(&js);
 
@@ -176,11 +177,11 @@ sais_list_builders(struct vhd *vhd)
 
 		walk = walk->next;
 		if (!walk) {
-			p += lws_snprintf((char *)p, end - p, "]}");
+			p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
 
 			sais_websrv_broadcast(vhd->h_ss_websrv,
 					      vhd->json_builders,
-					      lws_ptr_diff(p, vhd->json_builders));
+					      lws_ptr_diff_size_t(p, vhd->json_builders));
 
 			return 0;
 		}
@@ -206,7 +207,7 @@ _sais_taskchange(struct lws_ss_handle *h, void *_arg)
 					  "\"event_hash\":\"%s\", \"state\":%d}",
 					  arg->uid, arg->state);
 
-	if (lws_buflist_append_segment(&m->bltx, (uint8_t *)tc, n) >= 0)
+	if (lws_buflist_append_segment(&m->bltx, (uint8_t *)tc, (unsigned int)n) >= 0)
 		lws_ss_request_tx(h);
 	else
 		lwsl_warn("%s: buflist append failed\n", __func__);
@@ -232,7 +233,7 @@ _sais_eventchange(struct lws_ss_handle *h, void *_arg)
 					 "\"event_hash\":\"%s\", \"state\":%d}",
 					 arg->uid, arg->state);
 
-	if (lws_buflist_append_segment(&m->bltx, (uint8_t *)tc, n) >= 0)
+	if (lws_buflist_append_segment(&m->bltx, (uint8_t *)tc, (unsigned int)n) >= 0)
 		lws_ss_request_tx(h);
 	else
 		lwsl_warn("%s: buflist append failed\n", __func__);
@@ -268,7 +269,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	a.ac_block_size = 128;
 
 	lws_struct_json_init_parse(&m->ctx, NULL, &a);
-	n = lejp_parse(&m->ctx, (uint8_t *)buf, len);
+	n = lejp_parse(&m->ctx, (uint8_t *)buf, (int)len);
 	if (n < 0 || !a.dest) {
 		lwsl_hexdump_notice(buf, len);
 		lwsl_notice("%s: notification JSON decode failed '%s'\n",
@@ -319,6 +320,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 			sqlite3_exec(pdb, "BEGIN TRANSACTION",
 				     NULL, NULL, &err);
+			sqlite3_free(err);
 
 			/*
 			 * Walk the results list resetting all the tasks
@@ -334,6 +336,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 			sqlite3_exec(pdb, "END TRANSACTION",
 				     NULL, NULL, &err);
+			sqlite3_free(err);
 		}
 
 		sais_event_db_close(m->vhd, &pdb);

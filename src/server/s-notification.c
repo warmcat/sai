@@ -169,7 +169,7 @@ sai_tuple_element_compare(const char *e1, const char *e2)
 }
 
 static int
-sai_tuple_compare(const char *req, int req_len, const char *plat)
+sai_tuple_compare(const char *req, size_t req_len, const char *plat)
 {
 	const char *pos = req;
 	char e1[96];
@@ -330,7 +330,8 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 					if (!strncmp(ts.token, "none",
 						     ts.token_len)) {
-						not = match = 0;
+						not = 0;
+						match = 0;
 						continue;
 					}
 					if (!strncmp(ts.token, "not",
@@ -446,7 +447,8 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 					if (!strncmp(ts.token, "none",
 						     ts.token_len)) {
-						not = match = 0;
+						not = 0;
+						match = 0;
 						continue;
 					}
 					if (!strncmp(ts.token, "not",
@@ -535,7 +537,7 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 				lws_struct_sq3_serialize(pdb,
 							 lsm_schema_sq3_map_task,
-							 &owner, pss->sn.t.uid);
+							 &owner, (uint32_t)pss->sn.t.uid);
 			}
 
 		} lws_end_foreach_dll(p);
@@ -748,7 +750,7 @@ sai_notification_lejp_cb(struct lejp_ctx *ctx, char reason)
 		break;
 
 	case LEJPN_SAIFILE_LEN:
-		sn->saifile_in_len = atoi(ctx->buf);
+		sn->saifile_in_len = (unsigned int)atoi(ctx->buf);
 		/* only accept sane base64 size */
 		if (sn->saifile_in_len < 8 || sn->saifile_in_len > 65536) {
 			lwsl_err("%s: bad saifile_len %u\n", __func__,
@@ -832,7 +834,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 	case LWS_UFS_FINAL_CONTENT:
 	case LWS_UFS_CONTENT:
 		lwsl_notice("%s: LWS_UFS_[]CONTENT: %p %p, \n", __func__, pss, buf);
-		if (len && lws_genhmac_update(&pss->hmac, buf, len))
+		if (len && lws_genhmac_update(&pss->hmac, buf, (unsigned int)len))
 			return -1;
 
 		printf("%.*s", (int)len, buf);
@@ -917,7 +919,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		lejp_construct(&saictx, sai_saifile_lejp_cb, pss, saifile_paths,
 			       LWS_ARRAY_SIZE(saifile_paths));
 		m = lejp_parse(&saictx, (uint8_t *)pss->sn.saifile,
-			       pss->sn.saifile_out_pos);
+			       (int)pss->sn.saifile_out_pos);
 		sais_event_db_close(pss->vhd, (sqlite3 **)&pss->sn.e.pdb);
 		if (m < 0) {
 			lwsl_notice("%s: saifile JSON decode failed '%s' (%d)\n",
@@ -951,7 +953,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		lejp_construct(&saictx, sai_saifile_lejp_cb, pss, saifile_paths,
 			       LWS_ARRAY_SIZE(saifile_paths));
 		m = lejp_parse(&saictx, (uint8_t *)pss->sn.saifile,
-			       pss->sn.saifile_out_pos);
+			       (int)pss->sn.saifile_out_pos);
 		free(pss->sn.saifile);
 		pss->sn.saifile = NULL;
 		if (m < 0) {

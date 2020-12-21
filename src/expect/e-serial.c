@@ -83,8 +83,8 @@ sai_serial_try_open(struct lws_vhost *vh, const char *devpath, int _rate, int i)
 		return NULL;
 	}
 
-	cfsetospeed(&tio, rate);
-	cfsetispeed(&tio, rate);
+	cfsetospeed(&tio, (speed_t)rate);
+	cfsetispeed(&tio, (speed_t)rate);
 
 	tcsetattr(fd, TCSANOW, &tio);
 	tcflush(fd, TCIOFLUSH);
@@ -114,7 +114,7 @@ finished_cb(void *opaque)
 static void
 spill(struct pss *pss)
 {
-	saicom_lp_add(ssh[pss->i + 1], pss->collation, pss->pos);
+	saicom_lp_add(ssh[pss->i + 1], pss->collation, (unsigned int)pss->pos);
 	pss->pos = 0;
 	pss->earliest = 0;
 	lws_sul_cancel(&pss->sul);
@@ -165,7 +165,7 @@ callback_serial(struct lws *wsi, enum lws_callback_reasons reason,
 		 * Let's collate them up to 128 bytes, with a 150ms limit to
 		 * holding pieces
 		 */
-		n = read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf));
+		n = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf));
 		if (n < 1) {
 			lwsl_debug("%s: read on stdwsi failed\n", __func__);
 			return -1;
@@ -175,7 +175,7 @@ callback_serial(struct lws *wsi, enum lws_callback_reasons reason,
 			break;
 
 		for (m = 0; m < n; m++) {
-			pss->collation[pss->pos++] = buf[m];
+			pss->collation[pss->pos++] = (char)buf[m];
 
 			if (buf[m] == pass[pss->pass_match]) {
 				pss->pass_match++;

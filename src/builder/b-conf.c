@@ -167,8 +167,8 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 	case LEJPM_PLATFORMS_NAME:
 		n = lws_snprintf(temp, sizeof(temp), "%s.%.*s",
 				 builder.host, ctx->npos, ctx->buf);
-		a->sai_plat->name = lwsac_use(&a->builder->conf_head, n + 1, 512);
-		memcpy((char *)a->sai_plat->name, temp, n + 1);
+		a->sai_plat->name = lwsac_use(&a->builder->conf_head, (unsigned int)n + 1, 512);
+		memcpy((char *)a->sai_plat->name, temp, (unsigned int)n + 1);
 		lwsl_notice("%s: platform: %.*s, name %s\n", __func__,
 			    ctx->npos, ctx->buf, a->sai_plat->name);
 		pp = &a->sai_plat->platform;
@@ -226,7 +226,7 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 		/* hook the ss up to the server url */
 
 		cm->url = lwsac_use(&a->builder->conf_head,
-				    2 *(ctx->npos + 1), 512);
+				    2 *((unsigned int)ctx->npos + 1), 512);
 		memcpy((char *)cm->url, ctx->buf, ctx->npos);
 		((char *)cm->url)[ctx->npos] = '\0';
 
@@ -248,7 +248,7 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 		}
 
 		cm->name = cm->url + ctx->npos + 1;
-		memcpy((char *)cm->name, pq, n);
+		memcpy((char *)cm->name, pq, (unsigned int)n);
 		((char *)cm->name)[n] = '\0';
 
 		while (strchr(cm->name, '.'))
@@ -272,7 +272,7 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 		return 0;
 	}
 
-	*pp = lwsac_use(&a->builder->conf_head, ctx->npos + 1, 512);
+	*pp = lwsac_use(&a->builder->conf_head, ctx->npos + 1u, 512);
 	if (!*pp)
 		return 1;
 	memcpy((char *)(*pp), ctx->buf, ctx->npos);
@@ -322,7 +322,7 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		return 0;
 	}
 
-	*pp = lwsac_use(&a->builder->conf_head, ctx->npos + 1, 512);
+	*pp = lwsac_use(&a->builder->conf_head, ctx->npos + 1u, 512);
 	if (!*pp)
 		return 1;
 	memcpy((char *)(*pp), ctx->buf, ctx->npos);
@@ -358,7 +358,7 @@ saib_config_global(struct sai_builder *builder, const char *d)
 			paths_global, LWS_ARRAY_SIZE(paths_global));
 
 	do {
-		n = read(fd, buf, sizeof(buf));
+		n = (int)read(fd, buf, sizeof(buf));
 		if (!n)
 			break;
 
@@ -366,7 +366,7 @@ saib_config_global(struct sai_builder *builder, const char *d)
 	} while (m == LEJP_CONTINUE);
 
 	close(fd);
-	n = ctx.line;
+	n = (int)ctx.line;
 	lejp_destruct(&ctx);
 
 	return 0;
@@ -398,7 +398,7 @@ saib_config(struct sai_builder *builder, const char *d)
 	lejp_construct(&ctx, saib_conf_cb, &a, paths, LWS_ARRAY_SIZE(paths));
 
 	do {
-		n = read(fd, buf, sizeof(buf));
+		n = (int)read(fd, buf, sizeof(buf));
 		if (!n)
 			break;
 
@@ -406,7 +406,7 @@ saib_config(struct sai_builder *builder, const char *d)
 	} while (m == LEJP_CONTINUE);
 
 	close(fd);
-	n = ctx.line;
+	n = (int)ctx.line;
 	lejp_destruct(&ctx);
 
 	if (m < 0) {

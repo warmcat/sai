@@ -134,7 +134,7 @@ saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp)
 	memset(&info, 0, sizeof(info));
 
 	info.vhost_name			= pv;
-	pv += lws_snprintf(pv, sizeof(vhnames) - (pv - vhnames), "logproxy.%d", lpidx++) + 1;
+	pv += lws_snprintf(pv, sizeof(vhnames) - (size_t)(pv - vhnames), "logproxy.%d", lpidx++) + 1;
 	info.options = LWS_SERVER_OPTION_ADOPT_APPLY_LISTEN_ACCEPT_CONFIG |
 		       LWS_SERVER_OPTION_UNIX_SOCK;
 	info.iface			= lp->sockpath;

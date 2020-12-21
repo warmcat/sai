@@ -200,7 +200,7 @@ callback_dynamic_http(struct lws *wsi, enum lws_callback_reasons reason,
 			break;
 
 fin:
-		if (lws_add_http_common_headers(wsi, pss->ret, "text/html", 0,
+		if (lws_add_http_common_headers(wsi, (unsigned int)pss->ret, "text/html", 0,
 								       &p, end))
 			return 1;
 		if (lws_finalize_write_http_header(wsi, start, &p, end))

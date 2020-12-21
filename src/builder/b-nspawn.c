@@ -47,15 +47,20 @@ extern struct lws_vhost *builder_vhost;
 struct ws_capture_chunk *
 saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 {
-	struct ws_capture_chunk *chunk = malloc(sizeof(*chunk) + len);
+	struct ws_capture_chunk *chunk;
 
-	if (!chunk || !ns->spm)
+	if (!ns->spm)
+		return NULL;
+
+	chunk = malloc(sizeof(*chunk) + len);
+
+	if (!chunk)
 		return NULL;
 
 	memset(chunk, 0, sizeof(*chunk));
 	chunk->us = lws_now_usecs();
 	chunk->len = len;
-	chunk->stdfd = channel;
+	chunk->stdfd = (uint8_t)channel;
 	if (len)
 		memcpy(&chunk[1], buf, len);
 
@@ -102,14 +107,14 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		ilen = (int)rb;
 	}
 #else
-		ilen = read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf));
+		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf));
 		if (ilen < 1) {
 			lwsl_debug("%s: read on stdwsi failed\n", __func__);
 			return -1;
 		}
 #endif
 
-		len = ilen;
+		len = (unsigned int)ilen;
 
 		// printf("(%d) %.*s\n", (int)len, (int)len, buf);
 
@@ -288,7 +293,7 @@ saib_spawn(struct sai_nspawn *ns)
 
 	/* but from the script's pov, it's chrooted at /home/sai */
 
-	if (write(fd, st, n) != n) {
+	if (write(fd, st, (unsigned int)n) != n) {
 		close(fd);
 		lwsl_err("%s: failed to write runscript to %s\n", __func__, args);
 		return 1;
@@ -337,11 +342,12 @@ saib_prepare_mount(struct sai_builder *b, struct sai_nspawn *ns)
 	n = lws_snprintf(ns->fsm.mp, sizeof(ns->fsm.mp), "%s%coverlays",
 			 b->home, csep);
 
-	mkdir(ns->fsm.mp, 0770);
+	if (mkdir(ns->fsm.mp, 0770))
+		lwsl_notice("%s: mkdir %s failed\n", __func__, ns->fsm.mp);
 
 	/* create a subdir for our overlay pieces */
 
-	n += lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - n, "%c%s", csep,
+	n += lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n, "%c%s", csep,
 			  ns->fsm.ovname);
 	m = mkdir(ns->fsm.mp, 0777);
 	if (m && errno != EEXIST)
@@ -352,23 +358,23 @@ saib_prepare_mount(struct sai_builder *b, struct sai_nspawn *ns)
 
 #if defined(__linux__) && 0
 
-	lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - n, "%cwork", csep);
+	lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n, "%cwork", csep);
 	m = mkdir(ns->fsm.mp, 0770);
 	if (m && errno != EEXIST)
 		goto bail_dir;
 
-	lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - n, "%csession", csep);
+	lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n, "%csession", csep);
 	m = mkdir(ns->fsm.mp, 0777);
 	if (m && errno != EEXIST)
 		goto bail_dir;
 
-	n += lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - n, "%cmountpoint",
+	n += lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n, "%cmountpoint",
 				csep);
 	m = mkdir(ns->fsm.mp, 0777);
 	if (m && errno != EEXIST)
 		goto bail_dir;
 
-	lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - n, "%chome%csai",
+	lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n, "%chome%csai",
 			csep, csep);
 	lws_strncpy(homedir, ns->fsm.mp, sizeof(homedir));
 	ns->fsm.mp[n] = '\0';
@@ -383,13 +389,13 @@ saib_prepare_mount(struct sai_builder *b, struct sai_nspawn *ns)
 		 * them off later */
 
 		n = (int)strlen(ns->fsm.mp);
-		lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - n, "%chome",
+		lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n, "%chome",
 				csep);
 		m = mkdir(ns->fsm.mp, 0700);
 		if (m && errno != EEXIST)
 			goto bail_dir;
 
-		lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - n,
+		lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n,
 			     "%chome%csai", csep, csep);
 		lws_strncpy(homedir, ns->fsm.mp, sizeof(homedir));
 
@@ -397,7 +403,7 @@ saib_prepare_mount(struct sai_builder *b, struct sai_nspawn *ns)
 		if (m && errno != EEXIST)
 			goto bail_dir;
 
-		lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - n,
+		lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n,
 			     "%chome%csai%cgit-mirror", csep, csep, csep);
 		m = mkdir(ns->fsm.mp, 0755);
 		ns->fsm.mp[n] = '\0';

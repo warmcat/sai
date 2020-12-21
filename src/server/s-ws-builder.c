@@ -129,7 +129,7 @@ sais_dump_logs_to_db(lws_sorted_usec_list_t *sul)
 
 		n = lws_snprintf(sw, sizeof(sw), "{\"schema\":\"sai-tasklogs\","
 				 "\"event_hash\":\"%s\"}", lcpt->uuid);
-		sais_websrv_broadcast(vhd->h_ss_websrv, sw, n);
+		sais_websrv_broadcast(vhd->h_ss_websrv, sw, (unsigned int)n);
 
 		/*
 		 * Destroy the whole task-specific cache, it will regenerate
@@ -245,7 +245,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 
 	if (pss->bulk_binary_data) {
 		lwsl_info("%s: bulk %d\n", __func__, (int)bl);
-		m = bl;
+		m = (int)bl;
 		goto handle;
 	}
 
@@ -270,7 +270,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 	} else
 		pss->frag = 0;
 
-	m = lejp_parse(&pss->ctx, (uint8_t *)buf, bl);
+	m = lejp_parse(&pss->ctx, (uint8_t *)buf, (int)bl);
 
 	/*
 	 * returns negative, or unused amount... for us, we either had a
@@ -566,7 +566,7 @@ bail:
 
 			if (lws_struct_sq3_serialize(pss->pdb_artifact,
 						 lsm_schema_sq3_map_artifact,
-						 &o, ap->uid)) {
+						 &o, (unsigned int)ap->uid)) {
 				lwsl_err("%s: failed artifact struct insert\n",
 						__func__);
 
@@ -614,7 +614,7 @@ bail:
 			 */
 
 			if (sqlite3_blob_open(pss->pdb_artifact, "main",
-					  "artifacts", "blob", rid, 1,
+					  "artifacts", "blob", (sqlite3_int64)rid, 1,
 					  &pss->blob_artifact) != SQLITE_OK) {
 				lwsl_err("%s: unable to open blob\n", __func__);
 				goto afail;
@@ -627,24 +627,24 @@ bail:
 			pss->bulk_binary_data = 1;
 			pss->artifact_length = ap->len;
 		} else {
-			m = bl;
+			m = (int)bl;
 			lwsl_info("%s: BUILDER_ARTIFACT: blob bulk\n", __func__);
 		}
 
 		if (m) {
 			lwsl_info("%s: blob write +%d, ofs %llu / %llu, len %d (0x%02x)\n",
-				    __func__, (int)(bl - m),
+				    __func__, (int)(bl - (unsigned int)m),
 				    (unsigned long long)pss->artifact_offset,
 				    (unsigned long long)pss->artifact_length, m, buf[0]);
 			if (sqlite3_blob_write(pss->blob_artifact,
-					   (uint8_t *)buf + (bl - m), (int)m,
-					   pss->artifact_offset)) {
+					   (uint8_t *)buf + (bl - (unsigned int)m), (int)m,
+					   (int)pss->artifact_offset)) {
 				lwsl_err("%s: writing blob failed\n", __func__);
 				goto afail;
 			}
 
 			lws_set_timeout(pss->wsi, PENDING_TIMEOUT_HTTP_CONTENT, 5);
-			pss->artifact_offset += (int)m;
+			pss->artifact_offset = pss->artifact_offset + (uint64_t)m;
 		} else
 			lwsl_info("%s: no m\n", __func__);
 
@@ -710,7 +710,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		if (!js)
 			return 1;
 
-		n = lws_struct_json_serialize(js, p, end - p, &w);
+		n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 		lws_struct_json_serialize_destroy(&js);
 
 		lws_dll2_remove(&c->list);
@@ -743,7 +743,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	if (!js)
 		return 1;
 
-	n = lws_struct_json_serialize(js, p, end - p, &w);
+	n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 	lws_struct_json_serialize_destroy(&js);
 	pss->one_event = NULL;
 	lwsac_free(&task->ac_task_container);
@@ -769,7 +769,7 @@ send_json:
 
 	// lwsl_hexdump_notice(start, p - start);
 
-	if (lws_write(pss->wsi, start, p - start, flags) < 0)
+	if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start), flags) < 0)
 		return -1;
 
 	lws_callback_on_writable(pss->wsi);

@@ -91,7 +91,8 @@ sai_mirror_local_checkout(struct sai_nspawn *ns)
 	 * credentials since we have dropped root long ago
 	 */
 
-	mkdir(ns->inp, 0755);
+	if (mkdir(ns->inp, 0755))
+		lwsl_notice("%s: mkdir %s failed\n", __func__, ns->inp);
 
 	/*
 	 * Create the build-specific git dir and init it
@@ -278,7 +279,8 @@ saib_mirror_task(void *user, enum lws_threadpool_task_status s)
 			 * Make sure the dir itself is left standing in there
 			 */
 
-			mkdir(ns->inp, 0755);
+			if (mkdir(ns->inp, 0755))
+				lwsl_notice("%s: mkdir %s failed\n", __func__, ns->inp);
 
 			/*
 			 * Form a request, kick the remoting thread and then
@@ -478,7 +480,7 @@ fail:
 	saib_task_grace(ns);
 
 	if (saib_queue_task_status_update(ns->sp, ns->spm, NULL))
-		return -1;
+		return LWS_TP_RETURN_SYNC;
 
 	return LWS_TP_RETURN_SYNC;
 }

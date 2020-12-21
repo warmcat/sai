@@ -240,17 +240,17 @@ sais_event_db_delete_database(struct vhd *vhd, const char *event_uuid)
 	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3",
 		     vhd->sqlite3_path_lhs, saf);
 
-	r = unlink(filepath);
+	r = (char)!!unlink(filepath);
 
 	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3-wal",
 		     vhd->sqlite3_path_lhs, saf);
 
-	r |= unlink(filepath);
+	r |= (char)!!unlink(filepath);
 
 	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3-shm",
 		     vhd->sqlite3_path_lhs, saf);
 
-	return r | unlink(filepath);
+	return r | !!unlink(filepath);
 }
 
 
@@ -336,7 +336,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		*end = &buf[sizeof(buf) - LWS_PRE - 1];
 	struct pss *pss = (struct pss *)user;
 	sai_http_murl_t mu = SHMUT_NONE;
-	int n, resp;
+	int n;
 
 	(void)end;
 	(void)p;
@@ -408,7 +408,6 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 	case LWS_CALLBACK_HTTP:
 
-		resp = HTTP_STATUS_FORBIDDEN;
 		pss->vhd = vhd;
 
 		for (n = 0; n < (int)LWS_ARRAY_SIZE(well_known); n++)
@@ -437,15 +436,6 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return 0;
 		}
 
-		resp = HTTP_STATUS_OK;
-
-		if (lws_add_http_header_status(wsi, resp, &p, end))
-			goto bail;
-		if (lws_add_http_header_content_length(wsi, 0, &p, end))
-			goto bail;
-		if (lws_finalize_write_http_header(wsi, start, &p, end))
-			goto bail;
-		goto try_to_reuse;
 
 	/*
 	 * Notifcation POSTs
@@ -695,15 +685,6 @@ passthru:
 	}
 
 	return lws_callback_http_dummy(wsi, reason, user, in, len);
-
-bail:
-	return 1;
-
-try_to_reuse:
-	if (lws_http_transaction_completed(wsi))
-		return -1;
-
-	return 0;
 }
 
 const struct lws_protocols protocol_ws =

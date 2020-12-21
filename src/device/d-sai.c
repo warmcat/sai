@@ -127,10 +127,10 @@ said_check_device(lws_sorted_usec_list_t *sul)
 		lws_tokenize_init(&ts, d->compatible,
 				  LWS_TOKENIZE_F_COMMA_SEP_LIST |
 				  LWS_TOKENIZE_F_MINUS_NONTERM);
-		ts.len = (int)strlen(d->compatible);
+		ts.len = strlen(d->compatible);
 
 		do {
-			ts.e = lws_tokenize(&ts);
+			ts.e = (int8_t)lws_tokenize(&ts);
 			switch (ts.e) {
 			case LWS_TOKZE_TOKEN:
 				if (!strncmp(ts.token, devtype, ts.token_len))
@@ -204,7 +204,7 @@ said_check_device(lws_sorted_usec_list_t *sul)
 				char *p1 = p;
 
 				p += lws_snprintf(p, sizeof(ename) -
-						  lws_ptr_diff(p, ename),
+						  lws_ptr_diff_size_t(p, ename),
 						  "SAI_DEVICE_TTY%d",
 						  try);
 				setenv(p1, t->tty_path, 1);
@@ -228,7 +228,7 @@ said_check_device(lws_sorted_usec_list_t *sul)
 				n = lws_snprintf(log, sizeof(log),
 						 "sai-device: acquired device '%s' (%s)\n",
 						 d->name, d->type);
-				saicom_lp_add(ssh[0], log, n);
+				saicom_lp_add(ssh[0], log, (unsigned int)n);
 				/*
 				 * We'll check in the background if the child
 				 * exited, in the meanwhile we can send any
@@ -281,7 +281,7 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 		n = lws_snprintf(log, sizeof(log),
 				 "sai-device: queueing for device compatible with '%s'\n",
 				 devtype);
-		saicom_lp_add(ssh[0], log, n);
+		saicom_lp_add(ssh[0], log, (unsigned int)n);
 
 		lws_sul_schedule(context, 0, &sul, said_check_device, 1);
 		break;

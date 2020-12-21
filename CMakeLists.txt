@@ -1,5 +1,5 @@
 project(sai C)
-cmake_minimum_required(VERSION 2.8)
+cmake_minimum_required(VERSION 2.8.12)
 find_package(libwebsockets CONFIG REQUIRED)
 list(APPEND CMAKE_MODULE_PATH ${LWS_CMAKE_DIR})
 include(CheckCSourceCompiles)
@@ -136,7 +136,7 @@ if (requirements)
 	    CMAKE_COMPILER_IS_GNUCXX OR
 	    (CMAKE_C_COMPILER_ID MATCHES "Clang") OR
 	    (CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
-		set(CMAKE_C_FLAGS "-Wall -Wsign-compare -Wignored-qualifiers -Wtype-limits -Wuninitialized -Werror -Wundef ${CMAKE_C_FLAGS}" )
+	    set(CMAKE_C_FLAGS "-Wall -Wsign-compare -Wignored-qualifiers -Wtype-limits -Wuninitialized -Wconversion -Werror -Wundef ${CMAKE_C_FLAGS}" )
 	endif()
 
 	if (SAI_SERVER)

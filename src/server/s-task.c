@@ -34,7 +34,7 @@ sql3_get_integer_cb(void *user, int cols, char **values, char **name)
 	unsigned int *pui = (unsigned int *)user;
 
 	// lwsl_warn("%s: values[0] '%s'\n", __func__, values[0]);
-	*pui = atoi(values[0]);
+	*pui = (unsigned int)atoi(values[0]);
 
 	return 0;
 }
@@ -348,7 +348,7 @@ sais_task_cancel(struct vhd *vhd, const char *task_uuid)
 			return -1;
 		memset(can, 0, sizeof(*can));
 
-		strncpy(can->task_uuid, task_uuid, sizeof(can->task_uuid));
+		lws_strncpy(can->task_uuid, task_uuid, sizeof(can->task_uuid));
 
 		lws_dll2_add_tail(&can->list, &pss->task_cancel_owner);
 

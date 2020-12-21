@@ -116,7 +116,7 @@ said_conf_global_cb(struct lejp_ctx *ctx, char reason)
 			return -1;
 
 		a->tty->initial_monitor = 1;
-		a->tty->index = a->dev->ttys_owner.count;
+		a->tty->index = (int)a->dev->ttys_owner.count;
 		lws_dll2_add_tail(&a->tty->list, &a->dev->ttys_owner);
 		return 0;
 	}
@@ -170,7 +170,7 @@ said_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		return 0;
 	}
 
-	*pp = lwsac_use(&a->devices->conf_head, ctx->npos + 1, 512);
+	*pp = lwsac_use(&a->devices->conf_head, ctx->npos + 1u, 512);
 	if (!*pp)
 		return 1;
 	memcpy((char *)(*pp), ctx->buf, ctx->npos);
@@ -191,9 +191,9 @@ said_config_global(struct sai_devices *devices, const char *d)
 	a.devices = devices;
 
 #if defined(WIN32)
-	lws_snprintf((char *)buf, sizeof(buf) - 1, "%s\\conf", d);
+	lws_snprintf((char *)buf, sizeof(buf) - 1u, "%s\\conf", d);
 #else
-	lws_snprintf((char *)buf, sizeof(buf) - 1, "%s/conf", d);
+	lws_snprintf((char *)buf, sizeof(buf) - 1u, "%s/conf", d);
 #endif
 
 	fd = lws_open((char *)buf, O_RDONLY);
@@ -206,7 +206,7 @@ said_config_global(struct sai_devices *devices, const char *d)
 			paths_global, LWS_ARRAY_SIZE(paths_global));
 
 	do {
-		n = read(fd, buf, sizeof(buf));
+		n = (int)read(fd, buf, sizeof(buf));
 		if (!n)
 			break;
 
@@ -214,7 +214,7 @@ said_config_global(struct sai_devices *devices, const char *d)
 	} while (m == LEJP_CONTINUE);
 
 	close(fd);
-	n = ctx.line;
+	n = (int)ctx.line;
 	lejp_destruct(&ctx);
 
 	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,

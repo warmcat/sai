@@ -80,7 +80,7 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 		return LWSSSSRET_OK;
 	}
 
-	n = read(ap->fd, buf,
+	n = (int)read(ap->fd, buf,
 #if defined(WIN32)
 			(unsigned int)
 #endif
@@ -98,7 +98,7 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 		return LWSSSSRET_TX_DONT_SEND; /* nothing to send */
 	}
 
-	ap->ofs += n;
+	ap->ofs = ap->ofs + (unsigned int)n;
 	lwsl_info("%s: %p: writing %d at +%llu / %llu (0x%02X)\n", __func__, ap->ss, n,
 			(unsigned long long)ap->ofs, (unsigned long long)ap->len, buf[0]);
 	*len = (size_t)n;
@@ -122,7 +122,7 @@ saib_artifact_state(void *userobj, void *sh, lws_ss_constate_t state,
 	sai_artifact_t *ap = (sai_artifact_t *)userobj;
 	struct stat s;
 
-	lwsl_info("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
+	lwsl_info("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name((int)state),
 		  (unsigned int)ack);
 
 	switch (state) {
@@ -141,7 +141,7 @@ saib_artifact_state(void *userobj, void *sh, lws_ss_constate_t state,
 			ap->fd = -1;
 			return -1;
 		}
-		ap->len = s.st_size;
+		ap->len = (size_t)s.st_size;
 		break;
 
 	case LWSSSCS_DESTROYING:

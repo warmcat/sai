@@ -100,7 +100,7 @@ tp_sync_check(struct lws_dll2 *d, void *user)
 		//	    soe == NSSTATE_CHECKOUT ||
 		//	    soe == NSSTATE_CHECKEDOUT) &&
 
-		n = lws_threadpool_task_status(ns->tp_task, &vp);
+		n = (int)lws_threadpool_task_status(ns->tp_task, &vp);
 		lwsl_info("%s: WRITEABLE: ss=%p: "
 			   "task %p, priv %p, status %d\n", __func__, spm->ss,
 			   ns->tp_task, vp, n);
@@ -242,8 +242,8 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		if (!js)
 			return -1;
 
-		n = lws_struct_json_serialize(js, start,
-					      lws_ptr_diff(end, start), &w);
+		n = (int)lws_struct_json_serialize(js, start,
+					      lws_ptr_diff_size_t(end, start), &w);
 		lws_struct_json_serialize_destroy(&js);
 
 		lwsl_hexdump_notice(start, w);
@@ -274,15 +274,15 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		if (!js)
 			return -1;
 
-		n = lws_struct_json_serialize(js, start,
-					      lws_ptr_diff(end, start), &w);
+		n = (int)lws_struct_json_serialize(js, start,
+					      lws_ptr_diff_size_t(end, start), &w);
 		lws_struct_json_serialize_destroy(&js);
 
 		sp = (sai_plat_t *)builder.sai_plat_owner.head;
 		lwsl_hexdump_warn(sp, sizeof(*sp));
 		lwsl_hexdump_notice(start, w);
 
-		*len = (int)w;
+		*len = w;
 		spm->phase = PHASE_IDLE;
 		*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
 
@@ -379,7 +379,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 
 		if (ns->task) {
 
-			n = lws_snprintf((char *)p, lws_ptr_diff(end, p),
+			n = lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
 				"{\"schema\":\"com-warmcat-sai-logs\","
 				 "\"task_uuid\":\"%s\", \"timestamp\": %llu,"
 				 "\"channel\": %d, \"len\": %d, ",
@@ -390,10 +390,10 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 				/*
 				 * Let the last guy report the finished state
 				 */
-				n += lws_snprintf((char *)p + n, lws_ptr_diff(end, p) - n,
+				n += lws_snprintf((char *)p + n, lws_ptr_diff_size_t(end, p) - (unsigned int)n,
 					"\"finished\":%d,", ns->retcode);
 
-			n += lws_snprintf((char *)p + n, lws_ptr_diff(end, p) - n,
+			n += lws_snprintf((char *)p + n, lws_ptr_diff_size_t(end, p) - (unsigned int)n,
 					  "\"log\":\"");
 
 			// puts((const char *)&chunk[1]);
@@ -434,7 +434,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 sendify:
 
 	*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
-	*len = n;
+	*len = (unsigned int)n;
 
 	if (spm->phase != PHASE_IDLE || spm->logs_in_flight)
 		lws_ss_request_tx(spm->ss);
@@ -514,7 +514,7 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 {
 	struct sai_plat_server *spm = (struct sai_plat_server *)userobj;
 
-	lwsl_user("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
+	lwsl_user("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name((int)state),
 		  (unsigned int)ack);
 
 	switch (state) {
