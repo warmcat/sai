@@ -229,6 +229,8 @@ bail:
 	return 1;
 }
 
+/* we leave an allocation in sch->query_ac ... */
+
 static int
 saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 {
@@ -409,7 +411,8 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		lwsl_hexdump_notice(buf, bl);
 		lwsl_notice("%s: browser->web JSON decode failed '%s'\n",
 				__func__, lejp_error_to_string(m));
-		return m;
+		ret = m;
+		goto bail;
 	}
 
 	/*
@@ -446,7 +449,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		if (saiw_pss_schedule_taskinfo(pss, ti->task_hash, !!ti->logs))
 			goto soft_error;
 
-		return 0;
+		break;
 
 	case SAIM_WS_BROWSER_RX_EVENTINFO:
 
@@ -455,9 +458,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		if (saiw_pss_schedule_eventinfo(pss, ei->event_hash))
 			goto soft_error;
 
-		lwsac_free(&a.ac);
-
-		return 0;
+		break;
 
 	case SAIM_WS_BROWSER_RX_TASKRESET:
 
@@ -471,9 +472,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 
 		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl);
-		lwsac_free(&a.ac);
-
-		return 0;
+		break;
 
 	case SAIM_WS_BROWSER_RX_EVENTRESET:
 
@@ -490,9 +489,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			    __func__, ei->event_hash);
 
 		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl);
-		lwsac_free(&a.ac);
-
-		return 0;
+		break;
 
 	case SAIM_WS_BROWSER_RX_EVENTDELETE:
 		/*
@@ -1039,7 +1036,8 @@ b_finish:
 		 * asked for.
 		 *
 		 * We already got the task struct out of the db in .one_task
-		 * (all in .query_ac)
+		 * (all in .query_ac)... we're responsible for destroying it
+		 * when we go out of scope...
 		 */
 
 		lwsl_info("%s: PREPARE_TASKINFO: one_task %p\n", __func__, sch->one_task);
@@ -1055,6 +1053,7 @@ b_finish:
 				LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply),
 				0, &task_reply);
 		if (!js) {
+			saiw_dealloc_sched(sch);
 			lwsl_warn("%s: couldn't create\n", __func__);
 			return 1;
 		}
@@ -1104,11 +1103,14 @@ b_finish:
 			lwsl_debug("%s: WSS_PREPARE_TASKINFO: planning on artifacts\n", __func__);
 		// sch->one_task = NULL;
 		if (n == LSJS_RESULT_ERROR) {
+			saiw_dealloc_sched(sch);
 			lwsl_notice("%s: taskinfo: error generating json\n", __func__);
 			return 1;
 		}
 		p += w;
 		if (!lws_ptr_diff(p, start)) {
+			saiw_dealloc_sched(sch);
+			pss->send_state = WSS_IDLE;
 			lwsl_notice("%s: taskinfo: empty json\n", __func__);
 			return 0;
 		}
@@ -1133,6 +1135,7 @@ b_finish:
 					LWS_ARRAY_SIZE(lsm_schema_json_map_artifact),
 					0, aft);
 			if (!js) {
+				saiw_dealloc_sched(sch);
 				lwsl_err("%s ----------------- failed to render artifact json\n", __func__);
 				return 1;
 			}
@@ -1140,6 +1143,7 @@ b_finish:
 			n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 			lws_struct_json_serialize_destroy(&js);
 			if (n == LSJS_RESULT_ERROR) {
+				saiw_dealloc_sched(sch);
 				lwsl_notice("%s: taskinfo: ---------- error generating json\n", __func__);
 				return 1;
 			}
@@ -1159,15 +1163,13 @@ b_finish:
 
 send_it:
 
-	if (!sch) /* coverity */
-		goto no_sch;
+	flags = lws_write_ws_flags(LWS_WRITE_TEXT, first, endo || lg || (sch && !sch->walk));
 
-	flags = lws_write_ws_flags(LWS_WRITE_TEXT, first, endo || lg || !sch->walk);
-
-	if (lg || endo ||
-	    (pss->send_state != WSS_SEND_ARTIFACT_INFO && !sch->walk) ||
-	    (pss->send_state == WSS_SEND_ARTIFACT_INFO &&
-	     (!sch || !sch->owner.head))) {
+	if (lg ||
+	    endo ||
+	    (pss->send_state == WSS_IDLE && sch) ||
+	    (pss->send_state != WSS_SEND_ARTIFACT_INFO && sch && !sch->walk) ||
+	    (pss->send_state == WSS_SEND_ARTIFACT_INFO && (!sch || !sch->owner.head))) {
 
 		/* does he want to subscribe to logs? */
 		if (sch && sch->logsub && sch->one_task) {

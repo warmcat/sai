@@ -531,6 +531,11 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		// lwsl_notice("%s: HTTP\n", __func__);
 
+		if (!vhd) {
+			lwsl_err("%s: NULL vhd\n", __func__);
+			return -1;
+		}
+
 		resp = HTTP_STATUS_FORBIDDEN;
 		pss->vhd = vhd;
 
@@ -958,8 +963,10 @@ clean_spa:
 
 	case LWS_CALLBACK_ESTABLISHED:
 
-		if (!vhd)
+		if (!vhd) {
+			lwsl_err("%s: NULL vhd\n", __func__);
 			return -1;
+		}
 
 		/*
 		 * What's the situation with a JWT cookie?  Normal users won't
