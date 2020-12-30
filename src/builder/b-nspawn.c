@@ -206,6 +206,7 @@ static const char * const runscript =
 	"set SAI_LOGPROXY=%s\n"
 	"set SAI_LOGPROXY_TTY0=%s\n"
 	"set SAI_LOGPROXY_TTY1=%s\n"
+	"set HOME=%s\n"
 	"cd %s\\jobs\\%s\\%s &&"
 	"%s"
 ;
@@ -217,6 +218,7 @@ static const char * const runscript =
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
 #endif
+	"export HOME=%s\n"
 	"export SAI_OVN=%s\n"
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
@@ -280,11 +282,11 @@ saib_spawn(struct sai_nspawn *ns)
 #if defined(WIN32)
 	n = lws_snprintf(st, sizeof(st), runscript, ns->instance_idx,
 			 ns->slp_control.sockpath,
-			 ns->slp[0].sockpath, ns->slp[1].sockpath,
+			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
 			 builder.home, ns->fsm.ovname, ns->project_name,
 			 ns->task->build);
 #else
-	n = lws_snprintf(st, sizeof(st), runscript, ns->fsm.ovname,
+	n = lws_snprintf(st, sizeof(st), runscript, builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_idx,
 			 ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,
