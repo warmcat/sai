@@ -547,6 +547,8 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		break;
 
 	case LWSSSCS_ALL_RETRIES_FAILED:
+		lwsl_user("%s: LWSSSCS_ALL_RETRIES_FAILED\n", __func__);
+		lws_ss_request_tx(spm->ss);
 		break;
 
 	case LWSSSCS_QOS_ACK_REMOTE:
