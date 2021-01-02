@@ -224,6 +224,15 @@ sai_tuple_compare(const char *req, size_t req_len, const char *plat)
 
 /*
  * We parse the saifile JSON
+ *
+ * The backdrop of this is the remote's hook that's letting us know all this
+ * won't update his refs to the push described here until he's finished
+ * uploading the saifile POST.
+ *
+ * So although we are going to add the tasks as we parse them, in fact we
+ * can't hand any of them out to builders until a short time after we got to
+ * the end of the POST, otherwise the builders are not going to find the
+ * right refs in the repo yet.
  */
 
 static signed char
@@ -523,7 +532,7 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 						pss->sn.e.repo_fetchurl;
 				pss->sn.e.last_updated =
 					(unsigned long long)lws_now_secs();
-				pss->sn.e.state = 0;
+				pss->sn.e.state = SAIES_WAITING;
 				lws_strncpy(pss->sn.t.platform, pl->name,
 					    sizeof(pss->sn.t.platform));
 
@@ -965,11 +974,14 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		lwsl_notice("%s: notification inserted into db\n", __func__);
 
 		/*
-		 * Reassess now if there's a builder we can match to a pending task
+		 * The tasks are all in there but set to state
+		 * NOT_READY_FOR_BUILD, the periodic central scan
+		 * switch them over to WAITING when they have been like that
+		 * for 2s
 		 */
 
 		lws_sul_schedule(pss->vhd->context, 0, &pss->vhd->sul_central,
-				 sais_central_cb, 1);
+				 sais_central_cb, 1 * LWS_US_PER_SEC);
 
 		return 0;
 

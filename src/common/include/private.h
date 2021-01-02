@@ -41,6 +41,8 @@ typedef enum {
 	SAIES_CANCELLED				= 5,
 	SAIES_BEING_BUILT_HAS_FAILURES		= 6,
 	SAIES_DELETED				= 7,
+
+	SAIES_NOT_READY_FOR_BUILD		= 8,
 } sai_event_state_t;
 
 enum {

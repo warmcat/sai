@@ -263,7 +263,7 @@ static const sai_task_t *
 sais_task_pending(struct vhd *vhd, struct lwsac **pac, const char *platform)
 {
 	struct lwsac *ac = NULL;
-	char esc[96], pf[96];
+	char esc[96], pf[128];
 	lws_dll2_owner_t o;
 	int n;
 
@@ -279,10 +279,11 @@ sais_task_pending(struct vhd *vhd, struct lwsac **pac, const char *platform)
 	 * scope whether we find something or not
 	 */
 
-	n = lws_struct_sq3_deserialize(vhd->server.pdb,
-				       " and (state != 3 and state != 4 and state != 5)",
-				       "created desc ", lsm_schema_sq3_map_event, &o,
-				       &ac, 0, 10);
+	lws_snprintf(pf, sizeof(pf)," and (state != 3 and state != 4 and state != 5) and created < %llu",
+			(unsigned long long)(lws_now_secs() - 10));
+
+	n = lws_struct_sq3_deserialize(vhd->server.pdb, pf, "created desc ",
+				       lsm_schema_sq3_map_event, &o, &ac, 0, 10);
 	if (n < 0 || !o.head) {
 	//	lwsl_notice("%s: all events complete\n", __func__);
 		/* error, or there are no events that aren't complete */

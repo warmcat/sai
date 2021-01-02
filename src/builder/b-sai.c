@@ -62,8 +62,8 @@ static const char * const default_ss_policy =
 				"],"
 			"\"conceal\":"		"99999,"
 			"\"jitterpc\":"		"20,"
-			"\"svalidping\":"	"300,"
-			"\"svalidhup\":"	"350"
+			"\"svalidping\":"	"100,"
+			"\"svalidhup\":"	"110"
 		"}}"
 	  "],"
 
@@ -75,7 +75,7 @@ static const char * const default_ss_policy =
 
 	  "\"s\": ["
 		/*
-		 * The main connection to a server carrying events and logs
+		 * The main connection to sai-server
 		 */
 		"{\"sai_builder\": {"
 			"\"endpoint\":"		"\"${url}\","
@@ -83,6 +83,7 @@ static const char * const default_ss_policy =
 			"\"protocol\":"		"\"ws\","
 			"\"ws_subprotocol\":"	"\"com-warmcat-sai\","
 			"\"http_url\":"		"\"\"," /* filled in by url */
+			"\"nailed_up\":"        "true,"
 			"\"tls\":"		"true,"
 			"\"retry\":"		"\"default\","
 			"\"metadata\": ["

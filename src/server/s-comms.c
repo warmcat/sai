@@ -410,12 +410,14 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		pss->vhd = vhd;
 
-		for (n = 0; n < (int)LWS_ARRAY_SIZE(well_known); n++)
-			if (!strncmp((const char *)in, well_known[n],
-				     strlen(well_known[n]))) {
+		for (n = 0; n < (int)LWS_ARRAY_SIZE(well_known); n++) {
+
+			size_t q = strlen(in), t = strlen(well_known[n]);
+			if (q >= t && !strcmp((const char *)in + q - t, well_known[n])) {
 				mu = n;
 				break;
 			}
+		}
 
 		pss->our_form = 0;
 

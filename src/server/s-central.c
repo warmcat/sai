@@ -94,7 +94,26 @@ sais_central_clean_abandoned(struct vhd *vhd)
 			char *err = NULL;
 
 			/*
-			 * Such tasks should go into CANCELLED
+			 * Check for tasks that have waited long enough since
+			 * the notification to allow to be built
+			 */
+
+			lws_snprintf(s, sizeof(s),
+				     "update tasks set state=0 where "
+				     "(state=%u) and last_updated < %llu",
+				     SAIES_NOT_READY_FOR_BUILD, (unsigned long long)
+					     (lws_now_secs() - 5));
+
+			if (sqlite3_exec(pdb, s, NULL, NULL, &err) !=
+					 SQLITE_OK) {
+				lwsl_err("%s: %s: %s: fail\n", __func__, s,
+					 sqlite3_errmsg(pdb));
+				if (err)
+					sqlite3_free(err);
+			}
+
+			/*
+			 * Check for tasks that should go into CANCELLED
 			 */
 
 			lws_snprintf(s, sizeof(s),
