@@ -513,11 +513,71 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 	     lws_ss_tx_ordinal_t ack)
 {
 	struct sai_plat_server *spm = (struct sai_plat_server *)userobj;
+	struct lejp_ctx *ctx;
+	struct jpargs *a;
+	const char *pq;
+	int n;
 
 	lwsl_user("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name((int)state),
 		  (unsigned int)ack);
 
 	switch (state) {
+
+	case LWSSSCS_CREATING:
+		ctx = (struct lejp_ctx *)spm->opaque_data;
+		a = (struct jpargs *)ctx->user;
+
+		/*
+		 * Since we're "nailed up", we'll try to initiate the connection
+		 * straight away after calling back CREATING... so we need to
+		 * initialize any metadata etc here.
+		 */
+
+		spm->index = a->next_server_index++;
+
+		/* hook the ss up to the server url */
+
+		spm->url = lwsac_use(&a->builder->conf_head,
+				    2 *((unsigned int)ctx->npos + 1), 512);
+		memcpy((char *)spm->url, ctx->buf, ctx->npos);
+		((char *)spm->url)[ctx->npos] = '\0';
+
+		lwsl_notice("%s: binding ss to %s\n", __func__, spm->url);
+		lws_ss_set_metadata(spm->ss, "url", spm->url, strlen(spm->url));
+
+		pq = spm->url;
+		while (*pq && (pq[0] != '/' || pq[1] != '/'))
+			pq++;
+
+		if (*pq) {
+			n = 0;
+			pq += 2;
+			while (pq[n] && pq[n] != '/')
+				n++;
+		} else {
+			pq = spm->url;
+			n = ctx->npos;
+		}
+
+		spm->name = spm->url + ctx->npos + 1;
+		memcpy((char *)spm->name, pq, (unsigned int)n);
+		((char *)spm->name)[n] = '\0';
+
+		while (strchr(spm->name, '.'))
+			*strchr(spm->name, '.') = '_';
+		while (strchr(spm->name, '/'))
+			*strchr(spm->name, '/') = '_';
+
+		/* add us to the builder list of unique servers */
+		lws_dll2_add_head(&spm->list, &a->builder->sai_plat_server_owner);
+
+		/* add us to this platforms's list of servers it accepts */
+		a->mref->spm = spm;
+		spm->refcount++;
+		lws_dll2_add_tail(&a->mref->list, &a->sai_plat->servers);
+
+		break;
+
 	case LWSSSCS_DESTROYING:
 
 		/*

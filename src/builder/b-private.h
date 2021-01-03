@@ -163,6 +163,20 @@ struct sai_builder {
 	sai_mirror_instance_t	mi;
 };
 
+struct jpargs {
+	struct sai_builder	*builder;
+
+	struct sai_nspawn	*nspawn;
+	struct sai_plat		*sai_plat;
+
+	struct sai_platform	*pl;
+
+	sai_plat_server_ref_t	*mref;
+
+	int			next_server_index;
+	int			next_plat_index;
+};
+
 struct ws_capture_chunk {
 	struct lws_dll2 list;
 

@@ -63,26 +63,15 @@ enum enum_paths {
 	LEJPM_PLATFORMS,
 };
 
-struct jpargs {
-	struct sai_builder	*builder;
 
-	struct sai_nspawn	*nspawn;
-	struct sai_plat		*sai_plat;
-
-	struct sai_platform	*pl;
-
-	int			next_server_index;
-	int			next_plat_index;
-};
 
 static signed char
 saib_conf_cb(struct lejp_ctx *ctx, char reason)
 {
 	struct jpargs *a = (struct jpargs *)ctx->user;
 	sai_plat_server_ref_t *mref;
-	struct sai_plat_server *cm;
 	struct lws_ss_handle *h;
-	const char **pp, *pq;
+	const char **pp;
 	char temp[65];
 	int n;
 
@@ -195,7 +184,7 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 
 		lws_start_foreach_dll(struct lws_dll2 *, p,
 				      a->builder->sai_plat_server_owner.head) {
-			cm = lws_container_of(p, sai_plat_server_t, list);
+			struct sai_plat_server *cm = lws_container_of(p, sai_plat_server_t, list);
 
 			if (!strncmp(ctx->buf, cm->url, ctx->npos)) {
 				/* we already have a logical connection... */
@@ -208,63 +197,23 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 			}
 		} lws_end_foreach_dll(p);
 
+		a->mref = mref;
+
 		/*
 		 * This is the first plat that wants to talk to this server,
 		 * we need to create the logical SS connection
 		 */
 
-		if (lws_ss_create(builder.context, 0, &ssi_sai_builder, 0, &h,
+		if (lws_ss_create(builder.context, 0, &ssi_sai_builder, (void *)ctx, &h,
 				  NULL, NULL)) {
 			lwsl_err("%s: failed to create secure stream\n",
 				 __func__);
 			return -1;
 		}
 
-		cm = lws_ss_to_user_object(h); /* the sai_plat_server object */
-		cm->index = a->next_server_index++;
 
-		/* hook the ss up to the server url */
 
-		cm->url = lwsac_use(&a->builder->conf_head,
-				    2 *((unsigned int)ctx->npos + 1), 512);
-		memcpy((char *)cm->url, ctx->buf, ctx->npos);
-		((char *)cm->url)[ctx->npos] = '\0';
-
-		lwsl_notice("%s: binding ss to %s\n", __func__, cm->url);
-		lws_ss_set_metadata(h, "url", cm->url, strlen(cm->url));
-
-		pq = cm->url;
-		while (*pq && (pq[0] != '/' || pq[1] != '/'))
-			pq++;
-
-		if (*pq) {
-			n = 0;
-			pq += 2;
-			while (pq[n] && pq[n] != '/')
-				n++;
-		} else {
-			pq = cm->url;
-			n = ctx->npos;
-		}
-
-		cm->name = cm->url + ctx->npos + 1;
-		memcpy((char *)cm->name, pq, (unsigned int)n);
-		((char *)cm->name)[n] = '\0';
-
-		while (strchr(cm->name, '.'))
-			*strchr(cm->name, '.') = '_';
-		while (strchr(cm->name, '/'))
-			*strchr(cm->name, '/') = '_';
-
-		/* add us to the builder list of unique servers */
-		lws_dll2_add_head(&cm->list, &a->builder->sai_plat_server_owner);
-
-		/* add us to this platforms's list of servers it accepts */
-		mref->spm = cm;
-		cm->refcount++;
-		lws_dll2_add_tail(&mref->list, &a->sai_plat->servers);
-
-		lws_ss_client_connect(h);
+		// lws_ss_client_connect(h);
 
 		return 0;
 
