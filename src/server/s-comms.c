@@ -245,7 +245,7 @@ sais_event_db_delete_database(struct vhd *vhd, const char *event_uuid)
 	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3-wal",
 		     vhd->sqlite3_path_lhs, saf);
 
-	r |= (char)!!unlink(filepath);
+	r = (char)(r | !!unlink(filepath));
 
 	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3-shm",
 		     vhd->sqlite3_path_lhs, saf);

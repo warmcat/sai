@@ -161,6 +161,12 @@ Container # apt install sudo make git gcc cmake net-tools libssl-dev vim libc6-i
 Container # dnf install sudo make git gcc gcc-c++ cmake net-tools dhclient openssl-devel vim glibc.i686 dbus mbedtls-devel glib2-devel libevent-devel libev-devel libuv-devel libmount-devel sqlite-devel libgit2 libgit2-devel dbus systemd-container vim libpkgconf procps-ng
 ```
 
+### Specific to Centos 7
+
+```
+Container #  dnf install sudo make git gcc gcc-c++ cmake net-tools dhclient openssl-devel vim glibc.i686 dbus glib2-devel libevent-devel libev-devel sqlite-devel libgit2 dbus systemd-container vim libpkgconf rpm-build systemd-networkd systemd-resolved
+```
+
 ### Specific to Centos 8
 
 Centos / RHEL 8 simply doesn't provide some -devel packages like mbedtls, libgit2...
