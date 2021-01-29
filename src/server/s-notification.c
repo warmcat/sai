@@ -668,9 +668,11 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 		break;
 
 	case LEJPNSAIF_CONFIGURATIONS_PLATFORMS:
-		/* the necessary dependent package strings */
-		lws_strncpy(sn->explicit_platforms, ctx->buf,
-				    sizeof(sn->explicit_platforms));
+		/* the necessary dependent package strings... can be huge */
+		n = strlen(sn->explicit_platforms);
+		if (n < sizeof(sn->explicit_platforms) - 2)
+			lws_strnncpy(sn->explicit_platforms + n, ctx->buf, ctx->npos,
+				     sizeof(sn->explicit_platforms) - n);
 		break;
 
 	case LEJPNSAIF_CONFIGURATIONS_ARTIFACTS:

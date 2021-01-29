@@ -126,9 +126,11 @@ if (requirements)
 			../../assets/tc-mingw32.svg
 			../../assets/tc-mingw64.svg
 			../../assets/tc-msvc.svg
+			../../assets/tc-wmbedtlsmsvc.svg
+			../../assets/tc-noptmsvc.svg
 			../../assets/ubuntu-focal-aarch64.svg
 			../../assets/virt-qemu.svg
-			../../assets/windows-10.svg
+			../../assets/w10.svg
 
 		DESTINATION "${DATA_DIR}/sai/assets"
 		COMPONENT web)
