@@ -155,6 +155,10 @@ struct sai_builder {
 	struct lws_context	*context;
 	struct lws_vhost	*vhost;
 
+	const char		*metrics_uri;
+	const char		*metrics_path;
+	const char		*metrics_secret;
+
 	const char		*home;		/* home dir, usually /sai/home */
 	const char		*perms;		/* user:group */
 

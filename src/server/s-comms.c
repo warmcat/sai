@@ -279,7 +279,9 @@ sai_destroy_builder(struct lws_dll2 *d, void *user)
 static void
 sais_server_destroy(struct vhd *vhd, sais_t *server)
 {
-	lws_dll2_foreach_safe(&server->builder_owner, NULL, sai_destroy_builder);
+	lwsl_notice("%s: server %p\n", __func__, server);
+	if (server)
+		lws_dll2_foreach_safe(&server->builder_owner, NULL, sai_destroy_builder);
 
 	sais_event_db_close_all_now(vhd);
 
@@ -354,7 +356,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		if (lws_pvo_get_str(in, "notification-key",
 				    &vhd->notification_key)) {
-			lwsl_err("%s: notification_key pvo required\n", __func__);
+			lwsl_warn("%s: notification_key pvo required\n", __func__);
 			return -1;
 		}
 

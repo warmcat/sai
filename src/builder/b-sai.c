@@ -114,13 +114,39 @@ static const char * const default_ss_policy =
 static const struct lws_protocols *pprotocols[] = {
 	&protocol_stdxxx,
 	&protocol_logproxy,
+	&lws_openmetrics_export_protocols[LWSOMPROIDX_PROX_WS_CLIENT],
 	NULL
 };
 
 static int lpidx;
 static char vhnames[256], *pv = vhnames;
 
-static struct lws_protocol_vhost_options pvo = {
+static struct lws_protocol_vhost_options
+pvo1c = {
+        NULL,                  /* "next" pvo linked-list */
+        NULL,                 /* "child" pvo linked-list */
+        "ba-secret",        /* protocol name we belong to on this vhost */
+        "ok"                     /* set at runtime from conf */
+},
+pvo1b = {
+        &pvo1c,                  /* "next" pvo linked-list */
+        NULL,                 /* "child" pvo linked-list */
+        "metrics-proxy-path",        /* protocol name we belong to on this vhost */
+        "ok"                     /* set at runtime from conf */
+},
+pvo1a = {
+        &pvo1b,                  /* "next" pvo linked-list */
+        NULL,                 /* "child" pvo linked-list */
+        "ws-server-uri",        /* protocol name we belong to on this vhost */
+        "ok"                     /* set at runtime from conf */
+},
+pvo1 = {
+        NULL,                  /* "next" pvo linked-list */
+        &pvo1a,                 /* "child" pvo linked-list */
+        "lws-openmetrics-prox-client",        /* protocol name we belong to on this vhost */
+        "ok"                     /* ignored */
+},
+pvo = {
         NULL,                  /* "next" pvo linked-list */
         NULL,                 /* "child" pvo linked-list */
         "protocol-logproxy",        /* protocol name we belong to on this vhost */
@@ -368,6 +394,8 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
+	lwsl_notice("%s: parsed %s %s %s\n", __func__, builder.metrics_path, builder.metrics_uri, builder.metrics_secret);
+
 	/*
 	 * We need to sample the true uid / gid we should use inside
 	 * the mountpoint for sai:nobody or sai:sai, by looking at
@@ -434,6 +462,11 @@ int main(int argc, const char **argv)
 
 	/* ... and our vhost... */
 
+	pvo1a.value = builder.metrics_uri;
+	pvo1b.value = builder.metrics_path;
+	pvo1c.value = builder.metrics_secret;
+	info.pvo = &pvo1;
+
 	builder.vhost = lws_create_vhost(builder.context, &info);
 	if (!builder.vhost) {
 		lwsl_err("Failed to create tls vhost\n");
@@ -478,23 +511,6 @@ bail:
 
 	} lws_end_foreach_dll_safe(p, p1);
 
-	saib_config_destroy(&builder);
-
-	/*
-	 * Clean up after the threads
-	 */
-
-	builder.mi.finish = 1;
-
-	pthread_mutex_lock(&builder.mi.mut);
-	pthread_cond_broadcast(&builder.mi.cond);
-	pthread_mutex_unlock(&builder.mi.mut);
-
-	pthread_join(builder.mi.repo_thread, &retval);
-
-	pthread_mutex_destroy(&builder.mi.mut);
-	pthread_cond_destroy(&builder.mi.cond);
-
 	lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
 			           builder.sai_plat_owner.head) {
 		struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
@@ -512,6 +528,25 @@ bail:
 		} lws_end_foreach_dll_safe(p, p1);
 
 	} lws_end_foreach_dll_safe(mp, mp1);
+
+	saib_config_destroy(&builder);
+
+	/*
+	 * Clean up after the threads
+	 */
+
+	builder.mi.finish = 1;
+
+	pthread_mutex_lock(&builder.mi.mut);
+	pthread_cond_broadcast(&builder.mi.cond);
+	pthread_mutex_unlock(&builder.mi.mut);
+
+	pthread_join(builder.mi.repo_thread, &retval);
+
+	pthread_mutex_destroy(&builder.mi.mut);
+	pthread_cond_destroy(&builder.mi.cond);
+
+
 
 	lws_context_destroy(builder.context);
 

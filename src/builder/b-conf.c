@@ -33,12 +33,18 @@ static const char * const paths_global[] = {
 	"home",
 	"perms",
 	"host",
+	"metrics_uri",
+	"metrics_path",
+	"metrics_secret"
 };
 
 enum enum_paths_global {
 	LEJPM_HOME,
 	LEJPM_PERMS,
 	LEJPM_HOST,
+	LEJPM_METRICS_URI,
+	LEJPM_METRICS_PATH,
+	LEJPM_METRICS_SECRET,
 };
 
 /* platform-related part */
@@ -265,6 +271,18 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 
 	case LEJPM_HOST:
 		pp = &a->builder->host;
+		break;
+
+	case LEJPM_METRICS_URI:
+		pp = &a->builder->metrics_uri;
+		break;
+
+	case LEJPM_METRICS_PATH:
+		pp = &a->builder->metrics_path;
+		break;
+
+	case LEJPM_METRICS_SECRET:
+		pp = &a->builder->metrics_secret;
 		break;
 
 	default:

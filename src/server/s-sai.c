@@ -1,7 +1,7 @@
 /*
  * Sai server
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2021 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -53,7 +53,12 @@ static const char * const default_ss_policy =
 ;
 
 static const struct lws_protocols
-	*pprotocols[] = { &protocol_ws, NULL };
+	*pprotocols[] = {
+		&protocol_ws,
+		&lws_openmetrics_export_protocols[LWSOMPROIDX_PROX_HTTP_SERVER],
+		&lws_openmetrics_export_protocols[LWSOMPROIDX_PROX_WS_SERVER],
+		NULL
+	};
 
 static void sigint_handler(int sig)
 {

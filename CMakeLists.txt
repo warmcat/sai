@@ -129,6 +129,8 @@ set(requirements 1)
 require_lws_config(LWS_ROLE_H1				1 requirements)
 require_lws_config(LWS_ROLE_WS				1 requirements)
 require_lws_config(LWS_WITH_JOSE			1 requirements)
+require_lws_config(LWS_WITH_PLUGINS_BUILTIN		1 requirements)
+
 
 if (requirements)
 
