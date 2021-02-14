@@ -321,7 +321,7 @@ sai_get_head_status(struct vhd *vhd, const char *projname)
 		return -1;
 
 	e = lws_container_of(o.head, sai_event_t, list);
-	state = e->state;
+	state = (int)e->state;
 
 	lwsac_free(&ac);
 
@@ -485,7 +485,8 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				if (!strncmp(pss->notification_sig,
 					     hmac_names[n],
 					     strlen(hmac_names[n]))) {
-					pss->hmac_type = n + 1;
+					pss->hmac_type =
+						(enum lws_genhmac_types)(n + 1);
 					break;
 				}
 

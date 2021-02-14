@@ -235,7 +235,7 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 				goto bail;
 			}
 
-			sais_eventchange(vhd->h_ss_websrv, event_uuid, sta);
+			sais_eventchange(vhd->h_ss_websrv, event_uuid, (int)sta);
 		}
 	}
 

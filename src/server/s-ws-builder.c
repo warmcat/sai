@@ -710,7 +710,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		if (!js)
 			return 1;
 
-		n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 		lws_struct_json_serialize_destroy(&js);
 
 		lws_dll2_remove(&c->list);
@@ -743,7 +743,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	if (!js)
 		return 1;
 
-	n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+	n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 	lws_struct_json_serialize_destroy(&js);
 	pss->one_event = NULL;
 	lwsac_free(&task->ac_task_container);
@@ -769,7 +769,8 @@ send_json:
 
 	// lwsl_hexdump_notice(start, p - start);
 
-	if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start), flags) < 0)
+	if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
+			(enum lws_write_protocol)flags) < 0)
 		return -1;
 
 	lws_callback_on_writable(pss->wsi);

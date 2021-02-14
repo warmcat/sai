@@ -1,0 +1,15 @@
+#!/bin/sh
+#
+daemon="/usr/local/bin/sai-builder"
+daemon_flags="-D"
+
+. /etc/rc.d/rc.subr
+
+pexp="sai-builder: ${Daemon}${daemon_flags:+ ${daemon_flags}}"
+
+rc_reload() {
+	${daemon} ${daemon_flags} -t && pkill -HUP -xf "${pexp}"
+}
+
+rc_cmd $1
+

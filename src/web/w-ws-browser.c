@@ -672,7 +672,8 @@ again:
 					return 0;
 				}
 
-				n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+				n = (int)lws_struct_json_serialize(js, p,
+						lws_ptr_diff_size_t(end, p), &w);
 				lws_struct_json_serialize_destroy(&js);
 				if (n == LSJS_RESULT_ERROR) {
 					lwsl_notice("%s: json ser error\n", __func__);
@@ -818,7 +819,7 @@ again:
 
 			p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "{\"e\":");
 
-			n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+			n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 			lws_struct_json_serialize_destroy(&js);
 			switch (n) {
 			case LSJS_RESULT_ERROR:
@@ -903,7 +904,7 @@ enum_tasks:
 				lsm_schema_json_map_task,
 				LWS_ARRAY_SIZE(lsm_schema_json_map_task), 0, t);
 
-			n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+			n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 			lws_struct_json_serialize_destroy(&js);
 			lwsac_free(&task_ac);
 			p += w;
@@ -1058,7 +1059,7 @@ b_finish:
 			return 1;
 		}
 
-		n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 		lws_struct_json_serialize_destroy(&js);
 
 		/*
@@ -1140,7 +1141,7 @@ b_finish:
 				return 1;
 			}
 
-			n = lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+			n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 			lws_struct_json_serialize_destroy(&js);
 			if (n == LSJS_RESULT_ERROR) {
 				saiw_dealloc_sched(sch);
@@ -1186,7 +1187,8 @@ send_it:
 		saiw_dealloc_sched(sch);
 	}
 
-	if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start), flags) < 0)
+	if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
+					(enum lws_write_protocol)flags) < 0)
 		return -1;
 
 	lws_callback_on_writable(pss->wsi);

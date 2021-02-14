@@ -49,6 +49,7 @@ if (requirements)
 
 	target_link_libraries(${SUB} websockets ${SAI_LWS_LIB_PATH})
 	
+	message("LWS_OPENSSL_LIBRARIES ${SUB} '${LWS_OPENSSL_LIBRARIES}'")
 	if (LWS_OPENSSL_LIBRARIES)
 		target_link_libraries(${SUB} ${LWS_OPENSSL_LIBRARIES})
 	endif()

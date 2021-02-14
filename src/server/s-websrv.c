@@ -167,8 +167,8 @@ sais_list_builders(struct vhd *vhd)
 			*p++ = ',';
 		subsequent = 1;
 
-		n = lws_struct_json_serialize(js, (unsigned char *)p,
-					      lws_ptr_diff_size_t(end, p), &w);
+		n = (int)lws_struct_json_serialize(js, (unsigned char *)p,
+						   lws_ptr_diff_size_t(end, p), &w);
 		p += w;
 		lws_struct_json_serialize_destroy(&js);
 
@@ -478,7 +478,7 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
 
 	lwsl_user("%s: %p %s, ord 0x%x\n", __func__, m->ss,
-		  lws_ss_state_name(state), (unsigned int)ack);
+		  lws_ss_state_name((int)state), (unsigned int)ack);
 
 	switch (state) {
 	case LWSSSCS_DISCONNECTED:

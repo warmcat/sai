@@ -181,6 +181,13 @@ Container #  dnf install sudo make git gcc gcc-c++ cmake net-tools dhclient open
 Container # emerge dev-db/sqlite libgit2 gcc net-libs/mbedtls dev-libs/openssl cmake libuv libevent dev-libs/glib dev-libs/libev dbus pkgconf libcap
 ```
 
+### Specific to BSD type unix
+
+There are some assumptions in sai like the scripts will run by
+`/bin/bash` and cmake should be on Sai's PATH, it means you may need
+to symlink some things that don't match to /bin paths, eg,
+`ln -sf /usr/local/bin/cmake /bin/cmake`
+
 ## Step 3: Configure the container private networking
 
 Set up a hostname for the container by editing its `/etc/hostname`, ideally to
@@ -328,10 +335,13 @@ Container # git clone https://libwebsockets.org/repo/libwebsockets
 Container # cd libwebsockets && mkdir build && cd build && \
   cmake .. -DLWS_WITH_JOSE=1 -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 \
    -DLWS_WITH_STRUCT_SQLITE3=1 -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1 \
-   -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1 -DLWS_WITH_JOSE=1 \
-   -DLWS_WITH_PLUGINS_BUILTIN=1
+   -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1 \
+   -DLWS_WITH_PLUGINS_BUILTIN=1 -DLWS_WITHOUT_DAEMONIZE=0
 Container # make -j && make -j install && ldconfig
 ```
+
+(You only require `LWS_WITHOUT_DAEMONIZE=0` for FreeBSD and OpenBSD rc.d
+script integration.)
 
 For OSX, you'll need to add something like `-DLWS_OPENSSL_INCLUDE_DIRS=/usr/local/opt/openssl@1.1/include -DLWS_OPENSSL_LIBRARIES="/usr/local/opt/openssl/lib/libssl.dylib;/usr/local/opt/openssl/lib/libcrypto.dylib"` to the cmake line
 

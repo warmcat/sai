@@ -315,7 +315,7 @@ sai_get_head_status(struct vhd *vhd, const char *projname)
 		return -1;
 
 	e = lws_container_of(o.head, sai_event_t, list);
-	state = e->state;
+	state = (int)e->state;
 
 	lwsac_free(&ac);
 

@@ -1,3 +1,4 @@
+set(SUB "sai-builder")
 set(CPACK_DEBIAN_BUILDER_PACKAGE_NAME "sai-builder")
 
 set(SRCS
@@ -19,9 +20,9 @@ require_lws_config(LWS_WITH_SECURE_STREAMS	1 requirements)
 require_lws_config(LWS_WITH_DIR			1 requirements)
 
 if (requirements)
-	add_executable("sai-builder" ${SRCS})
+	add_executable(${SUB} ${SRCS})
 	if (APPLE)
-		set_property(TARGET sai-builder PROPERTY MACOSX_RPATH YES)
+		set_property(TARGET ${SUB} PROPERTY MACOSX_RPATH YES)
 	endif()
 
 	#
@@ -41,7 +42,7 @@ if (requirements)
 		       message(FATAL_ERROR " Unable to find libgit2")
 	       endif()
 	       
-	       target_link_libraries("sai-builder" ${SAI_GIT2_LIB_PATH})
+	       target_link_libraries(${SUB} ${SAI_GIT2_LIB_PATH})
 	endif()
 
 	set(CMAKE_REQUIRED_LIBRARIES ${SAI_GIT2_LIB_PATH})
@@ -71,33 +72,34 @@ if (requirements)
 	#configure_file("${PROJECT_SOURCE_DIR}/cmake/sai_config_private.h.in"
 	#	       "${PROJECT_BINARY_DIR}/sai_config_private.h")
 	#
-	#target_include_directories("sai-builder" PRIVATE "${PROJECT_BINARY_DIR}")
+	#target_include_directories(${SUB} PRIVATE "${PROJECT_BINARY_DIR}")
 
 
 
 	if (SAI_LWS_INC_PATH)
-		target_include_directories("sai-builder" PRIVATE ${SAI_LWS_INC_PATH})
+		target_include_directories(${SUB} PRIVATE ${SAI_LWS_INC_PATH})
 	endif()
 
 	if (HAS_LIBCAP)
 		find_library(CAP_LIB_PATH NAMES "cap")
 	endif()
 
-	target_link_libraries("sai-builder" ${SAI_LWS_LIB_PATH})
+	target_link_libraries(${SUB} websockets ${SAI_LWS_LIB_PATH})
 	
+	message("LWS_OPENSSL_LIBRARIES ${SUB} '${LWS_OPENSSL_LIBRARIES}'")
 	if (LWS_OPENSSL_LIBRARIES)
-		target_link_libraries("sai-builder" ${LWS_OPENSSL_LIBRARIES})
+		target_link_libraries(${SUB} ${LWS_OPENSSL_LIBRARIES})
 	endif()
 	
 	if (SAI_EXT_PTHREAD_LIBRARIES)
-		target_link_libraries("sai-builder" ${SAI_EXT_PTHREAD_LIBRARIES})
+		target_link_libraries(${SUB} ${SAI_EXT_PTHREAD_LIBRARIES})
 	endif()
 	if (HAS_LIBCAP)
-		target_link_libraries("sai-builder" ${CAP_LIB_PATH})
+		target_link_libraries(${SUB} ${CAP_LIB_PATH})
 	endif()
 
 	if (MSVC OR WIN32)
-		target_link_libraries("sai-builder" ws2_32.lib userenv.lib psapi.lib iphlpapi.lib)
+		target_link_libraries(${SUB} ws2_32.lib userenv.lib psapi.lib iphlpapi.lib)
 	endif()
 
 	install(TARGETS "sai-builder"

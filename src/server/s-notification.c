@@ -330,7 +330,7 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 					   LWS_TOKENIZE_F_SLASH_NONTERM |
 					   LWS_TOKENIZE_F_MINUS_NONTERM;
 				do {
-					ts.e = lws_tokenize(&ts);
+					ts.e = (int8_t)lws_tokenize(&ts);
 					if (ts.e != LWS_TOKZE_TOKEN)
 						continue;
 
@@ -447,7 +447,7 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 					   LWS_TOKENIZE_F_MINUS_NONTERM;
 
 				do {
-					ts.e = lws_tokenize(&ts);
+					ts.e = (int8_t)lws_tokenize(&ts);
 					if (ts.e != LWS_TOKZE_TOKEN)
 						continue;
 
@@ -733,7 +733,7 @@ sai_notification_lejp_cb(struct lejp_ctx *ctx, char reason)
 	case LEJPN_ACTION:
 		for (n = 0; n < (int)LWS_ARRAY_SIZE(notifaction_action_names);n++)
 			if (!strcmp(ctx->buf, notifaction_action_names[n])) {
-				sn->action = n + 1;
+				sn->action = (sai_notification_action_t)(n + 1);
 
 				return 0;
 			}

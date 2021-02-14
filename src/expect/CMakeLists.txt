@@ -1,3 +1,4 @@
+set(SUB "sai-expect")
 set(CPACK_DEBIAN_BUILDER_PACKAGE_NAME "sai-expect")
 
 set(SRCS
@@ -30,10 +31,11 @@ if (requirements AND NOT MSVC)
 		target_include_directories("sai-expect" PRIVATE ${SAI_LWS_INC_PATH})
 	endif()
 
-	target_link_libraries("sai-expect" ${SAI_LWS_LIB_PATH})
+	target_link_libraries(${SUB} websockets ${SAI_LWS_LIB_PATH})
 	
+	message("LWS_OPENSSL_LIBRARIES ${SUB} '${LWS_OPENSSL_LIBRARIES}'")
 	if (LWS_OPENSSL_LIBRARIES)
-		target_link_libraries("sai-expect" ${LWS_OPENSSL_LIBRARIES})
+		target_link_libraries(${SUB} ${LWS_OPENSSL_LIBRARIES})
 	endif()
 	
 	if (SAI_EXT_PTHREAD_LIBRARIES AND NOT MSVC)

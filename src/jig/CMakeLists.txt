@@ -1,3 +1,4 @@
+set(SUB "sai-jig")
 set(CPACK_DEBIAN_BUILDER_PACKAGE_NAME "sai-jig")
 
 set(SRCS
@@ -29,10 +30,11 @@ if (requirements)
 		set_property(TARGET sai-device PROPERTY MACOSX_RPATH YES)
 	endif()
 
-	target_link_libraries("sai-jig" ${SAI_LWS_LIB_PATH})
+	target_link_libraries(${SUB} websockets ${SAI_LWS_LIB_PATH})
 	
+	message("LWS_OPENSSL_LIBRARIES ${SUB} '${LWS_OPENSSL_LIBRARIES}'")
 	if (LWS_OPENSSL_LIBRARIES)
-		target_link_libraries("sai-jig" ${LWS_OPENSSL_LIBRARIES})
+		target_link_libraries(${SUB} ${LWS_OPENSSL_LIBRARIES})
 	endif()
 	
 	if (SAI_EXT_PTHREAD_LIBRARIES)

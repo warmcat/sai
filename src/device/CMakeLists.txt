@@ -1,3 +1,4 @@
+set(SUB "sai-device")
 set(CPACK_DEBIAN_BUILDER_PACKAGE_NAME "sai-device")
 
 set(SRCS
@@ -24,10 +25,11 @@ if (requirements)
 		target_include_directories("sai-device" PRIVATE ${SAI_LWS_INC_PATH})
 	endif()
 
-	target_link_libraries("sai-device" ${SAI_LWS_LIB_PATH})
+	target_link_libraries(${SUB} websockets ${SAI_LWS_LIB_PATH})
 	
+	message("LWS_OPENSSL_LIBRARIES ${SUB} '${LWS_OPENSSL_LIBRARIES}'")
 	if (LWS_OPENSSL_LIBRARIES)
-		target_link_libraries("sai-device" ${LWS_OPENSSL_LIBRARIES})
+		target_link_libraries(${SUB} ${LWS_OPENSSL_LIBRARIES})
 	endif()
 	
 	if (SAI_EXT_PTHREAD_LIBRARIES)

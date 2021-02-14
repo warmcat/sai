@@ -19,7 +19,9 @@
                         "build": "mkdir build destdir;cd build;export CCACHE_DISABLE=1;cmake .. ${cmake};make -j4",
 			"default": false
                 },
-
+		"openbsd/x86_64-amd/llvm": {
+                        "build": "mkdir build destdir;cd build;export CCACHE_DISABLE=1;cmake .. ${cmake};make -j4"
+		},
 		"w10/x86_64-amd/msvc": {
                         "build": "mkdir build && cd build && set SAI_CPACK=\"-G ZIP\" && cmake .. -DSAI_LWS_INC_PATH=\"C:\\Program Files (x86)\\libwebsockets\\include\" -DSAI_LWS_LIB_PATH=\"C:\\Program Files (x86)\\libwebsockets\\lib\\websockets_static.lib\" -DSAI_EXT_PTHREAD_INCLUDE_DIR=\"C:\\Program Files (x86)\\pthreads\\include\" -DSAI_EXT_PTHREAD_LIBRARIES=\"C:\\Program Files (x86)\\pthreads\\lib\\x64\\libpthreadGC2.a\" -DLWS_OPENSSL_INCLUDE_DIRS=\"C:\\Program Files\\OpenSSL\\include\" -DSAI_GIT2_INC_PATH=\"C:\\Program Files (x86)\\libgit2\\include\" -DSAI_GIT2_LIB_PATH=\"C:\\Program Files (x86)\\libgit2\\lib\\git2.lib\" -DLWS_OPENSSL_LIBRARIES=\"C:\\Program Files\\OpenSSL\\lib\\libcrypto.lib;C:\\Program Files\\OpenSSL\\lib\\libssl.lib\"  ${cmake} && cmake --build . --config DEBUG && set CTEST_OUTPUT_ON_FAILURE=1 && ctest . -C DEBUG -j4 --output-on-failure ${cpack}",
                         "default": false
