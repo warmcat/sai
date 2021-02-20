@@ -41,6 +41,7 @@ typedef struct said_logproxy {
 	lws_dll2_owner_t		logs;
 	struct lws_ss_handle		*ss;
 	void				*opaque_data;
+	char				pending;
 } said_logproxy_t;
 
 static saicom_drain_cb			cb;

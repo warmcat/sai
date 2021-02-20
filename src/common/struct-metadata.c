@@ -1,7 +1,7 @@
 /*
- * Sai server - ./src/server/struct-metadata.c
+ * Sai server - ./src/common/struct-metadata.c
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2021 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -154,6 +154,18 @@ const lws_struct_map_t lsm_schema_json_map_log[] = {
 
 const lws_struct_map_t lsm_schema_sq3_map_log[] = {
 	LSM_SCHEMA_DLL2	(sai_log_t, list, NULL, lsm_log, "logs"),
+};
+
+const lws_struct_map_t lsm_resource[] = {
+	LSM_STRING_PTR	(sai_resource_t, resname,	"resname"),
+	LSM_STRING_PTR	(sai_resource_t, cookie,	"cookie"),
+	LSM_UNSIGNED	(sai_resource_t, amount,	"amount"),
+	LSM_UNSIGNED	(sai_resource_t, lease,		"lease"),
+};
+
+const lws_struct_map_t lsm_schema_json_map_resource[] = {
+	LSM_SCHEMA	(sai_resource_t, NULL, lsm_resource,
+			 "com-warmcat-sai-resource"),
 };
 
 /*

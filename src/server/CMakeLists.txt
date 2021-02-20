@@ -11,6 +11,7 @@ set(SRCS
 	s-task.c
 	s-central.c
 	s-websrv.c
+	s-resource.c
 )
 
 set(requirements 1)

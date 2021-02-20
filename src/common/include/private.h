@@ -1,7 +1,7 @@
 /*
  * Sai - ./src/common/include/private.h
  *
- * Copyright (C) 2019-2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2021 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -25,8 +25,10 @@
 
 #if defined(__linux__)
 #define UDS_PATHNAME_LOGPROXY "@com.warmcat.com.saib.logproxy"
+#define UDS_PATHNAME_RESPROXY "@com.warmcat.com.saib.resproxy"
 #else
 #define UDS_PATHNAME_LOGPROXY "/var/run/com.warmcat.com.saib.logproxy"
+#define UDS_PATHNAME_RESPROXY "/var/run/com.warmcat.com.saib.resproxy"
 #endif
 
 struct sai_plat;
@@ -160,6 +162,58 @@ typedef struct {
 	char				sent_json;
 } sai_artifact_t;
 
+/* communication part of resource allocation requests */
+
+typedef struct {
+	const char			*resname;
+	const char			*cookie;
+	unsigned int			amount;
+	unsigned int			lease;
+} sai_resource_t;
+
+typedef struct {
+	lws_dll2_t			list_resource_wellknown;
+	lws_dll2_t			list_resource_queued_leased;
+	lws_dll2_t			list_pss;
+
+	lws_sorted_usec_list_t		sul_expiry;
+
+	const char			*cookie;
+
+	time_t				requested_since_time;
+	time_t				allocated_since_time;
+	unsigned int			amount;
+	unsigned int			lease_secs;
+
+	/* cookie is overallocated */
+} sai_resource_requisition_t;
+
+typedef struct {
+	lws_dll2_t			list;
+
+	struct lws_context		*cx;
+
+	/* any related resources listed here so we can get this object */
+	lws_dll2_owner_t		owner; /* sai_resource_requisition_t */
+	/* queue for pending requests on this resource */
+	lws_dll2_owner_t		owner_queued; /* sai_resource_requisition_t */
+	/* list of allocated leases */
+	lws_dll2_owner_t		owner_leased; /* sai_resource_requisition_t */
+
+	const char			*name;
+	long				budget;
+	long				allocated;
+
+	/* name is overallocated */
+} sai_resource_wellknown_t;
+
+typedef struct {
+	lws_dll2_t			list;
+	const char			*msg;
+	size_t				len;
+	/* msg is overallocated */
+} sai_resource_msg_t;
+
 struct sai_plat;
 
 /*
@@ -173,6 +227,10 @@ typedef struct sai_plat_server {
 	lws_dll2_t		list;
 
 	lws_dll2_owner_t	rejection_list;
+	lws_dll2_owner_t	resource_req_list; /* sai_resource_msg_t */
+	lws_dll2_owner_t	resource_pss_list; /* so we can find the cookie */
+
+	char			resproxy_path[128];
 
 	const char		*url;
 	const char		*name;
@@ -282,7 +340,8 @@ extern const lws_struct_map_t
 	lsm_task_cancel[1],
 	lsm_schema_json_map_can[1],
 	lsm_schema_json_map_task[1],
-	lsm_schema_json_map_event[1]
+	lsm_schema_json_map_event[1],
+	lsm_resource[4]
 ;
 
 extern const lws_ss_info_t ssi_said_logproxy;

@@ -78,6 +78,11 @@ struct saib_logproxy {
 	int			log_channel_idx;
 };
 
+struct saib_resproxy {
+	char			sockpath[128];
+	struct sai_nspawn	*ns;
+};
+
 struct sai_nspawn;
 
 struct sai_nspawn {
@@ -240,7 +245,14 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 int
 rm_rf_cb(const char *dirpath, void *user, struct lws_dir_entry *lde);
 
-extern const struct lws_protocols protocol_logproxy;
+extern const struct lws_protocols protocol_logproxy, protocol_resproxy;
 
 void *
 thread_repo(void *d);
+
+int
+saib_create_resproxy_listen_uds(struct lws_context *context,
+				struct sai_plat_server *spm);
+
+int
+saib_handle_resource_result(struct sai_plat_server *spm, const char *in, size_t len);

@@ -207,19 +207,19 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 
 		/*
 		 * This is the first plat that wants to talk to this server,
-		 * we need to create the logical SS connection
+		 * we need to create the logical SS connection.
+		 *
+		 * The created SS in turn creates a struct sai_plat_server as
+		 * its user object, its CREATING callback in b-comms.c adds
+		 * that to the builder .sai_plat_server_owner
 		 */
 
-		if (lws_ss_create(builder.context, 0, &ssi_sai_builder, (void *)ctx, &h,
-				  NULL, NULL)) {
+		if (lws_ss_create(builder.context, 0, &ssi_sai_builder,
+				  (void *)ctx, &h, NULL, NULL)) {
 			lwsl_err("%s: failed to create secure stream\n",
 				 __func__);
 			return -1;
 		}
-
-
-
-		// lws_ss_client_connect(h);
 
 		return 0;
 

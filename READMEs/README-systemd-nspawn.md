@@ -382,6 +382,8 @@ Container # cd sai && mkdir build && cd build && cmake .. && make && make instal
 Container # cp ../scripts/sai-builder.service /etc/systemd/system
 Container # mkdir -p /etc/sai/builder
 Container # cp ../scripts/builder-conf /etc/sai/builder/conf
+Container # mkdir /var/run/com.warmcat.com.saib.logproxy /var/run/com.warmcat.com.saib.resproxy
+Container # chown sai /var/run/com.warmcat.com.saib.logproxy /var/run/com.warmcat.com.saib.resproxy
 Container # vim /etc/sai/builder/conf
 Container # systemctl enable sai-builder
 ```

@@ -114,6 +114,7 @@ static const char * const default_ss_policy =
 static const struct lws_protocols *pprotocols[] = {
 	&protocol_stdxxx,
 	&protocol_logproxy,
+	&protocol_resproxy,
 	&lws_openmetrics_export_protocols[LWSOMPROIDX_PROX_WS_CLIENT],
 	NULL
 };
@@ -140,18 +141,26 @@ pvo1a = {
         "ws-server-uri",        /* protocol name we belong to on this vhost */
         "ok"                     /* set at runtime from conf */
 },
-pvo1 = {
+pvo1 = { /* starting point for metrics proxy */
         NULL,                  /* "next" pvo linked-list */
         &pvo1a,                 /* "child" pvo linked-list */
         "lws-openmetrics-prox-client",        /* protocol name we belong to on this vhost */
         "ok"                     /* ignored */
 },
-pvo = {
+
+pvo = { /* starting point for logproxy */
         NULL,                  /* "next" pvo linked-list */
         NULL,                 /* "child" pvo linked-list */
         "protocol-logproxy",        /* protocol name we belong to on this vhost */
         "ok"                     /* ignored */
-};
+},
+
+pvo_resproxy = { /* starting point for resproxy */
+	        NULL,                  /* "next" pvo linked-list */
+	        NULL,                 /* "child" pvo linked-list */
+	        "protocol-resproxy",        /* protocol name we belong to on this vhost */
+	        "ok"                     /* ignored */
+	};;
 
 static int
 saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp)
@@ -175,7 +184,44 @@ saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp)
 	unlink(lp->sockpath);
 #endif
 
-	lwsl_notice("%s: %s\n", __func__, lp->sockpath);
+	lwsl_notice("%s: %s.%s\n", __func__, info.vhost_name, lp->sockpath);
+
+	if (!lws_create_vhost(context, &info)) {
+		lwsl_notice("%s: failed to create vh %s\n", __func__,
+			    info.vhost_name);
+		return -1;
+	}
+
+	return 0;
+}
+
+/*
+ * We create one of these per server we connected to
+ */
+
+int
+saib_create_resproxy_listen_uds(struct lws_context *context,
+				struct sai_plat_server *spm)
+{
+	struct lws_context_creation_info info;
+
+	memset(&info, 0, sizeof(info));
+
+	info.vhost_name			= pv;
+	pv += lws_snprintf(pv, sizeof(vhnames) - (size_t)(pv - vhnames),
+				"resproxy.%d", spm->index) + 1;
+	info.options = LWS_SERVER_OPTION_ADOPT_APPLY_LISTEN_ACCEPT_CONFIG |
+		       LWS_SERVER_OPTION_UNIX_SOCK;
+
+	info.iface			= spm->resproxy_path;
+	info.listen_accept_role		= "raw-skt";
+	info.listen_accept_protocol	= "protocol-resproxy";
+	info.user			= spm;
+	info.pvo			= &pvo_resproxy;
+	info.pprotocols                 = pprotocols;
+
+	lwsl_notice("%s: Created resproxy %s.%s\n", __func__, info.vhost_name,
+			spm->resproxy_path);
 
 	if (!lws_create_vhost(context, &info)) {
 		lwsl_notice("%s: failed to create vh %s\n", __func__,
@@ -298,6 +344,31 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 			} lws_end_foreach_dll_safe(np, np1);
 		} lws_end_foreach_dll_safe(mp, mp1);
 
+		/*
+		 * Create the resource proxy listeners, one per server link
+		 */
+
+		lwsl_notice("%s: creating resource proxy listeners\n", __func__);
+
+		lws_start_foreach_dll(struct lws_dll2 *, pxx,
+				      builder.sai_plat_server_owner.head) {
+			struct sai_plat_server *spm = lws_container_of(pxx, sai_plat_server_t, list);
+
+			lws_snprintf(spm->resproxy_path, sizeof(spm->resproxy_path),
+	#if defined(__linux__)
+			     UDS_PATHNAME_RESPROXY".%d",
+	#else
+			     UDS_PATHNAME_RESPROXY"/%d",
+	#endif
+			     spm->index);
+
+			lwsl_notice("%s: creating %s\n", __func__, spm->resproxy_path);
+
+			saib_create_resproxy_listen_uds(builder.context, spm);
+
+		} lws_end_foreach_dll(pxx);
+
+
 		break;
 	}
 
@@ -394,7 +465,8 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
-	lwsl_notice("%s: parsed %s %s %s\n", __func__, builder.metrics_path, builder.metrics_uri, builder.metrics_secret);
+//	lwsl_notice("%s: parsed %s %s %s\n", __func__, builder.metrics_path,
+//			builder.metrics_uri, builder.metrics_secret);
 
 	/*
 	 * We need to sample the true uid / gid we should use inside
@@ -475,6 +547,7 @@ int main(int argc, const char **argv)
 
 	pthread_mutex_init(&builder.mi.mut, NULL);
 	pthread_cond_init(&builder.mi.cond, NULL);
+
 
 	/*
 	 * Our approach is to split off a thread to do the git remote handling

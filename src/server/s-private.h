@@ -29,8 +29,11 @@
 struct sai_plat;
 
 typedef struct sai_platm {
-	struct lws_dll2_owner builder_owner;
-	struct lws_dll2_owner subs_owner;
+	lws_dll2_owner_t builder_owner;
+	lws_dll2_owner_t subs_owner;
+
+	/* the list of well-known, configured resources */
+	lws_dll2_owner_t resource_wellknown_owner; /* sai_resource_wellknown_t */
 
 	sqlite3 *pdb;
 	sqlite3 *pdb_auth;
@@ -97,6 +100,12 @@ struct pss {
 	lws_dll2_owner_t	platform_owner; /* sai_platform_t builder offers */
 	lws_dll2_owner_t	task_cancel_owner; /* sai_platform_t builder offers */
 	lws_dll2_owner_t	aft_owner; /* for statefully spooling artifact info */
+	lws_dll2_owner_t	res_owner; /* sai_resource_requisition_t
+					    * owner of resource objects related
+					    * to this pss */
+	lws_dll2_owner_t	res_pending_reply_owner; /* sai_resource_msg_t
+							  * resource JSON return
+							  * messages to builder */
 	lws_struct_args_t	a;
 
 	union {
@@ -261,3 +270,21 @@ sais_websrv_broadcast(struct lws_ss_handle *hsrv, const char *str, size_t len);
 
 int
 sql3_get_integer_cb(void *user, int cols, char **values, char **name);
+
+sai_resource_wellknown_t *
+sais_resource_wellknown_by_name(sais_t *sais, const char *name);
+
+void
+sais_resource_wellknown_remove_pss(sais_t *sais, struct pss *pss);
+
+void
+sais_resource_check_if_can_accept_queued(sai_resource_wellknown_t *wk);
+
+sai_resource_requisition_t *
+sais_resource_lookup_lease_by_cookie(sais_t *sais, const char *cookie);
+
+void
+sais_resource_destroy_queued_by_cookie(sais_t *sais, const char *cookie);
+
+void
+sais_resource_rr_destroy(sai_resource_requisition_t *rr);

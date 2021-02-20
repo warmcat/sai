@@ -203,6 +203,7 @@ ok:
 
 static const char * const runscript =
 	"set SAI_INSTANCE_IDX=%d\n"
+	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"set SAI_LOGPROXY=%s\n"
 	"set SAI_LOGPROXY_TTY0=%s\n"
 	"set SAI_LOGPROXY_TTY1=%s\n"
@@ -217,12 +218,15 @@ static const char * const runscript =
 	"#!/bin/bash -x\n"
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
+#else
+	"export PATH=/usr/local/bin:$PATH\n"
 #endif
 	"export HOME=%s\n"
 	"export SAI_OVN=%s\n"
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
 	"export SAI_INSTANCE_IDX=%d\n"
+	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"export SAI_LOGPROXY=%s\n"
 	"export SAI_LOGPROXY_TTY0=%s\n"
 	"export SAI_LOGPROXY_TTY1=%s\n"
@@ -240,6 +244,7 @@ saib_spawn(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
 	char args[290], st[2048], *p;
+	const char *respath = "unk";
 	int fd, n;
 	const char * cmd[] = {
 		"/bin/ps",
@@ -279,16 +284,24 @@ saib_spawn(struct sai_nspawn *ns)
 		return 1;
 	}
 
+	if (builder.sai_plat_server_owner.head) {
+		struct sai_plat_server *cm = lws_container_of(
+				builder.sai_plat_server_owner.head,
+				sai_plat_server_t, list);
+
+		respath = cm->resproxy_path;
+	}
+
 #if defined(WIN32)
 	n = lws_snprintf(st, sizeof(st), runscript, ns->instance_idx,
-			 ns->slp_control.sockpath,
+			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
 			 builder.home, ns->fsm.ovname, ns->project_name,
 			 ns->task->build);
 #else
 	n = lws_snprintf(st, sizeof(st), runscript, builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_idx,
-			 ns->slp_control.sockpath,
+			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,
 			 builder.home, ns->task->build);
 #endif

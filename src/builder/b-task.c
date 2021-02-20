@@ -36,11 +36,13 @@ static char csep = '\\';
 const lws_struct_map_t lsm_schema_map_m_to_b[] = {
 	LSM_SCHEMA (sai_task_t, NULL, lsm_task, "com-warmcat-sai-ta"),
 	LSM_SCHEMA (sai_cancel_t, NULL, lsm_task_cancel, "com.warmcat.sai.taskcan"),
+	LSM_SCHEMA (sai_resource_t, NULL, lsm_resource, "com-warmcat-sai-resource")
 };
 
 enum {
 	SAIB_RX_TASK_ALLOCATION,
 	SAIB_RX_TASK_CANCEL,
+	SAIB_RX_RESOURCE_REPLY,
 };
 
 static const char * const nsstates[] = {
@@ -411,6 +413,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 	struct lws_threadpool_task_args tpa;
 	sai_plat_t *sp = NULL;
 	struct sai_nspawn *ns;
+	sai_resource_t *reso;
 	struct lejp_ctx ctx;
 	lws_struct_args_t a;
 	sai_cancel_t *can;
@@ -433,8 +436,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 	lws_struct_json_init_parse(&ctx, NULL, &a);
 	m = lejp_parse(&ctx, (uint8_t *)in, (int)len);
 	if (m < 0) {
-		printf("%.*s\n", (int)len, (const char *)in);
-		lwsl_notice("%s: builder rx JSON decode failed '%s'\n",
+		lwsl_hexdump_err(in, len);
+		lwsl_err("%s: builder rx JSON decode failed '%s'\n",
 			    __func__, lejp_error_to_string(m));
 		return m;
 	}
@@ -737,6 +740,15 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			} lws_end_foreach_dll_safe(p, p1);
 
 		} lws_end_foreach_dll_safe(mp, mp1);
+		break;
+
+	case SAIB_RX_RESOURCE_REPLY:
+		reso = (sai_resource_t *)a.dest;
+
+		lwsl_notice("%s: RESOURCE_REPLY: cookie %s\n",
+				__func__, reso->cookie);
+
+		saib_handle_resource_result(spm, in, len);
 		break;
 
 	default:

@@ -1,5 +1,5 @@
 /*
- * Sai server - ./src/server/ws-json-rx.c
+ * Sai server - ./src/server/s-ws-builder.c
  *
  * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
  *
@@ -18,8 +18,8 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  *  MA  02110-1301  USA
  *
- * These are ws rx and tx handlers related to builder ws connections, on
- * /builder
+ * These are ws rx and tx handlers related to builder ws connections, at the
+ * sai-server
  */
 
 #include <libwebsockets.h>
@@ -57,13 +57,16 @@ static const lws_struct_map_t lsm_schema_map_ba[] = {
 						"com.warmcat.sai.taskrej"),
 	LSM_SCHEMA      (sai_artifact_t,  NULL, lsm_artifact,
 						"com-warmcat-sai-artifact"),
+	LSM_SCHEMA      (sai_resource_t,  NULL, lsm_resource,
+						"com-warmcat-sai-resource"),
 };
 
 enum {
 	SAIM_WSSCH_BUILDER_PLATS,
 	SAIM_WSSCH_BUILDER_LOGS,
 	SAIM_WSSCH_BUILDER_TASKREJ,
-	SAIM_WSSCH_BUILDER_ARTIFACT
+	SAIM_WSSCH_BUILDER_ARTIFACT,
+	SAIM_WSSCH_BUILDER_RESOURCE_REQ
 };
 
 static void
@@ -233,9 +236,12 @@ int
 sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 {
 	char event_uuid[33], s[128], esc[96];
+	sai_resource_requisition_t *rr;
+	sai_resource_wellknown_t *wk;
 	struct lwsac *ac = NULL;
 	sai_plat_t *build, *cb;
 	sai_rejection_t *rej;
+	sai_resource_t *res;
 	lws_dll2_owner_t o;
 	sai_artifact_t *ap;
 	sai_task_t *task;
@@ -671,6 +677,105 @@ bail:
 
 			goto afail;
 		}
+		break;
+
+	case SAIM_WSSCH_BUILDER_RESOURCE_REQ:
+		res = (sai_resource_t *)pss->a.dest;
+
+		/*
+		 * We get resource requests here, and also the handing back of
+		 * assigned leases.  The requests have the resname member and
+		 * the lease yield messages don't.
+		 */
+
+		if (!res->resname) {
+			sai_resource_requisition_t *rr;
+
+			/*
+			 * An assigned resource lease is being yielded
+			 */
+
+			rr = sais_resource_lookup_lease_by_cookie(&vhd->server,
+								  res->cookie);
+			if (!rr) {
+				/*
+				 * He never got allocated... if he's on the
+				 * queue delete him from there... if he doesn't
+				 * exist on our side it's OK, just finish
+				 */
+				sais_resource_destroy_queued_by_cookie(
+						&vhd->server, res->cookie);
+
+				return 0;
+			}
+
+			/*
+			 * Destroy the requisition, freeing any leased resources
+			 * allocated to him
+			 */
+
+			sais_resource_rr_destroy(rr);
+
+			return 0;
+		}
+
+		/*
+		 * This is a new request for resources, find out the well-known
+		 * resource to attach it to
+		 */
+
+
+		wk = sais_resource_wellknown_by_name(&pss->vhd->server,
+						     res->resname);
+		if (!wk) {
+			sai_resource_msg_t *mq;
+
+			/*
+			 * Requested well-known resource doesn't exist
+			 */
+
+			lwsl_warn("%s: resource %s not well-known\n", __func__,
+					res->resname);
+
+			mq = malloc(sizeof(*mq) + LWS_PRE + 256);
+			if (!mq)
+				return 0;
+
+			memset(mq, 0, sizeof(*mq));
+
+			/* return with cookie but no amount == fail */
+
+			mq->len = (size_t)lws_snprintf((char *)&mq[1] + LWS_PRE, 256,
+					"{\"schema\":\"com-warmcat-sai-resource\","
+					"\"cookie\":\"%s\"}", res->cookie);
+
+			lws_dll2_add_tail(&mq->list, &pss->res_pending_reply_owner);
+			lws_callback_on_writable(pss->wsi);
+
+			return 0;
+		}
+
+		/*
+		 * Create and queue the request on the right well-known
+		 * resource manager, check if we can accept it
+		 */
+
+		rr = malloc(sizeof(*rr) + strlen(res->cookie) + 1);
+		if (!rr)
+			return 0;
+		memset(rr, 0, sizeof(*rr));
+		memcpy((char *)&rr[1], res->cookie, strlen(res->cookie) + 1);
+
+		rr->cookie = (char *)&rr[1];
+		rr->lease_secs = res->lease;
+		rr->amount = res->amount;
+
+		lws_dll2_add_tail(&rr->list_pss, &pss->res_owner);
+		lws_dll2_add_tail(&rr->list_resource_wellknown, &wk->owner);
+		lws_dll2_add_tail(&rr->list_resource_queued_leased, &wk->owner_queued);
+
+		sais_resource_check_if_can_accept_queued(wk);
+		break;
 
 	}
 
@@ -715,6 +820,32 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		lws_dll2_remove(&c->list);
 		free(c);
+
+		first = 1;
+		pss->walk = NULL;
+
+		goto send_json;
+	}
+
+	/*
+	 * resource response?
+	 */
+
+	if (pss->res_pending_reply_owner.count) {
+		sai_resource_msg_t *rm = lws_container_of(pss->res_pending_reply_owner.head,
+				sai_resource_msg_t, list);
+
+		n = (int)rm->len;
+		if (n > lws_ptr_diff(end, p))
+			n = lws_ptr_diff(end, p);
+
+		memcpy(p, rm->msg, (unsigned int)n);
+		w = (size_t)n;
+
+		lwsl_notice("%s: issuing pending resouce reply %.*s\n", __func__, (int)n, (const char *)start);
+
+		lws_dll2_remove(&rm->list);
+		free(rm);
 
 		first = 1;
 		pss->walk = NULL;

@@ -257,6 +257,31 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		goto sendify;
 	}
 
+	/*
+	 * Any resource requests / relinquishments to process?
+	 */
+
+	if (spm->resource_req_list.count) {
+		struct lws_dll2 *d = lws_dll2_get_head(&spm->resource_req_list);
+		sai_resource_msg_t *resm;
+
+		resm = lws_container_of(d, sai_resource_msg_t, list);
+
+		n = (int)resm->len;
+		if (*len > resm->len)
+			*len = resm->len;
+		memcpy(buf, resm->msg, *len);
+
+		lws_dll2_remove(&resm->list);
+		free(resm);
+
+		lwsl_notice("%s: forwarding to server %.*s\n", __func__,
+				(int)(*len), (const char *)buf);
+
+		lws_ss_request_tx(spm->ss);
+		goto sendify;
+	}
+
 	switch (spm->phase) {
 	case PHASE_BUILDING:
 	case PHASE_IDLE:
@@ -279,7 +304,6 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		lws_struct_json_serialize_destroy(&js);
 
 		sp = (sai_plat_t *)builder.sai_plat_owner.head;
-		lwsl_hexdump_warn(sp, sizeof(*sp));
 		lwsl_hexdump_notice(start, w);
 
 		*len = w;

@@ -267,11 +267,41 @@ sais_all_browser_on_writable(struct vhd *vhd)
 #endif
 
 static int
-sai_destroy_builder(struct lws_dll2 *d, void *user)
+sai_detach_builder(struct lws_dll2 *d, void *user)
 {
 //	saib_t *b = lws_container_of(d, saib_t, c.builder_list);
 
 	lws_dll2_remove(d);
+
+	return 0;
+}
+
+static int
+sai_detach_resource(struct lws_dll2 *d, void *user)
+{
+	lws_dll2_remove(d);
+
+	return 0;
+}
+
+static int
+sai_destroy_resource_wellknown(struct lws_dll2 *d, void *user)
+{
+	sai_resource_wellknown_t *rwk =
+			lws_container_of(d, sai_resource_wellknown_t, list);
+
+	/*
+	 * Just detach everything listed on this well-known resource...
+	 * everything listed here is ultimately owned by a pss and will be
+	 * destroyed when that goes down
+	 */
+
+	lws_dll2_foreach_safe(&rwk->owner_queued, NULL, sai_detach_resource);
+	lws_dll2_foreach_safe(&rwk->owner_leased, NULL, sai_detach_resource);
+
+	lws_dll2_remove(d);
+
+	free(rwk);
 
 	return 0;
 }
@@ -281,11 +311,15 @@ sais_server_destroy(struct vhd *vhd, sais_t *server)
 {
 	lwsl_notice("%s: server %p\n", __func__, server);
 	if (server)
-		lws_dll2_foreach_safe(&server->builder_owner, NULL, sai_destroy_builder);
+		lws_dll2_foreach_safe(&server->builder_owner, NULL,
+				      sai_detach_builder);
 
 	sais_event_db_close_all_now(vhd);
 
 	lws_struct_sq3_close(&server->pdb);
+
+	lws_dll2_foreach_safe(&server->resource_wellknown_owner, NULL,
+			      sai_destroy_resource_wellknown);
 }
 
 typedef enum {
@@ -338,6 +372,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		*end = &buf[sizeof(buf) - LWS_PRE - 1];
 	struct pss *pss = (struct pss *)user;
 	sai_http_murl_t mu = SHMUT_NONE;
+	const char *pvo_resources;
 	int n;
 
 	(void)end;
@@ -363,6 +398,55 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (lws_pvo_get_str(in, "database", &vhd->sqlite3_path_lhs)) {
 			lwsl_err("%s: database pvo required\n", __func__);
 			return -1;
+		}
+
+		/*
+		 * Create the listed well-known resources to be managed by the
+		 * sai-server for the builders
+		 */
+
+		if (!lws_pvo_get_str(in, "resources", &pvo_resources)) {
+			sai_resource_wellknown_t *wk;
+			struct lws_tokenize ts;
+			char wkname[32];
+
+			wkname[0] = '\0';
+			lws_tokenize_init(&ts, pvo_resources,
+					  LWS_TOKENIZE_F_MINUS_NONTERM);
+			do {
+
+				ts.e = (int8_t)lws_tokenize(&ts);
+				switch (ts.e) {
+				case LWS_TOKZE_TOKEN_NAME_EQUALS:
+					lws_strnncpy(wkname, ts.token, ts.token_len,
+							sizeof(wkname));
+					break;
+				case LWS_TOKZE_INTEGER:
+
+					/*
+					 * Create a new well-known resource
+					 */
+
+					wk = malloc(sizeof(*wk) + strlen(wkname) + 1);
+					if (!wk)
+						return -1;
+
+					memset(wk, 0, sizeof(*wk));
+					wk->cx = lws_get_context(wsi);
+					wk->name = (const char *)&wk[1];
+					memcpy((char *)wk->name, wkname,
+					       strlen(wkname) + 1);
+					wk->budget = atol(ts.token);
+					lwsl_notice("%s: well-known resource '%s' "
+						    "initialized to %ld\n", __func__,
+						    wk->name, wk->budget);
+					lws_dll2_add_tail(&wk->list, &vhd->server.
+							  resource_wellknown_owner);
+					break;
+				default:
+					break;
+				}
+			} while (ts.e > 0);
 		}
 
 		lws_snprintf((char *)buf, sizeof(buf), "%s-events.sqlite3",
@@ -634,6 +718,8 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			}
 
 		} lws_end_foreach_dll_safe(p, p1);
+
+		sais_resource_wellknown_remove_pss(&pss->vhd->server, pss);
 
 		if (pss->blob_artifact) {
 			sqlite3_blob_close(pss->blob_artifact);
