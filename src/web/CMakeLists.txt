@@ -114,7 +114,7 @@ if (requirements)
 			../../assets/linux-gentoo.svg
 			../../assets/linux-ubuntu-1804.svg
 			../../assets/linux-ubuntu-2004.svg
-			../../assets/linux-ubuntu-xenial-amd64.svg
+			../../assets/linux-ubuntu-xenial.svg
 			../../assets/netbsd-iOS.svg
 			../../assets/netbsd-OSX-catalina.svg
 			../../assets/sai-event.svg

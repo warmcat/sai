@@ -336,7 +336,8 @@ Container # cd libwebsockets && mkdir build && cd build && \
   cmake .. -DLWS_WITH_JOSE=1 -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 \
    -DLWS_WITH_STRUCT_SQLITE3=1 -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1 \
    -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1 \
-   -DLWS_WITH_PLUGINS_BUILTIN=1 -DLWS_WITHOUT_DAEMONIZE=0
+   -DLWS_WITH_PLUGINS_BUILTIN=1 -DLWS_WITHOUT_DAEMONIZE=0 \
+   -DLWS_WITH_SYS_METRICS=1
 Container # make -j && make -j install && ldconfig
 ```
 
@@ -353,6 +354,18 @@ cmake .. -DLWS_OPENSSL_INCLUDE_DIRS=/opt/homebrew/Cellar/openssl@1.1/1.1.1h/incl
    -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1 -DLWS_WITH_JOSE=1 \
    -DLWS_WITH_PLUGINS_BUILTIN=1
 ```
+
+### Solaris loader paths
+
+Solaris goes its own way to define well-known loader paths, the magic to cover
+default builds of lws and libgit2 is
+
+```
+# crle -c /var/ld/ld.config -l /lib:/usr/lib:/usr/local/lib:/opt/csw/lib
+```
+
+You also need to build libgit2 similar to as shown below, since it's not
+packaged.
 
 ### Windows: build libgit2
 
@@ -459,6 +472,21 @@ That's it, he should be running in the background.  To stop him
 
 ```
 % sudo launchctl stop com.warmcat.sai-builder
+```
+
+### Solaris service
+
+Solaris uses its own service manager called SMF.  Build sai and then do the
+following to create and enable the service, which will also start it at
+subsequent boots.
+
+```
+# mkdir -p /usr/local/svc/method
+# cp scripts/usr-local-svc-method-sai_builder-Solaris /usr/local/svc/method/sai_builder
+# cp scripts/var-svc-manifest-site-sai_builder.xml-Solaris /var/svc/manifest/site/sai_builder.xml
+# svccfg import /var/svc/manifest/site/sai_builder.xml
+# svcadm restart svc:/system/manifest-import
+# svcadm enable sai_builder
 ```
 
 ### Make the container start at boot

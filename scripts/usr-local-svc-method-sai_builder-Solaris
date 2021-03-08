@@ -1,0 +1,19 @@
+#!/bin/bash
+
+case "$1" in
+'start')
+	mkdir -p /var/run/com.warmcat.com.saib.resproxy /var/run/com.warmcat.com.saib.logproxy
+	chown 883 /var/run/com.warmcat.com.saib.resproxy /var/run/com.warmcat.com.saib.logproxy
+        /usr/local/bin/sai-builder 2>> /var/log/sai &
+        ;;
+
+'stop')
+        /usr/bin/pkill -x -u 883 sai-builder
+        ;;
+
+*)
+        echo "Usage: $0 { start | stop }"
+        ;;
+esac
+exit 0
+

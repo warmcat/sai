@@ -1,0 +1,60 @@
+<?xml version="1.0"?>
+<!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
+
+<service_bundle type='manifest' name='sai_builder'>
+<!--
+    pragma ident        "@(#)sai_builder.xml 1.2     03/08/21 SMI"
+-->
+<service
+    name='site/sai_builder'
+    type='service'
+    version='1'>
+
+    <single_instance/>
+    <dependency
+            name='usr'
+            type='service'
+            grouping='require_all'
+            restart_on='none'>
+                <service_fmri value='svc:/system/filesystem/local'/>
+        </dependency>
+        <!--
+        <dependency
+            name='network'
+            grouping='require_all'
+            type='service'
+            restart_on='none'>
+            <service_fmri value='svc:/milestone/network/default'/>
+        </dependency>
+        -->
+        <exec_method
+            type='method'
+            name='start'
+            exec='/usr/local/svc/method/sai_builder start'
+            timeout_seconds='30' />
+
+        <exec_method
+            type='method'
+            name='stop'
+            exec='/usr/local/svc/method/sai_builder stop'
+            timeout_seconds='30' />
+
+        <property_group name='startd' type='framework'>
+                <propval name='duration' type='astring' value='transient' />
+        </property_group>
+
+        <instance name='default' enabled='true' />
+
+        <stability value='Unstable' />
+
+        <template>
+                <common_name>
+                        <loctext xml:lang='C'>
+                                Sai Builder
+                        </loctext>
+                </common_name>
+        </template>
+</service>
+
+</service_bundle>
+

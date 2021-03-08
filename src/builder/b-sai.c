@@ -479,10 +479,12 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
-#if defined(__APPLE__)
+#if !defined(__linux__) && !defined(WIN32)
 	/* we are still root */
 	mkdir(UDS_PATHNAME_LOGPROXY, 0700);
 	chown(UDS_PATHNAME_LOGPROXY, sb.st_uid, sb.st_gid);
+	mkdir(UDS_PATHNAME_RESPROXY, 0700);
+	chown(UDS_PATHNAME_RESPROXY, sb.st_uid, sb.st_gid);
 #endif
 
 	/* if we don't do this, libgit2 looks in /root/.gitconfig */
