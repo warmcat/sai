@@ -567,7 +567,8 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		((char *)spm->url)[ctx->npos] = '\0';
 
 		lwsl_notice("%s: binding ss to %s\n", __func__, spm->url);
-		lws_ss_set_metadata(spm->ss, "url", spm->url, strlen(spm->url));
+		if (lws_ss_set_metadata(spm->ss, "url", spm->url, strlen(spm->url)))
+			lwsl_warn("%s: unable to set metadata\n", __func__);
 
 		pq = spm->url;
 		while (*pq && (pq[0] != '/' || pq[1] != '/'))

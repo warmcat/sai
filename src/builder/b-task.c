@@ -266,7 +266,8 @@ artifact_glob_cb(void *data, const char *path)
 	 * as meaning the bulk data follows.
 	 */
 
-	lws_ss_set_metadata(h, "url", ns->spm->url, strlen(ns->spm->url));
+	if (lws_ss_set_metadata(h, "url", ns->spm->url, strlen(ns->spm->url)))
+		lwsl_warn("%s: unable to set metadata\n", __func__);
 	lws_ss_client_connect(h);
 
 	return 0;

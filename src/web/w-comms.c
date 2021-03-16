@@ -510,8 +510,9 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return 1;
 		}
 
-		lws_ss_set_metadata(vhd->h_ss_websrv, "sockpath",
-				    "@com.warmcat.sai-websrv", 23);
+		if (lws_ss_set_metadata(vhd->h_ss_websrv, "sockpath",
+				    "@com.warmcat.sai-websrv", 23))
+			lwsl_warn("%s: unable to set metadata\n", __func__);
 		lws_ss_client_connect(vhd->h_ss_websrv);
 
 		break;

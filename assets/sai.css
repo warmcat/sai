@@ -203,9 +203,9 @@ div.taskinfo {
 	background: #fff;
 	z-index: 2002;
 	border-style: solid;
-	border-width: 16px 16px 0px 16px;
+	border-width: 3px 16px 0px 16px;
 	border-color: #fff;
-	margin-top: -16px;
+	margin-top: -3px;
 }
 
 table.scrollogs {
@@ -222,7 +222,6 @@ div.taskstate {
 }
 
 div.nailed {
-        position:fixed;
         background: #fff;
         width:auto;
         z-index:1001;
@@ -443,7 +442,7 @@ form.login {
 }
 
 div.login {
-	display: block;
+	display: inline-block;
 	vertical-align: middle;
 	font-size: 7pt;
 	color:#3d9970;
@@ -451,8 +450,6 @@ div.login {
 	margin: 0px 16px 0px 16px;
 	padding: 2px 3px;
 	border-radius:5px;
-	float: left;
-	width: auto;
 }
 
 
@@ -537,21 +534,24 @@ img.bsvg {
 }
 
 div.builder {
-	display: block;
-	position: absolute;
-	top: 150px;
+	display: inline-block;
 }
 
 div.sticky {
-	margin-left: 180px;
+	float: left;
+	position: absolute;
 }
 
+td.topregion {
+	vertical-align: top
+}
 
 div.logo {
+	display: inline-block;
 	margin: 3px;
 	margin-right: 4px;
 	padding: 2px;
-	vertical-align: top;
+	vertical-align: middle;
 	z-index: 1002;
 	width: 164px;
 	height: auto;
