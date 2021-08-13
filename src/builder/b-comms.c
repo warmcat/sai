@@ -213,6 +213,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	struct sai_plat *sp = NULL;
 	lws_struct_serialize_t *js;
 	lws_dll2_t *star, *walk;
+	lws_ss_state_return_t r;
 	struct sai_nspawn *ns;
 	size_t w = 0;
 	int n = 0;
@@ -253,7 +254,9 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		lws_dll2_remove(&rej->list);
 		free(rej);
 
-		lws_ss_request_tx(spm->ss);
+		r = lws_ss_request_tx(spm->ss);
+		if (r)
+			return r;
 		goto sendify;
 	}
 
@@ -278,7 +281,9 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		lwsl_notice("%s: forwarding to server %.*s\n", __func__,
 				(int)(*len), (const char *)buf);
 
-		lws_ss_request_tx(spm->ss);
+		r = lws_ss_request_tx(spm->ss);
+		if (r)
+			return r;
 		goto sendify;
 	}
 
@@ -311,9 +316,9 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
 
 		if (spm->logs_in_flight)
-			lws_ss_request_tx(spm->ss);
+			return lws_ss_request_tx(spm->ss);
 
-		return 0;
+		return LWSSSSRET_OK;
 	}
 
 	/*
@@ -460,13 +465,16 @@ sendify:
 	*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
 	*len = (unsigned int)n;
 
-	if (spm->phase != PHASE_IDLE || spm->logs_in_flight)
-		lws_ss_request_tx(spm->ss);
+	if (spm->phase != PHASE_IDLE || spm->logs_in_flight) {
+		r = lws_ss_request_tx(spm->ss);
+		if (r)
+			return r;
+	}
 
 	if (!n)
 		return 1;
 
-	return 0;
+	return LWSSSSRET_OK;
 }
 
 static int
@@ -618,8 +626,7 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 	case LWSSSCS_CONNECTED:
 		lwsl_user("%s: CONNECTED: %p\n", __func__, spm->ss);
 		spm->phase = PHASE_START_ATTACH;
-		lws_ss_request_tx(spm->ss);
-		break;
+		return lws_ss_request_tx(spm->ss);
 
 	case LWSSSCS_DISCONNECTED:
 		/*
@@ -633,8 +640,7 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 	case LWSSSCS_ALL_RETRIES_FAILED:
 		lwsl_user("%s: LWSSSCS_ALL_RETRIES_FAILED\n", __func__);
-		lws_ss_request_tx(spm->ss);
-		break;
+		return lws_ss_request_tx(spm->ss);
 
 	case LWSSSCS_QOS_ACK_REMOTE:
 		lwsl_notice("%s: LWSSSCS_QOS_ACK_REMOTE\n", __func__);
@@ -644,7 +650,7 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		break;
 	}
 
-	return 0;
+	return LWSSSSRET_OK;
 }
 
 const lws_ss_info_t ssi_sai_builder = {

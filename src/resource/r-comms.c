@@ -82,8 +82,7 @@ sair_lp_state(void *userobj, void *sh, lws_ss_constate_t state,
 	switch (state) {
 
 	case LWSSSCS_CONNECTED:
-		lws_ss_request_tx(lp->ss);
-		break;
+		return lws_ss_request_tx(lp->ss);
 
 	case LWSSSCS_ALL_RETRIES_FAILED:
 	case LWSSSCS_DISCONNECTED:
@@ -132,7 +131,10 @@ sair_ss_from_env(struct lws_context *context, const char *env_name)
 
 	if (lws_ss_set_metadata(h, "sockpath", e, strlen(e)))
 		lwsl_err("%s: unable to set metadata\n", __func__);
-	lws_ss_client_connect(h);
+	if (lws_ss_client_connect(h)) {
+		lws_ss_destroy(&h);
+		return NULL;
+	}
 
 	return h;
 }

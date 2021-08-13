@@ -48,6 +48,7 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 		 size_t *len, int *flags)
 {
 	sai_artifact_t *ap = (sai_artifact_t *)userobj;
+	lws_ss_state_return_t r;
 	lws_struct_serialize_t *js;
 	size_t w;
 	int n;
@@ -68,7 +69,9 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 		*len = w;
 
 		ap->sent_json = 1;
-		lws_ss_request_tx(ap->ss);
+		r = lws_ss_request_tx(ap->ss);
+		if (r)
+			return r;
 		lwsl_notice("%s: sent JSON %s\n", __func__, (const char *)buf);
 
 		return LWSSSSRET_OK;
@@ -110,9 +113,7 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	}
 
 	/* even if we finished, we want to come back to close */
-	lws_ss_request_tx(ap->ss);
-
-	return LWSSSSRET_OK;
+	return lws_ss_request_tx(ap->ss);
 }
 
 static lws_ss_state_return_t
@@ -160,8 +161,7 @@ saib_artifact_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 	case LWSSSCS_CONNECTED:
 		// lwsl_user("%s: CONNECTED: %p\n", __func__, ap->ss);
-		lws_ss_request_tx_len(ap->ss, (unsigned long)ap->len);
-		break;
+		return lws_ss_request_tx_len(ap->ss, (unsigned long)ap->len);
 
 	case LWSSSCS_TIMEOUT:
 		lwsl_info("%s: timeout\n", __func__);

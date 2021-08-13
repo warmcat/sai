@@ -104,7 +104,8 @@ sais_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len)
 	n = lws_buflist_append_segment(&m->bltx, buf, len);
 
 	lwsl_notice("%s: appened h %p: %d\n", __func__, h, n);
-	lws_ss_request_tx(h);
+	if (lws_ss_request_tx(h))
+		return 1;
 
 	return n < 0;
 }
@@ -120,10 +121,14 @@ _sais_websrv_broadcast(struct lws_ss_handle *h, void *arg)
 	websrvss_srv_t *m = (websrvss_srv_t *)lws_ss_to_user_object(h);
 	sais_websrv_broadcast_t *a = (sais_websrv_broadcast_t *)arg;
 
-	if (lws_buflist_append_segment(&m->bltx, a->buf, a->len) >= 0)
-		lws_ss_request_tx(h);
-	else
+	if (lws_buflist_append_segment(&m->bltx, a->buf, a->len) < 0) {
 		lwsl_warn("%s: buflist append fail\n", __func__);
+
+		return;
+	}
+	
+	if (lws_ss_request_tx(h))
+		lwsl_ss_warn(h, "tx req fail");
 }
 
 void
@@ -207,10 +212,14 @@ _sais_taskchange(struct lws_ss_handle *h, void *_arg)
 					  "\"event_hash\":\"%s\", \"state\":%d}",
 					  arg->uid, arg->state);
 
-	if (lws_buflist_append_segment(&m->bltx, (uint8_t *)tc, (unsigned int)n) >= 0)
-		lws_ss_request_tx(h);
-	else
+	if (lws_buflist_append_segment(&m->bltx, (uint8_t *)tc, (unsigned int)n) < 0) {
 		lwsl_warn("%s: buflist append failed\n", __func__);
+
+		return;
+	}
+
+	if (lws_ss_request_tx(h))
+		lwsl_ss_warn(h, "tx req fail");
 }
 
 void
@@ -221,7 +230,7 @@ sais_taskchange(struct lws_ss_handle *hsrv, const char *task_uuid, int state)
 	lws_ss_server_foreach_client(hsrv, _sais_taskchange, (void *)&arg);
 }
 
-void
+static void
 _sais_eventchange(struct lws_ss_handle *h, void *_arg)
 {
 	websrvss_srv_t *m = (websrvss_srv_t *)lws_ss_to_user_object(h);
@@ -233,10 +242,13 @@ _sais_eventchange(struct lws_ss_handle *h, void *_arg)
 					 "\"event_hash\":\"%s\", \"state\":%d}",
 					 arg->uid, arg->state);
 
-	if (lws_buflist_append_segment(&m->bltx, (uint8_t *)tc, (unsigned int)n) >= 0)
-		lws_ss_request_tx(h);
-	else
+	if (lws_buflist_append_segment(&m->bltx, (uint8_t *)tc, (unsigned int)n) < 0) {
 		lwsl_warn("%s: buflist append failed\n", __func__);
+		return;
+	}
+
+	if (lws_ss_request_tx(h))
+		lwsl_ss_warn(h, "req fail");
 }
 
 void
@@ -466,7 +478,7 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	*len = (size_t)used;
 
 	if (m->bltx)
-		lws_ss_request_tx(m->ss);
+		return lws_ss_request_tx(m->ss);
 
 	return 0;
 }
@@ -485,8 +497,8 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 		lws_buflist_destroy_all_segments(&m->bltx);
 		break;
 	case LWSSSCS_CREATING:
-		lws_ss_request_tx(m->ss);
-		break;
+		return lws_ss_request_tx(m->ss);
+
 	case LWSSSCS_CONNECTED:
 		sais_list_builders(m->vhd);
 		break;

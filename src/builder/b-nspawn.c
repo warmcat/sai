@@ -121,8 +121,7 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		if (!saib_log_chunk_create(ns, buf, len, lws_spawn_get_stdfd(wsi)))
 			return -1;
 
-		lws_ss_request_tx(ns->spm->ss);
-		break;
+		return lws_ss_request_tx(ns->spm->ss) ? -1 : 0;
 
 	default:
 		break;

@@ -92,9 +92,8 @@ saib_queue_yield_message(struct sai_plat_server *spm, const char *c, size_t len)
 	lwsl_notice("%s: %s\n", __func__, m->msg);
 
 	lws_dll2_add_tail(&m->list, &spm->resource_req_list);
-	lws_ss_request_tx(spm->ss);
 
-	return 0;
+	return lws_ss_request_tx(spm->ss) ? -1 : 0;
 }
 
 int
@@ -226,8 +225,7 @@ callback_resproxy(struct lws *wsi, enum lws_callback_reasons reason,
 		lws_dll2_add_tail(&pss->list, &spm->resource_pss_list);
 
 		/* try to schedule a write */
-		lws_ss_request_tx(spm->ss);
-		break;
+		return lws_ss_request_tx(spm->ss) ? -1 : 0;
 
 	case LWS_CALLBACK_RAW_WRITEABLE:
 		if (pss->response) {

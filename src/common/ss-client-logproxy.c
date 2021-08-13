@@ -67,7 +67,10 @@ saicom_lp_ss_from_env(struct lws_context *context, const char *env_name)
 
 	if (lws_ss_set_metadata(h, "sockpath", e, strlen(e)))
 		lwsl_warn("%s: metadata set failed\n", __func__);
-	lws_ss_client_connect(h);
+	if (lws_ss_client_connect(h)) {
+		lws_ss_destroy(&h);
+		return NULL;
+	}
 
 	return h;
 }
@@ -85,9 +88,8 @@ saicom_lp_add(struct lws_ss_handle *h, const char *buf, size_t len)
 
 	log->len = len;
 	lws_dll2_add_tail(&log->list, &lp->logs);
-	lws_ss_request_tx(h);
 
-	return 0;
+	return lws_ss_request_tx(h);
 }
 
 void
@@ -135,6 +137,7 @@ saicom_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 {
 	said_logproxy_t *lp = (said_logproxy_t *)userobj;
 	said_log_t *log = lws_container_of(lp->logs.head, said_log_t, list);
+	lws_ss_state_return_t r;
 
 	if (!lp->logs.head)
 		return 1; /* nothing to send */
@@ -154,9 +157,9 @@ saicom_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	}
 
 	if (lp->logs.head) {
-		lws_ss_request_tx(lp->ss);
-
-		return 0;
+		r = lws_ss_request_tx(lp->ss);
+		if (r)
+			return r;
 	}
 
 	check_drained();
@@ -178,8 +181,7 @@ saicom_lp_state(void *userobj, void *sh, lws_ss_constate_t state,
 		break;
 
 	case LWSSSCS_CONNECTED:
-		lws_ss_request_tx(lp->ss);
-		break;
+		return lws_ss_request_tx(lp->ss);
 
 	case LWSSSCS_DISCONNECTED:
 		break;

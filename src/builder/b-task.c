@@ -77,7 +77,7 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 	}
 
 	if (ns->spm && ns->spm->ss)
-		lws_ss_request_tx(ns->spm->ss);
+		return lws_ss_request_tx(ns->spm->ss) ? -1 : 0;
 
 	return 0;
 }
@@ -125,9 +125,8 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 	rej->ongoing = sp->ongoing;
 
 	lws_dll2_add_tail(&rej->list, &spm->rejection_list);
-	lws_ss_request_tx(spm->ss);
 
-	return 0;
+	return lws_ss_request_tx(spm->ss) ? -1 : 0;
 }
 
 void
@@ -143,7 +142,8 @@ saib_task_destroy(struct sai_nspawn *ns)
 	 */
 	if (ns->spm) {
 		ns->spm->phase = PHASE_START_ATTACH;
-		lws_ss_request_tx(ns->spm->ss);
+		if (lws_ss_request_tx(ns->spm->ss))
+			return;
 	}
 
 	if (ns->tp) {
@@ -268,9 +268,8 @@ artifact_glob_cb(void *data, const char *path)
 
 	if (lws_ss_set_metadata(h, "url", ns->spm->url, strlen(ns->spm->url)))
 		lwsl_warn("%s: unable to set metadata\n", __func__);
-	lws_ss_client_connect(h);
 
-	return 0;
+	return lws_ss_client_connect(h) ? -1 : 0;
 }
 
 /*

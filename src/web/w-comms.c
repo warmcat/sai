@@ -513,9 +513,8 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (lws_ss_set_metadata(vhd->h_ss_websrv, "sockpath",
 				    "@com.warmcat.sai-websrv", 23))
 			lwsl_warn("%s: unable to set metadata\n", __func__);
-		lws_ss_client_connect(vhd->h_ss_websrv);
 
-		break;
+		return lws_ss_client_connect(vhd->h_ss_websrv) ? -1 : 0;
 
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
 		saiw_event_db_close_all_now(vhd);

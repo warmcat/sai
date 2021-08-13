@@ -182,7 +182,7 @@ saiw_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	*len = (size_t)used;
 
 	if (m->bltx)
-		lws_ss_request_tx(m->ss);
+		return lws_ss_request_tx(m->ss);
 
 	return 0;
 }
@@ -203,8 +203,7 @@ saiw_lp_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 	case LWSSSCS_CONNECTED:
 		lwsl_notice("%s: connected to websrv uds\n", __func__);
-		lws_ss_request_tx(m->ss);
-		break;
+		return lws_ss_request_tx(m->ss);
 
 	case LWSSSCS_DISCONNECTED:
 		lws_buflist_destroy_all_segments(&m->bltx);
@@ -212,8 +211,7 @@ saiw_lp_state(void *userobj, void *sh, lws_ss_constate_t state,
 		break;
 
 	case LWSSSCS_ALL_RETRIES_FAILED:
-		lws_ss_client_connect(m->ss);
-		break;
+		return lws_ss_client_connect(m->ss);
 
 	case LWSSSCS_QOS_ACK_REMOTE:
 		break;
@@ -247,7 +245,5 @@ saiw_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len)
 	if (lws_buflist_append_segment(&m->bltx, buf, len) < 0)
 		return 1;
 
-	lws_ss_request_tx(h);
-
-	return 0;
+	return !!lws_ss_request_tx(h);
 }
