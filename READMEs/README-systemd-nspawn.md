@@ -119,6 +119,10 @@ If a 32-bit install, leave out libc6-i386
 Container # apt install sudo make git gcc cmake net-tools libssl-dev vim libc6-i386 dbus systemd-container libmbedtls-dev libev4 libev-dev libuv1 libuv1-dev libmount-dev libsqlite0-dev libgit2-dev inetutils-ping psmisc libgit2-27 libmbedcrypto3 libmbedtls12 libmbedx509-0 libmbedtls-dev libevent-2.1-6 libevent-dev libglib2.0-0 libsqlite3-0 libsqlite3-dev pkg-config libglib2.0-dev libglib2.0-0 libdbus-1-dev libdbus-1-3 g++
 ```
 
+### Specific to Debian 11
+
+Container # apt install sudo make git gcc cmake net-tools libssl-dev vim libc6-i386 dbus systemd-container libmbedtls-dev libev4 libev-dev libuv1 libuv1-dev libmount-dev libsqlite3-dev libgit2-dev inetutils-ping psmisc libgit2-1.1 libmbedcrypto3 libmbedtls12 libmbedx509-0 libmbedtls-dev libevent-2.1-7 libevent-dev libglib2.0-0 libsqlite3-0 libsqlite3-dev pkg-config libglib2.0-dev libglib2.0-0 libdbus-1-dev libdbus-1-3 g++ file
+
 ### Specific to Ubuntu
 
 We have to enable the "universe" packageset to get normal things.

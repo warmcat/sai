@@ -476,11 +476,6 @@ fail:
 
 	lwsl_err("%s: failed\n", __func__);
 	ns->retcode = SAISPRF_EXIT | 253;
-	saib_set_ns_state(ns, NSSTATE_FAILED);
-	saib_task_grace(ns);
-
-	if (saib_queue_task_status_update(ns->sp, ns->spm, NULL))
-		return LWS_TP_RETURN_SYNC;
 
 	return LWS_TP_RETURN_SYNC;
 }

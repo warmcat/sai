@@ -155,9 +155,7 @@ tp_sync_check(struct lws_dll2 *d, void *user)
 		if (soe == NSSTATE_FAILED) {
 			lwsl_notice("%s: thread over with FAILED\n",
 					__func__);
-			saib_set_ns_state(ns, NSSTATE_FAILED);
-			saib_task_grace(ns);
-			goto next;
+			goto failer;
 		}
 
 		/*
@@ -169,18 +167,16 @@ tp_sync_check(struct lws_dll2 *d, void *user)
 		ns->tp_task = NULL;
 
 		lws_sul_cancel(&ns->sul_task_cancel);
-
 		saib_set_ns_state(ns, NSSTATE_BUILD);
 
 		n = saib_spawn(ns);
-		if (!n)
-			goto next;
-
-		lwsl_err("%s: spawn failed: %d\n", __func__, n);
-
-		lwsl_notice("%s: failing spawn cleanly\n", __func__);
-		saib_set_ns_state(ns, NSSTATE_FAILED);
-		saib_task_grace(ns);
+		if (n) {
+			lwsl_err("%s: spawn failed: %d\n", __func__, n);
+failer:
+			saib_set_ns_state(ns, NSSTATE_FAILED);
+			saib_task_grace(ns);
+			saib_queue_task_status_update(ns->sp, ns->spm, NULL);
+		}
 
 next:
 
