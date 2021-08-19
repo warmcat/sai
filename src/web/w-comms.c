@@ -860,7 +860,7 @@ http_resp:
 			ck.aud = vhd->jwt_audience;
 			ck.cookie_name = "sai_jwt";
 			ck.extra_json = "\"authorized\": 1";
-			ck.expiry_unix_time = 2 * 60 * 60; /* 2 days */
+			ck.expiry_unix_time = 2 * 24 * 60 * 60; /* 2 days */
 
 			if (lws_jwt_sign_token_set_http_cookie(wsi, &ck, &p, end))
 				goto clean_spa;
