@@ -514,11 +514,12 @@ int main(int argc, const char **argv)
 	info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
 		       LWS_SERVER_OPTION_VALIDATE_UTF8 |
 		       LWS_SERVER_OPTION_EXPLICIT_VHOSTS;
+	info.rlimit_nofile = 20000;
 
 	signal(SIGINT, sigint_handler);
 
 	info.pss_policies_json = default_ss_policy;
-	info.fd_limit_per_thread = 1 + 128 + 1;
+	info.fd_limit_per_thread = 1 + 256 + 1;
 
 	/* hook up our lws_system state notifier */
 
