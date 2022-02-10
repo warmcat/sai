@@ -173,7 +173,7 @@ Container #  dnf install sudo make git gcc gcc-c++ cmake net-tools dhclient open
 
 ### Specific to Centos 8
 
-Centos / RHEL 8 simply doesn't provide some -devel packages like mbedtls, libgit2...
+Centos / RHEL 8 simply doesn't provide some -devel packages like mbedtls, libgit2... most missing -devel packages can be found in the `powertools` repo
 
 ```
 Container #  dnf install sudo make git gcc gcc-c++ cmake net-tools dhclient openssl-devel vim glibc.i686 dbus glib2-devel libevent-devel libev-devel sqlite-devel libgit2 dbus systemd-container vim libpkgconf rpm-build

@@ -29,6 +29,10 @@
 #include <string.h>
 #include <signal.h>
 
+#if defined(__linux__)
+#include <unistd.h>
+#endif
+
 #if defined(__APPLE__)
 #include <sys/stat.h>	/* for mkdir() */
 #include <unistd.h>	/* for chown() */
@@ -38,6 +42,9 @@
 #include <initguid.h>
 #include <KnownFolders.h>
 #include <Shlobj.h>
+
+int getpid(void) { return 0; }
+
 #endif
 
 #include "b-private.h"
@@ -209,7 +216,7 @@ saib_create_resproxy_listen_uds(struct lws_context *context,
 
 	info.vhost_name			= pv;
 	pv += lws_snprintf(pv, sizeof(vhnames) - (size_t)(pv - vhnames),
-				"resproxy.%d", spm->index) + 1;
+				"resproxy.%u.%d", getpid(), spm->index) + 1;
 	info.options = LWS_SERVER_OPTION_ADOPT_APPLY_LISTEN_ACCEPT_CONFIG |
 		       LWS_SERVER_OPTION_UNIX_SOCK;
 
@@ -356,7 +363,7 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 
 			lws_snprintf(spm->resproxy_path, sizeof(spm->resproxy_path),
 	#if defined(__linux__)
-			     UDS_PATHNAME_RESPROXY".%d",
+			     UDS_PATHNAME_RESPROXY".%u.%d", getpid(),
 	#else
 			     UDS_PATHNAME_RESPROXY"/%d",
 	#endif
@@ -419,6 +426,9 @@ int main(int argc, const char **argv)
 
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
+
+	if ((p = lws_cmdline_option(argc, argv, "-c")))
+		config_dir = p;
 
 #if defined(__NetBSD__) || defined(__OpenBSD__)
 	if (lws_cmdline_option(argc, argv, "-D")) {
