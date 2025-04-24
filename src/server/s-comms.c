@@ -148,20 +148,30 @@ sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
 
 	/* create / add to the schema for the tables we will have in here */
 
-	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_task))
+	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_task)) {
+		lwsl_err("%s: unable to create task table in %s\n", __func__, filepath);
 		return 1;
+	}
 
 	sai_sqlite3_statement(*ppdb, "PRAGMA journal_mode=WAL;", "set WAL");
 
-	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_log))
-		return 1;
+	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_log)) {
+		lwsl_err("%s: unable to create log table in %s\n", __func__, filepath);
 
-	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_artifact))
 		return 1;
+	}
+
+	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_artifact)) {
+		lwsl_err("%s: unable to create artifact table in %s\n", __func__, filepath);
+
+		return 1;
+	}
 
 	sc = malloc(sizeof(*sc));
 	memset(sc, 0, sizeof(*sc));
 	if (!sc) {
+		lwsl_err("%s: unable to alloc sc for %s\n", __func__, filepath);
+
 		lws_struct_sq3_close(ppdb);
 		*ppdb = NULL;
 		return 1;
