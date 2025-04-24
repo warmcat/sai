@@ -252,6 +252,8 @@ eg for windows or emulated architecture VMs.
 Builds happen using a user `sai` and on the builder, files are only created
 down `/home/sai` or `\Users\sai`.
 
+Note: on redhat type distros like Fedora / Rocky, use `-gnobody`
+
 ```
 # useradd -u883 -gnogroup sai -d/home/sai -m -r
 ```
@@ -271,7 +273,7 @@ Building sai produces two different sets of apps and daemons by default, for
 running on a the server that coordinates the builds and for running on machines
 that offer the actual builds for particular platforms to one or more servers.
 
-You can use cmake options `-DSAI_MASTER=0` and `-DSAI_BUILDER=0` to disable one
+You can use cmake options `-DSAI_SERVER=0` and `-DSAI_BUILDER=0` to disable one
 or the other.
 
 Server executables|Function
@@ -309,6 +311,9 @@ either|`-DLWS_WITH_STRUCT_JSON=1` `-DLWS_WITH_SECURE_STREAMS=1`
 server|`-DLWS_UNIX_SOCK=1` `-DLWS_WITH_GENCRYPTO=1` `-DLWS_WITH_STRUCT_SQLITE3=1` `-DLWS_WITH_JOSE=1`
 builder + related|`-DLWS_WITH_SPAWN=1` `-DLWS_WITH_THREADPOOL=1`
 
+You can also define `-DLWS_WITH_SYS_METRICS=1` on lws to enable build of
+openmetrics pieces in sai when built against lws.
+
 Similarly the two daemons bring in different dependencies
 
 Feature|dependency
@@ -322,7 +327,7 @@ jig (linux only)|libgpiod
 
 ```
 $ git clone https://warmcat.com/repo/sai
-$ cd sai && mkdir build && cd build && cmake .. && make && make install
+$ cd sai && mkdir build && cd build && cmake .. && make && sudo make install
 $ sudo cp ../scripts/sai-builder.service /etc/systemd/system
 $ sudo mkdir -p /etc/sai/builder
 $ sudo cp ../scripts/builder-conf /etc/sai/builder/conf
