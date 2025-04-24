@@ -1,5 +1,5 @@
-project(sai C)
 cmake_minimum_required(VERSION 2.8.12)
+project(sai C)
 find_package(libwebsockets CONFIG REQUIRED)
 list(APPEND CMAKE_MODULE_PATH ${LWS_CMAKE_DIR})
 include(CheckCSourceCompiles)
@@ -124,6 +124,8 @@ CHECK_C_SOURCE_COMPILES("#include <libwebsockets.h>\nint
 	main(void) {\n#if defined(LWS_HAVE_LIBCAP)\n return
 		0;\n#else\n fail;\n#endif\n return 0;\n}\n" HAS_LIBCAP)
 
+#set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -v")
+set (CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES};${LIBWEBSOCKETS_INCLUDE_DIRS}")
 
 set(requirements 1)
 require_lws_config(LWS_ROLE_H1				1 requirements)
