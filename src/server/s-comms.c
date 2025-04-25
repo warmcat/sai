@@ -115,6 +115,8 @@ sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
 	char filepath[256], saf[33];
 	sais_sqlite_cache_t *sc;
 
+	lwsl_notice("%s: (sai-server) entry\n", __func__);
+
 	if (*ppdb)
 		return 0;
 
@@ -143,14 +145,14 @@ sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
 		lwsl_err("%s: Unable to open db %s: %s\n", __func__,
 			 filepath, sqlite3_errmsg(*ppdb));
 
-		return 1;
+		return 2;
 	}
 
 	/* create / add to the schema for the tables we will have in here */
 
 	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_task)) {
 		lwsl_err("%s: unable to create task table in %s\n", __func__, filepath);
-		return 1;
+		return 3;
 	}
 
 	sai_sqlite3_statement(*ppdb, "PRAGMA journal_mode=WAL;", "set WAL");
@@ -158,13 +160,13 @@ sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
 	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_log)) {
 		lwsl_err("%s: unable to create log table in %s\n", __func__, filepath);
 
-		return 1;
+		return 4;
 	}
 
 	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_artifact)) {
 		lwsl_err("%s: unable to create artifact table in %s\n", __func__, filepath);
 
-		return 1;
+		return 5;
 	}
 
 	sc = malloc(sizeof(*sc));
@@ -174,7 +176,7 @@ sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
 
 		lws_struct_sq3_close(ppdb);
 		*ppdb = NULL;
-		return 1;
+		return 6;
 	}
 
 	lws_strncpy(sc->uuid, event_uuid, sizeof(sc->uuid));

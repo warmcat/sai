@@ -918,10 +918,11 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		 */
 
 		sai_uuid16_create(lws_get_context(pss->wsi), pss->sn.e.uuid);
-		if (sais_event_db_ensure_open(pss->vhd, pss->sn.e.uuid, 1,
-					      (sqlite3 **)&pss->sn.e.pdb)) {
-			lwsl_err("%s: unable to open event-specific database\n",
-					__func__);
+		m = sais_event_db_ensure_open(pss->vhd, pss->sn.e.uuid, 1,
+					      (sqlite3 **)&pss->sn.e.pdb);
+		if (m) {
+			lwsl_err("%s: XX %d unable to open event-specific database\n",
+					__func__, m);
 
 			goto saifile_bail;
 		}
@@ -933,8 +934,9 @@ sai_notification_file_upload_cb(void *data, const char *name,
 			       (int)pss->sn.saifile_out_pos);
 		sais_event_db_close(pss->vhd, (sqlite3 **)&pss->sn.e.pdb);
 		if (m < 0) {
-			lwsl_notice("%s: saifile JSON decode failed '%s' (%d)\n",
+			lwsl_notice("%s: saifile JSON 1 decode failed '%s' (%d)\n",
 				    __func__, lejp_error_to_string(m), m);
+			puts(pss->sn.saifile);
 			goto saifile_bail;
 		}
 
@@ -968,8 +970,9 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		free(pss->sn.saifile);
 		pss->sn.saifile = NULL;
 		if (m < 0) {
-			lwsl_notice("%s: saifile JSON decode failed '%s' (%d)\n",
+			lwsl_notice("%s: saifile JSON 2 decode failed '%s' (%d)\n",
 				    __func__, lejp_error_to_string(m), m);
+			puts(pss->sn.saifile);
 			return m;
 		}
 
