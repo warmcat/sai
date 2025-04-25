@@ -748,6 +748,7 @@ bail:
 			mq->len = (size_t)lws_snprintf((char *)&mq[1] + LWS_PRE, 256,
 					"{\"schema\":\"com-warmcat-sai-resource\","
 					"\"cookie\":\"%s\"}", res->cookie);
+			mq->msg = (char *)&mq[1] + LWS_PRE;
 
 			lws_dll2_add_tail(&mq->list, &pss->res_pending_reply_owner);
 			lws_callback_on_writable(pss->wsi);
