@@ -79,12 +79,15 @@ if (requirements)
 		      ../../assets/sai.js
 		      ../../assets/sai.svg
 		      ../../assets/sai-icon.svg
+		      ../../assets/builder-instance.svg
+		      ../../assets/builder-instance.png
 		      ../../assets/builder.png
 		      ../../assets/favicon.ico
 		      ../../assets/strict-csp.svg
 		      ../../assets/lws-common.js
 		      ../../assets/gs/lwsgs.js
 		      ../../assets/gs/lwsgs.css
+		      	../../assets/arch-aarch64-a72a55-rk3588.svg
 			../../assets/arch-aarch64-a72-bcm2711-rpi4.svg
 			../../assets/arch-aarch64.svg
 			../../assets/arch-arm32-m4-mt7697-usi.svg
@@ -117,6 +120,8 @@ if (requirements)
 			../../assets/linux-ubuntu-xenial.svg
 			../../assets/netbsd-iOS.svg
 			../../assets/netbsd-OSX-catalina.svg
+			../../assets/netbsd-OSX-bigsur.svg
+			../../assets/rocky9.svg
 			../../assets/sai-event.svg
 			../../assets/sai-icon.svg
 			../../assets/sai.svg
