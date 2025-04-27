@@ -134,7 +134,7 @@ sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
 	char filepath[256], saf[33];
 	sais_sqlite_cache_t *sc;
 
-	lwsl_notice("%s: (sai-web) entry\n", __func__);
+//	lwsl_notice("%s: (sai-web) entry\n", __func__);
 
 	if (*ppdb)
 		return 0;
@@ -399,6 +399,8 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 						  sizeof(struct vhd));
 		if (!vhd)
 			return -1;
+
+		lwsl_err("web-callback-ws: LWS_CALLBACK_PROTOCOL_INIT\n");
 
 		vhd->context = lws_get_context(wsi);
 		vhd->vhost = lws_get_vhost(wsi);
@@ -1096,7 +1098,7 @@ clean_spa:
 
 	case LWS_CALLBACK_CLOSED:
 
-		lwsl_info("%s: CLOSED browse conn\n", __func__);
+		lwsl_err("%s: CLOSED browse conn\n", __func__);
 		lws_dll2_remove(&pss->same);
 		lws_dll2_remove(&pss->subs_list);
 

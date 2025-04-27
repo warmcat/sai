@@ -954,6 +954,8 @@ so_finish:
 			pss->authorized, pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0,
 			lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu));
 
+		lwsl_err("%s: vhd %p vhd->builders %p\n", __func__, vhd, vhd ? vhd->builders : NULL);
+
 		if (vhd && vhd->builders) {
 			lwsac_reference(vhd->builders);
 			sch->walk = lws_dll2_get_head(vhd->builders_owner);

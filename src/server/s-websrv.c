@@ -121,6 +121,8 @@ _sais_websrv_broadcast(struct lws_ss_handle *h, void *arg)
 	websrvss_srv_t *m = (websrvss_srv_t *)lws_ss_to_user_object(h);
 	sais_websrv_broadcast_t *a = (sais_websrv_broadcast_t *)arg;
 
+	lwsl_err("%s: entry\n", __func__);
+
 	if (lws_buflist_append_segment(&m->bltx, a->buf, a->len) < 0) {
 		lwsl_warn("%s: buflist append fail\n", __func__);
 
@@ -154,6 +156,8 @@ sais_list_builders(struct vhd *vhd)
 	size_t w;
 	int n;
 
+	lwsl_err("%s: entry\n", __func__);
+
 	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
 					"{\"schema\":\"sai-builders\","
 					"\"platforms\":[");
@@ -166,8 +170,10 @@ sais_list_builders(struct vhd *vhd)
 			lsm_schema_map_plat_simple,
 			LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),
 			0, b);
-		if (!js)
+		if (!js) {
+			lwsl_err("%s: failed at json serialize create\n", __func__);
 			return 1;
+		}
 		if (subsequent)
 			*p++ = ',';
 		subsequent = 1;
@@ -177,12 +183,24 @@ sais_list_builders(struct vhd *vhd)
 		p += w;
 		lws_struct_json_serialize_destroy(&js);
 
-		if (n == LSJS_RESULT_ERROR)
+		if (n == LSJS_RESULT_ERROR) {
+			lwsl_err("%s: json serialize error\n", __func__);
 			return 1;
+		}
 
 		walk = walk->next;
 		if (!walk) {
+
+			/* end of the list of builders */
+
 			p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
+
+			/*
+			 * This is the SERVER's WEB daemon server, broadcasting to all connected clients (the WEB daemons)...
+			 * 		the list of BUILDERS
+			 */
+
+			lwsl_ss_err(vhd->h_ss_websrv, "sai-server's WEB daemon server broadcasting to all WEB daemons: %s\n", vhd->json_builders);
 
 			sais_websrv_broadcast(vhd->h_ss_websrv,
 					      vhd->json_builders,
@@ -466,6 +484,8 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
 	char som, eom;
 	int used;
+
+	lwsl_err("%s: entry\n", __func__);
 
 	if (!m->bltx)
 		return LWSSSSRET_TX_DONT_SEND;

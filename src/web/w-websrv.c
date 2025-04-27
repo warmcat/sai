@@ -72,8 +72,8 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	sai_browse_rx_evinfo_t *ei;
 	int n;
 
-	// lwsl_user("%s: len %d, flags: %d\n", __func__, (int)len, flags);
-	// lwsl_hexdump_info(buf, len);
+	lwsl_user("%s: len %d, flags: %d\n", __func__, (int)len, flags);
+	lwsl_hexdump_notice(buf, len);
 
 	if (flags & LWSSS_FLAG_SOM) {
 		memset(&m->a, 0, sizeof(m->a));
