@@ -592,6 +592,10 @@ thread_repo(void *d)
 		lws_snprintf(spec, sizeof(spec), "%s:ref-%s", rcopy.ref, rcopy.hash);
 		fprintf(stderr, "%s: fetching %s %s\n", __func__, rcopy.url, spec);
 
+#if defined(LIBGIT2_HAVE_GIT_PROXY_OPTIONS_INIT)
+	git_proxy_options_init(&opts.proxy_opts, GIT_PROXY_OPTIONS_VERSION);
+#endif
+
 		/*
 		 * This may take an open-ended amount of time
 		 */
