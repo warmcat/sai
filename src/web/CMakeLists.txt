@@ -95,6 +95,8 @@ if (requirements)
 			../../assets/arch-freertos.svg
 			../../assets/arch-riscv64-virt.svg
 			../../assets/arch-riscv.svg
+			../../assets/arch-riscv64.svg
+			../../assets/arch-risc-v.svg
 			../../assets/arch-x86_64-amd.svg
 			../../assets/arch-x86_64-intel-i3.svg
 			../../assets/arch-x86_64-intel.svg
@@ -134,6 +136,8 @@ if (requirements)
 			../../assets/tc-msvc.svg
 			../../assets/tc-wmbedtlsmsvc.svg
 			../../assets/tc-noptmsvc.svg
+			../../assets/ubuntu.svg
+			../../assets/ubuntu-noble.svg
 			../../assets/ubuntu-focal-aarch64.svg
 			../../assets/virt-qemu.svg
 			../../assets/w10.svg
