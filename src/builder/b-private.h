@@ -39,6 +39,8 @@
 #include <pthread.h>
 #include <git2.h>
 
+#define SAI_IDLE_GRACE_US	(20 * LWS_US_PER_SEC)
+
 typedef enum {
 	PHASE_IDLE,
 
@@ -156,13 +158,19 @@ struct sai_builder {
 	lws_dll2_owner_t	sai_plat_server_owner; /* servers we connect to */
 	lws_dll2_owner_t	devices_owner; /* sai_serial_t */
 
+	struct sai_nspawn	suspend_nspawn;
+
 	struct lwsac		*conf_head;
 	struct lws_context	*context;
 	struct lws_vhost	*vhost;
 
+	lws_sorted_usec_list_t	sul_idle;
+
 	const char		*metrics_uri;
 	const char		*metrics_path;
 	const char		*metrics_secret;
+
+	const char		*power_off;
 
 	const char		*home;		/* home dir, usually /sai/home */
 	const char		*perms;		/* user:group */
@@ -249,6 +257,10 @@ extern const struct lws_protocols protocol_logproxy, protocol_resproxy;
 
 void *
 thread_repo(void *d);
+
+void *
+thread_suspend(void *d);
+
 
 int
 saib_create_resproxy_listen_uds(struct lws_context *context,

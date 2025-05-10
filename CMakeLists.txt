@@ -130,7 +130,12 @@ set (CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES};${LIBWEBSOCKETS_INCLUDE
 set(requirements 1)
 require_lws_config(LWS_ROLE_H1				1 requirements)
 require_lws_config(LWS_ROLE_WS				1 requirements)
-require_lws_config(LWS_WITH_JOSE			1 requirements)
+if (SAI_SERVER)
+	require_lws_config(LWS_WITH_JOSE		1 requirements)
+endif()
+if (SAI_BUILDER)
+	require_lws_config(LWS_WITH_THREADPOOL		1 requirements)
+endif()
 #require_lws_config(LWS_WITH_PLUGINS_BUILTIN		1 requirements)
 
 

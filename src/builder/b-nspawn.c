@@ -49,7 +49,7 @@ saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 {
 	struct ws_capture_chunk *chunk;
 
-	if (!ns->spm)
+	if (!ns || !ns->spm)
 		return NULL;
 
 	chunk = malloc(sizeof(*chunk) + len);
@@ -95,8 +95,6 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		break;
 
 	case LWS_CALLBACK_RAW_RX_FILE:
-		if (!ns->spm)
-			return -1;
 #if defined(WIN32)
 	{
 		DWORD rb;
@@ -116,7 +114,10 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 		len = (unsigned int)ilen;
 
-		// printf("(%d) %.*s\n", (int)len, (int)len, buf);
+		if (!ns->spm) {
+			printf("%s: (%d) %.*s\n", __func__, (int)lws_spawn_get_stdfd(wsi), (int)len, buf);
+			return -1;
+		}
 
 		if (!saib_log_chunk_create(ns, buf, len, lws_spawn_get_stdfd(wsi)))
 			return -1;

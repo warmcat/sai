@@ -52,6 +52,7 @@ int getpid(void) { return 0; }
 static const char *config_dir = "/etc/sai/builder";
 static int interrupted;
 static lws_state_notify_link_t nl;
+static struct lws_spawn_piped *lsp_suspender;
 
 struct sai_builder builder;
 
@@ -386,6 +387,32 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 	return 0;
 }
 
+/*
+ * The grace time is up, ask for the suspend
+ */
+
+void
+sul_idle_cb(lws_sorted_usec_list_t *sul)
+{
+	ssize_t n;
+	uint8_t te = 1;
+
+	lwsl_notice("%s: requesting suspend...\n", __func__);
+
+	n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
+	if (n == 1) {
+		sleep(2);
+		/*
+		 * There were 0 tasks ongoing for us to suspend, start off
+		 * with the same assumption and set the idle grace time
+		 */
+		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
+				 sul_idle_cb, SAI_IDLE_GRACE_US);
+		lwsl_notice("%s: resuming after suspend\n", __func__);
+	} else
+		lwsl_err("%s: failed to request suspend\n", __func__);
+}
+
 static lws_state_notify_link_t * const app_notifier_list[] = {
 	&nl, NULL
 };
@@ -427,6 +454,48 @@ int main(int argc, const char **argv)
 	struct stat sb;
 	const char *p;
 	void *retval;
+
+
+	if ((p = lws_cmdline_option(argc, argv, "-s"))) {
+		ssize_t n = 0;
+
+		printf("%s: Spawn process creation entry...\n", __func__);
+
+		/*
+		 * A new process gets started with this option before we drop
+		 * privs.  This allows us to suspend with root privs later.
+		 *
+		 * We just wait until we get a byte on stdin from the main
+		 * process indicating we should suspend.
+		 */
+
+		while (n >= 0) {
+			int status;
+			uint8_t d;
+			pid_t p;
+
+			n = read(0, &d, 1);
+			lwsl_notice("%s: suspend process read returned %d\n", __func__, (int)n);
+
+			if (n <= 0)
+				continue;
+
+			if (n == 1 && d == 2) {
+				lwsl_warn("%s: suspend process ending\n", __func__);
+				break;
+			}
+
+			p = fork();
+			if (!p)
+				execl("/usr/bin/systemctl", "/usr/bin/systemctl", "suspend", NULL);
+			else
+				waitpid(p, &status, 0);
+		}
+
+		lwsl_notice("%s: exiting suspend process\n", __func__);
+
+		return 0;
+	}
 
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
@@ -562,6 +631,31 @@ int main(int argc, const char **argv)
 		goto bail;
 	}
 
+	if (!strcmp(builder.power_off, "suspend")) {
+		struct lws_spawn_piped_info info;
+		const char * const ea[] = { argv[0], "-s", NULL };
+
+		memset(&info, 0, sizeof(info));
+		memset(&builder.suspend_nspawn, 0, sizeof(builder.suspend_nspawn));
+
+		info.vh			= builder.vhost;
+		info.exec_array		= ea;
+		info.max_log_lines	= 100;
+		info.opaque		= (void *)&builder.suspend_nspawn;
+
+		lsp_suspender = lws_spawn_piped(&info);
+		if (!lsp_suspender)
+			lwsl_notice("%s: suspend spawn failed\n", __func__);
+
+		/*
+		* We start off idle, with no tasks on any platform and doing
+		* the grace time before suspend
+		*/
+
+		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
+				 sul_idle_cb, SAI_IDLE_GRACE_US);
+	}
+
 	pthread_mutex_init(&builder.mi.mut, NULL);
 	pthread_cond_init(&builder.mi.cond, NULL);
 
@@ -588,6 +682,16 @@ int main(int argc, const char **argv)
 		;
 
 bail:
+
+	if (!strcmp(builder.power_off, "suspend") && lsp_suspender) {
+		uint8_t te = 2;
+
+		/*
+		* Clean up after the suspend process
+		*/
+
+		write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
+	}
 
 	/* destroy the unique servers */
 
@@ -621,13 +725,15 @@ bail:
 
 	saib_config_destroy(&builder);
 
+	if (!strcmp(builder.power_off, "suspend"))
+		lws_sul_cancel(&builder.sul_idle);
+
 	/*
-	 * Clean up after the threads
+	 * Clean up after the spawn threads
 	 */
 
-	builder.mi.finish = 1;
-
 	pthread_mutex_lock(&builder.mi.mut);
+	builder.mi.finish = 1;
 	pthread_cond_broadcast(&builder.mi.cond);
 	pthread_mutex_unlock(&builder.mi.mut);
 
@@ -635,8 +741,6 @@ bail:
 
 	pthread_mutex_destroy(&builder.mi.mut);
 	pthread_cond_destroy(&builder.mi.cond);
-
-
 
 	lws_context_destroy(builder.context);
 

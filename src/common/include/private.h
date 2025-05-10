@@ -298,6 +298,7 @@ typedef struct sai_plat {
 
 typedef struct sai_plat_owner {
 	lws_dll2_owner_t	plat_owner;
+
 } sai_plat_owner_t;
 
 typedef struct sai_repo {
@@ -357,3 +358,6 @@ saicom_lp_ss_from_env(struct lws_context *context, const char *env_name);
 
 int
 saicom_lp_callback_on_drain(saicom_drain_cb cb, void *opaque);
+
+void
+sul_idle_cb(lws_sorted_usec_list_t *sul);
