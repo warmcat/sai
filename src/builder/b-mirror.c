@@ -601,19 +601,20 @@ thread_repo(void *d)
 		 */
 
 		n = git_remote_fetch(remote, &rfs, &opts, "fetch");
-
-		git_remote_free(remote);
-		git_repository_free(repo_mirror);
-
-		if (n) {
 #if defined(SAI_HAVE_LIBGIT2_GIT_ERROR)
+               if (n) {
 			const git_error *e = git_error_last();
 
 			if (e)
 				fprintf(stderr, "%s: git error %s\n", __func__,
 						e->message);
+               }
 #endif
 
+               git_remote_free(remote);
+               git_repository_free(repo_mirror);
+
+               if (n) {
 			fprintf(stderr, "%s: failed to fetch %s, n: %d\n",
 				__func__, spec, n);
 			goto fail_out;
