@@ -15,10 +15,10 @@ set(SRCS
 )
 
 set(requirements 1)
-require_lws_config(LWS_WITH_STRUCT_SQLITE3	1 requirements)
 require_lws_config(LWS_WITH_SERVER		1 requirements)
 require_lws_config(LWS_WITH_GENCRYPTO		1 requirements)
 require_lws_config(LWS_WITH_UNIX_SOCK		1 requirements)
+require_lws_config(LWS_WITH_STRUCT_SQLITE3	1 requirements)
 
 if (requirements)
 	add_executable(${SUB} ${SRCS})

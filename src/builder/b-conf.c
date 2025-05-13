@@ -36,7 +36,12 @@ static const char * const paths_global[] = {
 	"metrics_uri",
 	"metrics_path",
 	"metrics_secret",
-	"power-off"
+	"sai-power",
+	"power-on.type",
+	"power-on.url",
+	"power-on.mac",
+	"power-off.type",
+	"power-off.url"
 };
 
 enum enum_paths_global {
@@ -46,7 +51,12 @@ enum enum_paths_global {
 	LEJPM_METRICS_URI,
 	LEJPM_METRICS_PATH,
 	LEJPM_METRICS_SECRET,
-	LEJPM_POWER_OFF,
+	LEJPM_SAI_POWER,
+	LEJPM_POWER_ON_TYPE,
+	LEJPM_POWER_ON_URL,
+	LEJPM_POWER_ON_MAC,
+	LEJPM_POWER_OFF_TYPE,
+	LEJPM_POWER_OFF_URL
 };
 
 /* platform-related part */
@@ -287,8 +297,20 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		pp = &a->builder->metrics_secret;
 		break;
 
-	case LEJPM_POWER_OFF:
-		pp = &a->builder->power_off;
+	case LEJPM_POWER_ON_TYPE:
+		pp = &a->builder->power_on_type;
+		break;
+	case LEJPM_POWER_ON_URL:
+		pp = &a->builder->power_on_url;
+		break;
+	case LEJPM_POWER_ON_MAC:
+		pp = &a->builder->power_on_mac;
+		break;
+	case LEJPM_POWER_OFF_TYPE:
+		pp = &a->builder->power_off_type;
+		break;
+	case LEJPM_POWER_OFF_URL:
+		pp = &a->builder->power_off_url;
 		break;
 
 	default:

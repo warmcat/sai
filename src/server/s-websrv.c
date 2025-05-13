@@ -509,8 +509,8 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 {
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
 
-	lwsl_user("%s: %p %s, ord 0x%x\n", __func__, m->ss,
-		  lws_ss_state_name((int)state), (unsigned int)ack);
+	// lwsl_user("%s: %p %s, ord 0x%x\n", __func__, m->ss,
+	//	  lws_ss_state_name((int)state), (unsigned int)ack);
 
 	switch (state) {
 	case LWSSSCS_DISCONNECTED:

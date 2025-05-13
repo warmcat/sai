@@ -557,6 +557,12 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 		sais_event_db_close(pss->vhd, &pdb);
 
+		/*
+		 * Recompute startable task platforms and broadcast to all sai-power,
+		 * after there has been a change in tasks
+		 */
+		sais_platforms_with_tasks_pending(pss->vhd);
+
 //		lwsl_notice("%s: New test '%s', '%s', '%s'\n", __func__,
 //			    sn->t.taskname, sn->t.cmake, sn->t.packages);
 

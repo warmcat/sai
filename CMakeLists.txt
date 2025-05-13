@@ -155,6 +155,8 @@ if (requirements)
 	if (SAI_BUILDER)
 		add_subdirectory(src/builder)
 		add_subdirectory(src/resource)
+		add_subdirectory(src/power)
+
 		if (NOT MSVC AND NOT WIN32 AND NOT (${CMAKE_SYSTEM_NAME} MATCHES "SunOS"))
 			add_subdirectory(src/device)
 			add_subdirectory(src/expect)

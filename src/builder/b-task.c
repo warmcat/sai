@@ -165,7 +165,7 @@ saib_task_destroy(struct sai_nspawn *ns)
 			    ns->sp->ongoing, ns->sp->ongoing - 1);
 		ns->sp->ongoing--;
 
-		if (!strcmp(builder.power_off, "suspend") && !ns->sp->ongoing) {
+		if (!strcmp(builder.power_off_type, "suspend") && !ns->sp->ongoing) {
 			int m = 0;
 
 			/*
@@ -718,7 +718,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		sp->ongoing++;
 		ns->task->told_ongoing = 1;
 
-		if (!strcmp(builder.power_off, "suspend")) {
+		if (!strcmp(builder.power_off_type, "suspend")) {
 			/* we're busy, we're not in the mood for suspending */
 			lwsl_notice("%s: cancelling suspend grace time\n", __func__);
 			lws_sul_cancel(&ns->builder->sul_idle);

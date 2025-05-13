@@ -28,6 +28,8 @@
 #include <libwebsockets.h>
 #include <string.h>
 #include <signal.h>
+#include <limits.h>
+#include <stdlib.h>
 
 #if defined(__linux__)
 #include <unistd.h>
@@ -581,6 +583,13 @@ int main(int argc, const char **argv)
 		  "Copyright (C) 2019-2020 Andy Green <andy@warmcat.com>\n");
 	lwsl_user("   sai-builder [-c <config-file>]\n");
 
+	lwsl_notice("%s: sai-power: %s %s %s %s %s\n",
+		  __func__, builder.power_on_type,
+		builder.power_on_url,
+		builder.power_on_mac,
+		builder.power_off_type,
+		builder.power_off_url);
+
 	memset(&info, 0, sizeof info);
 	info.port = CONTEXT_PORT_NO_LISTEN;
 	info.pprotocols = pprotocols;
@@ -631,9 +640,12 @@ int main(int argc, const char **argv)
 		goto bail;
 	}
 
-	if (!strcmp(builder.power_off, "suspend")) {
+	if (!strcmp(builder.power_off_type, "suspend")) {
 		struct lws_spawn_piped_info info;
-		const char * const ea[] = { argv[0], "-s", NULL };
+		char rpath[PATH_MAX];
+		const char * const ea[] = { rpath, "-s", NULL };
+
+		realpath(argv[0], rpath);
 
 		memset(&info, 0, sizeof(info));
 		memset(&builder.suspend_nspawn, 0, sizeof(builder.suspend_nspawn));
@@ -683,7 +695,7 @@ int main(int argc, const char **argv)
 
 bail:
 
-	if (!strcmp(builder.power_off, "suspend") && lsp_suspender) {
+	if (!strcmp(builder.power_off_type, "suspend") && lsp_suspender) {
 		uint8_t te = 2;
 
 		/*
@@ -725,7 +737,7 @@ bail:
 
 	saib_config_destroy(&builder);
 
-	if (!strcmp(builder.power_off, "suspend"))
+	if (!strcmp(builder.power_off_type, "suspend"))
 		lws_sul_cancel(&builder.sul_idle);
 
 	/*

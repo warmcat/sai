@@ -170,7 +170,12 @@ struct sai_builder {
 	const char		*metrics_path;
 	const char		*metrics_secret;
 
-	const char		*power_off;
+
+	const char		*power_off_type;
+	const char		*power_off_url;
+	const char		*power_on_type;
+	const char		*power_on_url;
+	const char		*power_on_mac;
 
 	const char		*home;		/* home dir, usually /sai/home */
 	const char		*perms;		/* user:group */

@@ -151,6 +151,13 @@ struct pss {
 	uint8_t			ovstate; /* SOS_ substate when doing overview */
 };
 
+struct pss_power {
+	struct vhd		*vhd;
+	struct lws		*wsi;
+
+	struct lws_dll2		same; /* owner: vhd.builders */
+};
+
 typedef struct sais_sqlite_cache {
 	lws_dll2_t	list;
 	char		uuid[65];
@@ -158,6 +165,12 @@ typedef struct sais_sqlite_cache {
 	lws_usec_t	idle_since;
 	int		refcount;
 } sais_sqlite_cache_t;
+
+
+typedef struct sais_plat {
+	lws_dll2_t	list;
+	const char	*plat;
+} sais_plat_t;
 
 struct vhd {
 	struct lws_context *context;
@@ -168,7 +181,11 @@ struct vhd {
 	char				json_builders[8192];
 
 	/* pss lists */
-	struct lws_dll2_owner builders;
+	struct lws_dll2_owner		builders;
+	struct lws_dll2_owner		sai_powers;
+	struct lws_dll2_owner		pending_plats;
+
+	struct lwsac			*ac_plats;
 
 	const char *sqlite3_path_lhs;
 
@@ -189,7 +206,7 @@ sai_lws_context_from_json(const char *config_dir,
 			  struct lws_context_creation_info *info,
 			  const struct lws_protocols **pprotocols,
 			  const char *jpol);
-extern const struct lws_protocols protocol_ws;
+extern const struct lws_protocols protocol_ws, protocol_ws_power;
 
 int
 sai_notification_file_upload_cb(void *data, const char *name,
@@ -288,3 +305,6 @@ sais_resource_destroy_queued_by_cookie(sais_t *sais, const char *cookie);
 
 void
 sais_resource_rr_destroy(sai_resource_requisition_t *rr);
+
+int
+sais_platforms_with_tasks_pending(struct vhd *vhd);

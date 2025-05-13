@@ -1,0 +1,124 @@
+/*
+ * Sai power definitions src/power/b-private.h
+ *
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
+ *
+ *  This library is free software; you can redistribute it and/or
+ *  modify it under the terms of the GNU Lesser General Public
+ *  License as published by the Free Software Foundation:
+ *  version 2.1 of the License.
+ *
+ *  This library is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ *  Lesser General Public License for more details.
+ *
+ *  You should have received a copy of the GNU Lesser General Public
+ *  License along with this library; if not, write to the Free Software
+ *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
+ *  MA  02110-1301  USA
+ */
+
+#include "../common/include/private.h"
+
+#include <sys/stat.h>
+#if defined(WIN32)
+#include <direct.h>
+#define read _read
+#define open _open
+#define close _close
+#define write _write
+#define mkdir(x,y) _mkdir(x)
+#define rmdir _rmdir
+#define unlink _unlink
+#define HAVE_STRUCT_TIMESPEC
+#if defined(pid_t)
+#undef pid_t
+#endif
+#endif
+#include <pthread.h>
+#include <git2.h>
+
+#define SAI_IDLE_GRACE_US	(20 * LWS_US_PER_SEC)
+
+typedef enum {
+	PHASE_IDLE,
+
+	PFL_FIRST			= 	128,
+
+	PHASE_START_ATTACH		=	PFL_FIRST | 1,
+	PHASE_SUMM_PLATFORMS		=	2,
+
+	PHASE_BUILDING
+
+} cursor_phase_t;
+
+
+
+struct saip_ws_pss;
+
+typedef struct saip_server_plat {
+	struct lws_dll2		list;
+
+	const char		*name;
+	const char		*power_on_type;
+	const char		*power_on_url;
+	const char		*power_on_mac;
+	const char		*power_off_type;
+	const char		*power_off_url;
+
+} saip_server_plat_t;
+
+typedef struct saip_server {
+	struct lws_dll2		list;
+
+	lws_dll2_owner_t	sai_plat_owner; /* list of platforms we offer */
+
+	struct lws_ss_handle	*ss;
+
+	const char		*url;
+	const char		*name;
+} saip_server_t;
+
+/*
+ * This represents this power process as a whole
+ */
+
+struct sai_power {
+	lws_dll2_owner_t	sai_server_owner; /* servers we connect to */
+
+	struct lwsac		*ac_conf_head;
+	struct lws_context	*context;
+	struct lws_vhost	*vhost;
+
+	lws_sorted_usec_list_t	sul_idle;
+
+	const char		*power_off;
+
+	const char		*bind;		/* listen socket binding */
+	const char		*perms;		/* user:group */
+
+	const char		*port;		/* port we listen on */
+};
+
+struct jpargs {
+	struct sai_power	*power;
+
+	saip_server_t		*sai_server;
+	saip_server_plat_t	*sai_server_plat;
+
+	sai_plat_server_ref_t	*mref;
+
+	int			next_server_index;
+	int			next_plat_index;
+};
+
+extern struct sai_power power;
+extern const lws_ss_info_t ssi_saip_server_link_t;
+extern const struct lws_protocols protocol_com_warmcat_sai, protocol_ws_power;
+int
+saip_config_global(struct sai_power *power, const char *d);
+extern int saip_config(struct sai_power *power, const char *d);
+extern void saip_config_destroy(struct sai_power *power);
+
+

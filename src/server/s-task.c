@@ -329,6 +329,154 @@ bail:
 	return NULL;
 }
 
+/*
+ * If the plat name is already listed, just return with 1.
+ * Otherwise add to the ac and linked-list for unique startable plat names and
+ * return 0.
+ */
+
+static int
+sais_find_or_add_pending_plat(struct vhd *vhd, const char *name)
+{
+	sais_plat_t *sp;
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->pending_plats.head) {
+		sais_plat_t *pl = lws_container_of(p, sais_plat_t, list);
+
+		if (!strcmp(&pl->plat[1], name))
+			return 1;
+
+	} lws_end_foreach_dll(p);
+
+	/* platform name is new, make an entry in the ac */
+
+	sp = lwsac_use_zero(&vhd->ac_plats, sizeof(sais_plat_t) + strlen(name) + 1, 512);
+
+	sp->plat = (const char *)&sp[1]; /* start of overcommit */
+	memcpy(&sp[1], name, strlen(name) + 1);
+
+	lws_dll2_add_tail(&sp->list, &vhd->pending_plats);
+
+	return 0;
+}
+
+static void
+sais_destroy_pending_plat_list(struct vhd *vhd)
+{
+	/*
+	 * We can just drop everything in the owner and drop the ac to destroy
+	 */
+	lws_dll2_owner_clear(&vhd->pending_plats);
+	lwsac_free(&vhd->ac_plats);
+}
+
+static void
+sais_notify_all_sai_power(struct vhd *vhd)
+{
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->sai_powers.head) {
+		struct pss_power *pss = lws_container_of(p, struct pss_power, same);
+
+		lws_callback_on_writable(pss->wsi);
+
+	} lws_end_foreach_dll(p);
+}
+
+/*
+ * Find out which platforms on this server have pending tasks
+ */
+
+int
+sais_platforms_with_tasks_pending(struct vhd *vhd)
+{
+	struct lwsac *ac = NULL;
+	char pf[128];
+	lws_dll2_owner_t o;
+	int n;
+
+	lwsl_err("%s: ++++++++ entry\n", __func__);
+
+	/* lose everything we were holding on to from last time */
+	sais_destroy_pending_plat_list(vhd);
+
+	/*
+	 * Collect a list of events that still have any open tasks
+	 */
+
+	lws_snprintf(pf, sizeof(pf)," and (state != 3 and state != 4 and state != 5) and created < %llu",
+			(unsigned long long)(lws_now_secs() - 10));
+
+	n = lws_struct_sq3_deserialize(vhd->server.pdb, pf, "created desc ",
+				       lsm_schema_sq3_map_event, &o, &ac, 0, 10);
+
+	if (n < 0 || !o.head) {
+		/* error, or there are no events that aren't complete */
+		goto bail;
+	}
+
+
+	lwsl_err("%s: starting scan\n", __func__);
+
+	/*
+	 * Iterate through the events looking at his event-specific database
+	 * for platforms that have pending tasks...
+	 */
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
+		sai_event_t *e = lws_container_of(p, sai_event_t, list);
+		sqlite3 *pdb = NULL;
+		sqlite3_stmt *sm;
+		int n;
+
+		if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
+
+			if (sqlite3_prepare_v2(pdb, "select distinct platform "
+						    "from tasks where "
+						    "(state != 3 and state != 4 and state != 5)", -1, &sm,
+							   NULL) != SQLITE_OK) {
+				lwsl_err("%s: Unable to %s\n",
+					 __func__, sqlite3_errmsg(pdb));
+
+				goto bail;
+			}
+
+			do {
+				n = sqlite3_step(sm);
+				if (n == SQLITE_ROW) {
+					lwsl_err("%s: scanned plat %s\n", __func__, (const char *)sqlite3_column_text(sm, 0));
+					sais_find_or_add_pending_plat(vhd,
+						(const char *)sqlite3_column_text(sm, 0));
+				}
+			} while (n == SQLITE_ROW);
+
+			sqlite3_reset(sm);
+			sqlite3_finalize(sm);
+
+			if (n != SQLITE_DONE) {
+				n = sqlite3_extended_errcode(pdb);
+				if (!n)
+					lwsl_info("%s: failed\n", __func__);
+
+				lwsl_err("%s: %d: Unable to perform: %s\n",
+					 __func__, n, sqlite3_errmsg(pdb));
+			}
+
+			sais_event_db_close(vhd, &pdb);
+		}
+
+	} lws_end_foreach_dll(p);
+
+	sais_notify_all_sai_power(vhd);
+
+	lwsac_free(&ac);
+
+	return 0;
+
+bail:
+	lwsac_free(&ac);
+
+	return 1;
+}
+
 int
 sais_task_cancel(struct vhd *vhd, const char *task_uuid)
 {
@@ -358,6 +506,12 @@ sais_task_cancel(struct vhd *vhd, const char *task_uuid)
 	} lws_end_foreach_dll(p);
 
 	sais_taskchange(vhd->h_ss_websrv, task_uuid, SAIES_CANCELLED);
+
+	/*
+	 * Recompute startable task platforms and broadcast to all sai-power,
+	 * after there has been a change in tasks
+	 */
+	sais_platforms_with_tasks_pending(vhd);
 
 	return 0;
 }
@@ -412,6 +566,12 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 	 */
 
 	lws_sul_schedule(vhd->context, 0, &vhd->sul_central, sais_central_cb, 1);
+
+	/*
+	 * Recompute startable task platforms and broadcast to all sai-power,
+	 * after there has been a change in tasks
+	 */
+	sais_platforms_with_tasks_pending(vhd);
 
 	return 0;
 }

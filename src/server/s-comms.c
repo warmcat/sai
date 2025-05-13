@@ -115,7 +115,7 @@ sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
 	char filepath[256], saf[33];
 	sais_sqlite_cache_t *sc;
 
-	lwsl_notice("%s: (sai-server) entry\n", __func__);
+	// lwsl_notice("%s: (sai-server) entry\n", __func__);
 
 	if (*ppdb)
 		return 0;
@@ -792,3 +792,138 @@ passthru:
 
 const struct lws_protocols protocol_ws =
 	{ "com-warmcat-sai", callback_ws, sizeof(struct pss), 0 };
+
+
+	/*
+	 * This is where the sai-power connections to us end up.  They
+	 * want to know summaries of platforms that have open jobs on any
+	 * event, re-sent every time it might have changed.
+	 */
+
+
+static int
+callback_ws_power(struct lws *wsi, enum lws_callback_reasons reason, void *user,
+	    void *in, size_t len)
+{
+	struct vhd *vhd = (struct vhd *)lws_protocol_vh_priv_get(
+				lws_get_vhost(wsi), lws_get_protocol(wsi));
+	uint8_t buf[LWS_PRE + 8192], *start = &buf[LWS_PRE], *p = start,
+		*end = &buf[sizeof(buf) - LWS_PRE - 1];
+	struct pss_power *pss = (struct pss_power *)user;
+	int n;
+	size_t m;
+
+	(void)end;
+	(void)p;
+
+	switch (reason) {
+	case LWS_CALLBACK_PROTOCOL_INIT:
+		vhd = lws_protocol_vh_priv_zalloc(lws_get_vhost(wsi),
+					lws_get_protocol(wsi),
+					sizeof(struct vhd));
+
+		vhd->context = lws_get_context(wsi);
+		vhd->vhost = lws_get_vhost(wsi);
+
+		if (lws_pvo_get_str(in, "database", &vhd->sqlite3_path_lhs)) {
+			lwsl_err("%s: database pvo required\n", __func__);
+			return -1;
+		}
+
+		lws_snprintf((char *)buf, sizeof(buf), "%s-events.sqlite3",
+		vhd->sqlite3_path_lhs);
+
+		if (lws_struct_sq3_open(vhd->context, (char *)buf, 1,
+					&vhd->server.pdb)) {
+			lwsl_err("%s: Unable to open session db %s: %s\n",
+				 __func__, vhd->sqlite3_path_lhs, sqlite3_errmsg(
+						 vhd->server.pdb));
+
+			return -1;
+		}
+		break;
+
+	case LWS_CALLBACK_PROTOCOL_DESTROY:
+		goto passthru;
+
+	/*
+	 * ws connections from sai-power clients
+	 */
+
+	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
+		return 0;
+
+	case LWS_CALLBACK_ESTABLISHED:
+		pss->wsi = wsi;
+		pss->vhd = vhd;
+		if (!vhd)
+			return -1;
+
+		if (lws_hdr_total_length(wsi, WSI_TOKEN_GET_URI)) {
+			if (lws_hdr_copy(wsi, (char *)start, 64,
+					 WSI_TOKEN_GET_URI) < 0)
+				return -1;
+		}
+#if defined(LWS_ROLE_H2)
+		else
+			if (lws_hdr_copy(wsi, (char *)start, 64,
+					 WSI_TOKEN_HTTP_COLON_PATH) < 0)
+				return -1;
+#endif
+
+		lws_dll2_add_head(&pss->same, &vhd->sai_powers);
+
+		sais_platforms_with_tasks_pending(vhd);
+
+		break;
+
+	case LWS_CALLBACK_CLOSED:
+
+		lwsl_user("%s: CLOSED sai-power conn\n", __func__);
+		/* remove pss from vhd->sai_powers */
+		lws_dll2_remove(&pss->same);
+		break;
+
+	case LWS_CALLBACK_RECEIVE:
+		break;
+
+	case LWS_CALLBACK_SERVER_WRITEABLE:
+		if (!vhd) {
+			lwsl_notice("%s: no vhd\n", __func__);
+			break;
+		}
+
+		n = 0;
+		lws_start_foreach_dll(struct lws_dll2 *, px, vhd->pending_plats.head) {
+			sais_plat_t *pl = lws_container_of(px, sais_plat_t, list);
+
+			if (n)
+				*p++ = ',';
+			m = strlen(pl->plat);
+			if (lws_ptr_diff_size_t(end, p) < m + 2)
+				break;
+			memcpy(p, pl->plat, m);
+			p += m;
+			n = 1;
+
+		} lws_end_foreach_dll(px);
+
+
+		lwsl_hexdump_notice(start, lws_ptr_diff_size_t(p, start));
+
+		if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
+				LWS_WRITE_TEXT) < 0)
+			return -1;
+
+		break;
+
+	default:
+passthru:
+			break;
+	}
+
+	return lws_callback_http_dummy(wsi, reason, user, in, len);
+}
+
+const struct lws_protocols protocol_ws_power =
+	{ "com-warmcat-sai-power", callback_ws_power, sizeof(struct pss_power), 0 };

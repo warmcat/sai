@@ -55,6 +55,7 @@ static const char * const default_ss_policy =
 static const struct lws_protocols
 	*pprotocols[] = {
 		&protocol_ws,
+		&protocol_ws_power,
 #if defined(LWS_WITH_SYS_METRICS) && defined(LWS_WITH_PLUGINS_BUILTIN)
 		&lws_openmetrics_export_protocols[LWSOMPROIDX_PROX_HTTP_SERVER],
 		&lws_openmetrics_export_protocols[LWSOMPROIDX_PROX_WS_SERVER],
@@ -81,7 +82,7 @@ int main(int argc, const char **argv)
 		logs = atoi(p);
 
 	lws_set_log_level(logs, NULL);
-	lwsl_user("Sai Server - Copyright (C) 2019-2020 Andy Green <andy@warmcat.com>\n");
+	lwsl_user("Sai Server - Copyright (C) 2019-2025 Andy Green <andy@warmcat.com>\n");
 
 	if ((p = lws_cmdline_option(argc, argv, "-c")))
 		conf = p;

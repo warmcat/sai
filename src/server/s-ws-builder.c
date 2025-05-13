@@ -229,7 +229,7 @@ sai_sql3_get_uint64_cb(void *user, int cols, char **values, char **name)
 }
 
 /*
- * Master received a communication from a builder
+ * Server received a communication from a builder
  */
 
 int
