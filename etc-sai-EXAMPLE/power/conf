@@ -1,0 +1,34 @@
+{
+	"perms":	"sai:nobody",
+
+	"servers":	[
+		{
+			"url" : "wss://libwebsockets.org:4444/sai/builder",
+
+			"platforms": [
+				{
+					"name": "rocky9/x86_64-amd/gcc",
+					"power-on":	{
+						"type": "wol",
+						"mac": "00:e0:4c:68:01:30"
+					},
+					"power-off":	{
+						"type": "suspend"
+					}
+				},
+				{
+					"name": "rocky9/aarch64-a72a55-rk3588/gcc",
+					"power-on":     {
+						"type": "tasmota",
+						"url": "http://10.199.0.240/cm?cmnd=Power%20On"
+					},
+					"power-off":    {
+						"type": "tasmota",
+						"url": "http://10.199.0.240/cm?cmnd=Power%20Off"
+					}
+				}
+			]
+		}
+	]
+}
+
