@@ -5,6 +5,7 @@ set(SRCS
 	p-sai.c
 	p-conf.c
 	p-comms.c
+	p-smartplug.c
 )
 
 set(requirements 1)
@@ -13,6 +14,8 @@ require_lws_config(LWS_WITH_SPAWN		1 requirements)
 require_lws_config(LWS_WITH_STRUCT_JSON		1 requirements)
 require_lws_config(LWS_WITH_SECURE_STREAMS	1 requirements)
 require_lws_config(LWS_WITH_DIR			1 requirements)
+require_lws_config(LWS_WITH_WOL			1 requirements)
+
 
 if (requirements)
 	add_executable(${SUB} ${SRCS})

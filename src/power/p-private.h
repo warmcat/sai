@@ -114,7 +114,7 @@ struct jpargs {
 };
 
 extern struct sai_power power;
-extern const lws_ss_info_t ssi_saip_server_link_t;
+extern const lws_ss_info_t ssi_saip_server_link_t, ssi_saip_smartplug_t;
 extern const struct lws_protocols protocol_com_warmcat_sai, protocol_ws_power;
 int
 saip_config_global(struct sai_power *power, const char *d);

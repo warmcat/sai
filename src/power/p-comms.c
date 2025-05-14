@@ -38,14 +38,68 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
 	saip_server_link_t *pss = (saip_server_link_t *)userobj;
 	saip_server_t *sps = (saip_server_t *)lws_ss_opaque_from_user(pss);
+	const char *p = (const char *)buf, *end = (const char *)buf + len;
+	char plat[128];
+	size_t n;
 
-	lwsl_notice("%s: len %d, flags: %d\n", __func__, (int)len, flags);
+	lwsl_notice("%s: len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
 	lwsl_hexdump_notice(buf, len);
+
+	while (p < end) {
+		n = 0;
+		while (p < end && *p != ',')
+			if (n < sizeof(plat) - 1)
+				plat[n++] = *p++;
+
+		plat[n] = '\0';
+		if (p < end && *p == ',')
+			p++;
+
+		/*
+		 * Does this server list this platform?
+		 */
+
+		lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
+			saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
+
+			if (!strcmp(sp->name, plat)) {
+				/*
+				 * Server said this platform has pending jobs.
+				 * sai-power config says this builder can do
+				 * jobs on that platform.  Let's make sure it
+				 * is powered on.
+				 */
+				if (!strcmp(sp->power_on_type, "wol")) {
+					uint8_t mac[LWS_ETHER_ADDR_LEN];
+
+					if (lws_parse_mac(sp->power_on_mac, mac)) {
+						lwsl_user("Failed to parse mac '%s'\n", sp->power_on_mac);
+					} else
+
+						if (!lws_wol(lws_ss_cx_from_user(pss),
+								NULL, mac)) {
+							lwsl_user("Failed to WOL '%s'\n", sp->power_on_mac);
+						} else
+							lwsl_user("Sent WOL to '%s'\n", sp->power_on_mac);
+				}
+
+				if (!strcmp(sp->power_on_type, "tasmota")) {
+
+					if (lws_ss_create(lws_ss_cx_from_user(pss),
+							  0, &ssi_saip_smartplug_t,
+							  sp, NULL, NULL, NULL)) {
+						lwsl_err("%s: failed to create smartplug secure stream\n",
+								__func__);
+					}
+				}
+			}
+
+		} lws_end_foreach_dll(px);
+	}
 
 	(void)sps;
 
-//	if (saip_ws_json_rx_power(sps, buf, len))
-//		return 1;
+
 
 	return 0;
 }
@@ -103,7 +157,7 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 			pq = sps->url;
 			n = (int)strlen(pq);
 		}
-
+#if 0
 		sps->name = sps->url + strlen(sps->url) + 1;
 		memcpy((char *)sps->name, pq, (unsigned int)n);
 		((char *)sps->name)[n] = '\0';
@@ -112,7 +166,7 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 			*strchr(sps->name, '.') = '_';
 		while (strchr(sps->name, '/'))
 			*strchr(sps->name, '/') = '_';
-
+#endif
 		break;
 
 	case LWSSSCS_DESTROYING:

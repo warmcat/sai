@@ -132,6 +132,20 @@ static const char * const default_ss_policy =
 				"{\"method\": \"\"},"
 				"{\"mime\": \"\"}"
 			"]"
+		"}},"
+		/*
+		 * Http operations to smartplugs
+		 */
+		"{\"sai_power_smartplug\": {"
+			"\"endpoint\":"		"\"${url}\","
+			"\"port\":"		"80,"
+			"\"protocol\":"		"\"h1\","
+			"\"http_url\":"		"\"\"," /* filled in by url */
+			"\"tls\":"		"false,"
+			"\"retry\":"		"\"default\","
+			"\"metadata\": ["
+				"{\"url\": \"\"}"
+			"]"
 		"}}"
 	"]}"
 ;
