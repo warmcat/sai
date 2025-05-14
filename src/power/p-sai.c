@@ -50,6 +50,9 @@
 #include <libwebsockets.h>
 #include <string.h>
 #include <signal.h>
+#include <stdlib.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 #if defined(__linux__)
 #include <unistd.h>
@@ -74,6 +77,7 @@ int getpid(void) { return 0; }
 static const char *config_dir = "/etc/sai/power";
 static int interrupted;
 static lws_state_notify_link_t nl;
+struct lws_spawn_piped *lsp_wol;
 
 struct sai_power power;
 
@@ -320,6 +324,52 @@ int main(int argc, const char **argv)
 
 	lws_context_info_defaults(&info, NULL);
 
+	if ((p = lws_cmdline_option(argc, argv, "-s"))) {
+		struct lws_context *cx;
+		ssize_t n = 0;
+
+		printf("%s: WOL subprocess generation...\n", __func__);
+
+		cx = lws_create_context(&info);
+		if (!cx) {
+			lwsl_err("%s: failed to create wol cx\n", __func__);
+			return 1;
+		}
+
+		/*
+		 * A new process gets started with this option before we drop
+		 * privs.  This allows us to do WOL with root privs later.
+		 *
+		 * We just wait until we get an ascii mac on stdin from the main
+		 * process indicating the WOL needed.
+		 */
+
+		while (n >= 0) {
+			char min[20];
+			uint8_t mac[LWS_ETHER_ADDR_LEN];
+
+			n = read(0, min, sizeof(min) - 1);
+			lwsl_notice("%s: wol process read returned %d\n", __func__, (int)n);
+
+			if (n <= 0)
+				continue;
+
+			min[n] = '\0';
+
+                       { int fd = open("/tmp/q", O_CREAT | O_TRUNC | O_RDWR, 0644); write(fd, min, (size_t)(n + 1)); close(fd); }
+
+			if (lws_parse_mac(min, mac)) {
+				lwsl_user("Failed to parse mac '%s'\n", min);
+			} else
+                               if (lws_wol(cx, NULL, mac)) {
+					lwsl_user("Failed to WOL '%s'\n", min);
+				} else
+					lwsl_user("Sent WOL to '%s'\n", min);
+		}
+
+		return 0;
+	}
+
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
 
@@ -335,6 +385,10 @@ int main(int argc, const char **argv)
 #endif
 
 	lws_set_log_level(logs, NULL);
+
+	lwsl_user("Sai Power - "
+		  "Copyright (C) 2019-2025 Andy Green <andy@warmcat.com>\n");
+	lwsl_user("   sai-power [-c <config-file>]\n");
 
 #if defined(WIN32)
 	{
@@ -364,14 +418,11 @@ int main(int argc, const char **argv)
 	 * Let's parse the global bits out of the config
 	 */
 
-	lwsl_user("Sai Power - "
-		  "Copyright (C) 2019-2025 Andy Green <andy@warmcat.com>\n");
-	lwsl_user("   sai-power [-c <config-file>]\n");
-
 	info.pprotocols = pprotocols;
 	info.uid = 883;
 	info.pt_serv_buf_size = 32 * 1024;
 	info.rlimit_nofile = 20000;
+       info.options |= LWS_SERVER_OPTION_EXPLICIT_VHOSTS;
 
 	signal(SIGINT, sigint_handler);
 
@@ -392,7 +443,6 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
-
 	lwsl_notice("%s: config dir %s\n", __func__, config_dir);
 	if (saip_config_global(&power, config_dir)) {
 		lwsl_err("%s: global config failed\n", __func__);
@@ -405,6 +455,29 @@ int main(int argc, const char **argv)
 		lwsl_err("Failed to create tls vhost\n");
 		goto bail;
 	}
+
+	{
+		struct lws_spawn_piped_info info;
+		char rpath[PATH_MAX];
+		const char * const ea[] = { rpath, "-s", NULL };
+
+		realpath(argv[0], rpath);
+
+		memset(&info, 0, sizeof(info));
+		memset(&power.wol_nspawn, 0, sizeof(power.wol_nspawn));
+
+		info.vh			= power.vhost;
+		info.exec_array		= ea;
+		info.max_log_lines	= 100;
+		info.opaque		= (void *)&power.wol_nspawn;
+
+		lsp_wol = lws_spawn_piped(&info);
+		if (!lsp_wol)
+			lwsl_err("%s: wol spawn failed\n", __func__);
+	}
+
+       lws_finalize_startup(power.context);
+
 
 	while (!lws_service(power.context, 0) && !interrupted)
 		;

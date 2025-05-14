@@ -91,6 +91,8 @@ struct sai_power {
 	struct lws_context	*context;
 	struct lws_vhost	*vhost;
 
+	struct sai_nspawn	wol_nspawn;
+
 	lws_sorted_usec_list_t	sul_idle;
 
 	const char		*power_off;
@@ -116,6 +118,7 @@ struct jpargs {
 extern struct sai_power power;
 extern const lws_ss_info_t ssi_saip_server_link_t, ssi_saip_smartplug_t;
 extern const struct lws_protocols protocol_com_warmcat_sai, protocol_ws_power;
+extern struct lws_spawn_piped *lsp_wol;
 int
 saip_config_global(struct sai_power *power, const char *d);
 extern int saip_config(struct sai_power *power, const char *d);

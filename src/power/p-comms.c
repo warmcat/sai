@@ -70,17 +70,9 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				 * is powered on.
 				 */
 				if (!strcmp(sp->power_on_type, "wol")) {
-					uint8_t mac[LWS_ETHER_ADDR_LEN];
-
-					if (lws_parse_mac(sp->power_on_mac, mac)) {
-						lwsl_user("Failed to parse mac '%s'\n", sp->power_on_mac);
-					} else
-
-						if (!lws_wol(lws_ss_cx_from_user(pss),
-								NULL, mac)) {
-							lwsl_user("Failed to WOL '%s'\n", sp->power_on_mac);
-						} else
-							lwsl_user("Sent WOL to '%s'\n", sp->power_on_mac);
+					lwsl_notice("%s: triggering WOL\n", __func__);
+					write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
+					      sp->power_on_mac, strlen(sp->power_on_mac));
 				}
 
 				if (!strcmp(sp->power_on_type, "tasmota")) {

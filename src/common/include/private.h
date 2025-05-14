@@ -54,31 +54,8 @@ enum {
 	SAISPRF_SIGNALLED	= 0x4000,
 };
 
-/*
- * Builder is indicating he can't take the task and server should free it up
- * and try another builder.
- */
 
-typedef struct sai_rejection {
-	struct lws_dll2 list;
-	char		host_platform[65];
-	char		task_uuid[65];
-	int		ongoing;
-	int		limit;
-} sai_rejection_t;
-
-/*
- * Master is broadcasting that builders should stop work on the given task,
- * because, eg, the task was reset
- */
-
-typedef struct sai_cancel {
-	struct lws_dll2 list;
-	char		task_uuid[65];
-} sai_cancel_t;
-
-
-struct sai_event;
+struct sai_nspawn;
 
 typedef struct {
 	lws_dll2_t		list;
@@ -114,6 +91,94 @@ typedef struct {
 
 	char			told_ongoing;
 } sai_task_t;
+
+typedef struct sai_plat sai_plat_t;
+
+struct saib_logproxy {
+	char			sockpath[128];
+	struct sai_nspawn	*ns;
+	int			log_channel_idx;
+};
+
+struct saib_resproxy {
+	char			sockpath[128];
+	struct sai_nspawn	*ns;
+};
+
+struct sai_nspawn {
+	lws_dll2_owner_t		chunk_cache;
+
+	char				inp[512];
+	char				path[384];
+	char				pending_mirror_log[128];
+
+	/* convenient place to store it */
+	struct saib_logproxy		slp_control;
+	struct saib_logproxy		slp[2];
+
+	lws_dll2_t			list;		/* sai_plat owner lists sai_nspawns */
+	struct sai_builder		*builder;
+	struct lws_fsmount		fsm;
+	struct lws_spawn_piped		*lsp;
+	sai_task_t			*task;
+
+	lws_dll2_owner_t		artifact_owner; /* struct artifact_path */
+
+	struct lws_threadpool		*tp;
+	struct lws_threadpool_task	*tp_task;
+	lws_sorted_usec_list_t		sul_cleaner;
+	lws_sorted_usec_list_t		sul_task_cancel;
+
+	sai_plat_t			*sp; /* the sai_plat */
+	struct sai_plat_server		*spm; /* the sai plat / server with the ss / wsi */
+
+	size_t				chunk_cache_size;
+
+	const char			*server_name;	/* sai-server name who triggered this, eg, 'warmcat' */
+	const char			*project_name;	/* name of the git project, eg, 'libwebsockets' */
+	const char			*ref;		/* remote refname, eg 'server' */
+	const char			*hash;		/* remote hash */
+	const char			*git_repo_url;
+
+	int				retcode;
+	int				instance_idx;
+	int				mirror_wait_budget;
+
+	uint8_t				spins;
+	uint8_t				state;		/* NSSTATE_ */
+	uint8_t				stdcount;
+	uint8_t				term_budget;
+
+	uint8_t				finished_when_logs_drained:1;
+	uint8_t				state_changed:1;
+	uint8_t				user_cancel:1;
+};
+
+/*
+ * Builder is indicating he can't take the task and server should free it up
+ * and try another builder.
+ */
+
+typedef struct sai_rejection {
+	struct lws_dll2 list;
+	char		host_platform[65];
+	char		task_uuid[65];
+	int		ongoing;
+	int		limit;
+} sai_rejection_t;
+
+/*
+ * Master is broadcasting that builders should stop work on the given task,
+ * because, eg, the task was reset
+ */
+
+typedef struct sai_cancel {
+	struct lws_dll2 list;
+	char		task_uuid[65];
+} sai_cancel_t;
+
+
+struct sai_event;
 
 typedef struct sai_event {
 	struct lws_dll2			list;
