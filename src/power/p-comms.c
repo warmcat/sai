@@ -17,6 +17,8 @@
  *  License along with this library; if not, write to the Free Software
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  *  MA  02110-1301  USA
+ *
+ * This is the part of sai-power that handles communication with sai-server
  */
 
 #include <libwebsockets.h>
@@ -76,10 +78,9 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				}
 
 				if (!strcmp(sp->power_on_type, "tasmota")) {
-
 					if (lws_ss_create(lws_ss_cx_from_user(pss),
 							  0, &ssi_saip_smartplug_t,
-							  sp, NULL, NULL, NULL)) {
+							  (void *)sp->power_on_url, NULL, NULL, NULL)) {
 						lwsl_err("%s: failed to create smartplug secure stream\n",
 								__func__);
 					}

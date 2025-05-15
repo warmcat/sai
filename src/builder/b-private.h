@@ -110,6 +110,7 @@ struct sai_builder {
 	const char		*metrics_path;
 	const char		*metrics_secret;
 
+	const char		*url_sai_power;
 
 	const char		*power_off_type;
 	const char		*power_off_url;
@@ -123,6 +124,8 @@ struct sai_builder {
 	const char		*host;		/* prepended before hostname */
 
 	sai_mirror_instance_t	mi;
+
+	char			stay;
 };
 
 struct jpargs {

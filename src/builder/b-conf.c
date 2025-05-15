@@ -285,6 +285,10 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		pp = &a->builder->host;
 		break;
 
+	case LEJPM_SAI_POWER:
+		pp = &a->builder->url_sai_power;
+		break;
+
 	case LEJPM_METRICS_URI:
 		pp = &a->builder->metrics_uri;
 		break;

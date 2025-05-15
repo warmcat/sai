@@ -6,6 +6,11 @@
         "home":         "/home/sai",
         "host":         "myhostname",
 
+	# if you are using auto-power-on and off, the builder needs
+	# to point to a sai-power instance that can coordinate power-off
+	# when the builder decides it is idle
+	# "sai-power":    "http://10.199.0.10:3333",
+
         "platforms": [
                 {
                         "name":         "linux-debian-buster/x86_64-amd/gcc",

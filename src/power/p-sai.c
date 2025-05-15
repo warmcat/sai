@@ -128,8 +128,7 @@ static const char * const default_ss_policy =
 		"{\"local\": {"
 			"\"server\":"		"true,"
 			"\"port\":"		"3333,"
-			"\"protocol\":"		"\"ws\","
-			"\"ws_subprotocol\":"	"\"com-warmcat-sai-power\","
+			"\"protocol\":"		"\"h1\","
 			"\"tls\":"		"false,"
 			"\"metadata\": ["
 				"{\"path\": \"\"},"
@@ -145,6 +144,7 @@ static const char * const default_ss_policy =
 			"\"port\":"		"80,"
 			"\"protocol\":"		"\"h1\","
 			"\"http_url\":"		"\"\"," /* filled in by url */
+			"\"http_method\":"	"\"GET\","
 			"\"tls\":"		"false,"
 			"\"retry\":"		"\"default\","
 			"\"metadata\": ["
@@ -160,6 +160,24 @@ static const struct lws_protocols *pprotocols[] = {
 //	&protocol_ws_power,
 	NULL
 };
+static void
+saip_sul_action_power_off(struct lws_sorted_usec_list *sul)
+{
+	saip_server_plat_t *sp = lws_container_of(sul,
+					saip_server_plat_t, sul_delay_off);
+
+	lwsl_warn("%s: powering off host %s\n", __func__, sp->host);
+
+	if (lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,
+			  (void *)sp->power_off_url, NULL, NULL, NULL)) {
+		lwsl_err("%s: failed to create smartplug secure stream\n",
+				__func__);
+	}
+}
+
+/*
+ * local-side h1 server for builders to connect to
+ */
 
 LWS_SS_USER_TYPEDEF
         char                    payload[200];
@@ -197,11 +215,32 @@ local_srv_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
         return r;
 }
 
+static saip_server_plat_t *
+find_platform(const char *host)
+{
+	lws_start_foreach_dll(struct lws_dll2 *, px, power.sai_server_owner.head) {
+		saip_server_t *s = lws_container_of(px, saip_server_t, list);
+
+		lws_start_foreach_dll(struct lws_dll2 *, px1, s->sai_plat_owner.head) {
+			saip_server_plat_t *sp = lws_container_of(px1, saip_server_plat_t, list);
+
+			if (!strcmp(host, sp->host))
+				return sp;
+
+		} lws_end_foreach_dll(px1);
+	} lws_end_foreach_dll(px);
+
+	return NULL;
+}
+
 static lws_ss_state_return_t
 local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
                lws_ss_tx_ordinal_t ack)
 {
         local_srv_t *g = (local_srv_t *)userobj;
+	saip_server_plat_t *sp;
+	char *path = NULL;
+	size_t len;
 
 	lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name(state));
 
@@ -211,7 +250,17 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 
         case LWSSSCS_SERVER_TXN:
 
-		lwsl_ss_user(lws_ss_from_user(g), "LWSSSCS_SERVER_TXN");
+		lws_ss_get_metadata(lws_ss_from_user(g), "path", (const void **)&path, &len);
+		lwsl_ss_user(lws_ss_from_user(g), "LWSSSCS_SERVER_TXN path %.*s", (int)len, path);
+
+		/*
+		 * path is containing a string like "/power-off/b32"
+		 * match the last part to a known platform and find out how
+		 * to power that off
+		 */
+
+                if (lws_ss_set_metadata(lws_ss_from_user(g), "mime", "text/html", 9))
+                        return LWSSSSRET_DISCONNECT_ME;
 
                 /*
                  * A transaction is starting on an accepted connection.  Say
@@ -220,14 +269,91 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
                  */
                 lws_ss_server_ack(lws_ss_from_user(g), 0);
 
-                if (lws_ss_set_metadata(lws_ss_from_user(g), "mime", "text/html", 9))
-                        return LWSSSSRET_DISCONNECT_ME;
+		g->pos = 0;
 
-                g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-                                               "Hello World: %lu",
-                                               (unsigned long)lws_now_usecs());
-                g->pos = 0;
+		if (!strncmp(path, "/stay/", 6)) {
+			sp = find_platform(&path[6]);
 
+			if (sp)
+				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+								"%c", '0' + sp->stay);
+			else
+				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+								"unknown host %s", &path[6]);
+			goto bail;
+		}
+
+		if (!strncmp(path, "/power-on/", 10)) {
+			sp = find_platform(&path[10]);
+			if (!sp) {
+				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+                                               "Unable to find host %s", &path[11]);
+				goto bail;
+			}
+			if (sp->power_on_mac) {
+				write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
+					      sp->power_on_mac, strlen(sp->power_on_mac));
+				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+						"Resumed %s with stay", &path[10]);
+				sp->stay = 1;
+				goto bail;
+			}
+			if (!sp->power_on_url) {
+				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+						"no power-on-url entry for %s", &path[10]);
+				goto bail;
+			}
+			if (lws_ss_create(power.context, 0,
+					&ssi_saip_smartplug_t,
+					(void *)sp->power_on_url,
+					NULL, NULL, NULL)) {
+				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+					"power-on ss failed create %s", sp->host);
+				goto bail;
+			}
+
+			lwsl_warn("%s: powered on host %s\n", __func__, sp->host);
+
+			g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+				"Manually powered on %s", sp->host);
+
+			sp->stay = 1; /* so builder can understand it's manual */
+			goto bail;
+		}
+
+		if (strncmp(path, "/power-off/", 11)) {
+			g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+					"URL path needs to start with /power-off/");
+			goto bail;
+		}
+
+		/*
+		 * Let's have a look at the platform
+		 */
+
+		g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+                                               "Unable to find host %s", &path[11]);
+
+		sp = find_platform(&path[11]);
+		if (sp) {
+			/*
+				* OK this is it, schedule it to happen
+				*/
+			lws_sul_schedule(lws_ss_cx_from_user(g), 0,
+						&sp->sul_delay_off,
+						saip_sul_action_power_off,
+					3 * LWS_USEC_PER_SEC);
+
+			lwsl_warn("%s: scheduled powering off host %s\n",
+					__func__, sp->host);
+
+			g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+				"Scheduled powering off host %s", sp->host);
+
+			sp->stay = 0; /* reset any manual power up */
+		}
+
+bail:
                 return lws_ss_request_tx_len(lws_ss_from_user(g),
                                              (unsigned long)g->size);
         }
@@ -419,7 +545,7 @@ int main(int argc, const char **argv)
 	 */
 
 	info.pprotocols = pprotocols;
-	info.uid = 883;
+	//info.uid = 883;
 	info.pt_serv_buf_size = 32 * 1024;
 	info.rlimit_nofile = 20000;
        info.options |= LWS_SERVER_OPTION_EXPLICIT_VHOSTS;

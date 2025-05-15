@@ -33,6 +33,7 @@ static const char * const paths_global[] = {
 	"perms",
 	"servers[].url",
 	"servers[].platforms[].name",
+	"servers[].platforms[].host",
 	"servers[].platforms[].power-on.type",
 	"servers[].platforms[].power-on.mac",
 	"servers[].platforms[].power-on.url",
@@ -48,6 +49,7 @@ enum enum_paths_global {
 	LEJPM_PERMS,
 	LEJPM_SERVERS_URL,
 	LEJPM_SERVERS_PLATFORMS_NAME,
+	LEJPM_SERVERS_PLATFORMS_HOST,
 	LEJPM_SERVERS_PLATFORMS_POWER_ON_TYPE,
 	LEJPM_SERVERS_PLATFORMS_POWER_ON_MAC,
 	LEJPM_SERVERS_PLATFORMS_POWER_ON_URL,
@@ -135,6 +137,10 @@ saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 
 	case LEJPM_SERVERS_PLATFORMS_NAME:
 		pp = &a->sai_server_plat->name;
+		break;
+
+	case LEJPM_SERVERS_PLATFORMS_HOST:
+		pp = &a->sai_server_plat->host;
 		break;
 
 	case LEJPM_SERVERS_PLATFORMS_POWER_ON_TYPE:

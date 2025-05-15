@@ -161,11 +161,11 @@ saib_task_destroy(struct sai_nspawn *ns)
 		 * Account that we're not doing this task any more
 		 */
 
-		lwsl_notice("%s: ongoing %d -> %d\n", __func__,
-			    ns->sp->ongoing, ns->sp->ongoing - 1);
+		// lwsl_notice("%s: ongoing %d -> %d\n", __func__,
+		//	    ns->sp->ongoing, ns->sp->ongoing - 1);
 		ns->sp->ongoing--;
 
-		if (!strcmp(builder.power_off_type, "suspend") && !ns->sp->ongoing) {
+		if (!ns->sp->ongoing) {
 			int m = 0;
 
 			/*
@@ -183,12 +183,10 @@ saib_task_destroy(struct sai_nspawn *ns)
 					m++;
 			} lws_end_foreach_dll_safe(d, d1);
 
-			if (!m) {
-				lwsl_notice("%s: scheduling suspend grace time\n", __func__);
+			if (!m)
 				lws_sul_schedule(builder.context, 0,
 						 &builder.sul_idle, sul_idle_cb,
 						SAI_IDLE_GRACE_US);
-			}
 		}
 
 		/*
@@ -718,11 +716,9 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		sp->ongoing++;
 		ns->task->told_ongoing = 1;
 
-		if (!strcmp(builder.power_off_type, "suspend")) {
-			/* we're busy, we're not in the mood for suspending */
-			lwsl_notice("%s: cancelling suspend grace time\n", __func__);
-			lws_sul_cancel(&ns->builder->sul_idle);
-		}
+		/* we're busy, we're not in the mood for suspending */
+		lwsl_notice("%s: cancelling suspend grace time\n", __func__);
+		lws_sul_cancel(&ns->builder->sul_idle);
 
 		/*
 		 * Let the mirror thread get on with things...

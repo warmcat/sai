@@ -3,6 +3,11 @@
         "home":         "/home/sai",
         "host":         "bionic-noi",
 
+	# if you are using auto-power-on and off, the builder needs
+	# to point to a sai-power instance that can coordinate power-off
+	# when the builder decides it is idle
+	# "sai-power":    "http://10.199.0.10:3333",
+
         "platforms": [
                 {
                         "name":         "linux-ubuntu-1804/x86_64-amd/gcc",

@@ -2,7 +2,7 @@
 
 [![CI status](https://warmcat.com/sai/status/sai)](https://warmcat.com/git/sai)
 
-`Sai` (pronouced like 'sigh', "Trial" in Japanese) is a very lightweight
+`Sai` (pronouced like 'sigh': "Trial" in Japanese) is a very lightweight
 lws-based network-aware distributed CI builder and coordinating server.
 You can run the sai-builder daemon on any number of devices ad-hoc without
 central registration or inbound internet access, to offer builds for those
@@ -85,6 +85,15 @@ the browser, with JWT-authentication for manual job control.
    like deleting a whole event, or redoing whole events or individual tasks.
    For these, if the browser has an authentic JWT signed by the server, it can
    see and operate these privileged controls.
+
+ - sai-power is an optional daemon that runs on a machine on the builder subnet,
+   when builders identify they are idle, they can suspend themselves, or ask
+   sai-power to turn the builder off (after they have cleanly shutdown themselves)
+   at a smartplug.  sai-power also monitors sai-server, and when it sees there
+   is a job ready for the platform offered by the builder, either resume the
+   builder with WOL, or power the builder up at its smartplug.  Since builders in
+   most cases spend most of their time idle, this enables a very good optimization
+   of average power down to nearly zero.
 
 ## Build flow and support for embedded
 

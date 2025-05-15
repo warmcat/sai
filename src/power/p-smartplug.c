@@ -36,7 +36,7 @@ saip_spc_state(void *userobj, void *sh, lws_ss_constate_t state,
 	     lws_ss_tx_ordinal_t ack)
 {
 	saip_smartplug_t *pss = (saip_smartplug_t *)userobj;
-	saip_server_plat_t *sp = (saip_server_plat_t *)lws_ss_opaque_from_user(pss);
+	const char *op_url = (const char *)lws_ss_opaque_from_user(pss);
 
 	lwsl_user("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name((int)state),
 		  (unsigned int)ack);
@@ -45,11 +45,10 @@ saip_spc_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 	case LWSSSCS_CREATING:
 
-		lwsl_notice("%s: binding ss to %s\n", __func__, sp->power_on_url);
+		lwsl_notice("%s: binding ss to %s\n", __func__, op_url);
 
 		if (lws_ss_set_metadata(lws_ss_from_user(pss),
-					"url", sp->power_on_url,
-					strlen(sp->power_on_url)))
+					"url", op_url, strlen(op_url)))
 			lwsl_warn("%s: unable to set metadata\n", __func__);
 
 		return lws_ss_client_connect(lws_ss_from_user(pss));

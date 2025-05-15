@@ -117,6 +117,19 @@ static const char * const default_ss_policy =
 			"\"metadata\": ["
 				"{\"url\": \"\"}"
 			"]"
+		"}},"
+		/*
+		 * Used to connect to sai-power to ask for power-off
+		 */
+		"{\"sai_power\": {"
+			"\"endpoint\":"		"\"${url}\","
+			"\"protocol\":"		"\"h1\","
+			"\"http_url\":"		"\"\"," /* filled in by url */
+			"\"http_method\":"	"\"GET\","
+			"\"retry\":"		"\"default\","
+			"\"metadata\": ["
+				"{\"url\": \"\"}"
+			"]"
 		"}}"
 	"]}"
 ;
@@ -245,6 +258,64 @@ saib_create_resproxy_listen_uds(struct lws_context *context,
 
 	return 0;
 }
+
+/*
+ * This is used to check with sai-power if we should stay up (due to the power
+ * being turned on manually)
+ */
+
+
+LWS_SS_USER_TYPEDEF
+        char                    payload[200];
+        size_t                  size;
+        size_t                  pos;
+} saib_power_stay_t;
+
+
+static lws_ss_state_return_t
+saib_power_stay_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
+{
+	lwsl_notice("%s: %.*s\n", __func__, (int)len, buf);
+
+	if (len >= 1) {
+		builder.stay = *buf == '1';
+
+		lwsl_err("%s: setting %s builder stay: %d\n", __func__,
+			builder.host, builder.stay);
+	}
+
+	return 0;
+}
+
+static lws_ss_state_return_t
+sai_power_stay_state(void *userobj, void *sh, lws_ss_constate_t state,
+               lws_ss_tx_ordinal_t ack)
+{
+        saib_power_stay_t *g = (saib_power_stay_t *)userobj;
+	lws_ss_state_return_t r;
+	char path[256];
+
+	lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name(state));
+
+        switch ((int)state) {
+        case LWSSSCS_CREATING:
+		snprintf(path, sizeof(path) - 1, "%s/stay/%s",
+			 builder.url_sai_power, builder.host);
+
+		r = lws_ss_set_metadata(lws_ss_from_user(g), "url", path, strlen(path));
+		if (r)
+			lwsl_err("%s: set_metadata said %d\n", __func__, (int)r);
+
+                return lws_ss_request_tx(lws_ss_from_user(g));
+        }
+
+        return LWSSSSRET_OK;
+}
+
+LWS_SS_INFO("sai_power", saib_power_stay_t)
+	.rx				= saib_power_stay_rx,
+        .state                          = sai_power_stay_state,
+};
 
 static int
 app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
@@ -382,12 +453,66 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 
 		} lws_end_foreach_dll(pxx);
 
+		/*
+		 * Find out if we were powered up manually (in which case we
+		 * should suppress idle handling)
+		 */
+
+		if (lws_ss_create(builder.context, 0, &ssi_saib_power_stay_t,
+			  NULL, NULL, NULL, NULL)) {
+			lwsl_err("%s: failed to create sai-power-stay ss\n", __func__);
+			break;
+		}
 
 		break;
 	}
 
 	return 0;
 }
+
+/*
+ * This is used to fire http request to sai-power for power-down
+ */
+
+
+LWS_SS_USER_TYPEDEF
+        char                    payload[200];
+        size_t                  size;
+        size_t                  pos;
+} saib_power_link_t;
+
+static lws_ss_state_return_t
+sai_power_link_state(void *userobj, void *sh, lws_ss_constate_t state,
+               lws_ss_tx_ordinal_t ack)
+{
+        saib_power_link_t *g = (saib_power_link_t *)userobj;
+	lws_ss_state_return_t r;
+	char path[256];
+
+	lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name(state));
+
+        switch ((int)state) {
+        case LWSSSCS_CREATING:
+		snprintf(path, sizeof(path) - 1, "%s/power-off/%s",
+			 builder.url_sai_power,
+			(const char *)lws_ss_opaque_from_user(g));
+
+		lwsl_notice("%s: setting url metadata %s\n", __func__, path);
+
+		r = lws_ss_set_metadata(lws_ss_from_user(g), "url", path, strlen(path));
+		if (r)
+			lwsl_err("%s: set_metadata said %d\n", __func__, (int)r);
+
+                return lws_ss_request_tx(lws_ss_from_user(g));
+        }
+
+        return LWSSSSRET_OK;
+}
+
+LWS_SS_INFO("sai_power", saib_power_link_t)
+        .state                          = sai_power_link_state,
+};
+
 
 /*
  * The grace time is up, ask for the suspend
@@ -399,20 +524,65 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 	ssize_t n;
 	uint8_t te = 1;
 
-	lwsl_notice("%s: requesting suspend...\n", __func__);
+	if (builder.stay)
+		return;
 
+	if (builder.power_off_type &&
+	    !strcmp(builder.power_off_type, "suspend")) {
+
+		lwsl_notice("%s: requesting suspend...\n", __func__);
+
+		n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
+		if (n == 1) {
+			sleep(2);
+			/*
+			* There were 0 tasks ongoing for us to suspend, start off
+			* with the same assumption and set the idle grace time
+			*/
+			lws_sul_schedule(builder.context, 0, &builder.sul_idle,
+					sul_idle_cb, SAI_IDLE_GRACE_US);
+			lwsl_notice("%s: resuming after suspend\n", __func__);
+		} else
+			lwsl_err("%s: failed to request suspend\n", __func__);
+
+		return;
+	}
+
+	/*
+	 * Do we have a url for sai-power?  If not, nothing we can do.
+	 */
+
+	if (!builder.url_sai_power)
+		return;
+
+	/*
+	 * The plan is ask sai-power to turn us off...
+	 */
+
+	lwsl_notice("%s: creating sai-power ss...\n", __func__);
+
+	if (lws_ss_create(builder.context, 0, &ssi_saib_power_link_t,
+			  (void *)builder.host, NULL, NULL, NULL)) {
+		lwsl_err("%s: failed to create sai-power ss\n", __func__);
+		return;
+	}
+
+	/*
+	 * Give the http action some time to complete (else we will kill
+	 * everything including the http as soon as we progress on to shutdown)
+	 */
+
+	sleep(2);
+
+	lwsl_notice("%s: doing shutdown...\n", __func__);
+
+	/*
+	 * In the grace time for actioning the power-off, we should shutdown
+	 * cleanly
+	 */
+
+	te = 0;
 	n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
-	if (n == 1) {
-		sleep(2);
-		/*
-		 * There were 0 tasks ongoing for us to suspend, start off
-		 * with the same assumption and set the idle grace time
-		 */
-		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
-				 sul_idle_cb, SAI_IDLE_GRACE_US);
-		lwsl_notice("%s: resuming after suspend\n", __func__);
-	} else
-		lwsl_err("%s: failed to request suspend\n", __func__);
 }
 
 static lws_state_notify_link_t * const app_notifier_list[] = {
@@ -482,14 +652,21 @@ int main(int argc, const char **argv)
 			if (n <= 0)
 				continue;
 
-			if (n == 1 && d == 2) {
+			if (d == 2) {
 				lwsl_warn("%s: suspend process ending\n", __func__);
 				break;
 			}
 
 			p = fork();
 			if (!p)
-				execl("/usr/bin/systemctl", "/usr/bin/systemctl", "suspend", NULL);
+				switch(d) {
+				case 0:
+					execl("/usr/sbin/shutdown", "/usr/sbin/shutdown", "--halt", "now", NULL);
+					break;
+				case 1:
+					execl("/usr/bin/systemctl", "/usr/bin/systemctl", "suspend", NULL);
+					break;
+				}
 			else
 				waitpid(p, &status, 0);
 		}
@@ -640,7 +817,7 @@ int main(int argc, const char **argv)
 		goto bail;
 	}
 
-	if (!strcmp(builder.power_off_type, "suspend")) {
+	{
 		struct lws_spawn_piped_info info;
 		char rpath[PATH_MAX];
 		const char * const ea[] = { rpath, "-s", NULL };
@@ -695,7 +872,7 @@ int main(int argc, const char **argv)
 
 bail:
 
-	if (!strcmp(builder.power_off_type, "suspend") && lsp_suspender) {
+	if (lsp_suspender) {
 		uint8_t te = 2;
 
 		/*
@@ -737,8 +914,7 @@ bail:
 
 	saib_config_destroy(&builder);
 
-	if (!strcmp(builder.power_off_type, "suspend"))
-		lws_sul_cancel(&builder.sul_idle);
+	lws_sul_cancel(&builder.sul_idle);
 
 	/*
 	 * Clean up after the spawn threads

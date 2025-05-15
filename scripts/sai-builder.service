@@ -1,5 +1,6 @@
 [Unit]
 Description=Sai Builder
+After=network-online.target ntp.service
 
 [Service]
 Environment="LWS_NTP_SERVER=192.168.4.1"

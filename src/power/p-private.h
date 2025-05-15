@@ -60,12 +60,17 @@ struct saip_ws_pss;
 typedef struct saip_server_plat {
 	struct lws_dll2		list;
 
+	lws_sorted_usec_list_t	sul_delay_off;
+
 	const char		*name;
+	const char		*host;
 	const char		*power_on_type;
 	const char		*power_on_url;
 	const char		*power_on_mac;
 	const char		*power_off_type;
 	const char		*power_off_url;
+
+	char			stay;
 
 } saip_server_plat_t;
 

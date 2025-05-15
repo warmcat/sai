@@ -393,8 +393,6 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 	lws_dll2_owner_t o;
 	int n;
 
-	lwsl_err("%s: ++++++++ entry\n", __func__);
-
 	/* lose everything we were holding on to from last time */
 	sais_destroy_pending_plat_list(vhd);
 
@@ -402,19 +400,15 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 	 * Collect a list of events that still have any open tasks
 	 */
 
-	lws_snprintf(pf, sizeof(pf)," and (state != 3 and state != 4 and state != 5) and created < %llu",
-			(unsigned long long)(lws_now_secs() - 10));
+	lws_snprintf(pf, sizeof(pf)," and (state == 0 or state == 1 or state == 2)");
 
 	n = lws_struct_sq3_deserialize(vhd->server.pdb, pf, "created desc ",
-				       lsm_schema_sq3_map_event, &o, &ac, 0, 10);
+				       lsm_schema_sq3_map_event, &o, &ac, 0, 20);
 
 	if (n < 0 || !o.head) {
 		/* error, or there are no events that aren't complete */
 		goto bail;
 	}
-
-
-	lwsl_err("%s: starting scan\n", __func__);
 
 	/*
 	 * Iterate through the events looking at his event-specific database
@@ -431,7 +425,7 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 
 			if (sqlite3_prepare_v2(pdb, "select distinct platform "
 						    "from tasks where "
-						    "(state != 3 and state != 4 and state != 5)", -1, &sm,
+						    "(state == 0)", -1, &sm,
 							   NULL) != SQLITE_OK) {
 				lwsl_err("%s: Unable to %s\n",
 					 __func__, sqlite3_errmsg(pdb));
@@ -441,11 +435,9 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 
 			do {
 				n = sqlite3_step(sm);
-				if (n == SQLITE_ROW) {
-					lwsl_err("%s: scanned plat %s\n", __func__, (const char *)sqlite3_column_text(sm, 0));
+				if (n == SQLITE_ROW)
 					sais_find_or_add_pending_plat(vhd,
 						(const char *)sqlite3_column_text(sm, 0));
-				}
 			} while (n == SQLITE_ROW);
 
 			sqlite3_reset(sm);
