@@ -112,7 +112,7 @@ static const char * const default_ss_policy =
 			"\"endpoint\":"		"\"${url}\","
 			"\"port\":"		"443,"
 			"\"protocol\":"		"\"ws\","
-			"\"ws_subprotocol\":"	"\"com-warmcat-sai-power\","
+			"\"ws_subprotocol\":"	"\"com-warmcat-sai\","
 			"\"http_url\":"		"\"\"," /* filled in by url */
 			"\"nailed_up\":"        "true,"
 			"\"tls\":"		"true,"
@@ -165,6 +165,11 @@ saip_sul_action_power_off(struct lws_sorted_usec_list *sul)
 {
 	saip_server_plat_t *sp = lws_container_of(sul,
 					saip_server_plat_t, sul_delay_off);
+
+	if (!sp->power_off_url) {
+		lwsl_notice("%s: no power_off_url for %s\n", __func__, sp->host);
+		return;
+	}
 
 	lwsl_warn("%s: powering off host %s\n", __func__, sp->host);
 
@@ -291,9 +296,13 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 				goto bail;
 			}
 			if (sp->power_on_mac) {
-				write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
-					      sp->power_on_mac, strlen(sp->power_on_mac));
-				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+				if (write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
+					      sp->power_on_mac, strlen(sp->power_on_mac)) !=
+						(ssize_t)strlen(sp->power_on_mac))
+					g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+						"Write to resume %s failed %d", &path[10], errno);
+				else
+					g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
 						"Resumed %s with stay", &path[10]);
 				sp->stay = 1;
 				goto bail;
@@ -456,6 +465,8 @@ int main(int argc, const char **argv)
 
 		printf("%s: WOL subprocess generation...\n", __func__);
 
+		info.wol_if = argv[2];
+
 		cx = lws_create_context(&info);
 		if (!cx) {
 			lwsl_err("%s: failed to create wol cx\n", __func__);
@@ -482,15 +493,14 @@ int main(int argc, const char **argv)
 
 			min[n] = '\0';
 
-                       { int fd = open("/tmp/q", O_CREAT | O_TRUNC | O_RDWR, 0644); write(fd, min, (size_t)(n + 1)); close(fd); }
-
 			if (lws_parse_mac(min, mac)) {
 				lwsl_user("Failed to parse mac '%s'\n", min);
 			} else
                                if (lws_wol(cx, NULL, mac)) {
 					lwsl_user("Failed to WOL '%s'\n", min);
-				} else
+				} else {
 					lwsl_user("Sent WOL to '%s'\n", min);
+				}
 		}
 
 		return 0;
@@ -544,11 +554,22 @@ int main(int argc, const char **argv)
 	 * Let's parse the global bits out of the config
 	 */
 
+	lwsl_notice("%s: config dir %s\n", __func__, config_dir);
+	if (saip_config_global(&power, config_dir)) {
+		lwsl_err("%s: global config failed\n", __func__);
+
+		return 1;
+	}
+
+	info.wol_if = power.wol_if;
+	if (power.wol_if)
+		lwsl_notice("%s: WOL bound to interface %s\n", __func__, power.wol_if);
+
 	info.pprotocols = pprotocols;
 	//info.uid = 883;
 	info.pt_serv_buf_size = 32 * 1024;
 	info.rlimit_nofile = 20000;
-       info.options |= LWS_SERVER_OPTION_EXPLICIT_VHOSTS;
+	info.options |= LWS_SERVER_OPTION_EXPLICIT_VHOSTS;
 
 	signal(SIGINT, sigint_handler);
 
@@ -569,13 +590,6 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
-	lwsl_notice("%s: config dir %s\n", __func__, config_dir);
-	if (saip_config_global(&power, config_dir)) {
-		lwsl_err("%s: global config failed\n", __func__);
-
-		return 1;
-	}
-
 	power.vhost = lws_create_vhost(power.context, &info);
 	if (!power.vhost) {
 		lwsl_err("Failed to create tls vhost\n");
@@ -585,7 +599,7 @@ int main(int argc, const char **argv)
 	{
 		struct lws_spawn_piped_info info;
 		char rpath[PATH_MAX];
-		const char * const ea[] = { rpath, "-s", NULL };
+		const char * const ea[] = { rpath, "-s", power.wol_if, NULL };
 
 		realpath(argv[0], rpath);
 

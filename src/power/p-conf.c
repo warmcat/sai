@@ -31,6 +31,7 @@
 
 static const char * const paths_global[] = {
 	"perms",
+	"wol-if",
 	"servers[].url",
 	"servers[].platforms[].name",
 	"servers[].platforms[].host",
@@ -47,6 +48,7 @@ static const char * const paths_global[] = {
 
 enum enum_paths_global {
 	LEJPM_PERMS,
+	LEJPM_WOL_IF,
 	LEJPM_SERVERS_URL,
 	LEJPM_SERVERS_PLATFORMS_NAME,
 	LEJPM_SERVERS_PLATFORMS_HOST,
@@ -128,6 +130,10 @@ saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 
 	case LEJPM_PERMS:
 		pp = &a->power->perms;
+		break;
+
+	case LEJPM_WOL_IF:
+		pp = &a->power->wol_if;
 		break;
 
 	case LEJPM_SERVERS_URL:

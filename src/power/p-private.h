@@ -102,6 +102,8 @@ struct sai_power {
 
 	const char		*power_off;
 
+	const char		*wol_if;
+
 	const char		*bind;		/* listen socket binding */
 	const char		*perms;		/* user:group */
 

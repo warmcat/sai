@@ -165,6 +165,8 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 
 		sais_taskchange(vhd->h_ss_websrv, task_uuid, state);
 
+		sais_platforms_with_tasks_pending(vhd);
+
 		/*
 		 * So, how many tasks for this event?
 		 */
@@ -302,7 +304,7 @@ sais_task_pending(struct vhd *vhd, struct lwsac **pac, const char *platform)
 
 		if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
 			lws_snprintf(pf, sizeof(pf),
-				     " and state=0 and platform='%s'", esc);
+				     " and (state == 0) and (platform == '%s')", esc);
 			n = lws_struct_sq3_deserialize(pdb, pf, NULL,
 						       lsm_schema_sq3_map_task,
 						       &ot, pac, 0, 1);
@@ -374,7 +376,7 @@ static void
 sais_notify_all_sai_power(struct vhd *vhd)
 {
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->sai_powers.head) {
-		struct pss_power *pss = lws_container_of(p, struct pss_power, same);
+		struct pss *pss = lws_container_of(p, struct pss, same);
 
 		lws_callback_on_writable(pss->wsi);
 
@@ -400,7 +402,7 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 	 * Collect a list of events that still have any open tasks
 	 */
 
-	lws_snprintf(pf, sizeof(pf)," and (state == 0 or state == 1 or state == 2)");
+	lws_snprintf(pf, sizeof(pf)," and (state != 3 and state != 4 and state != 5)");
 
 	n = lws_struct_sq3_deserialize(vhd->server.pdb, pf, "created desc ",
 				       lsm_schema_sq3_map_event, &o, &ac, 0, 20);
@@ -425,7 +427,7 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 
 			if (sqlite3_prepare_v2(pdb, "select distinct platform "
 						    "from tasks where "
-						    "(state == 0)", -1, &sm,
+						    "(state == 0 or state == 1)", -1, &sm,
 							   NULL) != SQLITE_OK) {
 				lwsl_err("%s: Unable to %s\n",
 					 __func__, sqlite3_errmsg(pdb));
@@ -631,6 +633,8 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	lws_callback_on_writable(pss->wsi);
 
 	pss->a.ac = NULL;
+
+	sais_platforms_with_tasks_pending(vhd);
 
 	/*
 	 * We are going to leave here with a live pss->a.ac (pointed into by
