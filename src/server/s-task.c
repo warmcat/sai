@@ -374,7 +374,7 @@ static void
 sais_notify_all_sai_power(struct vhd *vhd)
 {
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->sai_powers.head) {
-		struct pss_power *pss = lws_container_of(p, struct pss_power, same);
+		struct pss *pss = lws_container_of(p, struct pss, same);
 
 		lws_callback_on_writable(pss->wsi);
 

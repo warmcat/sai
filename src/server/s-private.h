@@ -147,15 +147,9 @@ struct pss {
 	unsigned int		wants_event_updates:1;
 	unsigned int		announced:1;
 	unsigned int		bulk_binary_data:1;
+	unsigned int		is_power:1;
 
 	uint8_t			ovstate; /* SOS_ substate when doing overview */
-};
-
-struct pss_power {
-	struct vhd		*vhd;
-	struct lws		*wsi;
-
-	struct lws_dll2		same; /* owner: vhd.builders */
 };
 
 typedef struct sais_sqlite_cache {

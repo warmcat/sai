@@ -112,7 +112,7 @@ static const char * const default_ss_policy =
 			"\"endpoint\":"		"\"${url}\","
 			"\"port\":"		"443,"
 			"\"protocol\":"		"\"ws\","
-			"\"ws_subprotocol\":"	"\"com-warmcat-sai-power\","
+			"\"ws_subprotocol\":"	"\"com-warmcat-sai\","
 			"\"http_url\":"		"\"\"," /* filled in by url */
 			"\"nailed_up\":"        "true,"
 			"\"tls\":"		"true,"

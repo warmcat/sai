@@ -100,10 +100,11 @@ the builder to request sai power to turn itself off.
 Builders that are managed by sai-power are OFF a lot, basically any time it finished
 building the last push until the next one, which may be whole days or more.
 
-If you need to ssh in to them, that would be inconvenient since they are literally OFF.
+If you need to ssh in to them to manage them, that is inconvenient since they are
+literally OFF.  Even if you caught them while on and building, they can choose to go OFF
+or suspend at any time.
 
-To simplify that case, you can manually ask sai-power to start up a builder and
-for that session only, disable its idle detection.
+To simplify that case, you can manually ask sai-power to start up a builder.
 
 ```
 # wget -O- http://10.199.0.10:3333/power-on/hostname
@@ -112,12 +113,15 @@ for that session only, disable its idle detection.
 Asking sai-power to do it has some advantages:
 
  - it will work the same no matter the details of that particular builder's
-   power arrangements, ie, if suspend / resume or needs a specific smartplug,
-   sai-power knows what to do depending on the hostname
+   power arrangements, ie, if suspend / resume, or needs a specific smartplug,
+   sai-power knows what to do depending on the hostname (and config) while
+   the "api" url is the same.
 
  - sai-power can remember if you did it manually (as opposed to sai-power
    starting the builder since it saw jobs available) and inform the builder
    after it starts that for this session, it shouldn't auto suspend /
    power down.
 
-
+In order to reset the idle detection, you should manually use sai-power to
+power down the builder.  Next time it starts, idle detection will be operational
+again.
