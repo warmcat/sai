@@ -39,7 +39,8 @@
 #include <pthread.h>
 #include <git2.h>
 
-#define SAI_IDLE_GRACE_US	(20 * LWS_US_PER_SEC)
+#define SAI_IDLE_GRACE_US	(30 * LWS_US_PER_SEC)
+#define SAI_STAY_POLL_US	(20 * LWS_US_PER_SEC)
 
 typedef enum {
 	PHASE_IDLE,
@@ -105,6 +106,7 @@ struct sai_builder {
 	struct lws_vhost	*vhost;
 
 	lws_sorted_usec_list_t	sul_idle;
+	lws_sorted_usec_list_t	sul_stay;
 
 	const char		*metrics_uri;
 	const char		*metrics_path;
