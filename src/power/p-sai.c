@@ -266,7 +266,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 {
         local_srv_t *g = (local_srv_t *)userobj;
 	saip_server_plat_t *sp;
-	char *path = NULL;
+	char *path = NULL, pn[128];
 	size_t len;
 
 	lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name(state));
@@ -298,23 +298,26 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 		g->pos = 0;
 
-		if (!strncmp(path, "/stay/", 6)) {
-			sp = find_platform(&path[6]);
+		if (len > 6 && !strncmp(path, "/stay/", 6)) {
+			lws_strnncpy(pn, &path[6], len - 6, sizeof(pn));
+
+			sp = find_platform(pn);
 
 			if (sp)
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
 								"%c", '0' + sp->stay);
 			else
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-								"unknown host %s", &path[6]);
+								"unknown host %s", pn);
 			goto bail;
 		}
 
-		if (!strncmp(path, "/power-on/", 10)) {
-			sp = find_platform(&path[10]);
+		if (len > 10 && !strncmp(path, "/power-on/", 10)) {
+			lws_strnncpy(pn, &path[10], len - 10, sizeof(pn));
+			sp = find_platform(pn);
 			if (!sp) {
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-                                               "Unable to find host %s", &path[11]);
+                                               "Unable to find host %s", pn);
 				goto bail;
 			}
 			if (sp->power_on_mac) {
@@ -322,16 +325,16 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 					      sp->power_on_mac, strlen(sp->power_on_mac)) !=
 						(ssize_t)strlen(sp->power_on_mac))
 					g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-						"Write to resume %s failed %d", &path[10], errno);
+						"Write to resume %s failed %d", pn, errno);
 				else
 					g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-						"Resumed %s with stay", &path[10]);
+						"Resumed %s with stay", pn);
 				sp->stay = 1;
 				goto bail;
 			}
 			if (!sp->power_on_url) {
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-						"no power-on-url entry for %s", &path[10]);
+						"no power-on-url entry for %s", pn);
 				goto bail;
 			}
 			if (lws_ss_create(power.context, 0,
@@ -352,20 +355,22 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 			goto bail;
 		}
 
-		if (strncmp(path, "/power-off/", 11)) {
+		if (len < 11 || strncmp(path, "/power-off/", 11)) {
 			g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
 					"URL path needs to start with /power-off/");
 			goto bail;
 		}
+
+		lws_strnncpy(pn, &path[11], len - 11, sizeof(pn));
 
 		/*
 		 * Let's have a look at the platform
 		 */
 
 		g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-                                               "Unable to find host %s", &path[11]);
+                                               "Unable to find host %s", pn);
 
-		sp = find_platform(&path[11]);
+		sp = find_platform(pn);
 		if (sp) {
 			/*
 				* OK this is it, schedule it to happen
