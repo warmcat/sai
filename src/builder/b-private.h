@@ -99,6 +99,8 @@ struct sai_builder {
 	lws_dll2_owner_t	sai_plat_server_owner; /* servers we connect to */
 	lws_dll2_owner_t	devices_owner; /* sai_serial_t */
 
+	struct lws_ss_handle	*ss_stay;
+
 	struct sai_nspawn	suspend_nspawn;
 
 	struct lwsac		*conf_head;
@@ -127,6 +129,7 @@ struct sai_builder {
 
 	sai_mirror_instance_t	mi;
 
+	char			path[256];
 	char			stay;
 };
 

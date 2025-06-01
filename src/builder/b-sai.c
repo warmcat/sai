@@ -280,7 +280,7 @@ saib_power_stay_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 	builder.stay = *buf == '1';
 
-	lwsl_err("%s: stay %d\n", __func__, builder.stay);
+//	lwsl_err("%s: stay %d\n", __func__, builder.stay);
 
 	if (builder.stay) {
 		/*
@@ -334,16 +334,15 @@ sai_power_stay_state(void *userobj, void *sh, lws_ss_constate_t state,
 {
         saib_power_stay_t *g = (saib_power_stay_t *)userobj;
 	lws_ss_state_return_t r;
-	char path[256];
 
 	// lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name(state));
 
         switch ((int)state) {
         case LWSSSCS_CREATING:
-		snprintf(path, sizeof(path) - 1, "%s/stay/%s",
+		snprintf(builder.path, sizeof(builder.path) - 1, "%s/stay/%s",
 			 builder.url_sai_power, builder.host);
 
-		r = lws_ss_set_metadata(lws_ss_from_user(g), "url", path, strlen(path));
+		r = lws_ss_set_metadata(lws_ss_from_user(g), "url", builder.path, strlen(builder.path));
 		if (r)
 			lwsl_err("%s: set_metadata said %d\n", __func__, (int)r);
 
@@ -368,16 +367,10 @@ LWS_SS_INFO("sai_power", saib_power_stay_t)
 void
 sul_stay_cb(lws_sorted_usec_list_t *sul)
 {
+	lws_ss_state_return_t r = lws_ss_client_connect(builder.ss_stay);
 
-	/*
-	 * Trigger sampling it again
-	 */
-
-	if (lws_ss_create(builder.context, 0, &ssi_saib_power_stay_t,
-			NULL, NULL, NULL, NULL)) {
-		lwsl_err("%s: failed to create sai-power-stay ss\n", __func__);
-		return;
-	}
+	if (r)
+		lwsl_ss_err(builder.ss_stay, "Unable to start stay connection (%d)", (int)r);
 
 	lws_sul_schedule(builder.context, 0, &builder.sul_stay,
 			 sul_stay_cb, SAI_STAY_POLL_US);
@@ -518,6 +511,16 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 			saib_create_resproxy_listen_uds(builder.context, spm);
 
 		} lws_end_foreach_dll(pxx);
+
+		/*
+		 * ss used to query sai-power about stay situation
+		 */
+
+		if (lws_ss_create(builder.context, 0, &ssi_saib_power_stay_t,
+				NULL, &builder.ss_stay, NULL, NULL)) {
+			lwsl_err("%s: failed to create sai-power-stay ss\n", __func__);
+			return 1;
+		}
 
 		lws_sul_schedule(builder.context, 0, &builder.sul_stay,
 			 sul_stay_cb, 1000);
