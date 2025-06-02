@@ -37,7 +37,6 @@
 #endif
 #endif
 #include <pthread.h>
-#include <git2.h>
 
 #define SAI_IDLE_GRACE_US	(20 * LWS_US_PER_SEC)
 
