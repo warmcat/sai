@@ -724,7 +724,11 @@ int main(int argc, const char **argv)
 			if (!p)
 				switch(d) {
 				case 0:
+#if defined(__NetBSD__)
+                                       execl("/sbin/shutdown", "/sbin/shutdown", "-h", "now", NULL);
+#else
 					execl("/usr/sbin/shutdown", "/usr/sbin/shutdown", "--halt", "now", NULL);
+#endif
 					break;
 				case 1:
 					execl("/usr/bin/systemctl", "/usr/bin/systemctl", "suspend", NULL);
