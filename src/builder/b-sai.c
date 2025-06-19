@@ -45,6 +45,10 @@
 #include <KnownFolders.h>
 #include <Shlobj.h>
 
+#if !defined(PATH_MAX)
+#define PATH_MAX MAX_PATH
+#endif
+
 int getpid(void) { return 0; }
 
 #endif
@@ -582,6 +586,7 @@ LWS_SS_INFO("sai_power", saib_power_link_t)
 void
 sul_idle_cb(lws_sorted_usec_list_t *sul)
 {
+#if !defined(WIN32)
 	ssize_t n;
 	uint8_t te = 1;
 
@@ -597,7 +602,11 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 
 		n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
 		if (n == 1) {
+#if defined(WIN32)
+			Sleep(2000);
+#else
 			sleep(2);
+#endif
 			/*
 			* There were 0 tasks ongoing for us to suspend, start off
 			* with the same assumption and set the idle grace time
@@ -635,7 +644,11 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 	 * everything including the http as soon as we progress on to shutdown)
 	 */
 
+#if defined(WIN32)
+	Sleep(2000);
+#else
 	sleep(2);
+#endif
 
 	lwsl_notice("%s: doing shutdown...\n", __func__);
 
@@ -646,6 +659,7 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 
 	te = 0;
 	n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
+#endif
 }
 
 static lws_state_notify_link_t * const app_notifier_list[] = {
@@ -690,6 +704,7 @@ int main(int argc, const char **argv)
 	const char *p;
 	void *retval;
 
+#if !defined(WIN32)
 
 	if ((p = lws_cmdline_option(argc, argv, "-s"))) {
 		ssize_t n = 0;
@@ -742,6 +757,7 @@ int main(int argc, const char **argv)
 
 		return 0;
 	}
+#endif
 
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
@@ -776,7 +792,7 @@ int main(int argc, const char **argv)
 		}
 
 		lws_snprintf(stg_config_dir, sizeof(stg_config_dir),
-				"%s\\sai\\builder\\", temp);
+				"%s\\sai\\builder", temp);
 
 		config_dir = stg_config_dir;
 		CoTaskMemFree(wdi);
@@ -884,6 +900,7 @@ int main(int argc, const char **argv)
 		goto bail;
 	}
 
+#if !defined(WIN32)
 	{
 		struct lws_spawn_piped_info info;
 		char rpath[PATH_MAX];
@@ -912,6 +929,7 @@ int main(int argc, const char **argv)
 		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
 				 sul_idle_cb, SAI_IDLE_GRACE_US);
 	}
+#endif
 
 	pthread_mutex_init(&builder.mi.mut, NULL);
 	pthread_cond_init(&builder.mi.cond, NULL);

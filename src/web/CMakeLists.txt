@@ -141,6 +141,7 @@ if (requirements)
 			../../assets/ubuntu-focal-aarch64.svg
 			../../assets/virt-qemu.svg
 			../../assets/w10.svg
+			../../assets/w11.svg
 
 		DESTINATION "${DATA_DIR}/sai/assets"
 		COMPONENT web)

@@ -71,18 +71,22 @@ sai_mirror_local_checkout(struct sai_nspawn *ns)
 	git_checkout_options co_opts = GIT_CHECKOUT_OPTIONS_INIT;
 	git_fetch_options opts = GIT_FETCH_OPTIONS_INIT;
 	git_repository *git_repo_build_specific = NULL;
-	char dp[512], spec[256], *paths[] = { spec };
+	char dp[512], spec[256], *paths[] = { spec }, inp[512];
 	git_strarray rfs = { paths, 1 };
 	git_object *treeish;
 	git_remote *remote;
 	int n, tries = 2;
 
+	lws_strncpy(inp, ns->inp, sizeof(inp) - 1);
+	if (inp[strlen(inp) - 1] == '\\')
+		inp[strlen(inp) - 1] = '\0';
+
 	/*
 	 * Remove anything that was already in the build-specific dir
 	 */
 
-	lwsl_notice("%s: rm -rf %s\n", __func__, ns->inp);
-	lws_dir(ns->inp, NULL, lws_dir_rm_rf_cb);
+	lwsl_notice("%s: rm -rf %s\n", __func__, inp);
+	lws_dir(inp, NULL, lws_dir_rm_rf_cb);
 
 	/*
 	 * Make sure the build-specific dir itself is left standing in there.
@@ -91,14 +95,14 @@ sai_mirror_local_checkout(struct sai_nspawn *ns)
 	 * credentials since we have dropped root long ago
 	 */
 
-	if (mkdir(ns->inp, 0755))
+	if (mkdir(inp, 0755))
 		lwsl_notice("%s: mkdir %s failed\n", __func__, ns->inp);
 
 	/*
 	 * Create the build-specific git dir and init it
 	 */
 
-	n = git_repository_init(&git_repo_build_specific, ns->inp, 0);
+	n = git_repository_init(&git_repo_build_specific, inp, 0);
 	if (n) {
 #if defined(SAI_HAVE_LIBGIT2_GIT_ERROR)
 		const git_error *e = git_error_last();
@@ -110,7 +114,7 @@ sai_mirror_local_checkout(struct sai_nspawn *ns)
 					 __func__, ns->inp, n);
 #endif
 
-		return 1;
+		return SAIB_CHECKOUT_CHECKOUT_FAILED;
 	}
 
 	/*
@@ -125,7 +129,7 @@ sai_mirror_local_checkout(struct sai_nspawn *ns)
 			 ns->git_repo_url);
 
 		git_repository_free(git_repo_build_specific);
-		return 1;
+		return SAIB_CHECKOUT_CHECKOUT_FAILED;
 	}
 
 	lws_snprintf(spec, sizeof(spec), "ref-%s:ref-%s", ns->hash, ns->hash);
@@ -362,7 +366,7 @@ saib_mirror_task(void *user, enum lws_threadpool_task_status s)
 
 		case SAIB_CHECKOUT_NOT_IN_LOCAL_MIRROR:
 			/* fallthru */
-			lwsl_notice("%s: checkout not it local mirror\n", __func__);
+			lwsl_notice("%s: checkout not in local mirror\n", __func__);
 		case SAIB_CHECKOUT_CHECKOUT_FAILED:
 
 			lws_snprintf(ns->pending_mirror_log,
