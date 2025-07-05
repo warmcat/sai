@@ -954,8 +954,6 @@ so_finish:
 			pss->authorized, pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0,
 			lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu));
 
-		lwsl_err("%s: vhd %p vhd->builders %p\n", __func__, vhd, vhd ? vhd->builders : NULL);
-
 		if (vhd && vhd->builders) {
 			lwsac_reference(vhd->builders);
 			sch->walk = lws_dll2_get_head(vhd->builders_owner);
@@ -1074,8 +1072,8 @@ b_finish:
 			sai_task_uuid_to_event_uuid(event_uuid,
 						    sch->one_task->uuid);
 
-			lwsl_debug("%s: ---------------- event uuid '%s'\n",
-					__func__, event_uuid);
+			//lwsl_debug("%s: ---------------- event uuid '%s'\n",
+			//		__func__, event_uuid);
 
 			lws_dll2_owner_clear(&sch->owner);
 			if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
@@ -1083,7 +1081,7 @@ b_finish:
 				lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s')",
 					     sch->one_task->uuid);
 
-				lwsl_debug("%s: ---------------- %s\n", __func__, filt);
+				// lwsl_debug("%s: ---------------- %s\n", __func__, filt);
 
 				if (lws_struct_sq3_deserialize(pdb, filt, NULL,
 							lsm_schema_sq3_map_artifact,
@@ -1099,7 +1097,7 @@ b_finish:
 		sch->walk = NULL;
 		pss->send_state = WSS_SEND_ARTIFACT_INFO;
 		if (!sch->owner.head) {
-			lwsl_debug("%s: ---------------- no artifacts\n", __func__);
+			// lwsl_debug("%s: ---------------- no artifacts\n", __func__);
 			/* there's no artifact stuff to do */
 			endo = 1;
 		} else
@@ -1152,7 +1150,7 @@ b_finish:
 			}
 			first = 1;
 			p += w;
-			lwsl_warn("%s: --------------------- %.*s\n", __func__, (int)w, start);
+			// lwsl_warn("%s: --------------------- %.*s\n", __func__, (int)w, start);
 		}
 
 		if (!sch->owner.head)
