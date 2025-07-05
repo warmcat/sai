@@ -44,8 +44,8 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	char plat[128];
 	size_t n;
 
-	lwsl_notice("%s: len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
-	lwsl_hexdump_notice(buf, len);
+	lwsl_info("%s: len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
+	lwsl_hexdump_info(buf, len);
 
 	while (p < end) {
 		n = 0;
@@ -125,14 +125,14 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 	const char *pq;
 	int n;
 
-	lwsl_user("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name((int)state),
+	lwsl_info("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
 		  (unsigned int)ack);
 
 	switch (state) {
 
 	case LWSSSCS_CREATING:
 
-		lwsl_notice("%s: binding ss to %p %s\n", __func__, sps, sps->url);
+		lwsl_info("%s: binding ss to %p %s\n", __func__, sps, sps->url);
 
 		if (lws_ss_set_metadata(sps->ss, "url", sps->url, strlen(sps->url)))
 			lwsl_warn("%s: unable to set metadata\n", __func__);
@@ -175,7 +175,7 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		break;
 
 	case LWSSSCS_CONNECTED:
-		lwsl_user("%s: CONNECTED: %p\n", __func__, sps->ss);
+		lwsl_info("%s: CONNECTED: %p\n", __func__, sps->ss);
 		return lws_ss_request_tx(sps->ss);
 
 	case LWSSSCS_DISCONNECTED:
@@ -183,17 +183,17 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		 * clean up any ongoing spawns related to this connection
 		 */
 
-		lwsl_user("%s: DISCONNECTED\n", __func__);
+		lwsl_info("%s: DISCONNECTED\n", __func__);
 		lws_dll2_foreach_safe(&power.sai_server_owner, sps,
 				      cleanup_on_ss_disconnect);
 		break;
 
 	case LWSSSCS_ALL_RETRIES_FAILED:
-		lwsl_user("%s: LWSSSCS_ALL_RETRIES_FAILED\n", __func__);
+		lwsl_info("%s: LWSSSCS_ALL_RETRIES_FAILED\n", __func__);
 		return lws_ss_request_tx(sps->ss);
 
 	case LWSSSCS_QOS_ACK_REMOTE:
-		lwsl_notice("%s: LWSSSCS_QOS_ACK_REMOTE\n", __func__);
+		lwsl_info("%s: LWSSSCS_QOS_ACK_REMOTE\n", __func__);
 		break;
 
 	default:
@@ -203,10 +203,7 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 	return LWSSSSRET_OK;
 }
 
-LWS_SS_INFO("power_server_link", saip_server_link_t)
+LWS_SS_INFO("sai_power", saip_server_link_t)
 	.rx = saip_m_rx,
-//	.tx = saip_m_tx,
 	.state = saip_m_state,
-	.user_alloc = sizeof(saip_server_link_t),
-	.streamtype = "sai_power"
 };

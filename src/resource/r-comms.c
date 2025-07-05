@@ -76,7 +76,7 @@ sair_lp_state(void *userobj, void *sh, lws_ss_constate_t state,
 {
 	sair_resource_t *lp = (sair_resource_t *)userobj;
 
-	lwsl_info("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name((int)state),
+	lwsl_info("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
 		  (unsigned int)ack);
 
 	switch (state) {

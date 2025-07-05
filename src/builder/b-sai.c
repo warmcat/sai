@@ -556,7 +556,7 @@ sai_power_link_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 	lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name(state));
 
-        switch ((int)state) {
+        switch (state) {
         case LWSSSCS_CREATING:
 		snprintf(path, sizeof(path) - 1, "%s/power-off/%s",
 			 builder.url_sai_power,
@@ -569,7 +569,9 @@ sai_power_link_state(void *userobj, void *sh, lws_ss_constate_t state,
 			lwsl_err("%s: set_metadata said %d\n", __func__, (int)r);
 
                 return lws_ss_request_tx(lws_ss_from_user(g));
-        }
+	default:
+		break;
+	}
 
         return LWSSSSRET_OK;
 }

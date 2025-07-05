@@ -236,7 +236,7 @@ local_srv_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
         else
                 *flags |= LWSSS_FLAG_EOM;
 
-        lwsl_ss_user(lws_ss_from_user(g), "TX %zu, flags 0x%x, r %d", *len,
+        lwsl_ss_info(lws_ss_from_user(g), "TX %zu, flags 0x%x, r %d", *len,
                                           (unsigned int)*flags, (int)r);
 
         return r;
@@ -269,7 +269,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 	char *path = NULL, pn[128];
 	size_t len;
 
-	lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name(state));
+	// lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name((int)state));
 
         switch ((int)state) {
         case LWSSSCS_CREATING:
@@ -278,7 +278,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
         case LWSSSCS_SERVER_TXN:
 
 		lws_ss_get_metadata(lws_ss_from_user(g), "path", (const void **)&path, &len);
-		lwsl_ss_user(lws_ss_from_user(g), "LWSSSCS_SERVER_TXN path %.*s", (int)len, path);
+		// lwsl_ss_user(lws_ss_from_user(g), "LWSSSCS_SERVER_TXN path %.*s", (int)len, path);
 
 		/*
 		 * path is containing a string like "/power-off/b32"

@@ -123,7 +123,7 @@ saib_artifact_state(void *userobj, void *sh, lws_ss_constate_t state,
 	sai_artifact_t *ap = (sai_artifact_t *)userobj;
 	struct stat s;
 
-	lwsl_info("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name((int)state),
+	lwsl_info("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
 		  (unsigned int)ack);
 
 	switch (state) {

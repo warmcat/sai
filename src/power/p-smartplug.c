@@ -59,10 +59,6 @@ saip_spc_state(void *userobj, void *sh, lws_ss_constate_t state,
 	return LWSSSSRET_OK;
 }
 
-LWS_SS_INFO("smartplug_control", saip_smartplug_t)
-//	.rx = saip_spc_rx,
-//	.tx = saip_spc_tx,
+LWS_SS_INFO("sai_power_smartplug", saip_smartplug_t)
 	.state = saip_spc_state,
-	.user_alloc = sizeof(saip_smartplug_t),
-	.streamtype = "sai_power_smartplug"
 };

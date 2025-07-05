@@ -121,8 +121,6 @@ _sais_websrv_broadcast(struct lws_ss_handle *h, void *arg)
 	websrvss_srv_t *m = (websrvss_srv_t *)lws_ss_to_user_object(h);
 	sais_websrv_broadcast_t *a = (sais_websrv_broadcast_t *)arg;
 
-	lwsl_err("%s: entry\n", __func__);
-
 	if (lws_buflist_append_segment(&m->bltx, a->buf, a->len) < 0) {
 		lwsl_warn("%s: buflist append fail\n", __func__);
 
@@ -289,8 +287,8 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	lws_dll2_owner_t o;
 	int n;
 
-	lwsl_user("%s: len %d, flags: %d\n", __func__, (int)len, flags);
-	lwsl_hexdump_info(buf, len);
+	// lwsl_user("%s: len %d, flags: %d\n", __func__, (int)len, flags);
+	// lwsl_hexdump_info(buf, len);
 
 	memset(&a, 0, sizeof(a));
 	a.map_st[0] = lsm_schema_json_map;
@@ -307,7 +305,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		return LWSSSSRET_DISCONNECT_ME;
 	}
 
-	lwsl_notice("%s: schema idx %d\n", __func__, a.top_schema_index);
+	// lwsl_notice("%s: schema idx %d\n", __func__, a.top_schema_index);
 
 	switch (a.top_schema_index) {
 	case SAIS_WS_WEBSRV_RX_TASKRESET:
@@ -484,8 +482,6 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
 	char som, eom;
 	int used;
-
-	lwsl_err("%s: entry\n", __func__);
 
 	if (!m->bltx)
 		return LWSSSSRET_TX_DONT_SEND;
