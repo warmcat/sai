@@ -375,8 +375,10 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	case SAIS_WS_WEBSRV_RX_EVENTDELETE:
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
-		if (sais_validate_id(ei->event_hash, SAI_EVENTID_LEN))
+		if (sais_validate_id(ei->event_hash, SAI_EVENTID_LEN)) {
+			lwsl_err("%s: SAIS_WS_WEBSRV_RX_EVENTDELETE: unable to validate id %s\n", __func__, ei->event_hash);
 			goto soft_error;
+		}
 
 		lwsl_notice("%s: eventdelete %s\n", __func__, ei->event_hash);
 

@@ -244,7 +244,7 @@ sais_event_db_close(struct vhd *vhd, sqlite3 **ppdb)
 int
 sais_event_db_delete_database(struct vhd *vhd, const char *event_uuid)
 {
-	char filepath[256], saf[33];
+	char filepath[256], saf[33], r = 0, ra = 0;
 
 	lws_strncpy(saf, event_uuid, sizeof(saf));
 	lws_filename_purify_inplace(saf);
@@ -252,8 +252,36 @@ sais_event_db_delete_database(struct vhd *vhd, const char *event_uuid)
 	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3",
 		     vhd->sqlite3_path_lhs, saf);
 
-	return unlink(filepath);
+	r = (char)!!unlink(filepath);
+	if (r) {
+		lwsl_err("%s (web): unable to delete %s (%d)\n", __func__, filepath, errno);
+		ra = 1;
+	}
+
+	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3-wal",
+		     vhd->sqlite3_path_lhs, saf);
+
+	r = (char)!!unlink(filepath);
+	if (r) {
+		lwsl_err("%s (web): unable to delete %s (%d)\n", __func__, filepath, errno);
+		ra = 1;
+	}
+
+	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3-shm",
+		     vhd->sqlite3_path_lhs, saf);
+
+	r = (char)!!unlink(filepath);
+	if (r) {
+		lwsl_err("%s (web): unable to delete %s (%d)\n", __func__, filepath, errno);
+		ra = 1;
+	}
+
+	if (!ra)
+		lwsl_notice("%s (web): deleted %s OK\n", __func__, filepath);
+
+	return ra;
 }
+
 
 
 #if 0
