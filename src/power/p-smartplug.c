@@ -44,7 +44,7 @@ saip_spc_state(void *userobj, void *sh, lws_ss_constate_t state,
 	switch (state) {
 
 	case LWSSSCS_CREATING:
-		lwsl_notice("%s: binding ss to %s\n", __func__, op_url);
+//		lwsl_notice("%s: binding ss to %s\n", __func__, op_url);
 
 		if (lws_ss_set_metadata(lws_ss_from_user(pss),
 					"url", op_url, strlen(op_url)))

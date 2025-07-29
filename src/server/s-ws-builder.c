@@ -734,7 +734,7 @@ bail:
 			 * Requested well-known resource doesn't exist
 			 */
 
-			lwsl_warn("%s: resource %s not well-known\n", __func__,
+			lwsl_info("%s: resource %s not well-known\n", __func__,
 					res->resname);
 
 			mq = malloc(sizeof(*mq) + LWS_PRE + 256);
@@ -843,7 +843,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		memcpy(p, rm->msg, (unsigned int)n);
 		w = (size_t)n;
 
-		lwsl_notice("%s: issuing pending resouce reply %.*s\n", __func__, (int)n, (const char *)start);
+		lwsl_info("%s: issuing pending resouce reply %.*s\n", __func__, (int)n, (const char *)start);
 
 		lws_dll2_remove(&rm->list);
 		free(rm);

@@ -122,6 +122,9 @@ struct pss {
 	lws_dll2_owner_t	query_owner;
 	lws_dll2_t		*walk;
 
+	sai_task_t		alloc_task;
+	struct lwsac		*ac_alloc_task;
+
 	int			task_index;
 	int			log_cache_index;
 	int			log_cache_size;

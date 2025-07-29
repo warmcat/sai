@@ -823,8 +823,8 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 			} lws_end_foreach_dll(px);
 
-
-			lwsl_hexdump_notice(start, lws_ptr_diff_size_t(p, start));
+			lwsl_notice("%s: detected jobs for %.*s\n", __func__,
+					(int)lws_ptr_diff_size_t(p, start), start);
 
 			if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
 					LWS_WRITE_TEXT) < 0)
