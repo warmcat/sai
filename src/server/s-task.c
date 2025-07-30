@@ -584,7 +584,7 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 
 	/*
 	 * Iterate through the events looking at his event-specific database
-	 * for platforms that have pending tasks...
+	 * for platforms that have pending or ongoing tasks...
 	 */
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
@@ -597,7 +597,7 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 
 			if (sqlite3_prepare_v2(pdb, "select distinct platform "
 						    "from tasks where "
-						    "(state == 0 or state == 1)", -1, &sm,
+						    "(state = 0 or state = 1 or state = 2)", -1, &sm,
 							   NULL) != SQLITE_OK) {
 				lwsl_err("%s: Unable to %s\n",
 					 __func__, sqlite3_errmsg(pdb));

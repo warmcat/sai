@@ -47,6 +47,11 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	lwsl_info("%s: len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
 	lwsl_hexdump_info(buf, len);
 
+	lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
+		saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
+		sp->needed = 0;
+	} lws_end_foreach_dll(px);
+	
 	while (p < end) {
 		n = 0;
 		while (p < end && *p != ',')
@@ -58,41 +63,68 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			p++;
 
 		/*
-		 * Does this server list this platform?
+		 * Does this server list this platform as having startable or ongoing
+		 * tasks?
 		 */
 
 		lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
 			saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
+			int hit = 0;
 
-			if (!strcmp(sp->name, plat)) {
-				/*
-				 * Server said this platform has pending jobs.
-				 * sai-power config says this builder can do
-				 * jobs on that platform.  Let's make sure it
-				 * is powered on.
-				 */
-				if (!strcmp(sp->power_on_type, "wol")) {
-					lwsl_notice("%s: triggering WOL\n", __func__);
-					write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
-					      sp->power_on_mac, strlen(sp->power_on_mac));
+			/*
+			 * How about any dependency listed?
+			 */
+
+			lws_start_foreach_dll(struct lws_dll2 *, px1, sp->dependencies_owner.head) {
+				saip_server_plat_t *sp1 = lws_container_of(px1, saip_server_plat_t, dependencies_list);
+
+				if (!strcmp(sp1->name, plat)) {
+					sp->needed = 1;
+					break;
 				}
 
-				if (!strcmp(sp->power_on_type, "tasmota")) {
-					if (lws_ss_create(lws_ss_cx_from_user(pss),
-							  0, &ssi_saip_smartplug_t,
-							  (void *)sp->power_on_url, NULL, NULL, NULL)) {
-						lwsl_err("%s: failed to create smartplug secure stream\n",
-								__func__);
-					}
-				}
-			}
+			} lws_end_foreach_dll(px1);
+
+			if (hit || !strcmp(sp->name, plat))
+				sp->needed = 1;
 
 		} lws_end_foreach_dll(px);
 	}
 
+	lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
+		saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
+
+		if (sp->needed) {
+			lwsl_notice("%s: %s: needed\n", __func__, sp->name);
+
+			/*
+			 * Server said this platform or at least one dependency
+			 * has pending jobs. sai-power config says this builder
+			 * can do jobs on that platform.  Let's make sure it
+			 * is powered on.
+			 */
+			if (!strcmp(sp->power_on_type, "wol")) {
+				lwsl_notice("%s:   triggering WOL\n", __func__);
+				write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
+				      sp->power_on_mac, strlen(sp->power_on_mac));
+			}
+
+			if (!strcmp(sp->power_on_type, "tasmota")) {
+				lwsl_notice("%s:   starting tasmota\n", __func__);
+				if (lws_ss_create(lws_ss_cx_from_user(pss),
+						  0, &ssi_saip_smartplug_t,
+						  (void *)sp->power_on_url, NULL, NULL, NULL)) {
+					lwsl_err("%s: failed to create smartplug secure stream\n",
+							__func__);
+				}
+			}
+
+		} else
+			lwsl_notice("%s:  (%s not needed)\n", __func__, sp->name);
+
+	} lws_end_foreach_dll(px);
+	
 	(void)sps;
-
-
 
 	return 0;
 }

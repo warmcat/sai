@@ -182,6 +182,7 @@ static const struct lws_protocols *pprotocols[] = {
 	&protocol_std,
 	NULL
 };
+
 static void
 saip_sul_action_power_off(struct lws_sorted_usec_list *sul)
 {
@@ -201,6 +202,25 @@ saip_sul_action_power_off(struct lws_sorted_usec_list *sul)
 				__func__);
 	}
 }
+
+saip_server_plat_t *
+find_platform(struct sai_power *pwr, const char *host)
+{
+	lws_start_foreach_dll(struct lws_dll2 *, px, pwr->sai_server_owner.head) {
+		saip_server_t *s = lws_container_of(px, saip_server_t, list);
+
+		lws_start_foreach_dll(struct lws_dll2 *, px1, s->sai_plat_owner.head) {
+			saip_server_plat_t *sp = lws_container_of(px1, saip_server_plat_t, list);
+
+			if (!strcmp(host, sp->host))
+				return sp;
+
+		} lws_end_foreach_dll(px1);
+	} lws_end_foreach_dll(px);
+
+	return NULL;
+}
+
 
 /*
  * local-side h1 server for builders to connect to
@@ -242,31 +262,14 @@ local_srv_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
         return r;
 }
 
-static saip_server_plat_t *
-find_platform(const char *host)
-{
-	lws_start_foreach_dll(struct lws_dll2 *, px, power.sai_server_owner.head) {
-		saip_server_t *s = lws_container_of(px, saip_server_t, list);
-
-		lws_start_foreach_dll(struct lws_dll2 *, px1, s->sai_plat_owner.head) {
-			saip_server_plat_t *sp = lws_container_of(px1, saip_server_plat_t, list);
-
-			if (!strcmp(host, sp->host))
-				return sp;
-
-		} lws_end_foreach_dll(px1);
-	} lws_end_foreach_dll(px);
-
-	return NULL;
-}
-
 static lws_ss_state_return_t
 local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
                lws_ss_tx_ordinal_t ack)
 {
         local_srv_t *g = (local_srv_t *)userobj;
-	saip_server_plat_t *sp;
 	char *path = NULL, pn[128];
+	saip_server_plat_t *sp;
+	int apo = 0;
 	size_t len;
 
 	// lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name((int)state));
@@ -301,7 +304,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 		if (len > 6 && !strncmp(path, "/stay/", 6)) {
 			lws_strnncpy(pn, &path[6], len - 6, sizeof(pn));
 
-			sp = find_platform(pn);
+			sp = find_platform(&power, pn);
 
 			if (sp)
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
@@ -314,7 +317,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 		if (len > 10 && !strncmp(path, "/power-on/", 10)) {
 			lws_strnncpy(pn, &path[10], len - 10, sizeof(pn));
-			sp = find_platform(pn);
+			sp = find_platform(&power, pn);
 			if (!sp) {
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
                                                "Unable to find host %s", pn);
@@ -355,6 +358,12 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 			goto bail;
 		}
 
+		if (len > 16 && !strncmp(path, "/auto-power-off/", 16)) {
+			apo = 1;
+			lws_strnncpy(pn, &path[16], len - 16, sizeof(pn));
+			goto power_off;
+		}
+
 		if (len < 11 || strncmp(path, "/power-off/", 11)) {
 			g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
 					"URL path needs to start with /power-off/");
@@ -363,6 +372,8 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 		lws_strnncpy(pn, &path[11], len - 11, sizeof(pn));
 
+power_off:
+
 		/*
 		 * Let's have a look at the platform
 		 */
@@ -370,11 +381,36 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 		g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
                                                "Unable to find host %s", pn);
 
-		sp = find_platform(pn);
+		sp = find_platform(&power, pn);
 		if (sp) {
+
+			if (apo) {
+				char needs[128];
+
+				/*
+				 * Since it's not a manual request,
+				 * we should deny it if any deps still need us
+				 */
+
+				needs[0] = '\0';
+				lws_start_foreach_dll(struct lws_dll2 *, px1, sp->dependencies_owner.head) {
+					saip_server_plat_t *sp1 = lws_container_of(px1, saip_server_plat_t, dependencies_list);
+
+					if (sp1->needed)
+						lws_snprintf(needs, sizeof(needs) - 1 - strlen(needs), "%s ", sp1->name);
+
+				} lws_end_foreach_dll(px1);
+
+				if (needs[0] || sp->needed) {
+					g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+								"NAK: %s and/or dependencies still active: %s", pn, needs);
+					goto bail;
+				}
+			}
+
 			/*
-				* OK this is it, schedule it to happen
-				*/
+			 * OK this is it, schedule it to happen
+			 */
 			lws_sul_schedule(lws_ss_cx_from_user(g), 0,
 						&sp->sul_delay_off,
 						saip_sul_action_power_off,
@@ -384,7 +420,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 					__func__, sp->host);
 
 			g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-				"Scheduled powering off host %s", sp->host);
+				"ACK: Scheduled powering off host %s", sp->host);
 
 			sp->stay = 0; /* reset any manual power up */
 		}

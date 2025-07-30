@@ -58,11 +58,14 @@ struct saip_ws_pss;
 
 typedef struct saip_server_plat {
 	struct lws_dll2		list;
+	lws_dll2_owner_t	dependencies_owner;
+	lws_dll2_t		dependencies_list;
 
 	lws_sorted_usec_list_t	sul_delay_off;
 
 	const char		*name;
 	const char		*host;
+	const char		*depends; /* depended-on plat must stay powered if we need power */
 	const char		*power_on_type;
 	const char		*power_on_url;
 	const char		*power_on_mac;
@@ -70,6 +73,7 @@ typedef struct saip_server_plat {
 	const char		*power_off_url;
 
 	char			stay;
+	char			needed;
 
 } saip_server_plat_t;
 
@@ -108,6 +112,10 @@ struct sai_power {
 
 	const char		*port;		/* port we listen on */
 };
+
+saip_server_plat_t *
+find_platform(struct sai_power *pwr, const char *host);
+
 
 struct jpargs {
 	struct sai_power	*power;

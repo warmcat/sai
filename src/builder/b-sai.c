@@ -547,7 +547,7 @@ LWS_SS_USER_TYPEDEF
 } saib_power_link_t;
 
 static lws_ss_state_return_t
-sai_power_link_state(void *userobj, void *sh, lws_ss_constate_t state,
+saib_power_link_state(void *userobj, void *sh, lws_ss_constate_t state,
                lws_ss_tx_ordinal_t ack)
 {
         saib_power_link_t *g = (saib_power_link_t *)userobj;
@@ -558,7 +558,7 @@ sai_power_link_state(void *userobj, void *sh, lws_ss_constate_t state,
 
         switch (state) {
         case LWSSSCS_CREATING:
-		snprintf(path, sizeof(path) - 1, "%s/power-off/%s",
+		snprintf(path, sizeof(path) - 1, "%s/auto-power-off/%s",
 			 builder.url_sai_power,
 			(const char *)lws_ss_opaque_from_user(g));
 
@@ -568,7 +568,13 @@ sai_power_link_state(void *userobj, void *sh, lws_ss_constate_t state,
 		if (r)
 			lwsl_err("%s: set_metadata said %d\n", __func__, (int)r);
 
+		lws_ss_start_timeout(lws_ss_from_user(g), 3000); /* 3 sec */
+
                 return lws_ss_request_tx(lws_ss_from_user(g));
+
+	case LWSSSCS_TIMEOUT:
+		break;
+
 	default:
 		break;
 	}
@@ -576,8 +582,39 @@ sai_power_link_state(void *userobj, void *sh, lws_ss_constate_t state,
         return LWSSSSRET_OK;
 }
 
+static lws_ss_state_return_t
+saib_power_link_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
+{
+	uint8_t te = 0;
+	ssize_t n;
+
+	if (len < 4 || !(flags & LWSSS_FLAG_SOM))
+		return 0;
+
+	if (memcmp(buf, "ACK:", 4)) {
+		lwsl_warn("%s: sai-power didn't start power-off: %.*s\n",
+				__func__, (int)len, (const char *)buf);
+		return LWSSSSRET_OK;
+	}
+
+	lwsl_notice("%s: sai-power scheduling power-off: doing shutdown...\n", __func__);
+
+	/*
+	 * In the grace time for actioning the power-off, we should shutdown
+	 * cleanly
+	 */
+
+	n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
+	if (n != 1)
+		lwsl_err("%s: unable to request shutdown\n", __func__);
+
+	return LWSSSSRET_OK;
+}
+
+
 LWS_SS_INFO("sai_power", saib_power_link_t)
-        .state                          = sai_power_link_state,
+	.rx				= saib_power_link_rx,
+        .state                          = saib_power_link_state,
 };
 
 
@@ -630,7 +667,11 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 		return;
 
 	/*
-	 * The plan is ask sai-power to turn us off...
+	 * The plan is ask sai-power to turn us off... we don't know our
+	 * dependency situation since we're just a standalone builder.
+	 *
+	 * We will have to let sai-power figure the deps out and say if
+	 * it's willing to auto power-off or not.
 	 */
 
 	lwsl_notice("%s: creating sai-power ss...\n", __func__);
@@ -641,26 +682,6 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 		return;
 	}
 
-	/*
-	 * Give the http action some time to complete (else we will kill
-	 * everything including the http as soon as we progress on to shutdown)
-	 */
-
-#if defined(WIN32)
-	Sleep(2000);
-#else
-	sleep(2);
-#endif
-
-	lwsl_notice("%s: doing shutdown...\n", __func__);
-
-	/*
-	 * In the grace time for actioning the power-off, we should shutdown
-	 * cleanly
-	 */
-
-	te = 0;
-	n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
 #endif
 }
 

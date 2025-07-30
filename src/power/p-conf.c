@@ -35,6 +35,7 @@ static const char * const paths_global[] = {
 	"servers[].url",
 	"servers[].platforms[].name",
 	"servers[].platforms[].host",
+	"servers[].platforms[].depends",
 	"servers[].platforms[].power-on.type",
 	"servers[].platforms[].power-on.mac",
 	"servers[].platforms[].power-on.url",
@@ -52,6 +53,7 @@ enum enum_paths_global {
 	LEJPM_SERVERS_URL,
 	LEJPM_SERVERS_PLATFORMS_NAME,
 	LEJPM_SERVERS_PLATFORMS_HOST,
+	LEJPM_SERVERS_PLATFORMS_DEPENDS,
 	LEJPM_SERVERS_PLATFORMS_POWER_ON_TYPE,
 	LEJPM_SERVERS_PLATFORMS_POWER_ON_MAC,
 	LEJPM_SERVERS_PLATFORMS_POWER_ON_URL,
@@ -149,6 +151,10 @@ saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		pp = &a->sai_server_plat->host;
 		break;
 
+	case LEJPM_SERVERS_PLATFORMS_DEPENDS:
+		pp = &a->sai_server_plat->depends;
+		break;
+
 	case LEJPM_SERVERS_PLATFORMS_POWER_ON_TYPE:
 		pp = &a->sai_server_plat->power_on_type;
 		break;
@@ -220,6 +226,29 @@ saip_config_global(struct sai_power *power, const char *d)
 	close(fd);
 	n = (int)ctx.line;
 	lejp_destruct(&ctx);
+
+	/* let's wire up any dependencies so the dependent knows easily */
+
+	lws_start_foreach_dll(struct lws_dll2 *, px, power->sai_server_owner.head) {
+		saip_server_t *s = lws_container_of(px, saip_server_t, list);
+
+		lws_start_foreach_dll(struct lws_dll2 *, px1, s->sai_plat_owner.head) {
+			saip_server_plat_t *sp = lws_container_of(px1, saip_server_plat_t, list);
+
+			if (sp->depends) {
+				saip_server_plat_t *d = find_platform(power, sp->depends);
+
+				if (!d) {
+					lwsl_err("%s: can't find dependency '%s' on conf for '%s'\n", __func__,
+							sp->depends, sp->host);
+					return 1;
+				}
+
+				lws_dll2_add_tail(&d->dependencies_list, &sp->dependencies_owner);
+			}
+
+		} lws_end_foreach_dll(px1);
+	} lws_end_foreach_dll(px);
 
 	return 0;
 }
