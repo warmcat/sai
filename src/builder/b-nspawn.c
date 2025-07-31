@@ -243,9 +243,9 @@ int
 saib_spawn(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
-	char args[290], st[2048], *p;
+	char args[290], st[2048], cgroup[128], *p;
 	const char *respath = "unk";
-	int fd, n;
+	int fd, n, in_cgroup = 1;
 	const char * cmd[] = {
 		"/bin/ps",
 		NULL
@@ -318,16 +318,20 @@ saib_spawn(struct sai_nspawn *ns)
 
 	cmd[0] = args;
 
+	lws_snprintf(cgroup, sizeof(cgroup), "inst-%u-%d", (unsigned int)getpid(), ns->instance_idx);
+
 	memset(&info, 0, sizeof(info));
-	info.vh = builder.vhost;
-	info.env_array = (const char **)env;
-	info.exec_array = cmd;
-	info.protocol_name = "sai-stdxxx";
-	info.max_log_lines = 10000;
-	info.timeout_us = 30 * 60 * LWS_US_PER_SEC;
-	info.reap_cb = sai_lsp_reap_cb;
-	info.opaque = ns;
-	info.plsp = &ns->lsp;
+	info.vh			= builder.vhost;
+	info.env_array		= (const char **)env;
+	info.exec_array		= cmd;
+	info.protocol_name	= "sai-stdxxx";
+	info.max_log_lines	= 10000;
+	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
+	info.reap_cb		= sai_lsp_reap_cb;
+	info.opaque		= ns;
+	info.plsp		= &ns->lsp;
+	info.cgroup_name_suffix = cgroup;
+	info.p_cgroup_ret	= &in_cgroup;
 
 	ns->lsp = lws_spawn_piped(&info);
 	if (!ns->lsp) {
@@ -336,7 +340,7 @@ saib_spawn(struct sai_nspawn *ns)
 		return 1;
 	}
 
-	lwsl_notice("%s: lws_spawn_piped started\n", __func__);
+	lwsl_notice("%s: lws_spawn_piped started (cgroup: %d)\n", __func__, in_cgroup);
 
 	return 0;
 }

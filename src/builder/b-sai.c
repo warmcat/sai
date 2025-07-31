@@ -31,6 +31,10 @@
 #include <limits.h>
 #include <stdlib.h>
 
+#include <sys/types.h>
+#include <pwd.h>
+#include <grp.h>
+
 #if defined(__linux__)
 #include <unistd.h>
 #endif
@@ -846,6 +850,22 @@ int main(int argc, const char **argv)
 		lwsl_err("%s: Can't find %s\n", __func__, builder.home);
 		return 1;
 	}
+
+#if defined(__linux__)
+	/*
+	 * At this point we're still root.  So we should be able
+	 * to register our toplevel cgroup OK
+	 */
+	{
+		struct passwd *pwd = getpwuid(sb.st_uid);
+		struct group *grp = getgrgid(sb.st_gid);
+
+		if (lws_spawn_prepare_self_cgroup(pwd->pw_name, grp->gr_name)) {
+			lwsl_err("%s: failed to initialize cgroup dir %s %s\n", __func__, pwd->pw_name, grp->gr_name);
+			return 1;
+		}
+	}
+#endif
 
 #if !defined(__linux__) && !defined(WIN32)
 	/* we are still root */
