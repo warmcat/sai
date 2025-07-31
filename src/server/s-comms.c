@@ -705,6 +705,9 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (!strcmp((char *)start, "/builder")) {
 			lwsl_info("%s: ESTABLISHED: builder\n", __func__);
 			pss->wsi = wsi;
+
+			lws_get_peer_simple(wsi, pss->peer_ip, sizeof(pss->peer_ip));
+
 			/*
 			 * this adds our pss part, but not the logical builder
 			 * yet, until we get the ws rx

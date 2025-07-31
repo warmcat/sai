@@ -376,9 +376,19 @@ handle:
 			}
 
 			/*
+			 * It's a reconnect, update connection-specific things
+			 */
+
+			cb->wsi = pss->wsi;
+
+			if (pss->peer_ip[0])
+				lws_strncpy(cb->peer_ip, pss->peer_ip, sizeof(cb->peer_ip));
+
+			/*
 			 * Even if he's not new, we should use his updated info about
 			 * builder load
 			 */
+
 			cb->ongoing = build->ongoing;
 			cb->instances = build->instances;
 

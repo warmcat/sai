@@ -26,6 +26,7 @@ static const lws_struct_map_t lsm_plat[] = {
 	LSM_UNSIGNED	(sai_plat_t, ongoing,		"ongoing"),
 	LSM_UNSIGNED	(sai_plat_t, instances,		"instances"),
 	LSM_STRING_PTR	(sai_plat_t, platform,		"platform"),
+	LSM_CARRAY	(sai_plat_t, peer_ip,		"peer_ip"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {

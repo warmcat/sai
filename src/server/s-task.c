@@ -322,13 +322,28 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 	lws_sql_purify(esc_plat, platform, sizeof(esc_plat));
 	assert(platform);
 
-	lws_snprintf(pf, sizeof(pf)," and (state != 3 and state != 4 and state != 5 and state != 6) and (created < %llu)",
+	/* 
+	 * this is looking at the state of *events*
+	 *
+	 *      SAIES_WAITING                           = 0,
+         *	SAIES_PASSED_TO_BUILDER                 = 1,
+         *	SAIES_BEING_BUILT                       = 2,
+         *	SAIES_SUCCESS                           = 3,
+         *	SAIES_FAIL                              = 4,
+         *	SAIES_CANCELLED                         = 5,
+         *	SAIES_BEING_BUILT_HAS_FAILURES          = 6,
+         *	SAIES_DELETED                           = 7,
+	 */
+	lws_snprintf(pf, sizeof(pf)," and (state != 3 and state != 5) and (created < %llu)",
 			(unsigned long long)(lws_now_secs() - 10));
 
 	n = lws_struct_sq3_deserialize(vhd->server.pdb, pf, "created desc ",
 				       lsm_schema_sq3_map_event, &o, &ac, 0, 10);
-	if (n < 0 || !o.head)
+	if (n < 0 || !o.count) {
+		lwsl_notice("%s: platform %s: bail1: n %d count %d\n", __func__, platform, n, o.count);
+
 		goto bail;
+	}
 
 	// lwsl_notice("%s: plat %s, toplevel results %d\n", __func__, platform, o.count);
 
@@ -340,19 +355,20 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 		char prev_event_uuid[33] = "", checked_uuid[33] = "";
 		char esc_repo[96], esc_ref[96];
 		uint64_t last_created;
+		int m;
 
 		// lwsl_notice("candidate event %s '%s'\n", e->uuid, esc_plat);
 
 		if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
 
 			lws_snprintf(query, sizeof(query), "select count(state) from tasks where "
-					"state = 0 and platform = '%s'", esc_plat);
-			if (sqlite3_exec(pdb, query, sql3_get_integer_cb,
-					 &pending_count, NULL) != SQLITE_OK) {
+							   "state = 0 and platform = '%s'", esc_plat);
+			m = sqlite3_exec(pdb, query, sql3_get_integer_cb, &pending_count, NULL);
+		       
+			if (m != SQLITE_OK) {
 				pending_count = 0;
-				lwsl_err("%s: query failed\n", __func__);
+				lwsl_err("%s: query failed: %d\n", __func__, m);
 			}
-
 
 			if (pending_count > 0) {
 
@@ -387,7 +403,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 				} while (1);
 
 				if (checked_uuid[0]) {
-					lwsl_notice("%s: checked_uuid %s\n", __func__, checked_uuid);
+					// lwsl_notice("%s: checked_uuid %s\n", __func__, checked_uuid);
 					if (!sais_event_db_ensure_open(vhd, checked_uuid, 1, &prev_pdb)) {
 						sqlite3_stmt *sm;
 
@@ -435,7 +451,8 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 						sais_event_db_close(vhd, &prev_pdb);
 					} else
 						lwsl_err("%s: unable to open %s\n", __func__, checked_uuid);
-				}
+				} else
+					lwsl_notice("%s: platform %s: no checked uuid\n", __func__, platform);
 
 				/*
 				 * Let's go through the tasks that failed last time we built this repo / branch, and see
@@ -464,6 +481,9 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 						lwsac_free(&failed_ac);
 						memcpy(&pss->alloc_task, lws_container_of(
 							       owner.head, sai_task_t, list), sizeof(pss->alloc_task));
+
+						lwsl_notice("%s: platform %s: returning selected task\n", __func__, platform);
+
 						return &pss->alloc_task;
 					}
 				} lws_end_foreach_dll(p_fail);
@@ -487,9 +507,15 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 					lwsac_free(&failed_ac);
 					memcpy(&pss->alloc_task, lws_container_of(
 						       owner.head, sai_task_t, list), sizeof(pss->alloc_task));
+
+					lwsl_notice("%s: platform %s: returning fallback task\n", __func__, platform);
+
 					return &pss->alloc_task;
 				}
-			}
+			} // else
+				// lwsl_notice("%s: platform %s: no pending count\n", __func__, platform);
+
+
 			sais_event_db_close(vhd, &pdb);
 		}
 	} lws_end_foreach_dll(p);

@@ -344,6 +344,8 @@ typedef struct sai_plat {
 	lws_dll2_owner_t	servers; /* list of sai_plat_server_ref_t */
 	lws_dll2_owner_t	chunk_cache;
 
+	char			peer_ip[48];
+
 	const char		*name;
 	const char		*platform;
 

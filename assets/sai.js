@@ -878,9 +878,11 @@ function render_builders(jso)
 				    host !== jso.builders[n - 1].name.split('.')[0] ||
 				    e.platform != samplat) {
 				s += "<div class=\"ibuil bdr\" title=\"" +
-					san(e.platform) + "@" + san(host) +
+					san(e.platform) + "@" + san(host) + 
+					(e.peer_ip ? " / " + san(e.peer_ip) : "") +
 					"\"><table class=\"nomar\"><tr><td class=\"bn\">" +
-					sai_plat_icon(e.platform, 1);
+					sai_plat_icon(e.platform, 1) +
+					(e.peer_ip ? "<br>" + san(e.peer_ip) : "");
 
 				samplat = e.platform;
 				did = 1;

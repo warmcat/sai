@@ -125,6 +125,8 @@ struct pss {
 	sai_task_t		alloc_task;
 	struct lwsac		*ac_alloc_task;
 
+	char			peer_ip[48];
+
 	int			task_index;
 	int			log_cache_index;
 	int			log_cache_size;
