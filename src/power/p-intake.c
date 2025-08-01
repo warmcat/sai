@@ -144,6 +144,8 @@ callback_ws_power(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		 * Update the sai-webs about the builder removal, so they
 		 * can update their connected browsers
 		 */
+		lwsl_wsi_warn(wsi, "LWS_CALLBACK_CLOSED: doing WSS_PREPARE_BUILDER_SUMMARY\n");
+
 		sais_list_builders(vhd);
 		break;
 

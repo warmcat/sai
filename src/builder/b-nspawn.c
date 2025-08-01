@@ -30,6 +30,8 @@
 #include <sys/types.h>
 #if !defined(WIN32)
 #include <unistd.h>
+#else
+#include <process.h>
 #endif
 #include <fcntl.h>
 #include <assert.h>
@@ -243,9 +245,8 @@ int
 saib_spawn(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
-	char args[290], st[2048], cgroup[128], *p;
+	char args[290], st[2048], *p;
 	const char *respath = "unk";
-	int fd, n, in_cgroup = 1;
 	const char * cmd[] = {
 		"/bin/ps",
 		NULL
@@ -255,6 +256,11 @@ saib_spawn(struct sai_nspawn *ns)
 		"LANG=en_US.UTF-8",
 		NULL
 	};
+	int fd, n;
+#if defined(__linux__)
+	int in_cgroup = 1;
+	char cgroup[128];
+#endif
 
 	lws_strncpy(st, ns->sp->name, sizeof(st));
 	lws_filename_purify_inplace(st);
@@ -318,7 +324,9 @@ saib_spawn(struct sai_nspawn *ns)
 
 	cmd[0] = args;
 
+#if defined(__linux__)
 	lws_snprintf(cgroup, sizeof(cgroup), "inst-%u-%d", (unsigned int)getpid(), ns->instance_idx);
+#endif
 
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
@@ -330,8 +338,10 @@ saib_spawn(struct sai_nspawn *ns)
 	info.reap_cb		= sai_lsp_reap_cb;
 	info.opaque		= ns;
 	info.plsp		= &ns->lsp;
+#if defined(__linux__)
 	info.cgroup_name_suffix = cgroup;
 	info.p_cgroup_ret	= &in_cgroup;
+#endif
 
 	ns->lsp = lws_spawn_piped(&info);
 	if (!ns->lsp) {
@@ -340,7 +350,9 @@ saib_spawn(struct sai_nspawn *ns)
 		return 1;
 	}
 
+#if defined(__linux__)
 	lwsl_notice("%s: lws_spawn_piped started (cgroup: %d)\n", __func__, in_cgroup);
+#endif
 
 	return 0;
 }

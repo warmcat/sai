@@ -54,6 +54,35 @@ enum {
 	SAISPRF_SIGNALLED	= 0x4000,
 };
 
+/*
+ * per-instance load data.
+ * Sent from builder -> server -> web -> browser.
+ */
+typedef struct sai_instance_load {
+	lws_dll2_t		list;
+	unsigned int		cpu_percent; /* CPU usage for this instance * 100 */
+	unsigned int		state;       /* 0 = idle, 1 = running */
+} sai_instance_load_t;
+
+/*
+ * load report struct, sent in its own schema.
+ */
+typedef struct sai_load_report {
+	lws_dll2_t		list;        /* Not used, for schema mapping */
+	char			builder_name[64];
+	char			platform_name[128];
+	lws_dll2_owner_t	loads;
+} sai_load_report_t;
+
+/*
+ * viewer state.
+ * Sent from server -> builder.
+ */
+typedef struct sai_viewer_state {
+	lws_dll2_t		list;        /* Not used, for schema mapping */
+	unsigned int		viewers;
+} sai_viewer_state_t;
+
 
 struct sai_nspawn;
 
@@ -297,6 +326,11 @@ typedef struct sai_plat_server {
 
 	char			resproxy_path[128];
 
+	/* for load reporting */
+	lws_sorted_usec_list_t	sul_load_report;
+	lws_dll2_owner_t	load_report_owner; /* sai_load_report_t */
+	unsigned int		viewer_count;
+
 	const char		*url;
 	const char		*name;
 
@@ -356,6 +390,7 @@ typedef struct sai_plat {
 	struct lws		*wsi; /* server side only */
 
 	lws_dll2_owner_t	env_head;
+	lws_dll2_owner_t	loads;
 
 	int			instances;
 	int			ongoing;

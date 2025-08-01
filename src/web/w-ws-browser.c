@@ -31,6 +31,26 @@
 #include "w-private.h"
 
 /*
+ * This allows other parts of sai-web to queue a raw buffer to be sent to
+ * all connected browsers, eg, for load reports.
+ */
+void
+saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len)
+{
+	// lwsl_err("%s: sai-web broadcasting to browsers\n", __func__);
+	// lwsl_hexdump_err(buf, len);
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
+		struct pss *pss = lws_container_of(p, struct pss, same);
+
+		if (lws_buflist_append_segment(&pss->raw_tx, buf, len) >= 0)
+			lws_callback_on_writable(pss->wsi);
+	} lws_end_foreach_dll(p);
+}
+
+extern const lws_struct_map_t lsm_load_report_members[2]; 
+
+/*
  * For decoding specific event data request from browser
  */
 
@@ -66,6 +86,8 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 			/* shares struct */   "com.warmcat.sai.eventdelete"),
 	LSM_SCHEMA	(sai_cancel_t,		 NULL, lsm_task_cancel,
 					      "com.warmcat.sai.taskcan"),
+	LSM_SCHEMA	(sai_load_report_t,	 NULL, lsm_load_report_members,
+					      "com.warmcat.sai.loadreport"),
 };
 
 enum {
@@ -74,7 +96,7 @@ enum {
 	SAIM_WS_BROWSER_RX_TASKRESET,
 	SAIM_WS_BROWSER_RX_EVENTRESET,
 	SAIM_WS_BROWSER_RX_EVENTDELETE,
-	SAIM_WS_BROWSER_RX_TASKCANCEL
+	SAIM_WS_BROWSER_RX_TASKCANCEL,
 };
 
 
@@ -220,6 +242,7 @@ saiw_pss_schedule_eventinfo(struct pss *pss, const char *event_uuid)
 		goto bail;
 
 	sch->ov_db_done = 1;
+	// lwsl_warn("%s: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
 	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
 
 	return 0;
@@ -329,6 +352,8 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	sch->logsub = !!logsub;
 	sch->one_event = lws_container_of(o.head, sai_event_t, list);
 
+	// lwsl_warn("%s: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
+
 	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
 
 	return 0;
@@ -433,6 +458,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			/*
 			 * he's asking for the overview schema
 			 */
+			// lwsl_warn("%s: SAIM_WS_BROWSER_RX_TASKINFO: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
 
 			saiw_alloc_sched(pss, WSS_PREPARE_OVERVIEW);
 			saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
@@ -582,6 +608,31 @@ again:
 
 	// lwsl_notice("%s: send_state %d, pss %p, wsi %p\n", __func__,
 	// pss->send_state, pss, pss->wsi);
+
+	if (pss->raw_tx) {
+		char som, eom;
+		int used;
+
+		p = start; /* buf + LWS_PRE */
+		used = lws_buflist_fragment_use(&pss->raw_tx, p,
+						lws_ptr_diff_size_t(end, p), &som, &eom);
+		if (!used)
+			return 0;
+
+		flags = lws_write_ws_flags(LWS_WRITE_TEXT, som, eom);
+		if (lws_write(pss->wsi, p, (size_t)used, (enum lws_write_protocol)flags) < 0)
+			return -1;
+
+		/*
+		 * if there are more fragments, we must exit now and wait for
+		 * the next writable callback to send the rest. Otherwise, we
+		 * can fall through and check for other work to do.
+		 */
+		if (pss->raw_tx) {
+			lws_callback_on_writable(pss->wsi);
+			return 0;
+		}
+	}
 
 	if (pss->sched.count)
 		sch = lws_container_of(pss->sched.head, saiw_scheduled_t, list);
@@ -1199,4 +1250,64 @@ no_sch:
 	pss->send_state = WSS_IDLE;
 
 	return 0;
+}
+
+/*
+ * This should be called from the browser-facing websocket protocol handler
+ * on LWS_CALLBACK_ESTABLISHED and LWS_CALLBACK_CLOSED events to keep an
+ * accurate real-time list of connected browsers.
+ */
+void
+saiw_browser_state_changed(struct pss *pss, int established)
+{
+	if (established)
+		lws_dll2_add_tail(&pss->same, &pss->vhd->browsers);
+	else
+		lws_dll2_remove(&pss->same);
+
+	/*
+	 * After any change, recalculate the total and inform the server
+	 */
+	saiw_update_viewer_count(pss->vhd);
+}
+
+/*
+ * This function calculates the current number of connected browsers and
+ * sends an update to the sai-server.
+ */
+void
+saiw_update_viewer_count(struct vhd *vhd)
+{
+	sai_viewer_state_t vs;
+	char buf[LWS_PRE + 256];
+	size_t len;
+
+	if (!vhd || !vhd->h_ss_websrv)
+		return;
+
+	/* The count is simply the number of items in the browsers list */
+	vs.viewers = (unsigned int)vhd->browsers.count;
+	
+	const lws_struct_map_t lsm_viewercount_members[] = {
+		LSM_UNSIGNED(sai_viewer_state_t, viewers,	"count"),
+	};
+
+	const lws_struct_map_t lsm_schema_json_map[] = {
+		LSM_SCHEMA	(sai_viewer_state_t,	 NULL, lsm_viewercount_members,
+						      "com.warmcat.sai.viewercount"),
+	};
+
+	lws_struct_serialize_t *js = lws_struct_json_serialize_create(
+			lsm_schema_json_map, LWS_ARRAY_SIZE(lsm_schema_json_map),
+			0, &vs);
+	if (!js)
+		return;
+	
+	len = 0;
+	lws_struct_json_serialize(js, (unsigned char *)buf + LWS_PRE,
+				      sizeof(buf) - LWS_PRE, &len);
+	lws_struct_json_serialize_destroy(&js);
+
+	if (len > 0)
+		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf + LWS_PRE, len);
 }

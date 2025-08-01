@@ -47,11 +47,15 @@ typedef struct websrvss_srv {
 
 	struct lejp_ctx			ctx;
 	struct lws_buflist		*bltx;
-
+	unsigned int			viewers;
 } websrvss_srv_t;
 
 static lws_struct_map_t lsm_browser_taskreset[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"uuid"),
+};
+
+static const lws_struct_map_t lsm_viewercount_members[] = {
+	LSM_UNSIGNED(sai_viewer_state_t, viewers,	"count"),
 };
 
 static const lws_struct_map_t lsm_schema_json_map[] = {
@@ -63,13 +67,16 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 			/* shares struct */   "com.warmcat.sai.eventdelete"),
 	LSM_SCHEMA	(sai_cancel_t,		 NULL, lsm_task_cancel,
 					      "com.warmcat.sai.taskcan"),
+	LSM_SCHEMA	(sai_viewer_state_t,	 NULL, lsm_viewercount_members,
+					      "com.warmcat.sai.viewercount"),
 };
 
 enum {
 	SAIS_WS_WEBSRV_RX_TASKRESET,
 	SAIS_WS_WEBSRV_RX_EVENTRESET,
 	SAIS_WS_WEBSRV_RX_EVENTDELETE,
-	SAIS_WS_WEBSRV_RX_TASKCANCEL
+	SAIS_WS_WEBSRV_RX_TASKCANCEL,
+	SAIS_WS_WEBSRV_RX_VIEWERCOUNT,
 };
 
 int
@@ -275,6 +282,12 @@ sais_eventchange(struct lws_ss_handle *hsrv, const char *event_uuid, int state)
 	lws_ss_server_foreach_client(hsrv, _sais_eventchange, (void *)&arg);
 }
 
+static void
+sum_viewers_cb(struct lws_ss_handle *h, void *arg)
+{
+	websrvss_srv_t *m_client = (websrvss_srv_t *)lws_ss_to_user_object(h);
+	*(unsigned int *)arg += m_client->viewers;
+}
 
 static lws_ss_state_return_t
 websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
@@ -467,6 +480,39 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		sais_task_cancel(m->vhd, ei->event_hash);
 
 		break;
+
+	case SAIS_WS_WEBSRV_RX_VIEWERCOUNT:
+		{
+			sai_viewer_state_t *vs = (sai_viewer_state_t *)a.dest;
+			unsigned int total_viewers = 0;
+
+			/* Store viewer count for this specific sai-web client */
+			m->viewers = vs->viewers;
+
+			/* Recalculate total from all connected sai-web clients */
+			lws_ss_server_foreach_client(m->vhd->h_ss_websrv,
+						     sum_viewers_cb, &total_viewers);
+
+			m->vhd->browser_viewer_count = total_viewers;
+			lwsl_notice("%s: Client viewer count %u, total is now %u\n",
+				    __func__, m->viewers, m->vhd->browser_viewer_count);
+
+			/* Broadcast the new viewer state to all connected builders */
+			lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
+				struct pss *pss_builder = lws_container_of(p,
+							struct pss, same);
+				sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
+
+				if (vsend) {
+					/* Send the new TOTAL viewer count */
+					vsend->viewers = m->vhd->browser_viewer_count;
+					lws_dll2_add_tail(&vsend->list,
+						      &pss_builder->viewer_state_owner);
+					lws_callback_on_writable(pss_builder->wsi);
+				}
+			} lws_end_foreach_dll(p);
+			break;
+		}
 	}
 
 	return 0;
@@ -511,13 +557,43 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 	//	  lws_ss_state_name((int)state), (unsigned int)ack);
 
 	switch (state) {
-	case LWSSSCS_DISCONNECTED:
-		lws_buflist_destroy_all_segments(&m->bltx);
+	case LWSSSCS_DISCONNECTED: {
+		unsigned int total_viewers = 0;
+
+ 		lws_buflist_destroy_all_segments(&m->bltx);
+		m->viewers = 0;
+
+		/* This sai-web client disconnected, recalculate total viewers */
+		lws_ss_server_foreach_client(m->vhd->h_ss_websrv,
+					     sum_viewers_cb, &total_viewers);
+
+		if (m->vhd->browser_viewer_count != total_viewers) {
+			m->vhd->browser_viewer_count = total_viewers;
+			lwsl_notice("%s: A sai-web client disconnected, total viewers now %u\n",
+				    __func__, total_viewers);
+
+			/* Broadcast new count to builders */
+			lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
+				struct pss *pss_builder = lws_container_of(p,
+							    struct pss, same);
+				sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
+
+				if (vsend) {
+					vsend->viewers = m->vhd->browser_viewer_count;
+					lws_dll2_add_tail(&vsend->list,
+						&pss_builder->viewer_state_owner);
+					lws_callback_on_writable(pss_builder->wsi);
+				}
+			} lws_end_foreach_dll(p);
+		}
 		break;
+	}
 	case LWSSSCS_CREATING:
+		m->viewers = 0;
 		return lws_ss_request_tx(m->ss);
 
 	case LWSSSCS_CONNECTED:
+		// lwsl_warn("%s: resending builders because CONNECTED\n", __func__);
 		sais_list_builders(m->vhd);
 		break;
 	case LWSSSCS_ALL_RETRIES_FAILED:

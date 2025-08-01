@@ -826,6 +826,46 @@ function sai_event_render(o, now_ut, reset_all_icon)
 	return s;
 }
 
+function getBuilderHostname(platName) {
+	return platName.split('.')[0];
+}
+
+function getBuilderGroupKey(platName) {
+	let hostname = platName.split('.')[0];
+	if (hostname.includes('-')) {
+		let parts = hostname.split('-');
+		return parts[parts.length - 1];
+	}
+	return hostname;
+}
+
+function createBuilderDiv(plat) {
+	const platDiv = document.createElement("div");
+	platDiv.className = "ibuil bdr";
+	platDiv.id = "binfo-" + plat.name;
+	platDiv.title = plat.platform + "@" + plat.name.split('.')[0] + " / " + plat.peer_ip;
+
+	let plat_parts = plat.platform.split('/');
+	let plat_os = plat_parts[0] || 'generic';
+	let plat_arch = plat_parts[1] || 'generic';
+	let plat_tc = plat_parts[2] || 'generic';
+
+	let innerHTML = `<table class="nomar"><tbody><tr><td class="bn">`;
+	innerHTML += `<img class="ip1 zup" src="/sai/${plat_os}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
+	innerHTML += `<img class="ip1 tread1" src="/sai/arch-${plat_arch}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
+	innerHTML += `<img class="ip1 tread2" src="/sai/tc-${plat_tc}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
+	innerHTML += `<br>${plat.peer_ip}`;
+	innerHTML += `<div id="instload-${plat.name}">`;
+
+	for (let i = 0; i < plat.instances; i++) {
+		innerHTML += `<div class="inst_box inst_idle" title="instance ${i}: idle"></div>`;
+	}
+
+	innerHTML += `</div></td></tr></tbody></table>`;
+	platDiv.innerHTML = innerHTML;
+	return platDiv;
+}
+
 function render_builders(jso)
 {
 	var s, n, conts = [], nc = 0;
@@ -877,13 +917,22 @@ function render_builders(jso)
 				if (!n ||
 				    host !== jso.builders[n - 1].name.split('.')[0] ||
 				    e.platform != samplat) {
-				s += "<div class=\"ibuil bdr\" title=\"" +
+
+ 				s += "<div class=\"ibuil bdr\" title=\"" +
 					san(e.platform) + "@" + san(host) + 
-					(e.peer_ip ? " / " + san(e.peer_ip) : "") +
-					"\"><table class=\"nomar\"><tr><td class=\"bn\">" +
+ 					(e.peer_ip ? " / " + san(e.peer_ip) : "") +
+					"\" id=\"binfo-" + san(e.name) + "\">" +
+					"<table class=\"nomar\"><tr><td class=\"bn\">" +
 					sai_plat_icon(e.platform, 1) +
 					(e.peer_ip ? "<br>" + san(e.peer_ip) : "");
 
+				/* Add a container for the instance load boxes */
+				s += "<div id=\"instload-" + san(e.name) + "\">";
+				for (var i = 0; i < e.instances; i++) {
+					s += "<div class=\"inst_box inst_idle\" title=\"instance " + i + ": idle\"></div>";
+				}
+				s += "</div>";
+ 
 				samplat = e.platform;
 				did = 1;
 				}
@@ -1064,15 +1113,17 @@ function ws_open_sai()
 				}
 			}
 
-			if (jso.schema == "com.warmcat.sai.builders") {
+			switch (jso.schema) {
+
+			case "com.warmcat.sai.builders":
 
 				s = render_builders(jso);
 				
 				if (document.getElementById("sai_builders"))
 				document.getElementById("sai_builders").innerHTML = s;
-			}
+				break;
 			
-			if (jso.schema == "sai.warmcat.com.overview") {
+			case "sai.warmcat.com.overview":
 				/*
 				 * Sent with an array of e[] to start, but also
 				 * can send a single e[] if it just changed
@@ -1208,10 +1259,10 @@ function ws_open_sai()
 				 	  	sai.send(rs);
 						setTimeout(after_delete, 750);
 					});
-				} 
-			}
+				}
+				break;
 			
-			if (jso.schema == "com.warmcat.sai.taskinfo") {
+			case "com.warmcat.sai.taskinfo":
 			
 				authd = jso.authorized;
 				if (jso.authorized === 0) {
@@ -1348,10 +1399,116 @@ function ws_open_sai()
 									
 					aging();
 				}
+				break;
+
+
+	case "sai-builders":
+		const buildersContainer = document.getElementById("sai_builders");
+		if (!buildersContainer) { break; }
+		buildersContainer.innerHTML = "";
+		if (!jso.platforms || !Array.isArray(jso.platforms) || jso.platforms.length === 0) {
+			break;
+		}
+
+		// --- NEW, FINAL LOGIC ---
+
+		// Step 1: Create a map of group keys to group container divs.
+		// Also create a list of standalone platforms.
+		const groups = {};
+		const standalones = [];
+		const platformsByGroup = {};
+
+		for (const plat of jso.platforms) {
+			const groupKey = getBuilderGroupKey(plat.name);
+			if (!platformsByGroup[groupKey]) {
+				platformsByGroup[groupKey] = [];
 			}
+			platformsByGroup[groupKey].push(plat);
+		}
+
+		// Step 2: Build the HTML structure
+		const table = document.createElement("table");
+		table.className = "builders";
+		const tbody = document.createElement("tbody");
+		const tr = document.createElement("tr");
+		const td = document.createElement("td");
+		tr.appendChild(td);
+		tbody.appendChild(tr);
+		table.appendChild(tbody);
+		
+		// Order of rendering matters. Let's process the groups first.
+		const groupKeys = Object.keys(platformsByGroup).sort();
+
+		for (const key of groupKeys) {
+			const groupPlatforms = platformsByGroup[key];
 			
-			
-			if (jso.schema == "com-warmcat-sai-artifact") {
+			// Find platforms that are nested (VMs, different hostnames)
+			const nestedPlatforms = groupPlatforms.filter(p => getBuilderHostname(p.name) !== key);
+			// Find platforms that are the main host itself
+			const mainPlatforms = groupPlatforms.filter(p => getBuilderHostname(p.name) === key);
+
+			// If there are nested platforms, create a group container for them.
+			if (nestedPlatforms.length > 0) {
+				const groupDiv = document.createElement("div");
+				groupDiv.className = "ibuil ibuilctr bdr";
+				
+				const nameDiv = document.createElement("div");
+				nameDiv.className = "ibuilctrname bdr";
+				nameDiv.textContent = key;
+				groupDiv.appendChild(nameDiv);
+
+				for (const plat of nestedPlatforms) {
+					groupDiv.appendChild(createBuilderDiv(plat));
+				}
+				td.appendChild(groupDiv);
+			}
+
+			// Render the main host platforms as standalones.
+			for (const plat of mainPlatforms) {
+				td.appendChild(createBuilderDiv(plat));
+			}
+		}
+
+		buildersContainer.appendChild(table);
+		break;
+
+			case "com.warmcat.sai.loadreport":
+				if (!jso.platform_name)
+						break;
+
+				const platformName = jso.platform_name;
+				
+				// The container for the load squares has a predictable ID
+				const loadContainerId = "instload-" + platformName;
+				const loadContainer = document.getElementById(loadContainerId);
+
+				if (loadContainer) {
+
+					// Clear any old load indicators
+					loadContainer.innerHTML = "";
+
+					// Loop through the new load data and create the squares
+					if (jso.loads && Array.isArray(jso.loads)) {
+
+						for (const instanceLoad of jso.loads) {
+							let instanceDiv = document.createElement("div");
+							
+							// Set class for styling (e.g., green for idle, red for busy)
+							let stateClass = instanceLoad.state ? "inst_busy" : "inst_idle";
+							instanceDiv.className = "inst_box " + stateClass;
+
+							// Set tooltip to show the CPU percentage
+							let cpu = instanceLoad.cpu_percent / 10.0;
+							instanceDiv.title = `Instance: ${stateClass.split('_')[1]} \nCPU: ${cpu.toFixed(1)}%`;
+							
+							loadContainer.appendChild(instanceDiv);
+						}
+					}
+				}
+
+                       		break;
+
+			case "com-warmcat-sai-artifact":
 				console.log(jso);
 				
 				sai_arts += "<div class=\"sai_arts\"><img src=\"artifact.svg\">&nbsp;<a href=\"artifacts/" +
@@ -1364,9 +1521,9 @@ function ws_open_sai()
 				if (document.getElementById("sai_arts"))
 					document.getElementById("sai_arts").innerHTML = sai_arts;
 				
-			}
+				break;
 
-			if (jso.schema == "com-warmcat-sai-logs") {
+			case "com-warmcat-sai-logs":
 				var s1 = atob(jso.log), s = hsanitize(s1), li,
 					en = "", yo, dh, ce, tn = "";
 					
@@ -1398,9 +1555,10 @@ function ws_open_sai()
 
 				}
 				
-				if (!cont[jso.channel] && jso.len)
+				if (cont && !cont[jso.channel] && jso.len)
 					tn = ((jso.timestamp - tfirst) / 1000000).toFixed(4);
 
+				if (cont)
 				cont[jso.channel] = (li == 0);
 					
 				while (li--) {
@@ -1438,9 +1596,10 @@ function ws_open_sai()
 			document.body.clientHeight;
 					}, 500);
 				}
-			}
-		};
-
+			
+		break;
+	} /* switch */
+	} /* onmessage */
 		sai.onclose = function(){
 //			document.getElementById("title").innerHTML =
 //						"Server Status (Disconnected)";

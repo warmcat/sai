@@ -693,3 +693,15 @@ img.branch {
 	vertical-align:middle;
 	color: rgba(0, 0, 0, 0);
 }
+
+.inst_box {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border: 1px solid #777;
+    margin-left: 2px;
+    vertical-align: middle;
+}
+.inst_idle { background-color: #d0d0d0; }
+.inst_run { background-color: #78c678; }
+.load_text { font-size: 9px; vertical-align: middle; }

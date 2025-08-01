@@ -106,6 +106,7 @@ struct pss {
 	lws_dll2_owner_t	res_pending_reply_owner; /* sai_resource_msg_t
 							  * resource JSON return
 							  * messages to builder */
+	lws_dll2_owner_t	viewer_state_owner;
 	lws_struct_args_t	a;
 
 	union {
@@ -197,6 +198,8 @@ struct vhd {
 	lws_usec_t	last_check_abandoned_tasks;
 
 	const char *notification_key;
+
+	unsigned int		browser_viewer_count; 
 
 	sais_t server;
 };

@@ -131,6 +131,7 @@ struct pss {
 
 	struct lws_spa		*spa;
 	struct lejp_ctx		ctx;
+	struct lws_buflist	*raw_tx;
 	sai_notification_t	sn;
 	struct lws_dll2		same; /* owner: vhd.browsers */
 
@@ -314,4 +315,14 @@ saiw_dealloc_sched(saiw_scheduled_t *sch);
 
 int
 saiw_sched_destroy(struct lws_dll2 *d, void *user);
+
+
+void
+saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len);
+
+void
+saiw_browser_state_changed(struct pss *pss, int established);
+
+void
+saiw_update_viewer_count(struct vhd *vhd);
 

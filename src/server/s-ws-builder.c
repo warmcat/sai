@@ -40,6 +40,20 @@ typedef struct sais_logcache_pertask {
 	lws_dll2_owner_t	cache; /* sai_log_t */
 } sais_logcache_pertask_t;
 
+/* map for a single instance's load */
+static const lws_struct_map_t lsm_instance_load[] = {
+	LSM_UNSIGNED(sai_instance_load_t, cpu_percent,	"cpu_percent"),
+	LSM_UNSIGNED(sai_instance_load_t, state,	"state"),
+};
+
+/* map for the members of the load report object */
+static const lws_struct_map_t lsm_load_report_members[] = {
+	LSM_CARRAY(sai_load_report_t, builder_name,	"builder_name"),
+	LSM_CARRAY(sai_load_report_t, platform_name,	"platform_name"),
+	LSM_LIST(sai_load_report_t, loads, sai_instance_load_t, list,
+		 NULL, lsm_instance_load,		"loads"),
+};
+
 /*
  * The Schema that may be sent to us by a builder
  *
@@ -57,6 +71,8 @@ static const lws_struct_map_t lsm_schema_map_ba[] = {
 						"com.warmcat.sai.taskrej"),
 	LSM_SCHEMA      (sai_artifact_t,  NULL, lsm_artifact,
 						"com-warmcat-sai-artifact"),
+	LSM_SCHEMA	(sai_load_report_t, NULL, lsm_load_report_members, /* from builder */
+						"com.warmcat.sai.loadreport"),
 	LSM_SCHEMA      (sai_resource_t,  NULL, lsm_resource,
 						"com-warmcat-sai-resource"),
 };
@@ -66,7 +82,8 @@ enum {
 	SAIM_WSSCH_BUILDER_LOGS,
 	SAIM_WSSCH_BUILDER_TASKREJ,
 	SAIM_WSSCH_BUILDER_ARTIFACT,
-	SAIM_WSSCH_BUILDER_RESOURCE_REQ
+	SAIM_WSSCH_BUILDER_LOADREPORT,
+	SAIM_WSSCH_BUILDER_RESOURCE_REQ,
 };
 
 static void
@@ -368,6 +385,7 @@ handle:
 				cb->instances = build->instances;
 
 				cb->wsi = pss->wsi;
+				pss->announced = 0;
 
 				/* Then attach the copy to the server in the vhd
 				 */
@@ -486,7 +504,7 @@ bail:
 		cb->ongoing = rej->ongoing;
 		cb->instances = rej->limit;
 
-		lwsl_notice("%s: builder %s reports load %d/%d (rej %s)\n",
+		lwsl_notice("%s: builder %s reports occupancy %d/%d (rej %s)\n",
 			    __func__, cb->name, cb->ongoing, cb->instances,
 			    rej->task_uuid[0] ? rej->task_uuid : "none");
 
@@ -494,6 +512,11 @@ bail:
 			sais_task_reset(vhd, rej->task_uuid);
 
 		lwsac_free(&pss->a.ac);
+		break;
+
+	case SAIM_WSSCH_BUILDER_LOADREPORT:
+		lwsl_wsi_user(pss->wsi, "SAIM_WSSCH_BUILDER_LOADREPORT broadcasting\n");
+		sais_websrv_broadcast(vhd->h_ss_websrv, (const char *)buf, bl);
 		break;
 
 	case SAIM_WSSCH_BUILDER_ARTIFACT:
@@ -814,6 +837,50 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	sai_task_t *task;
 	size_t w;
 
+	if (pss->viewer_state_owner.head) {
+		/*
+		 * Pending viewer state message to send to a builder
+		 */
+		sai_viewer_state_t *vs = lws_container_of(
+				pss->viewer_state_owner.head,
+				sai_viewer_state_t, list);
+
+		const lws_struct_map_t lsm_viewerstate_members[] = {
+			LSM_UNSIGNED(sai_viewer_state_t, viewers, "viewers"),
+		};
+		const lws_struct_map_t lsm_schema_viewerstate[] = {
+			LSM_SCHEMA(sai_viewer_state_t, NULL, lsm_viewerstate_members,
+				   "com.warmcat.sai.viewerstate")
+		};
+
+		lwsl_wsi_notice(pss->wsi, "++++ Sending viewerstate (count: %u) to builder\n",
+			    vs->viewers);
+
+		js = lws_struct_json_serialize_create(lsm_schema_viewerstate,
+				LWS_ARRAY_SIZE(lsm_schema_viewerstate), 0, vs);
+		if (!js)
+			return 1;
+
+		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+		lws_struct_json_serialize_destroy(&js);
+
+		/* Dequeue the message we just sent */
+		lws_dll2_remove(&vs->list);
+		/* And free the memory */
+		free(vs);
+
+		first = 1;
+
+		/*
+		 * If there are more viewer state messages, or other messages,
+		 * * request another writeable callback.
+		 */
+		if (pss->viewer_state_owner.head)
+			lws_callback_on_writable(pss->wsi);
+
+		goto send_json;
+	}
+
 	if (pss->task_cancel_owner.head) {
 		/*
 		 * Pending cancel message to send
@@ -831,9 +898,6 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		lws_dll2_remove(&c->list);
 		free(c);
-
-		first = 1;
-		pss->walk = NULL;
 
 		goto send_json;
 	}
@@ -857,9 +921,6 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		lws_dll2_remove(&rm->list);
 		free(rm);
-
-		first = 1;
-		pss->walk = NULL;
 
 		goto send_json;
 	}
@@ -891,9 +952,6 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	lwsac_free(&task->ac_task_container);
 
 	first = 1;
-	pss->walk = NULL;
-
-	//lwsac_free(&pss->query_ac);
 
 send_json:
 	p += w;
@@ -915,7 +973,10 @@ send_json:
 			(enum lws_write_protocol)flags) < 0)
 		return -1;
 
-	lws_callback_on_writable(pss->wsi);
+	if (pss->viewer_state_owner.head || pss->task_cancel_owner.head ||
+	    pss->res_pending_reply_owner.count ||
+	    pss->issue_task_owner.count)
+		lws_callback_on_writable(pss->wsi);
 
 	return 0;
 }

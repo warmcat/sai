@@ -776,6 +776,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		 * Update the sai-webs about the builder removal, so they
 		 * can update their connected browsers
 		 */
+		lwsl_wsi_warn(pss->wsi, "LWS_CALLBACK_CLOSED: doing WSS_PREPARE_BUILDER_SUMMARY\n");
 		sais_list_builders(vhd);
 		break;
 
@@ -791,12 +792,14 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		pss->wsi = wsi;
 		if (sais_ws_json_rx_builder(vhd, pss, in, len))
 			return -1;
+
 		if (!pss->announced) {
 
 			/*
-			 * Update the sai-webs about the builder removal, so
+			 * Update the sai-webs about the builder creation, so
 			 * they can update their connected browsers
 			 */
+			lwsl_wsi_warn(pss->wsi, "LWS_CALLBACK_RECEIVE: unannounced pss doing WSS_PREPARE_BUILDER_SUMMARY\n");
 			sais_list_builders(vhd);
 
 			pss->announced = 1;

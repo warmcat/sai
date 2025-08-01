@@ -21,6 +21,19 @@
  * lws_struct metadata for structs common to builder and server
  */
 
+const lws_struct_map_t lsm_instance_load[] = {
+	LSM_UNSIGNED	(sai_instance_load_t, cpu_percent, "cpu_percent"),
+	LSM_UNSIGNED	(sai_instance_load_t, state,	   "state"),
+};
+
+const lws_struct_map_t lsm_load_report_members[] = {
+	LSM_CARRAY	(sai_load_report_t, builder_name, "builder_name"),
+	LSM_CARRAY	(sai_load_report_t, platform_name,	"platform_name"),
+	LSM_LIST	(sai_load_report_t, loads, sai_instance_load_t, list,
+			 NULL, lsm_instance_load, "loads"),
+};
+
+
 static const lws_struct_map_t lsm_plat[] = {
 	LSM_STRING_PTR	(sai_plat_t, name,		"name"),
 	LSM_UNSIGNED	(sai_plat_t, ongoing,		"ongoing"),

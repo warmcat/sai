@@ -39,30 +39,24 @@ typedef struct saiw_websrv {
 
 } saiw_websrv_t;
 
-static lws_struct_map_t lsm_websrv_evinfo[] = {
-	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"event_hash"),
-};
-
-static const lws_struct_map_t lsm_schema_json_map[] = {
-	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
-			/* shares struct */   "sai-taskchange"),
-	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
-			/* shares struct */   "sai-eventchange"),
-	LSM_SCHEMA	(sai_plat_owner_t, NULL, lsm_plat_list, "sai-builders"),
-	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
-			/* shares struct */   "sai-overview"),
-	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
-			/* shares struct */   "sai-tasklogs"),
-};
+extern const lws_struct_map_t lsm_schema_json_map[];
+extern size_t lsm_schema_json_map_array_size;
 
 enum {
 	SAIS_WS_WEBSRV_RX_TASKCHANGE,
 	SAIS_WS_WEBSRV_RX_EVENTCHANGE,
 	SAIS_WS_WEBSRV_RX_SAI_BUILDERS,
 	SAIS_WS_WEBSRV_RX_OVERVIEW, /* deleted or added event */
-	SAIS_WS_WEBSRV_RX_TASKLOGS /* new logs for task (ratelimited) */
+	SAIS_WS_WEBSRV_RX_TASKLOGS, /* new logs for task (ratelimited) */
+	SAIS_WS_WEBSRV_RX_LOADREPORT
 };
 
+/*
+ * sai-web is receiving from sai-server
+ *
+ * This may come in chunks and is statefully parsed
+ * so it's not directly sensitive to size or fragmentation
+ */
 
 static int
 saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
@@ -72,15 +66,15 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	sai_browse_rx_evinfo_t *ei;
 	int n;
 
-//	lwsl_user("%s: len %d, flags: %d\n", __func__, (int)len, flags);
+//	lwsl_user("%s: RX from server -> sai-web: len %d, flags: %d\n", __func__, (int)len, flags);
 //	lwsl_hexdump_notice(buf, len);
 
 	if (flags & LWSSS_FLAG_SOM) {
 		memset(&m->a, 0, sizeof(m->a));
 		m->a.map_st[0] = lsm_schema_json_map;
-		m->a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_json_map);
-		m->a.map_entries_st[1] = LWS_ARRAY_SIZE(lsm_schema_json_map);
-		m->a.ac_block_size = 128;
+		m->a.map_entries_st[0] = lsm_schema_json_map_array_size;
+		m->a.map_entries_st[1] = lsm_schema_json_map_array_size;
+		m->a.ac_block_size = 4096;
 
 		lws_struct_json_init_parse(&m->ctx, NULL, &m->a);
 	}
@@ -88,16 +82,17 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	n = lejp_parse(&m->ctx, (uint8_t *)buf, (int)len);
 	if (n < LEJP_CONTINUE || (n >= 0 && !m->a.dest)) {
 		lwsac_free(&m->a.ac);
-		lwsl_hexdump_notice(buf, len);
 		lwsl_notice("%s: srv->web JSON decode failed '%s'\n",
 				__func__, lejp_error_to_string(n));
+		lwsl_hexdump_notice(buf, len);
+
 		return LWSSSSRET_DISCONNECT_ME;
 	}
 
 	if (!(flags & LWSSS_FLAG_EOM))
 		return 0;
 
-//	lwsl_notice("%s: schema idx %d\n", __func__, m->a.top_schema_index);
+	lwsl_notice("%s: schema idx %d parsed correctly from sai-server\n", __func__, m->a.top_schema_index);
 
 	switch (m->a.top_schema_index) {
 
@@ -115,19 +110,14 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		break;
 
 	case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
-		lwsl_notice("%s: updated sai builder list\n", __func__);
+		lwsl_notice("%s: updated sai builder list (%d browsers)\n", __func__, vhd->browsers.count);
 		if (vhd->builders)
 			lwsac_detach(&vhd->builders);
 		vhd->builders = m->a.ac;
 		m->a.ac = NULL;
 		vhd->builders_owner =
 				&((sai_plat_owner_t *)m->a.dest)->plat_owner;
-		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
-			struct pss *pss = lws_container_of(p, struct pss, same);
-
-			saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
-
-		} lws_end_foreach_dll(p);
+		saiw_ws_broadcast_raw(vhd, buf, len);
 		break;
 
 	case SAIS_WS_WEBSRV_RX_OVERVIEW:
@@ -154,6 +144,13 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			if (!strcmp(pss->sub_task_uuid, ei->event_hash))
 				lws_callback_on_writable(pss->wsi);
 		} lws_end_foreach_dll(p);
+		break;
+
+	case SAIS_WS_WEBSRV_RX_LOADREPORT:
+               /* A builder sent a load report, forward to all browsers */
+               lwsl_notice("%s: ===== Received load report, broadcasting to %d browsers\n",
+                           __func__, (int)vhd->browsers.count);
+               saiw_ws_broadcast_raw(vhd, buf, len);
 		break;
 	}
 

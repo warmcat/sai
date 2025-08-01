@@ -32,8 +32,10 @@
 #include <stdlib.h>
 
 #include <sys/types.h>
+#if !defined(WIN32)
 #include <pwd.h>
 #include <grp.h>
+#endif
 
 #if defined(__linux__)
 #include <unistd.h>

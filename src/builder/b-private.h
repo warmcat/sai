@@ -39,6 +39,7 @@
 #include <pthread.h>
 #include <git2.h>
 
+#define SAI_LOAD_REPORT_US	(5 * LWS_US_PER_SEC)
 #define SAI_IDLE_GRACE_US	(30 * LWS_US_PER_SEC)
 #define SAI_STAY_POLL_US	(20 * LWS_US_PER_SEC)
 
@@ -221,3 +222,6 @@ saib_create_resproxy_listen_uds(struct lws_context *context,
 
 int
 saib_handle_resource_result(struct sai_plat_server *spm, const char *in, size_t len);
+
+void
+saib_sul_load_report_cb(struct lws_sorted_usec_list *sul);

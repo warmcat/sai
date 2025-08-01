@@ -39,6 +39,8 @@
 
 #include "../common/struct-metadata.c"
 
+extern const lws_struct_map_t lsm_schema_json_map[];
+
 typedef enum {
 	SJS_CLONING,
 	SJS_ASSIGNING,
@@ -81,8 +83,45 @@ const lws_struct_map_t lsm_schema_sq3_map_auth[] = {
 	LSM_SCHEMA_DLL2	(sai_auth_t, list, NULL, lsm_auth,	"auth"),
 };
 
+static lws_struct_map_t lsm_websrv_evinfo[] = {
+	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"event_hash"),
+};
+
+const lws_struct_map_t lsm_schema_json_map[] = {
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
+			/* shares struct */   "sai-taskchange"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
+			/* shares struct */   "sai-eventchange"),
+	LSM_SCHEMA	(sai_plat_owner_t, NULL, lsm_plat_list, "sai-builders"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
+			/* shares struct */   "sai-overview"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
+			/* shares struct */   "sai-tasklogs"),
+	LSM_SCHEMA	(sai_load_report_t, NULL, lsm_load_report_members,
+			 "com.warmcat.sai.loadreport"),
+};
+
+size_t lsm_schema_json_map_array_size = LWS_ARRAY_SIZE(lsm_schema_json_map);
+
 extern const lws_struct_map_t lsm_schema_sq3_map_event[];
 
+#if 0
+/*
+ * Let the server know how many browsers are connected, so it can inform
+ * builders who can then moderate their reporting rate
+ */
+void
+saiw_update_viewer_count(struct vhd *vhd)
+{
+	char buf[128];
+	int n;
+
+	n = lws_snprintf(buf, sizeof(buf),
+			"{\"schema\":\"com.warmcat.sai.viewercount\",\"count\":%u}",
+			(unsigned int)vhd->browsers.count);
+	saiw_websrv_queue_tx(vhd->h_ss_websrv, (uint8_t *)buf, (size_t)n);
+}
+#endif
 
 /* len is typically 16 (event uuid is 32 chars + NUL)
  * But eg, task uuid is concatenated 32-char eventid and 32-char taskid
@@ -974,35 +1013,24 @@ clean_spa:
 	/*
 	 * ws connections from builders and browsers
 	 */
+       case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
+               n = lws_hdr_copy(wsi, (char *)buf, sizeof(buf) - 1,
+                                WSI_TOKEN_GET_URI);
+ 
+               /*
+                * This protocol is for browsers on /browse... URLs.
+                * Builders connect on /builder... URLs and should be handled
+                * by a different protocol. Explicitly reject them here.
+                *
+                * Returning 0 accepts the connection for this protocol.
+                * Returning non-zero rejects it.
+                */
+               if (n >= 8 && !strncmp((const char *)buf + n - 8,
+                                       "/builder", 8))
+                       return 1; /* Reject builder connections */
 
-	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
-		n = lws_hdr_copy(wsi, (char *)buf, sizeof(buf) - 1,
-				 WSI_TOKEN_GET_URI);
-		if (!n)
-			buf[0] = '\0';
-		//lwsl_notice("%s: checking with lwsgs for ws conn: %s\n",
-		//	    __func__, (const char *)buf);
-
-		/*
-		 * Builders don't authenticate using sessions...
-		 */
-
-		if (n >= 8 && !strncmp((const char *)buf + n - 8,
-					"/builder", 8))
-			return 0;
-
-		return 0;
-#if 0
-		/* but everything else does */
-
-		car_args.max_len = LWSGS_AUTH_LOGGED_IN | LWSGS_AUTH_VERIFIED;
-		car_args.final = 0;
-		car_args.chunked = 1; /* ie, we are ws */
-
-		in = &car_args;
-		goto passthru;
-#endif
-
+               return 0;
+ 
 	case LWS_CALLBACK_ESTABLISHED:
 
 		if (!vhd) {
@@ -1022,8 +1050,6 @@ clean_spa:
 		ck.iss = vhd->jwt_issuer;
 		ck.aud = vhd->jwt_audience;
 		ck.cookie_name = "__Host-sai_jwt";
-
-		lws_dll2_add_head(&pss->same, &vhd->browsers);
 
 		cml = sizeof(buf);
 		if (!lws_jwt_get_http_cookie_validate_jwt(wsi, &ck,
@@ -1109,6 +1135,8 @@ clean_spa:
 						sizeof(pss->specific_ref));
 			}
 
+			saiw_browser_state_changed(pss, 1);
+
 			lwsl_info("%s: spec %d, ref '%s', task '%s' \n", __func__,
 					pss->specificity, pss->specific_ref, pss->specific_task);
 			break;
@@ -1116,6 +1144,7 @@ clean_spa:
 
 		if (!strcmp((char *)start, "/browse")) {
 			lwsl_info("%s: ESTABLISHED: browser\n", __func__);
+			saiw_browser_state_changed(pss, 1);
 			pss->wsi = wsi;
 			break;
 		}
@@ -1127,7 +1156,8 @@ clean_spa:
 	case LWS_CALLBACK_CLOSED:
 
 		lwsl_err("%s: CLOSED browse conn\n", __func__);
-		lws_dll2_remove(&pss->same);
+		lws_buflist_destroy_all_segments(&pss->raw_tx);
+		saiw_browser_state_changed(pss, 0);
 		lws_dll2_remove(&pss->subs_list);
 
 		lws_dll2_foreach_safe(&pss->sched, NULL, saiw_sched_destroy);

@@ -33,16 +33,23 @@ static char csep = '/';
 static char csep = '\\';
 #endif
 
+static const lws_struct_map_t lsm_viewerstate_members[] = {
+       LSM_UNSIGNED(sai_viewer_state_t, viewers,       "viewers"),
+};
+
 const lws_struct_map_t lsm_schema_map_m_to_b[] = {
-	LSM_SCHEMA (sai_task_t, NULL, lsm_task, "com-warmcat-sai-ta"),
-	LSM_SCHEMA (sai_cancel_t, NULL, lsm_task_cancel, "com.warmcat.sai.taskcan"),
-	LSM_SCHEMA (sai_resource_t, NULL, lsm_resource, "com-warmcat-sai-resource")
+	LSM_SCHEMA	(sai_task_t, NULL, lsm_task, "com-warmcat-sai-ta"),
+	LSM_SCHEMA	(sai_cancel_t, NULL, lsm_task_cancel, "com.warmcat.sai.taskcan"),
+	LSM_SCHEMA	(sai_viewer_state_t, NULL, lsm_viewerstate_members,
+						 "com.warmcat.sai.viewerstate"),
+	LSM_SCHEMA	(sai_resource_t, NULL, lsm_resource, "com-warmcat-sai-resource")
 };
 
 enum {
 	SAIB_RX_TASK_ALLOCATION,
 	SAIB_RX_TASK_CANCEL,
-	SAIB_RX_RESOURCE_REPLY,
+	SAIB_RX_VIEWERSTATE,
+	SAIB_RX_RESOURCE_REPLY
 };
 
 static const char * const nsstates[] = {
@@ -768,6 +775,23 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			} lws_end_foreach_dll_safe(p, p1);
 
 		} lws_end_foreach_dll_safe(mp, mp1);
+		break;
+
+	case SAIB_RX_VIEWERSTATE:
+		{
+			sai_viewer_state_t *vs = (sai_viewer_state_t *)a.dest;
+			lwsl_notice("Received viewer state update: %u viewers\n",
+				    vs->viewers);
+
+			spm->viewer_count = vs->viewers;
+
+			if (vs->viewers)
+				/* At least one viewer, start reporting */
+				lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
+						 saib_sul_load_report_cb, SAI_LOAD_REPORT_US);
+			else
+				lws_sul_cancel(&spm->sul_load_report);
+		}
 		break;
 
 	case SAIB_RX_RESOURCE_REPLY:

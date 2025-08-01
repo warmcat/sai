@@ -27,6 +27,14 @@
 
 #include "../common/struct-metadata.c"
 
+const lws_struct_map_t lsm_viewerstate_members[] = {
+	LSM_UNSIGNED(sai_viewer_state_t, viewers,	"viewers"),
+};
+
+static const lws_struct_map_t lsm_schema_json_loadreport[] = {
+	LSM_SCHEMA	(sai_load_report_t, NULL, lsm_load_report_members, "com.warmcat.sai.loadreport"),
+};
+
 static lws_ss_state_return_t
 saib_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
@@ -249,6 +257,44 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 
 		lws_dll2_remove(&rej->list);
 		free(rej);
+
+		r = lws_ss_request_tx(spm->ss);
+		if (r)
+			return r;
+		goto sendify;
+	}
+
+	/*
+	 * Any load reports to send?
+	 */
+	if (spm->load_report_owner.count) {
+		struct lws_dll2 *d = lws_dll2_get_head(&spm->load_report_owner);
+		sai_load_report_t *lr =
+				lws_container_of(d, sai_load_report_t, list);
+
+		// lwsl_notice("%s: issuing load report for %s\n", __func__,
+		//	    lr->builder_name);
+
+		js = lws_struct_json_serialize_create(lsm_schema_json_loadreport,
+			      LWS_ARRAY_SIZE(lsm_schema_json_loadreport), 0, lr);
+		if (!js)
+			return -1;
+
+		n = (int)lws_struct_json_serialize(js, start,
+					      lws_ptr_diff_size_t(end, start), &w);
+		lws_struct_json_serialize_destroy(&js);
+
+		// lwsl_hexdump_notice(start, w);
+
+		n = (int)w;
+
+		lws_dll2_remove(&lr->list);
+		lws_start_foreach_dll_safe(struct lws_dll2 *, il, il1, lr->loads.head) {
+			sai_instance_load_t *i = lws_container_of(il, sai_instance_load_t, list);
+			lws_dll2_remove(&i->list);
+			free(i);
+		} lws_end_foreach_dll_safe(il, il1);
+		free(lr);
 
 		r = lws_ss_request_tx(spm->ss);
 		if (r)
@@ -536,6 +582,60 @@ cleanup_on_ss_disconnect(struct lws_dll2 *d, void *user)
 	return 0;
 }
 
+void
+saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
+{
+       struct sai_plat_server *spm = lws_container_of(sul,
+                                       struct sai_plat_server, sul_load_report);
+       sai_load_report_t *lr = calloc(1, sizeof(*lr));
+       struct sai_plat *sp = NULL;
+
+       if (!lr)
+               return;
+
+       /*
+        * This builder process has one name, but may have multiple platforms,
+        * each with multiple instances. For now, we report on the whole builder
+        * under one name.
+        */
+       lws_strncpy(lr->builder_name, builder.host, sizeof(lr->builder_name));
+       if (builder.sai_plat_owner.head) {
+               sai_plat_t *any_plat = lws_container_of(builder.sai_plat_owner.head,
+                                                       sai_plat_t, sai_plat_list);
+               lws_strncpy(lr->platform_name, any_plat->name, sizeof(lr->platform_name));
+       }
+
+       /*
+        * Iterate all platforms and their nspawn instances to collect load.
+        * In a real implementation, you would query the system for CPU usage
+        * of each nspawn process. For now, we will simulate it.
+        */
+       lws_start_foreach_dll(struct lws_dll2 *, p, builder.sai_plat_owner.head) {
+               sp = lws_container_of(p, sai_plat_t, sai_plat_list);
+
+               lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
+                       struct sai_nspawn *ns = lws_container_of(d, struct sai_nspawn, list);
+                       sai_instance_load_t *il = calloc(1, sizeof(*il));
+
+                       if (il) {
+                               il->state = (ns->state == NSSTATE_BUILD);
+                               /* Simulate load: 50% if building, 1% if idle */
+                               il->cpu_percent = il->state ? 500 : 10;
+                               lws_dll2_add_tail(&il->list, &lr->loads);
+                       }
+               } lws_end_foreach_dll(d);
+       } lws_end_foreach_dll(p);
+
+       lws_dll2_add_tail(&lr->list, &spm->load_report_owner);
+       if (lws_ss_request_tx(spm->ss))
+	       lwsl_debug("%s: request tx failed\n", __func__);
+
+       /* Reschedule the timer */
+       lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
+                        saib_sul_load_report_cb, SAI_LOAD_REPORT_US);
+}
+
+
 static lws_ss_state_return_t
 saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 	     lws_ss_tx_ordinal_t ack)
@@ -622,6 +722,9 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 	case LWSSSCS_CONNECTED:
 		lwsl_user("%s: CONNECTED: %p\n", __func__, spm->ss);
 		spm->phase = PHASE_START_ATTACH;
+		/* Initialize the load report SUL timer for this server connection */
+		lws_sul_cancel(&spm->sul_load_report);
+
 		return lws_ss_request_tx(spm->ss);
 
 	case LWSSSCS_DISCONNECTED:
@@ -630,6 +733,7 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		 */
 
 		lwsl_user("%s: DISCONNECTED\n", __func__);
+		lws_sul_cancel(&spm->sul_load_report);
 		lws_dll2_foreach_safe(&builder.sai_plat_owner, spm,
 				      cleanup_on_ss_disconnect);
 		break;
