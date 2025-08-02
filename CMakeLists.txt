@@ -109,6 +109,9 @@ if (NOT MSVC)
 endif()
 
 if (APPLE)
+       set(CMAKE_MACOSX_RPATH 1)
+       set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+
 	set(CMAKE_C_FLAGS "-I/usr/local/include ${CMAKE_C_FLAGS}")
 	link_directories("/usr/local/lib")
 endif()

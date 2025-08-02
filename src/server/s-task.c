@@ -340,7 +340,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 	n = lws_struct_sq3_deserialize(vhd->server.pdb, pf, "created desc ",
 				       lsm_schema_sq3_map_event, &o, &ac, 0, 10);
 	if (n < 0 || !o.count) {
-		lwsl_notice("%s: platform %s: bail1: n %d count %d\n", __func__, platform, n, o.count);
+		// lwsl_notice("%s: platform %s: bail1: n %d count %d\n", __func__, platform, n, o.count);
 
 		goto bail;
 	}

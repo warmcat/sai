@@ -24,6 +24,16 @@ if (requirements)
 	add_executable(${SUB} ${SRCS})
 	if (APPLE)
 		set_property(TARGET ${SUB} PROPERTY MACOSX_RPATH YES)
+               set(CMAKE_MACOSX_RPATH 1)
+               set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
+
+               add_custom_command(TARGET ${SUB}
+                       POST_BUILD COMMAND 
+                       ${CMAKE_INSTALL_NAME_TOOL} -add_rpath "/usr/local/lib"
+                       $<TARGET_FILE:${SUB}>)
+
+               set(CMAKE_C_FLAGS "-I/usr/local/include ${CMAKE_C_FLAGS}")
+               link_directories("/usr/local/lib")
 	endif()
 
 	#
