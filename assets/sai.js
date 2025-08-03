@@ -641,6 +641,10 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 	var s, q, ctn = "", wai, s1 = "", n, e = o.e;
 
 	s = "<table class=\"comp";
+
+	if (!o.e)
+		return;
+
 	if (e.state == 3)
 		s += " comp_pass";
 	if (e.state == 4 || e.state == 6)
@@ -857,7 +861,7 @@ function createBuilderDiv(plat) {
 	innerHTML += `<img class="ip1 tread1" src="/sai/arch-${plat_arch}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
 	innerHTML += `<img class="ip1 tread2" src="/sai/tc-${plat_tc}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
 	innerHTML += `<br>${plat.peer_ip}`;
-	innerHTML += `<div id="instload-${plat.name}">`;
+	innerHTML += `<div id="instload-` + plat.name.split('.')[0] + `">`;
 
 	for (let i = 0; i < plat.instances; i++) {
 		innerHTML += `<div class="inst_box inst_idle" title="instance ${i}: idle"></div>`;
@@ -929,7 +933,7 @@ function render_builders(jso)
 					(e.peer_ip ? "<br>" + san(e.peer_ip) : "");
 
 				/* Add a container for the instance load boxes */
-				s += "<div id=\"instload-" + san(e.name) + "\">";
+				s += "<div id=\"instload-" + san(e.name).split('.')[0] + "\">";
 				for (var i = 0; i < e.instances; i++) {
 					s += "<div class=\"inst_box inst_idle\" title=\"instance " + i + ": idle\"></div>";
 				}
@@ -977,7 +981,10 @@ function after_delete() {
 function ws_open_sai()
 {	
 	var s = "", q, qa, qi, q5, q5s;
-	
+
+	if (document.getElementById("apirev"))
+		document.getElementById("apirev").innerHTML = "API rev " + SAI_JS_API_VERSION; 
+
 	q = window.location.href;
 	console.log(q);
 	qi = q.indexOf("/git/");
@@ -1073,7 +1080,7 @@ function ws_open_sai()
 			var u, ci, n;
 			var now_ut = Math.round((new Date().getTime() / 1000));
 
-		//	console.log(msg.data);
+			console.log(msg.data);
 		//	if (msg.data.length < 10)
 		//		return;
 			jso = JSON.parse(msg.data);
@@ -1483,11 +1490,16 @@ function ws_open_sai()
 		break;
 
 			case "com.warmcat.sai.loadreport":
-				if (!jso.platform_name)
-						break;
 
-				const platformName = jso.platform_name;
+			//	console.log("received com.warmcat.sai.loadreport" + jso);
+
+				if (!jso.builder_name)
+					break;
+
+				const platformName = jso.builder_name;
 				
+				console.log("loadreport: builder name " + platformName);
+
 				// The container for the load squares has a predictable ID
 				const loadContainerId = "instload-" + platformName;
 				const loadContainer = document.getElementById(loadContainerId);

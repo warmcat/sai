@@ -563,6 +563,18 @@ img.logo {
 	height: auto;
 }
 
+span.logo {
+	margin: 3px;
+	margin-right: 4px;
+	padding: 2px;
+	vertical-align: middle;
+	z-index: 1002;
+	width: 164px;
+	height: auto;
+	font-size: 7pt;
+	text-align: left;
+}
+
 td.summary {
 	background: #f8f8f8;
 	width: 100%;

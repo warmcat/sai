@@ -605,22 +605,28 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
                lws_strncpy(lr->platform_name, any_plat->name, sizeof(lr->platform_name));
        }
 
-       /*
-        * Iterate all platforms and their nspawn instances to collect load.
-        * In a real implementation, you would query the system for CPU usage
-        * of each nspawn process. For now, we will simulate it.
-        */
+       int system_load = saib_get_system_cpu(&builder);
+
        lws_start_foreach_dll(struct lws_dll2 *, p, builder.sai_plat_owner.head) {
                sp = lws_container_of(p, sai_plat_t, sai_plat_list);
 
                lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
                        struct sai_nspawn *ns = lws_container_of(d, struct sai_nspawn, list);
                        sai_instance_load_t *il = calloc(1, sizeof(*il));
+                       int load = -1;
 
                        if (il) {
+ #if defined(__linux__)
+                               /* On Linux, try cgroup first, then fall back to system */
+                               load = saib_get_cgroup_cpu(ns);
+ #endif
+                               if (load < 0)
+                                       load = system_load;
+                               if (load < 0) /* If system load also failed */
+                                       load = 10; /* Default to 1% */
+
                                il->state = (ns->state == NSSTATE_BUILD);
-                               /* Simulate load: 50% if building, 1% if idle */
-                               il->cpu_percent = il->state ? 500 : 10;
+                               il->cpu_percent = (uint16_t)load;
                                lws_dll2_add_tail(&il->list, &lr->loads);
                        }
                } lws_end_foreach_dll(d);

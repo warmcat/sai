@@ -1219,7 +1219,8 @@ clean_spa:
 			break;
 		}
 
-		return saiw_ws_json_tx_browser(vhd, pss, buf, sizeof(buf));
+		saiw_ws_json_tx_browser(vhd, pss, buf, sizeof(buf));
+		break;
 
 	default:
 passthru:

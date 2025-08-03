@@ -11,6 +11,7 @@ set(SRCS
 	b-artifacts.c
 	b-logproxy.c
 	b-refproxy.c
+	b-load.c
 )
 
 set(requirements 1)
@@ -54,7 +55,11 @@ if (requirements)
 	       endif()
 	       
 	       target_link_libraries(${SUB} ${SAI_GIT2_LIB_PATH})
-	endif()
+
+		if (APPLE)
+		    target_link_libraries(sai-builder "-framework IOKit")
+		endif() 
+       endif()
 
 	set(CMAKE_REQUIRED_LIBRARIES ${SAI_GIT2_LIB_PATH})
 	

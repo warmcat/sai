@@ -131,6 +131,16 @@ struct sai_builder {
 	sai_mirror_instance_t	mi;
 
 	char			path[256];
+
+#if defined(__linux__) || defined(__APPLE__)
+	/* For system-wide load calculation */
+	uint64_t		last_sys_total;
+	uint64_t		last_sys_idle;
+#elif defined(WIN32)
+	ULARGE_INTEGER		last_sys_idle;
+	ULARGE_INTEGER		last_sys_kernel;
+	ULARGE_INTEGER		last_sys_user;
+#endif
 	char			stay;
 };
 
@@ -225,3 +235,9 @@ saib_handle_resource_result(struct sai_plat_server *spm, const char *in, size_t 
 
 void
 saib_sul_load_report_cb(struct lws_sorted_usec_list *sul);
+
+int
+saib_get_cgroup_cpu(struct sai_nspawn *ns);
+
+int
+saib_get_system_cpu(struct sai_builder *b);

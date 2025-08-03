@@ -1,7 +1,7 @@
 /*
  * Sai server - ./src/server/m-ws-browser.c
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -35,7 +35,7 @@
  * all connected browsers, eg, for load reports.
  */
 void
-saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int api_ver_min)
+saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int api_ver_min, int flags)
 {
 	int eff = 0;
 	// lwsl_err("%s: sai-web broadcasting to browsers\n", __func__);
@@ -43,13 +43,15 @@ saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 		struct pss *pss = lws_container_of(p, struct pss, same);
+		int *pi = (int *)((const char *)buf -sizeof(int));
 
 		if (pss->js_api_version >= api_ver_min) {
 			eff++;
-			if (lws_buflist_append_segment(&pss->raw_tx, buf, len) >= 0)
+			*pi = flags;
+
+			if (lws_buflist_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) > 0)
 				lws_callback_on_writable(pss->wsi);
 		}
-
 	} lws_end_foreach_dll(p);
 
 	lwsl_notice("%s: broadcast to %d / %d browsers\n", __func__,
@@ -625,29 +627,34 @@ again:
 	// lwsl_notice("%s: send_state %d, pss %p, wsi %p\n", __func__,
 	// pss->send_state, pss, pss->wsi);
 
-	if (pss->raw_tx) {
-		char som, eom;
-		int used;
+	/*
+	 * Send anything waiting on broadcast_raw buflist first
+	 */
 
-		p = start; /* buf + LWS_PRE */
-		used = lws_buflist_fragment_use(&pss->raw_tx, p,
-						lws_ptr_diff_size_t(end, p), &som, &eom);
+	if (pss->raw_tx) {
+		char som, eom, rb[4096];
+		int used, *pi = (int *)rb;
+
+		used = lws_buflist_fragment_use(&pss->raw_tx, (uint8_t *)rb,
+						sizeof(rb), &som, &eom);
 		if (!used)
 			return 0;
 
-		flags = lws_write_ws_flags(LWS_WRITE_TEXT, som, eom);
-		if (lws_write(pss->wsi, p, (size_t)used, (enum lws_write_protocol)flags) < 0)
-			return -1;
+		// lwsl_wsi_notice(pss->wsi, "writing %d bytes flags 0x%x: '%.*s'",
+		//		(int)(used - (int)sizeof(int)), (int)*pi,
+		//		(int)(used - (int)sizeof(int)), rb + sizeof(int));  
 
-		/*
-		 * if there are more fragments, we must exit now and wait for
-		 * the next writable callback to send the rest. Otherwise, we
-		 * can fall through and check for other work to do.
-		 */
-		if (pss->raw_tx) {
-			lws_callback_on_writable(pss->wsi);
-			return 0;
+		if (lws_write(pss->wsi, (uint8_t *)rb + sizeof(int),
+					(size_t)used - sizeof(int),
+					(enum lws_write_protocol)*pi) < 0) {
+			lwsl_wsi_err(pss->wsi, "attempt to write %d failed", (int)used - (int)sizeof(int));
+
+			return -1;
 		}
+
+		lws_callback_on_writable(pss->wsi);
+
+		return 0;
 	}
 
 	if (pss->sched.count)

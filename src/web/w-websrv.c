@@ -89,10 +89,10 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		return LWSSSSRET_DISCONNECT_ME;
 	}
 
-	if (!(flags & LWSSS_FLAG_EOM))
-		return 0;
+//	if (!(flags & LWSSS_FLAG_EOM))
+//		return 0;
 
-	lwsl_notice("%s: schema idx %d parsed correctly from sai-server\n", __func__, m->a.top_schema_index);
+	// lwsl_notice("%s: schema idx %d parsed correctly from sai-server\n", __func__, m->a.top_schema_index);
 
 	switch (m->a.top_schema_index) {
 
@@ -117,7 +117,8 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		m->a.ac = NULL;
 		vhd->builders_owner =
 				&((sai_plat_owner_t *)m->a.dest)->plat_owner;
-		saiw_ws_broadcast_raw(vhd, buf, len, 0);
+		saiw_ws_broadcast_raw(vhd, buf, len, 0,
+				      lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 
 	case SAIS_WS_WEBSRV_RX_OVERVIEW:
@@ -148,9 +149,10 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 	case SAIS_WS_WEBSRV_RX_LOADREPORT:
                /* A builder sent a load report, forward to all browsers */
-               lwsl_notice("%s: ===== Received load report, broadcasting to %d browsers\n",
-                           __func__, (int)vhd->browsers.count);
-               saiw_ws_broadcast_raw(vhd, buf, len, 2);
+       //        lwsl_notice("%s: ===== Received load report, broadcasting to %d browsers\n",
+       //                    __func__, (int)vhd->browsers.count);
+               saiw_ws_broadcast_raw(vhd, buf, len, 2,
+			             lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 	}
 

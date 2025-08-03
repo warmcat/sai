@@ -161,6 +161,9 @@ struct sai_nspawn {
 	sai_plat_t			*sp; /* the sai_plat */
 	struct sai_plat_server		*spm; /* the sai plat / server with the ss / wsi */
 
+	uint64_t			last_cpu_usec;
+	lws_usec_t			last_cpu_usec_time;
+
 	size_t				chunk_cache_size;
 
 	const char			*server_name;	/* sai-server name who triggered this, eg, 'warmcat' */
