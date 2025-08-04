@@ -41,8 +41,8 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	saip_server_link_t *pss = (saip_server_link_t *)userobj;
 	saip_server_t *sps = (saip_server_t *)lws_ss_opaque_from_user(pss);
 	const char *p = (const char *)buf, *end = (const char *)buf + len;
-	char plat[128];
-	size_t n;
+	char plat[128], benched[4096];
+	size_t n, bp = 0;
 
 	lwsl_info("%s: len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
 	lwsl_hexdump_info(buf, len);
@@ -95,7 +95,7 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
 
 		if (sp->needed) {
-			lwsl_notice("%s: %s: needed\n", __func__, sp->name);
+			lwsl_notice("%s: Needed builders: %s\n", __func__, sp->name);
 
 			/*
 			 * Server said this platform or at least one dependency
@@ -119,11 +119,18 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				}
 			}
 
-		} else
-			lwsl_notice("%s:  (%s not needed)\n", __func__, sp->name);
+		} else {
+			bp += (size_t)lws_snprintf(&benched[bp], sizeof(benched) - bp - 1, "%s%s", !bp ? "" : ", ", sp->name);
+			benched[sizeof(benched) - 1] = '\0';
+		}
 
 	} lws_end_foreach_dll(px);
-	
+
+	if (bp)
+		lwsl_notice("%s:  Benched builders: %s\n", __func__, benched);
+
+
+
 	(void)sps;
 
 	return 0;
