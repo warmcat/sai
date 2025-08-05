@@ -610,7 +610,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 	case LWS_CALLBACK_HTTP:
 
-		// lwsl_notice("%s: HTTP\n", __func__);
+		lwsl_wsi_notice(wsi, "_HTTP");
 
 		if (!vhd) {
 			lwsl_err("%s: NULL vhd\n", __func__);
@@ -1038,6 +1038,40 @@ clean_spa:
 			return -1;
 		}
 
+		{
+			const unsigned char *c;
+
+			n = 0;
+
+			do {
+				int hlen;
+
+				c = lws_token_to_string((enum lws_token_indexes)n);
+				if (!c) {
+					n++;
+					continue;
+				}
+
+				hlen = lws_hdr_total_length(wsi, (enum lws_token_indexes)n);
+				if (!hlen || hlen > (int)sizeof(buf) - 1) {
+					n++;
+					continue;
+				}
+
+				if (lws_hdr_copy(wsi, (char *)buf, sizeof buf, (enum lws_token_indexes)n) < 0)
+					lwsl_wsi_err(wsi, "ESTABLISHED    %s (too big)", (char *)c);
+				else {
+					buf[sizeof(buf) - 1] = '\0';
+
+					lwsl_wsi_notice(wsi, "ESTABLISHED    %s = %s\n", (char *)c, buf);
+				}
+				n++;
+			} while (c);
+		}
+
+
+		lwsl_wsi_warn(wsi, "ESTABLISHED");
+
 		/*
 		 * What's the situation with a JWT cookie?  Normal users won't
 		 * have any, but privileged users will have one, and we should
@@ -1155,7 +1189,7 @@ clean_spa:
 
 	case LWS_CALLBACK_CLOSED:
 
-		lwsl_err("%s: CLOSED browse conn\n", __func__);
+		lwsl_wsi_err(wsi, "CLOSED browse conn");
 		lws_buflist_destroy_all_segments(&pss->raw_tx);
 		saiw_browser_state_changed(pss, 0);
 		lws_dll2_remove(&pss->subs_list);
