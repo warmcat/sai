@@ -117,7 +117,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		m->a.ac = NULL;
 		vhd->builders_owner =
 				&((sai_plat_owner_t *)m->a.dest)->plat_owner;
-		saiw_ws_broadcast_raw(vhd, buf, len);
+		saiw_ws_broadcast_raw(vhd, buf, len, 0);
 		break;
 
 	case SAIS_WS_WEBSRV_RX_OVERVIEW:
@@ -150,7 +150,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
                /* A builder sent a load report, forward to all browsers */
                lwsl_notice("%s: ===== Received load report, broadcasting to %d browsers\n",
                            __func__, (int)vhd->browsers.count);
-               saiw_ws_broadcast_raw(vhd, buf, len);
+               saiw_ws_broadcast_raw(vhd, buf, len, 2);
 		break;
 	}
 

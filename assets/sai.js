@@ -1,3 +1,5 @@
+const SAI_JS_API_VERSION = 2;
+
 (function() {
 
 /*
@@ -1033,6 +1035,7 @@ function ws_open_sai()
 				 
 				 sai.send("{\"schema\":" +
 				 	  "\"com.warmcat.sai.taskinfo\"," +
+					  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
 				 	  "\"logs\": 1," +
 				 	  "\"task_hash\":" +
 				 	  JSON.stringify(tid) + "}");
@@ -1051,7 +1054,8 @@ function ws_open_sai()
 				 
 				 sai.send("{\"schema\":" +
 				 	  "\"com.warmcat.sai.eventinfo\"," +
-				 	  "\"event_hash\":" +
+					  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
+					  "\"event_hash\":" +
 				 	  JSON.stringify(eid) + "}");
 				 	  
 				 return;
@@ -1062,7 +1066,7 @@ function ws_open_sai()
 			 */
 			
 			 sai.send("{\"schema\":" +
-			 	  "\"com.warmcat.sai.taskinfo\"}");
+			 	  "\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION + "}");
 		};
 
 		sai.onmessage = function got_packet(msg) {
@@ -1111,6 +1115,12 @@ function ws_open_sai()
 						break;
 					}
 				}
+			}
+
+			if (jso.api_version && jso.api_version !== SAI_JS_API_VERSION) {
+				console.warn(`Sai JS API version mismatch. Client: ${SAI_JS_API_VERSION}, Server: ${jso.api_version}. Reloading page.`);
+				location.reload(true); // Force a hard reload
+				return; // Stop processing this old message
 			}
 
 			switch (jso.schema) {

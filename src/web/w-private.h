@@ -23,6 +23,8 @@
 #include <sqlite3.h>
 #include <sys/stat.h>
 
+#define SAIW_API_VERSION 2
+
 struct sai_plat;
 
 typedef struct sai_platm {
@@ -167,6 +169,7 @@ struct pss {
 	int			log_cache_size;
 	int			authorized;
 	int			specificity;
+	unsigned int		js_api_version;
 	unsigned long		expiry_unix_time;
 
 	/* notification hmac information */
@@ -318,7 +321,7 @@ saiw_sched_destroy(struct lws_dll2 *d, void *user);
 
 
 void
-saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len);
+saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int min_api_version);
 
 void
 saiw_browser_state_changed(struct pss *pss, int established);

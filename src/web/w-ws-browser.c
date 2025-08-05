@@ -35,17 +35,25 @@
  * all connected browsers, eg, for load reports.
  */
 void
-saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len)
+saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int api_ver_min)
 {
+	int eff = 0;
 	// lwsl_err("%s: sai-web broadcasting to browsers\n", __func__);
 	// lwsl_hexdump_err(buf, len);
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 		struct pss *pss = lws_container_of(p, struct pss, same);
 
-		if (lws_buflist_append_segment(&pss->raw_tx, buf, len) >= 0)
-			lws_callback_on_writable(pss->wsi);
+		if (pss->js_api_version >= api_ver_min) {
+			eff++;
+			if (lws_buflist_append_segment(&pss->raw_tx, buf, len) >= 0)
+				lws_callback_on_writable(pss->wsi);
+		}
+
 	} lws_end_foreach_dll(p);
+
+	lwsl_notice("%s: broadcast to %d / %d browsers\n", __func__,
+		        eff, (int)vhd->browsers.count);	
 }
 
 extern const lws_struct_map_t lsm_load_report_members[2]; 
@@ -63,10 +71,10 @@ static lws_struct_map_t lsm_browser_taskreset[] = {
 };
 
 static lws_struct_map_t lsm_browser_taskinfo[] = {
-	LSM_CARRAY	(sai_browse_rx_taskinfo_t, task_hash,	"task_hash"),
-	LSM_UNSIGNED	(sai_browse_rx_taskinfo_t, logs,	"logs"),
+	LSM_CARRAY	(sai_browse_rx_taskinfo_t, task_hash,		"task_hash"),
+	LSM_UNSIGNED	(sai_browse_rx_taskinfo_t, logs,		"logs"),
+	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, js_api_version,	"js_api_version"),
 };
-
 
 /*
  * Schema list so lws_struct can pick the right object to create based on the
@@ -97,6 +105,7 @@ enum {
 	SAIM_WS_BROWSER_RX_EVENTRESET,
 	SAIM_WS_BROWSER_RX_EVENTDELETE,
 	SAIM_WS_BROWSER_RX_TASKCANCEL,
+	SAIM_WS_BROWSER_RX_JS_HELLO,
 };
 
 
@@ -425,6 +434,10 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	int m, ret = -1;
 
 	memset(&a, 0, sizeof(a));
+	/*
+	 * pss->js_api_version defaults to 1 (from ESTABLISHED callback).
+	 * A new client will update it by sending a js-hello message.
+	 */
 	a.map_st[0] = lsm_schema_json_map_bwsrx;
 	a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_json_map_bwsrx);
 	a.map_entries_st[1] = LWS_ARRAY_SIZE(lsm_schema_json_map_bwsrx);
@@ -459,6 +472,9 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			 * he's asking for the overview schema
 			 */
 			// lwsl_warn("%s: SAIM_WS_BROWSER_RX_TASKINFO: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
+
+			if (ti->js_api_version)
+				pss->js_api_version = ti->js_api_version;
 
 			saiw_alloc_sched(pss, WSS_PREPARE_OVERVIEW);
 			saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
@@ -790,11 +806,13 @@ again:
 
 		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
 			"{\"schema\":\"sai.warmcat.com.overview\","
+			" \"api_version\":%u,"
 			" \"alang\":\"%s\","
 			" \"authorized\": %d,"
 			" \"auth_secs\": %ld,"
 			" \"auth_user\": \"%s\","
 			"\"overview\":[",
+			SAIW_API_VERSION,
 			lws_json_purify(esc, pss->alang, sizeof(esc) - 1, &iu),
 			pss->authorized, pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0,
 			lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu)

@@ -421,6 +421,7 @@ typedef struct sai_browse_rx_evinfo {
 typedef struct sai_browse_rx_taskinfo {
 	char		task_hash[65];
 	unsigned int	log_start;
+	unsigned int	js_api_version;
 	uint8_t		logs;
 } sai_browse_rx_taskinfo_t;
 
