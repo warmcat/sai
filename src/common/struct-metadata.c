@@ -26,13 +26,18 @@ const lws_struct_map_t lsm_instance_load[] = {
 	LSM_UNSIGNED	(sai_instance_load_t, state,	   "state"),
 };
 
-const lws_struct_map_t lsm_load_report_members[] = {
-	LSM_CARRAY	(sai_load_report_t, builder_name, "builder_name"),
-	LSM_CARRAY	(sai_load_report_t, platform_name,	"platform_name"),
-	LSM_LIST	(sai_load_report_t, loads, sai_instance_load_t, list,
-			 NULL, lsm_instance_load, "loads"),
+/* Map for a sai_platform_load_t object */
+const lws_struct_map_t lsm_platform_load[] = {
+	LSM_CARRAY(sai_platform_load_t, platform_name, "platform_name"),
+	LSM_LIST(sai_platform_load_t, loads, sai_instance_load_t, list,
+		 NULL, lsm_instance_load, "loads"),
 };
 
+const lws_struct_map_t lsm_load_report_members[] = {
+	LSM_CARRAY	(sai_load_report_t, builder_name, "builder_name"),
+	LSM_LIST	(sai_load_report_t, platforms, sai_platform_load_t, list,
+			 NULL, lsm_platform_load, "platforms"),
+};
 
 static const lws_struct_map_t lsm_plat[] = {
 	LSM_STRING_PTR	(sai_plat_t, name,		"name"),

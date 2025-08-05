@@ -717,3 +717,45 @@ img.branch {
 .inst_idle { background-color: #d0d0d0; }
 .inst_run { background-color: #78c678; }
 .load_text { font-size: 9px; vertical-align: middle; }
+
+/* Container for all instance boxes for a given platform */
+.instload {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px;
+	padding-top: 4px;
+	padding-bottom: 4px;
+	min-height: 22px; /* Ensure container doesn't collapse if empty */
+}
+
+/* The outer box for a single instance */
+.inst_box {
+	width: 16px;
+	height: 16px;
+	border: 1px solid #555;
+	box-sizing: border-box;
+	background-color: #ddd; /* Dark background for the meter */
+	position: relative;     /* Needed for positioning the child bar */
+	overflow: hidden;       /* Hide any part of the bar that goes over 100% */
+}
+
+/* The actual colored bar inside the box */
+.inst_bar {
+	background-color: #00afff; /* A nice, high-contrast green */
+	width: 100%;
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	transition: height 0.2s ease-out; /* Smoothly animate height changes */
+}
+
+.inst_idle {
+	/* An idle instance can have a subtle border or effect if desired */
+	border-color: #555;
+}
+
+.inst_busy {
+	/* A busy instance can have a brighter border */
+	border-color: #999;
+}
+

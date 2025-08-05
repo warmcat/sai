@@ -845,6 +845,8 @@ function getBuilderGroupKey(platName) {
 	return hostname;
 }
 
+
+
 function createBuilderDiv(plat) {
 	const platDiv = document.createElement("div");
 	platDiv.className = "ibuil bdr";
@@ -861,13 +863,17 @@ function createBuilderDiv(plat) {
 	innerHTML += `<img class="ip1 tread1" src="/sai/arch-${plat_arch}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
 	innerHTML += `<img class="ip1 tread2" src="/sai/tc-${plat_tc}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
 	innerHTML += `<br>${plat.peer_ip}`;
-	innerHTML += `<div id="instload-` + plat.name.split('.')[0] + `">`;
+	innerHTML += `<div class="instload" id="instload-${plat.name}">`; // Changed class name for clarity
 
+	// Create initial idle squares
 	for (let i = 0; i < plat.instances; i++) {
-		innerHTML += `<div class="inst_box inst_idle" title="instance ${i}: idle"></div>`;
+		innerHTML += `<div class="inst_box inst_idle" title="instance ${i}: idle">` +
+		             `<div class="inst_bar"></div>` +
+		             `</div>`;
 	}
 
 	innerHTML += `</div></td></tr></tbody></table>`;
+
 	platDiv.innerHTML = innerHTML;
 	return platDiv;
 }
@@ -933,9 +939,9 @@ function render_builders(jso)
 					(e.peer_ip ? "<br>" + san(e.peer_ip) : "");
 
 				/* Add a container for the instance load boxes */
-				s += "<div id=\"instload-" + san(e.name).split('.')[0] + "\">";
+				s += "<div id=\"instload-" + san(e.name)/*.split('.')[0]*/ + "\">";
 				for (var i = 0; i < e.instances; i++) {
-					s += "<div class=\"inst_box inst_idle\" title=\"instance " + i + ": idle\"></div>";
+					s += "<div class=\"inst_box inst_idle\" title=\"instance " + i + ": idle\"><div class=\"inst_bar\"></div></div>";
 				}
 				s += "</div>";
  
@@ -1489,46 +1495,63 @@ function ws_open_sai()
 		buildersContainer.appendChild(table);
 		break;
 
-			case "com.warmcat.sai.loadreport":
+	case "com.warmcat.sai.loadreport":
+		if (!jso.platforms || !Array.isArray(jso.platforms)) {
+			break;
+		}
 
-			//	console.log("received com.warmcat.sai.loadreport" + jso);
+		for (const platformReport of jso.platforms) {
+			const platformName = platformReport.platform_name;
+			if (!platformName) {
+				continue;
+			}
+			
+			const loadContainer = document.getElementById("instload-" + platformName);
+			if (!loadContainer) {
+				continue;
+			}
 
-				if (!jso.builder_name)
-					break;
-
-				const platformName = jso.builder_name;
+			if (platformReport.loads && Array.isArray(platformReport.loads)) {
+				const instanceDivs = loadContainer.getElementsByClassName("inst_box");
 				
-				console.log("loadreport: builder name " + platformName);
+				for (let i = 0; i < platformReport.loads.length; i++) {
+					const instanceLoad = platformReport.loads[i];
+					const instanceDiv = instanceDivs[i];
 
-				// The container for the load squares has a predictable ID
-				const loadContainerId = "instload-" + platformName;
-				const loadContainer = document.getElementById(loadContainerId);
+					if (!instanceDiv) {
+						break;
+					}
 
-				if (loadContainer) {
+					let cpu = instanceLoad.cpu_percent / 10.0;
+					let stateText = instanceLoad.state ? 'busy' : 'idle';
+					instanceDiv.title = `Instance ${i}: ${stateText}\nCPU: ${cpu.toFixed(1)}%`;
 
-					// Clear any old load indicators
-					loadContainer.innerHTML = "";
+					if (instanceLoad.state) {
+						instanceDiv.classList.add("inst_busy");
+						instanceDiv.classList.remove("inst_idle");
+					} else {
+						instanceDiv.classList.add("inst_idle");
+						instanceDiv.classList.remove("inst_busy");
+					}
 
-					// Loop through the new load data and create the squares
-					if (jso.loads && Array.isArray(jso.loads)) {
+					// The bar is always the first (and only) child of the inst_box div.
+					const bar = instanceDiv.firstChild;
+					if (bar && bar.classList.contains("inst_bar")) {
+						let cpu_percentage = (instanceLoad.cpu_percent / 1000) * 100;
+						if (cpu_percentage > 100) cpu_percentage = 100;
+						
+						// Let's add a minimum height so even a tiny load is visible
+						if (cpu_percentage > 0 && cpu_percentage < 1) cpu_percentage = 1;
 
-						for (const instanceLoad of jso.loads) {
-							let instanceDiv = document.createElement("div");
-							
-							// Set class for styling (e.g., green for idle, red for busy)
-							let stateClass = instanceLoad.state ? "inst_busy" : "inst_idle";
-							instanceDiv.className = "inst_box " + stateClass;
-
-							// Set tooltip to show the CPU percentage
-							let cpu = instanceLoad.cpu_percent / 10.0;
-							instanceDiv.title = `Instance: ${stateClass.split('_')[1]} \nCPU: ${cpu.toFixed(1)}%`;
-							
-							loadContainer.appendChild(instanceDiv);
-						}
+						bar.style.height = `${cpu_percentage}%`;
+					} else {
+						// This console log will tell us if the bar element is missing
+						console.error("Could not find .inst_bar child in .inst_box for", instanceDiv);
 					}
 				}
-
-                       		break;
+			}
+		}
+		break;
 
 			case "com-warmcat-sai-artifact":
 				console.log(jso);

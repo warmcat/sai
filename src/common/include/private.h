@@ -67,11 +67,17 @@ typedef struct sai_instance_load {
 /*
  * load report struct, sent in its own schema.
  */
-typedef struct sai_load_report {
+typedef struct sai_platform_load {
 	lws_dll2_t		list;        /* Not used, for schema mapping */
-	char			builder_name[64];
 	char			platform_name[128];
 	lws_dll2_owner_t	loads;
+} sai_platform_load_t;
+
+/* The top-level load report message from a builder */
+typedef struct sai_load_report {
+	lws_dll2_t		list; /* For queuing on sai_plat_server */
+	char			builder_name[64];
+	lws_dll2_owner_t	platforms; /* List of sai_platform_load_t */
 } sai_load_report_t;
 
 /*

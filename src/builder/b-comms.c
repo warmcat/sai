@@ -289,8 +289,8 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		n = (int)w;
 
 		lws_dll2_remove(&lr->list);
-		lws_start_foreach_dll_safe(struct lws_dll2 *, il, il1, lr->loads.head) {
-			sai_instance_load_t *i = lws_container_of(il, sai_instance_load_t, list);
+		lws_start_foreach_dll_safe(struct lws_dll2 *, il, il1, lr->platforms.head) {
+			sai_platform_load_t *i = lws_container_of(il, sai_platform_load_t, list);
 			lws_dll2_remove(&i->list);
 			free(i);
 		} lws_end_foreach_dll_safe(il, il1);
@@ -599,16 +599,22 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
         * under one name.
         */
        lws_strncpy(lr->builder_name, builder.host, sizeof(lr->builder_name));
-       if (builder.sai_plat_owner.head) {
-               sai_plat_t *any_plat = lws_container_of(builder.sai_plat_owner.head,
-                                                       sai_plat_t, sai_plat_list);
-               lws_strncpy(lr->platform_name, any_plat->name, sizeof(lr->platform_name));
-       }
 
        int system_load = saib_get_system_cpu(&builder);
 
+       /*
+        * Iterate all platforms. For each platform, create a sai_platform_load_t
+        * and populate its list of instance loads.
+        */
+
        lws_start_foreach_dll(struct lws_dll2 *, p, builder.sai_plat_owner.head) {
-               sp = lws_container_of(p, sai_plat_t, sai_plat_list);
+	       sp = lws_container_of(p, sai_plat_t, sai_plat_list);
+
+               sai_platform_load_t *pl = calloc(1, sizeof(*pl));
+               if (!pl)
+                       continue;
+
+               lws_strncpy(pl->platform_name, sp->name, sizeof(pl->platform_name));
 
                lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
                        struct sai_nspawn *ns = lws_container_of(d, struct sai_nspawn, list);
@@ -616,20 +622,28 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
                        int load = -1;
 
                        if (il) {
- #if defined(__linux__)
-                               /* On Linux, try cgroup first, then fall back to system */
-                               load = saib_get_cgroup_cpu(ns);
- #endif
-                               if (load < 0)
-                                       load = system_load;
-                               if (load < 0) /* If system load also failed */
-                                       load = 10; /* Default to 1% */
-
                                il->state = (ns->state == NSSTATE_BUILD);
+
+                               if (!il->state) {
+                                       /* If the instance is idle, its load is 0, regardless of system load. */
+                                       load = 0;
+                               } else {
+                                      /* The instance is busy, try to get a specific load for it. */
+                                       load = saib_get_cgroup_cpu(ns);
+                                       if (load < 0)
+                                               /* Fall back to system load for busy instances on non-cgroup platforms. */
+                                               load = system_load;
+                               }
+ 
+                               if (load < 0) /* Final fallback for errors */
+                                       load = 10; /* Default to 1% if system load failed */
+  
                                il->cpu_percent = (uint16_t)load;
-                               lws_dll2_add_tail(&il->list, &lr->loads);
+                               lws_dll2_add_tail(&il->list, &pl->loads);
                        }
                } lws_end_foreach_dll(d);
+
+	       lws_dll2_add_tail(&pl->list, &lr->platforms);
        } lws_end_foreach_dll(p);
 
        lws_dll2_add_tail(&lr->list, &spm->load_report_owner);
