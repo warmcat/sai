@@ -126,6 +126,7 @@ struct pss {
 	struct lwsac		*ac_alloc_task;
 
 	char			peer_ip[48];
+	char			last_power_report[8192];
 
 	int			task_index;
 	int			log_cache_index;
