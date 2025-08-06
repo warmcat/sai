@@ -27,6 +27,29 @@
 #include <mach/mach_host.h>
 #endif
 
+#if defined(WIN32)
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
+int
+saib_get_cpu_count(void)
+{
+	long nprocs = -1;
+#if defined(WIN32)
+	SYSTEM_INFO sysinfo;
+	GetSystemInfo(&sysinfo);
+	nprocs = sysinfo.dwNumberOfProcessors;
+#elif defined(_SC_NPROCESSORS_ONLN)
+	nprocs = sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+	if (nprocs < 1)
+		return 1; /* Fallback */
+
+	return (int)nprocs;
+}
+
 /*
  * Returns CPU usage as an integer from 0-1000 (for 0.0% to 100.0%)
  * or -1 on error.

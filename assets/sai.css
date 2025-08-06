@@ -749,13 +749,15 @@ img.branch {
 	transition: height 0.2s ease-out; /* Smoothly animate height changes */
 }
 
-.inst_idle {
-	/* An idle instance can have a subtle border or effect if desired */
+.inst_idle {	
 	border-color: #555;
+	opacity: 0.5; /* Make idle instances semi-transparent */
+	transition: opacity 0.3s; /* Smoothly fade in/out */
 }
 
 .inst_busy {
-	/* A busy instance can have a brighter border */
 	border-color: #999;
+	opacity: 1.0; /* Ensure busy instances are fully opaque */
+	transition: opacity 0.3s;
 }
 

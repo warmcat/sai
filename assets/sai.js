@@ -1537,13 +1537,27 @@ function ws_open_sai()
 					// The bar is always the first (and only) child of the inst_box div.
 					const bar = instanceDiv.firstChild;
 					if (bar && bar.classList.contains("inst_bar")) {
-						let cpu_percentage = (instanceLoad.cpu_percent / 1000) * 100;
-						if (cpu_percentage > 100) cpu_percentage = 100;
+						// cpu_percent is in tenths of a percent, relative to ONE core.
+						// So 1000 = 100% = 1 full core.
+						let total_cpu_capacity = jso.core_count * 1000;
 						
-						// Let's add a minimum height so even a tiny load is visible
+						// Normalize the load to be a percentage of the ENTIRE system's capacity
+						let cpu_percentage = (instanceLoad.cpu_percent / total_cpu_capacity) * 100;
+
+						if (cpu_percentage > 100) cpu_percentage = 100;
+						if (cpu_percentage < 0) cpu_percentage = 0;
 						if (cpu_percentage > 0 && cpu_percentage < 1) cpu_percentage = 1;
 
 						bar.style.height = `${cpu_percentage}%`;
+
+						// Update the class for idle/busy state
+						if (instanceLoad.state) { // state == 1 means busy
+						    instanceDiv.classList.add("inst_busy");
+						    instanceDiv.classList.remove("inst_idle");
+						} else { // state == 0 means idle
+						    instanceDiv.classList.add("inst_idle");
+						    instanceDiv.classList.remove("inst_busy");
+						}
 					} else {
 						// This console log will tell us if the bar element is missing
 						console.error("Could not find .inst_bar child in .inst_box for", instanceDiv);

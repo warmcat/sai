@@ -600,6 +600,7 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
         * under one name.
         */
        lws_strncpy(lr->builder_name, builder.host, sizeof(lr->builder_name));
+       lr->core_count = saib_get_cpu_count();
 
        int system_load = saib_get_system_cpu(&builder);
 

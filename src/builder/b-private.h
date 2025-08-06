@@ -241,3 +241,5 @@ saib_get_cgroup_cpu(struct sai_nspawn *ns);
 
 int
 saib_get_system_cpu(struct sai_builder *b);
+
+int saib_get_cpu_count(void);

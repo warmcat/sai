@@ -77,6 +77,7 @@ typedef struct sai_platform_load {
 typedef struct sai_load_report {
 	lws_dll2_t		list; /* For queuing on sai_plat_server */
 	char			builder_name[64];
+	int			core_count;
 	lws_dll2_owner_t	platforms; /* List of sai_platform_load_t */
 } sai_load_report_t;
 

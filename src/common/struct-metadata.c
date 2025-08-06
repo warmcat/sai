@@ -35,6 +35,7 @@ const lws_struct_map_t lsm_platform_load[] = {
 
 const lws_struct_map_t lsm_load_report_members[] = {
 	LSM_CARRAY	(sai_load_report_t, builder_name, "builder_name"),
+	LSM_SIGNED	(sai_load_report_t, core_count,	"core_count"),
 	LSM_LIST	(sai_load_report_t, platforms, sai_platform_load_t, list,
 			 NULL, lsm_platform_load, "platforms"),
 };
