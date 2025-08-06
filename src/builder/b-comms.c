@@ -589,6 +589,7 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
                                        struct sai_plat_server, sul_load_report);
        sai_load_report_t *lr = calloc(1, sizeof(*lr));
        struct sai_plat *sp = NULL;
+	char somebody_not_idle = 0;
 
        if (!lr)
                return;
@@ -628,6 +629,7 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
                                        /* If the instance is idle, its load is 0, regardless of system load. */
                                        load = 0;
                                } else {
+				       somebody_not_idle = 1;
                                       /* The instance is busy, try to get a specific load for it. */
                                        load = saib_get_cgroup_cpu(ns);
                                        if (load < 0)
@@ -650,8 +652,9 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
        if (lws_ss_request_tx(spm->ss))
 	       lwsl_debug("%s: request tx failed\n", __func__);
 
-       /* Reschedule the timer */
-       lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
+	if (somebody_not_idle)
+		/* Reschedule the timer only if at least one active instance */
+		lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
                         saib_sul_load_report_cb, SAI_LOAD_REPORT_US);
 }
 

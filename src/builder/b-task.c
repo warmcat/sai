@@ -727,6 +727,11 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		lwsl_notice("%s: cancelling suspend grace time\n", __func__);
 		lws_sul_cancel(&ns->builder->sul_idle);
 
+		/* if we weren't, we should report load on instances now we're busy */
+		if (lws_dll2_is_detached(&spm->sul_load_report.list))
+			lws_sul_schedule(ns->builder->context, 0, &spm->sul_load_report,
+                		 saib_sul_load_report_cb, 1);
+
 		/*
 		 * Let the mirror thread get on with things...
 		 *
@@ -780,17 +785,41 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 	case SAIB_RX_VIEWERSTATE:
 		{
 			sai_viewer_state_t *vs = (sai_viewer_state_t *)a.dest;
+			char any_busy = 0;
+
 			lwsl_notice("Received viewer state update: %u viewers\n",
 				    vs->viewers);
 
 			spm->viewer_count = vs->viewers;
 
-			if (vs->viewers)
-				/* At least one viewer, start reporting */
-				lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
-						 saib_sul_load_report_cb, SAI_LOAD_REPORT_US);
-			else
+			if (!vs->viewers) {
 				lws_sul_cancel(&spm->sul_load_report);
+				break;
+			}
+
+			/* are there any busy instances */
+
+			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+						builder.sai_plat_owner.head) {
+			       sp = lws_container_of(d, sai_plat_t, sai_plat_list);
+
+		      		lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
+			      		 struct sai_nspawn *ns = lws_container_of(d, struct sai_nspawn, list);
+
+			       		if (ns->state == NSSTATE_BUILD)
+						any_busy = 1;
+
+		       		} lws_end_foreach_dll(d);
+			} lws_end_foreach_dll_safe(d, d1);
+
+		        if (!any_busy) {
+				lws_sul_cancel(&spm->sul_load_report);
+				break;
+			}
+
+			/* At least one viewer, start reporting */
+			lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
+					 saib_sul_load_report_cb, 1);
 		}
 		break;
 

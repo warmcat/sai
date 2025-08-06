@@ -494,8 +494,8 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 						     sum_viewers_cb, &total_viewers);
 
 			m->vhd->browser_viewer_count = total_viewers;
-			lwsl_notice("%s: Client viewer count %u, total is now %u\n",
-				    __func__, m->viewers, m->vhd->browser_viewer_count);
+			lwsl_notice("%s: Client viewer count %u\n",
+				    __func__, m->vhd->browser_viewer_count);
 
 			/* Broadcast the new viewer state to all connected builders */
 			lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {

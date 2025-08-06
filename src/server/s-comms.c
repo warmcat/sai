@@ -849,6 +849,8 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 						LWS_WRITE_TEXT) < 0)
 					return -1;
 
+				lws_callback_on_writable(pss->wsi);
+
 				goto passthru;
 			}
 			break;

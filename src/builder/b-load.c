@@ -1,7 +1,7 @@
 /*
  * Sai builder - platform-specific load reporting
  *
- * Copyright (C) 2021 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2025 Andy Green <andy@warmcat.com>
  *
  * This file is part of Sai.
  *
