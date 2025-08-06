@@ -40,11 +40,14 @@ const lws_struct_map_t lsm_load_report_members[] = {
 			 NULL, lsm_platform_load, "platforms"),
 };
 
-static const lws_struct_map_t lsm_plat[] = {
+const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/include/private.h in sync */
+	LSM_UNSIGNED	(sai_event_t, uid,		"uid"),
 	LSM_STRING_PTR	(sai_plat_t, name,		"name"),
 	LSM_UNSIGNED	(sai_plat_t, ongoing,		"ongoing"),
 	LSM_UNSIGNED	(sai_plat_t, instances,		"instances"),
 	LSM_STRING_PTR	(sai_plat_t, platform,		"platform"),
+	LSM_SIGNED	(sai_plat_t, online,		"online"),
+	LSM_UNSIGNED	(sai_plat_t, last_seen,		"last_seen"),
 	LSM_CARRAY	(sai_plat_t, peer_ip,		"peer_ip"),
 };
 
@@ -60,6 +63,11 @@ const lws_struct_map_t lsm_plat_list[] = {
 const lws_struct_map_t lsm_schema_map_plat[] = {
 	LSM_SCHEMA_DLL2	(sai_plat_owner_t, plat_owner, NULL, lsm_plat_list,
 							"com-warmcat-sai-ba"),
+};
+
+const lws_struct_map_t lsm_schema_sq3_map_plat[] = {
+	LSM_SCHEMA_DLL2	(sai_plat_t, sai_plat_list, NULL, lsm_plat,
+							"builders"),
 };
 
 const lws_struct_map_t lsm_event[] = {

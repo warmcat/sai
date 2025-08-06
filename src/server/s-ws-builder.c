@@ -29,6 +29,21 @@
 
 #include "s-private.h"
 
+typedef struct {
+	int count;
+} count_ctx_t;
+
+#if 0
+static int
+online_builder_count_cb(void *priv, int cols, char **cv, char **cn)
+{
+	count_ctx_t *ctx = (count_ctx_t *)priv;
+	ctx->count++;
+	lwsl_err("%s: FOUND an online builder in DB: %s\n", __func__, cv[0]);
+	return 0;
+}
+#endif
+
 enum sai_overview_state {
 	SOS_EVENT,
 	SOS_TASKS,
@@ -329,107 +344,85 @@ handle:
 	switch (pss->a.top_schema_index) {
 	case SAIM_WSSCH_BUILDER_PLATS:
 
-
 		/*
 		 * builder is sending us an array of platforms it provides us
 		 */
 
 		pss->u.o = (sai_plat_owner_t *)pss->a.dest;
 
-		lwsl_notice("%s: SERVER: seen incoming platform list: count %d\n", __func__,
-				pss->u.o->plat_owner.count);
-
 		lws_start_foreach_dll(struct lws_dll2 *, pb,
 				      pss->u.o->plat_owner.head) {
 			build = lws_container_of(pb, sai_plat_t, sai_plat_list);
+			sai_plat_t *live_cb;
 
 			lwsl_notice("%s: seeing plat %s\n", __func__, build->name);
 
 			/*
-			 * ... so is this one a new guy?
+			 * Step 1: Upsert this platform into the persistent database.
 			 */
-
-			cb = sais_builder_from_uuid(vhd, build->name);
-			if (!cb) {
-				char *cp;
-
-				/*
-				 * We need to make a persistent, deep, copy of
-				 * the (from JSON) builder object representing
-				 * this client.
-				 *
-				 * "platform" is eg "linux-ubuntu-bionic-arm64"
-				 * and "name" is "hostname.<platform>".
-				 */
-
-				if (!build->name || !build->platform) {
-					lwsl_err("%s: missing build '%s'/hostname '%s'\n",
-						__func__,
-						build->name ? build->name : "null",
-						build->platform ? build->platform : "null");
-					return -1;
-				}
-
-				cb = malloc(sizeof(*cb) +
-					    strlen(build->name) + 1 +
-					    strlen(build->platform) + 1);
-
-				memset(cb, 0, sizeof(*cb));
-				cp = (char *)&cb[1];
-
-				memcpy(cp, build->name, strlen(build->name) + 1);
-				cb->name = cp;
-				cp += strlen(build->name) + 1;
-
-				memcpy(cp, build->platform, strlen(build->platform) + 1);
-				cb->platform = cp;
-				cp += strlen(build->platform) + 1;
-
-				cb->ongoing = build->ongoing;
-				cb->instances = build->instances;
-
-				cb->wsi = pss->wsi;
-				pss->announced = 0;
-
-				/* Then attach the copy to the server in the vhd
-				 */
-				lws_dll2_add_tail(&cb->sai_plat_list,
-						  &vhd->server.builder_owner);
+			build->online = 1;
+			build->last_seen = (uint64_t)lws_now_secs();
+			lws_strncpy(build->peer_ip, pss->peer_ip, sizeof(build->peer_ip));
+			if (lws_struct_sq3_upsert(vhd->server.pdb, "builders", lsm_plat,
+						  LWS_ARRAY_SIZE(lsm_plat), build, "name")) {
+				lwsl_err("%s: Failed to upsert builder %s\n",
+ 					 __func__, build->name);	
 			}
 
 			/*
-			 * It's a reconnect, update connection-specific things
+			 * Step 2: Update the long-lived, malloc'd in-memory list.
 			 */
-
-			cb->wsi = pss->wsi;
-
-			if (pss->peer_ip[0])
-				lws_strncpy(cb->peer_ip, pss->peer_ip, sizeof(cb->peer_ip));
-
-			/*
-			 * Even if he's not new, we should use his updated info about
-			 * builder load
-			 */
-
-			cb->ongoing = build->ongoing;
-			cb->instances = build->instances;
-
-			lwsl_notice("%s: builder %s reports load %d/%d\n",
-				    __func__, cb->name, cb->ongoing,
-				    cb->instances);
-
+			live_cb = sais_builder_from_uuid(vhd, build->name);
+			if (live_cb) {
+				/* Already exists (reconnect), just update dynamic info */
+				live_cb->wsi = pss->wsi;
+				live_cb->ongoing = 0; /* Reset ongoing task count on connect */
+				lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
+			} else {
+				/* New builder, create a deep-copied, malloc'd object */
+				size_t nlen = strlen(build->name) + 1;
+				size_t plen = strlen(build->platform) + 1;
+				live_cb = malloc(sizeof(*live_cb) + nlen + plen);
+				if (live_cb) {
+					char *p_str = (char *)(live_cb + 1);
+					memset(live_cb, 0, sizeof(*live_cb));
+					live_cb->name = p_str;
+					memcpy(p_str, build->name, nlen);
+					live_cb->platform = p_str + nlen;
+					memcpy(p_str + nlen, build->platform, plen);
+					live_cb->instances = build->instances;
+					live_cb->wsi = pss->wsi;
+					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
+					lws_dll2_add_tail(&live_cb->sai_plat_list, &vhd->server.builder_owner);
+				}
+			}
 		} lws_end_foreach_dll(pb);
 
+		/* The lwsac from the parsed message is now completely disposable */
 		lwsac_free(&pss->a.ac);
 
-
 		/*
-		 * look if we should offer the builder a task, given the
-		 * platforms he's offering
-		 */
+		 * Now, iterate through the in-memory list of online builders and
+		 * try to allocate a task for each platform that belongs to the
+		 * builder that just connected.
+ 		 */
+		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.builder_owner.head) {
+			cb = lws_container_of(p, sai_plat_t, sai_plat_list);
+			if (cb->wsi == pss->wsi) {
+				/* This platform belongs to the connection that sent the message */
+				if (sais_allocate_task(vhd, pss, cb, cb->platform) < 0)
+					goto bail;
+			}
+		} lws_end_foreach_dll(p);
 
-		if (sais_allocate_task(vhd, pss, cb, cb->platform) < 0)
-			goto bail;
+		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.builder_owner.head) {
+			cb = lws_container_of(p, sai_plat_t, sai_plat_list);
+			if (cb->wsi == pss->wsi) {
+				/* This platform belongs to the connection that sent the message */
+				if (sais_allocate_task(vhd, pss, cb, cb->platform) < 0)
+					goto bail;
+			}
+		} lws_end_foreach_dll(p);
 
 		/*
 		 * If we did allocate a task in pss->a.ac, responsibility of
@@ -495,6 +488,7 @@ bail:
 
 		rej = (sai_rejection_t *)pss->a.dest;
 
+		rej->host_platform[sizeof(rej->host_platform) - 1] = '\0';
 		cb = sais_builder_from_uuid(vhd, rej->host_platform);
 		if (!cb) {
 			lwsl_info("%s: unknown builder %s rejecting\n",

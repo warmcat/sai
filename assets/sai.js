@@ -1717,6 +1717,22 @@ function post_login_form()
 /* stuff that has to be delayed until all the page assets are loaded */
 
 window.addEventListener("load", function() {
+	const lnameInput = document.getElementById("lname");
+	const lpassInput = document.getElementById("lpass");
+
+	function stopClickPropagation(event) {
+		// This is the key. It prevents the click event from
+		// reaching any parent elements.
+		event.stopPropagation();
+	}
+
+	if (lnameInput) {
+		lnameInput.addEventListener("click", stopClickPropagation);
+	}
+
+	if (lpassInput) {
+		lpassInput.addEventListener("click", stopClickPropagation);
+	}
 
 	if (document.getElementById("noscript"))
 		document.getElementById("noscript").display = "none";

@@ -400,7 +400,10 @@ typedef struct sai_plat {
 	struct lws		*wsi; /* server side only */
 
 	lws_dll2_owner_t	env_head;
+	uint64_t		uid;
 	lws_dll2_owner_t	loads;
+	int			online; /* 1 = connected, 0 = offline */
+	uint64_t		last_seen; /* unix time */
 
 	int			instances;
 	int			ongoing;
@@ -457,6 +460,7 @@ extern const lws_struct_map_t
 	lsm_schema_json_map_event[1],
 	lsm_resource[4]
 ;
+extern const lws_struct_map_t lsm_plat[8];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];

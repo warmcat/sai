@@ -153,7 +153,8 @@ sais_websrv_broadcast(struct lws_ss_handle *hsrv, const char *str, size_t len)
 int
 sais_list_builders(struct vhd *vhd)
 {
-	lws_dll2_t *walk = lws_dll2_get_head(&vhd->server.builder_owner);
+	lws_dll2_owner_t dbo;
+	struct lwsac *ac = NULL;
 	char *p = vhd->json_builders, *end = p + sizeof(vhd->json_builders),
 	     subsequent = 0;
 	lws_struct_serialize_t *js;
@@ -161,13 +162,21 @@ sais_list_builders(struct vhd *vhd)
 	size_t w;
 	int n;
 
-	lwsl_err("%s: entry\n", __func__);
+	/*
+	 * Query the database for ALL builders, online and offline,
+	 * sorted by name.
+	 */
+	if (lws_struct_sq3_deserialize(vhd->server.pdb, NULL, "name ",
+				       lsm_schema_sq3_map_plat, &dbo, &ac, 0, 100)) {
+		lwsl_err("%s: Failed to query builders from DB\n", __func__);
+		return 1;
+	}
 
 	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
 					"{\"schema\":\"sai-builders\","
 					"\"platforms\":[");
 
-	while (end - p > 512 && walk) {
+	lws_start_foreach_dll(struct lws_dll2 *, walk, dbo.head) {
 
 		b = lws_container_of(walk, sai_plat_t, sai_plat_list);
 
@@ -176,8 +185,8 @@ sais_list_builders(struct vhd *vhd)
 			LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),
 			0, b);
 		if (!js) {
-			lwsl_err("%s: failed at json serialize create\n", __func__);
-			return 1;
+			lwsl_err("%s: json serialize create failed\n", __func__);
+			goto bail;
 		}
 		if (subsequent)
 			*p++ = ',';
@@ -189,27 +198,27 @@ sais_list_builders(struct vhd *vhd)
 		lws_struct_json_serialize_destroy(&js);
 
 		if (n == LSJS_RESULT_ERROR) {
-			lwsl_err("%s: json serialize error\n", __func__);
-			return 1;
+			lwsl_err("%s: json serialize failed\n", __func__);
+			goto bail;
 		}
+	} lws_end_foreach_dll(walk);
 
-		walk = walk->next;
-		if (!walk) {
+	/* end of the list of builders */
 
-			/* end of the list of builders */
+	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
 
-			p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
+	/*
+	 * This is the SERVER's WEB daemon server, broadcasting to all connected
+	 * clients (the WEB daemons)... the list of BUILDERS
+	 */
+	sais_websrv_broadcast(vhd->h_ss_websrv, vhd->json_builders,
+			      lws_ptr_diff_size_t(p, vhd->json_builders));
 
-			lwsl_ss_notice(vhd->h_ss_websrv, "sai-server's WEB daemon server broadcasting to all WEB daemons: %s\n", vhd->json_builders);
+	lwsac_free(&ac);
+	return 0;
 
-			sais_websrv_broadcast(vhd->h_ss_websrv,
-					      vhd->json_builders,
-					      lws_ptr_diff_size_t(p, vhd->json_builders));
-
-			return 0;
-		}
-	}
-
+bail:
+	lwsac_free(&ac);
 	return 1;
 }
 

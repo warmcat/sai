@@ -499,6 +499,16 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 		}
 
+		if (lws_struct_sq3_create_table(vhd->server.pdb,
+						lsm_schema_sq3_map_plat)) {
+			lwsl_err("%s: unable to create builders table\n", __func__);
+			return -1;
+		}
+
+ 		sai_sqlite3_statement(vhd->server.pdb,
+				"CREATE UNIQUE INDEX IF NOT EXISTS name_idx ON builders (name)",
+				"create builder name index");
+	
 		lwsl_notice("%s: creating server stream\n", __func__);
 
 		if (lws_ss_create(vhd->context, 0, &ssi_server, vhd,
@@ -746,28 +756,28 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		lwsac_free(&pss->query_ac);
 
 		lwsl_user("%s: CLOSED builder conn\n", __func__);
-		/* remove pss from vhd->builders */
+		/* remove pss from vhd->builders (active connection list) */
 		lws_dll2_remove(&pss->same);
 
 		/*
-		 * Destroy any the builder-tracking objects that
-		 * were using this departing connection
+		 * Find any builder-tracking objects that were using this departing
+		 * connection. Mark them as offline in the database.
+		 * Also remove from the in-memory list of active builders.
 		 */
-
 		lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
 				      vhd->server.builder_owner.head) {
 			sai_plat_t *cb = lws_container_of(p, sai_plat_t,
 							      sai_plat_list);
+			char q[256];
 
 			if (cb->wsi == wsi) {
-				/* remove builder object itself from server list */
-				cb->wsi = NULL;
+				lwsl_warn("%s: Builder '%s' disconnected. Removing from live list.\n",
+					  __func__, cb->name);
+				lws_snprintf(q, sizeof(q), "UPDATE builders SET online=0 WHERE name='%s'", cb->name);
+				sai_sqlite3_statement(vhd->server.pdb, q, "set builder offline");
+
+				/* remove from active in-memory list */
 				lws_dll2_remove(&cb->sai_plat_list);
-				/*
-				 * free the deserialized builder object,
-				 * everything he pointed to was overallocated
-				 * when his deep copy was made
-				 */
 				free(cb);
 			}
 
