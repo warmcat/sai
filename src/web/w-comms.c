@@ -1038,6 +1038,7 @@ clean_spa:
 			return -1;
 		}
 
+#if 0
 		{
 			const unsigned char *c;
 
@@ -1068,9 +1069,7 @@ clean_spa:
 				n++;
 			} while (c);
 		}
-
-
-		lwsl_wsi_warn(wsi, "ESTABLISHED");
+#endif
 
 		/*
 		 * What's the situation with a JWT cookie?  Normal users won't
@@ -1103,6 +1102,11 @@ clean_spa:
 		pss->alang[0] = '\0';
 		lws_hdr_copy(wsi, pss->alang, sizeof(pss->alang),
 			     WSI_TOKEN_HTTP_ACCEPT_LANGUAGE);
+		buf[0] = '\0';
+		lws_hdr_copy(wsi, (char *)buf, sizeof(buf),
+			     WSI_TOKEN_X_FORWARDED_FOR);
+
+		lwsl_wsi_warn(wsi, "ESTABLISHED: %s %s", (char *)buf, pss->alang);
 
 		if (lws_hdr_total_length(wsi, WSI_TOKEN_GET_URI)) {
 			if (lws_hdr_copy(wsi, (char *)start, 64,

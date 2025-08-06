@@ -1,4 +1,4 @@
-const SAI_JS_API_VERSION = 2;
+const SAI_JS_API_VERSION = 3;
 
 (function() {
 
@@ -1086,11 +1086,11 @@ function ws_open_sai()
 			var u, ci, n;
 			var now_ut = Math.round((new Date().getTime() / 1000));
 
-			console.log(msg.data);
+		//	console.log(msg.data);
 		//	if (msg.data.length < 10)
 		//		return;
 			jso = JSON.parse(msg.data);
-			console.log(jso.schema);
+		//	console.log(jso.schema);
 			
 			if (jso.alang) {
 				var a = jso.alang.split(","), n;
@@ -1433,7 +1433,12 @@ function ws_open_sai()
 			break;
 		}
 
-		// --- NEW, FINAL LOGIC ---
+		jso.platforms.sort((a, b) => {
+			if (a.name && b.name) {
+				return a.name.localeCompare(b.name);
+			}
+			return 0; // Don't sort if names are missing
+		});
 
 		// Step 1: Create a map of group keys to group container divs.
 		// Also create a list of standalone platforms.

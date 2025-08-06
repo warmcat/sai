@@ -137,6 +137,7 @@ struct sai_builder {
 	uint64_t		last_sys_total;
 	uint64_t		last_sys_idle;
 #elif defined(WIN32)
+	ULARGE_INTEGER		last_sys_total;
 	ULARGE_INTEGER		last_sys_idle;
 	ULARGE_INTEGER		last_sys_kernel;
 	ULARGE_INTEGER		last_sys_user;

@@ -858,7 +858,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 				   "com.warmcat.sai.viewerstate")
 		};
 
-		lwsl_wsi_notice(pss->wsi, "++++ Sending viewerstate (count: %u) to builder\n",
+		lwsl_wsi_info(pss->wsi, "++++ Sending viewerstate (count: %u) to builder\n",
 			    vs->viewers);
 
 		js = lws_struct_json_serialize_create(lsm_schema_viewerstate,
