@@ -812,50 +812,6 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			break;
 		}
 
-		if (pss->is_power) {
-			char diff = 0;
-
-			n = 0;
-			lws_start_foreach_dll(struct lws_dll2 *, px, vhd->pending_plats.head) {
-				sais_plat_t *pl = lws_container_of(px, sais_plat_t, list);
-				size_t m;
-
-				if (n)
-					*p++ = ',';
-				m = strlen(pl->plat);
-				if (lws_ptr_diff_size_t(end, p) < m + 2)
-					break;
-				memcpy(p, pl->plat, m);
-				p += m;
-				*p = '\0';
-				n = 1;
-
-			} lws_end_foreach_dll(px);
-
-			/*
-			 * Don't resend the same status over and over
-			 */
-
-			if (memcmp(pss->last_power_report, start, lws_ptr_diff_size_t(p, start) + 1)) {
-				diff = 1;
-				memcpy(pss->last_power_report, start, lws_ptr_diff_size_t(p, start) + 1);
-			}
-
-			if (diff && start != p) {
-				lwsl_notice("%s: detected jobs for %.*s\n", __func__,
-						(int)lws_ptr_diff_size_t(p, start), start);
-
-				if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
-						LWS_WRITE_TEXT) < 0)
-					return -1;
-
-				lws_callback_on_writable(pss->wsi);
-
-				goto passthru;
-			}
-			break;
-		}
-
 		return sais_ws_json_tx_builder(vhd, pss, buf, sizeof(buf));
 
 	default:

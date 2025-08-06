@@ -837,7 +837,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			size_t bl)
 {
 	uint8_t *start = buf + LWS_PRE, *p = start, *end = p + bl - LWS_PRE - 1;
-	int n, flags = LWS_WRITE_TEXT, first = 0;
+	int n, flags = LWS_WRITE_TEXT, first = 1;
 	lws_struct_serialize_t *js;
 	sai_task_t *task;
 	size_t w;
@@ -873,8 +873,6 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		lws_dll2_remove(&vs->list);
 		/* And free the memory */
 		free(vs);
-
-		first = 1;
 
 		/*
 		 * If there are more viewer state messages, or other messages,
@@ -930,6 +928,50 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		goto send_json;
 	}
 
+	if (pss->is_power) {
+		char diff = 0;
+
+		n = 0;
+		lws_start_foreach_dll(struct lws_dll2 *, px, vhd->pending_plats.head) {
+			sais_plat_t *pl = lws_container_of(px, sais_plat_t, list);
+			size_t m;
+
+			if (n)
+				*p++ = ',';
+			m = strlen(pl->plat);
+			if (lws_ptr_diff_size_t(end, p) < m + 2)
+				break;
+			memcpy(p, pl->plat, m);
+			p += m;
+			*p = '\0';
+			n = 1;
+
+		} lws_end_foreach_dll(px);
+
+		/*
+		 * Don't resend the same status over and over
+		 */
+
+		if (memcmp(pss->last_power_report, start, lws_ptr_diff_size_t(p, start) + 1)) {
+			diff = 1;
+			memcpy(pss->last_power_report, start, lws_ptr_diff_size_t(p, start) + 1);
+		}
+
+		if (diff && start != p) {
+			lwsl_notice("%s: detected jobs for %.*s\n", __func__,
+					(int)lws_ptr_diff_size_t(p, start), start);
+
+			if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
+					LWS_WRITE_TEXT) < 0)
+				return -1;
+
+			lws_callback_on_writable(pss->wsi);
+
+			return 0;
+		}
+	}
+
+
 	if (!pss->issue_task_owner.count)
 		return 0; /* nothing to send */
 
@@ -970,7 +1012,7 @@ send_json:
 		return 0;
 	}
 
-	flags = lws_write_ws_flags(LWS_WRITE_TEXT, first, !pss->walk);
+	flags = lws_write_ws_flags(LWS_WRITE_TEXT, first, 1);
 
 	// lwsl_hexdump_notice(start, p - start);
 

@@ -39,7 +39,7 @@
 #include <pthread.h>
 #include <git2.h>
 
-#define SAI_LOAD_REPORT_US	(5 * LWS_US_PER_SEC)
+#define SAI_LOAD_REPORT_US	(1 * LWS_US_PER_SEC)
 #define SAI_IDLE_GRACE_US	(30 * LWS_US_PER_SEC)
 #define SAI_STAY_POLL_US	(20 * LWS_US_PER_SEC)
 

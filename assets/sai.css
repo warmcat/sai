@@ -751,7 +751,7 @@ img.branch {
 
 .inst_idle {	
 	border-color: #555;
-	opacity: 0.5; /* Make idle instances semi-transparent */
+	opacity: 0.3; /* Make idle instances semi-transparent */
 	transition: opacity 0.3s; /* Smoothly fade in/out */
 }
 
