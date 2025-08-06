@@ -349,6 +349,10 @@ sai_power_stay_state(void *userobj, void *sh, lws_ss_constate_t state,
 
         switch ((int)state) {
         case LWSSSCS_CREATING:
+
+               if (!builder.url_sai_power)
+                       return LWSSSSRET_DESTROY_ME;
+
 		snprintf(builder.path, sizeof(builder.path) - 1, "%s/stay/%s",
 			 builder.url_sai_power, builder.host);
 
@@ -377,7 +381,13 @@ LWS_SS_INFO("sai_power", saib_power_stay_t)
 void
 sul_stay_cb(lws_sorted_usec_list_t *sul)
 {
-	lws_ss_state_return_t r = lws_ss_client_connect(builder.ss_stay);
+       lws_ss_state_return_t r;
+
+       /* nothing to do if no sai-power coordinates given */
+       if (!builder.url_sai_power)
+               return;
+
+       r = lws_ss_client_connect(builder.ss_stay);
 
 	if (r)
 		lwsl_ss_err(builder.ss_stay, "Unable to start stay connection (%d)", (int)r);

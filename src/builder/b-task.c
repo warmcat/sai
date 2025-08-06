@@ -787,12 +787,12 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			sai_viewer_state_t *vs = (sai_viewer_state_t *)a.dest;
 			char any_busy = 0;
 
-			lwsl_notice("Received viewer state update: %u viewers\n",
-				    vs->viewers);
+                       lwsl_notice("Received viewer state update: %u viewers\n", vs->viewers);
 
 			spm->viewer_count = vs->viewers;
 
 			if (!vs->viewers) {
+                               lwsl_notice("%s: VIEWERSTATE: no viewers -> no load reports\n", __func__);
 				lws_sul_cancel(&spm->sul_load_report);
 				break;
 			}
@@ -813,11 +813,15 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			} lws_end_foreach_dll_safe(d, d1);
 
 		        if (!any_busy) {
+                               lwsl_notice("%s: VIEWERSTATE: no busy instances -> no load reports\n", __func__);
+
 				lws_sul_cancel(&spm->sul_load_report);
 				break;
 			}
 
 			/* At least one viewer, start reporting */
+                       lwsl_notice("%s: VIEWERSTATE: viewers + busy instances -> load reports\n", __func__);
+
 			lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
 					 saib_sul_load_report_cb, 1);
 		}
