@@ -200,6 +200,7 @@ struct vhd {
 	const char *notification_key;
 
 	unsigned int		browser_viewer_count; 
+	unsigned int		viewers_are_present:1;
 
 	sais_t server;
 };

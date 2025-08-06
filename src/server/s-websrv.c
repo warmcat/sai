@@ -485,6 +485,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		{
 			sai_viewer_state_t *vs = (sai_viewer_state_t *)a.dest;
 			unsigned int total_viewers = 0;
+			char old_viewers_present = !!m->vhd->viewers_are_present;
 
 			/* Store viewer count for this specific sai-web client */
 			m->viewers = vs->viewers;
@@ -494,23 +495,27 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 						     sum_viewers_cb, &total_viewers);
 
 			m->vhd->browser_viewer_count = total_viewers;
-			lwsl_notice("%s: Client viewer count %u\n",
-				    __func__, m->vhd->browser_viewer_count);
 
-			/* Broadcast the new viewer state to all connected builders */
-			lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
-				struct pss *pss_builder = lws_container_of(p,
-							struct pss, same);
-				sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
+			m->vhd->viewers_are_present = !!total_viewers;
 
-				if (vsend) {
-					/* Send the new TOTAL viewer count */
-					vsend->viewers = m->vhd->browser_viewer_count;
-					lws_dll2_add_tail(&vsend->list,
-						      &pss_builder->viewer_state_owner);
-					lws_callback_on_writable(pss_builder->wsi);
-				}
-			} lws_end_foreach_dll(p);
+			/*
+			 * Only broadcast to builders if the state has changed
+			 * from 0 viewers to >0, or from >0 viewers to 0.
+			 */
+			if (old_viewers_present != m->vhd->viewers_are_present) {
+				lwsl_notice("%s: Viewer presence changed to %d. Broadcasting to builders.\n",
+					    __func__, m->vhd->viewers_are_present);
+				lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
+					struct pss *pss_builder = lws_container_of(p, struct pss, same);
+					sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
+
+					if (vsend) {
+						vsend->viewers = m->vhd->viewers_are_present;
+						lws_dll2_add_tail(&vsend->list, &pss_builder->viewer_state_owner);
+						lws_callback_on_writable(pss_builder->wsi);
+					}
+ 				} lws_end_foreach_dll(p);
+			}
 			break;
 		}
 	}
@@ -567,21 +572,21 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 		lws_ss_server_foreach_client(m->vhd->h_ss_websrv,
 					     sum_viewers_cb, &total_viewers);
 
-		if (m->vhd->browser_viewer_count != total_viewers) {
-			m->vhd->browser_viewer_count = total_viewers;
-			lwsl_notice("%s: A sai-web client disconnected, total viewers now %u\n",
-				    __func__, total_viewers);
+		m->vhd->browser_viewer_count = total_viewers;
+		char new_viewers_present = !!total_viewers;
 
-			/* Broadcast new count to builders */
+		if (m->vhd->viewers_are_present != new_viewers_present) {
+			m->vhd->viewers_are_present = !!new_viewers_present;
+			lwsl_notice("%s: A sai-web client disconnected, viewer presence changed to %d. Broadcasting.\n",
+				    __func__, new_viewers_present);
+
+			/* Broadcast new presence state to builders */
 			lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
-				struct pss *pss_builder = lws_container_of(p,
-							    struct pss, same);
+				struct pss *pss_builder = lws_container_of(p, struct pss, same);
 				sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
-
 				if (vsend) {
-					vsend->viewers = m->vhd->browser_viewer_count;
-					lws_dll2_add_tail(&vsend->list,
-						&pss_builder->viewer_state_owner);
+					vsend->viewers = new_viewers_present;
+					lws_dll2_add_tail(&vsend->list, &pss_builder->viewer_state_owner);
 					lws_callback_on_writable(pss_builder->wsi);
 				}
 			} lws_end_foreach_dll(p);

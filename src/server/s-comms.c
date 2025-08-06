@@ -713,6 +713,19 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			 * yet, until we get the ws rx
 			 */
 			lws_dll2_add_head(&pss->same, &vhd->builders);
+
+			/*
+			 * If viewers are already present, tell this new builder to
+			 * start reporting immediately.
+			 */
+			if (vhd->viewers_are_present) {
+				sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
+				if (vsend) {
+					vsend->viewers = 1; /* true */
+					lws_dll2_add_tail(&vsend->list, &pss->viewer_state_owner);
+					lws_callback_on_writable(pss->wsi);
+				}
+			}
 			break;
 		}
 
