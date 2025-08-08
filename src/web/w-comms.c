@@ -92,7 +92,7 @@ const lws_struct_map_t lsm_schema_json_map[] = {
 			/* shares struct */   "sai-taskchange"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
 			/* shares struct */   "sai-eventchange"),
-	LSM_SCHEMA	(sai_plat_owner_t, NULL, lsm_plat_list, "sai-builders"),
+	LSM_SCHEMA	(sai_plat_owner_t, NULL, lsm_plat_list, "com.warmcat.sai.builders"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
 			/* shares struct */   "sai-overview"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,

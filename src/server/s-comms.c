@@ -508,7 +508,9 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
  		sai_sqlite3_statement(vhd->server.pdb,
 				"CREATE UNIQUE INDEX IF NOT EXISTS name_idx ON builders (name)",
 				"create builder name index");
-	
+
+//		sais_mark_all_builders_offline(vhd);
+
 		lwsl_notice("%s: creating server stream\n", __func__);
 
 		if (lws_ss_create(vhd->context, 0, &ssi_server, vhd,
@@ -758,6 +760,8 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		lwsl_user("%s: CLOSED builder conn\n", __func__);
 		/* remove pss from vhd->builders (active connection list) */
 		lws_dll2_remove(&pss->same);
+
+		sais_builder_disconnected(vhd, wsi);
 
 		/*
 		 * Find any builder-tracking objects that were using this departing

@@ -239,20 +239,50 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 				 sais_dump_logs_to_db, 250 * LWS_US_PER_MS);
 }
 
-static sai_plat_t *
-sais_builder_from_uuid(struct vhd *vhd, const char *hostname)
+sai_plat_t *
+sais_builder_from_uuid(struct vhd *vhd, const char *hostname, const char *_file, int _line)
 {
 	lws_start_foreach_dll(struct lws_dll2 *, p,
 			      vhd->server.builder_owner.head) {
 		sai_plat_t *cb = lws_container_of(p, sai_plat_t,
 				sai_plat_list);
 
-		if (!strcmp(hostname, cb->name))
+		if (!strcmp(hostname, cb->name)) {
+			lwsl_err("%s: %s:%d: found live builder %s\n", __func__, _file, _line, hostname);
+			cb->online = 1;
 			return cb;
+		}
 
 	} lws_end_foreach_dll(p);
 
 	return NULL;
+}
+
+/*
+ * Called from the builder protocol LWS_CALLBACK_CLOSED handler
+ */
+void
+sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
+{
+	sai_plat_t *cb;
+
+	/*
+	 * A builder's websocket has closed. Find all platforms associated
+	 * with it, mark them as offline in the database, and remove them
+	 * from the live in-memory list.
+	 */
+	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
+				   vhd->server.builder_owner.head) {
+		cb = lws_container_of(p, sai_plat_t, sai_plat_list);
+
+		if (cb->wsi == wsi) {
+			lwsl_notice("%s: Builder '%s' disconnected\n", __func__,
+				    cb->name);
+
+			lws_dll2_remove(&cb->sai_plat_list);
+			free(cb);
+		}
+	} lws_end_foreach_dll_safe(p, p1);
 }
 
 int
@@ -355,8 +385,6 @@ handle:
 			build = lws_container_of(pb, sai_plat_t, sai_plat_list);
 			sai_plat_t *live_cb;
 
-			lwsl_notice("%s: seeing plat %s\n", __func__, build->name);
-
 			/*
 			 * Step 1: Upsert this platform into the persistent database.
 			 */
@@ -372,16 +400,24 @@ handle:
 			/*
 			 * Step 2: Update the long-lived, malloc'd in-memory list.
 			 */
-			live_cb = sais_builder_from_uuid(vhd, build->name);
+			//cb = sais_builder_from_uuid(vhd, build->name);
+			//if (cb)
+			//	sais_builder_disconnected(vhd, cb->wsi);
+			live_cb = sais_builder_from_uuid(vhd, build->name, __FILE__, __LINE__);
 			if (live_cb) {
 				/* Already exists (reconnect), just update dynamic info */
+				lwsl_err("%s: found live builder for %s\n", __func__, build->name);
 				live_cb->wsi = pss->wsi;
 				live_cb->ongoing = 0; /* Reset ongoing task count on connect */
 				lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
+				live_cb->online = 1;
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
 				size_t nlen = strlen(build->name) + 1;
 				size_t plen = strlen(build->platform) + 1;
+
+				lwsl_err("%s: no live for %s\n", __func__, build->name);
+
 				live_cb = malloc(sizeof(*live_cb) + nlen + plen);
 				if (live_cb) {
 					char *p_str = (char *)(live_cb + 1);
@@ -392,6 +428,7 @@ handle:
 					memcpy(p_str + nlen, build->platform, plen);
 					live_cb->instances = build->instances;
 					live_cb->wsi = pss->wsi;
+					live_cb->online = 1;
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 					lws_dll2_add_tail(&live_cb->sai_plat_list, &vhd->server.builder_owner);
 				}
@@ -489,7 +526,7 @@ bail:
 		rej = (sai_rejection_t *)pss->a.dest;
 
 		rej->host_platform[sizeof(rej->host_platform) - 1] = '\0';
-		cb = sais_builder_from_uuid(vhd, rej->host_platform);
+		cb = sais_builder_from_uuid(vhd, rej->host_platform, __FILE__, __LINE__);
 		if (!cb) {
 			lwsl_info("%s: unknown builder %s rejecting\n",
 				 __func__, rej->host_platform);

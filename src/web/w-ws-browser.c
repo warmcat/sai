@@ -1030,15 +1030,12 @@ so_finish:
 			lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu));
 
 		if (vhd && vhd->builders) {
-			lwsac_reference(vhd->builders);
-			sch->walk = lws_dll2_get_head(vhd->builders_owner);
+	//		lwsac_reference(vhd->builders);
+			sch->walk = lws_dll2_get_head(&vhd->builders_owner);
 
-			/* builders_owner must be inside vhd->builders ac */
-			if (lwsac_assert_valid(vhd->builders, vhd->builders_owner, sizeof(lws_dll2_owner_t)))
-				break;
-			/* HEAD of the owner list must be also inside the vhd->builders ac */
-			if (sch->walk && lwsac_assert_valid(vhd->builders, sch->walk, sizeof(sai_plat_t)))
-				break;
+			/* HEAD of the owner list must be inside the vhd->builders ac */
+		//	if (sch->walk && lwsac_assert_valid(vhd->builders, sch->walk, sizeof(sai_plat_t)))
+		//		break;
 		} else {
 			lwsl_notice("%s: BUILDER_SUMMARY: can't start walk\n", __func__);
 			sch->walk = 0;
@@ -1065,19 +1062,15 @@ so_finish:
 		 * builders / platforms we feel are connected to us
 		 */
 
-		lwsl_notice("%s: WSS_SEND_BUILDER_SUMMARY outside write loop, walk %p\n", __func__, sch->walk);
-
 		while (end - p > 512 && sch->walk &&
 		       pss->send_state == WSS_SEND_BUILDER_SUMMARY) {
 
-			/* every builder must be also inside the vhd->builders ac */
-			if (lwsac_assert_valid(vhd->builders, sch->walk, sizeof(sai_plat_t)))
-				break;
+			/* every builder must be inside the vhd->builders ac */
+			//if (lwsac_assert_valid(vhd->builders, sch->walk, sizeof(sai_plat_t)))
+			//	break;
 
 			sai_plat_t *b = lws_container_of(sch->walk, sai_plat_t,
 						     sai_plat_list);
-
-			lwsl_notice("%s: serializing inside %s\n", __func__, b->name);
 
 			js = lws_struct_json_serialize_create(
 				lsm_schema_map_plat_simple,
@@ -1118,7 +1111,7 @@ so_finish:
 		break;
 b_finish:
 		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
-		lwsac_unreference(&vhd->builders);
+	//	lwsac_unreference(&vhd->builders);
 		endo = 1;
 		break;
 

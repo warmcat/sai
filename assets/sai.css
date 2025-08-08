@@ -689,8 +689,12 @@ div.awaiting {
 div.bdr {
 	display: inline-block;
 	opacity: 1;
+       transition: opacity 2s ease;
 }
 
+.bdr.offline {
+	opacity: 0.35;
+}
 
 
 img.branch {

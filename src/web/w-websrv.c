@@ -34,10 +34,7 @@ typedef struct saiw_websrv {
 
 	lws_struct_args_t		a;
 	struct lejp_ctx			ctx;
-	//lws_dll2_t
 	struct lws_buflist		*bltx;
-	struct lwsac			*deprecated;
-
 } saiw_websrv_t;
 
 extern const lws_struct_map_t lsm_schema_json_map[];
@@ -47,9 +44,9 @@ enum {
 	SAIS_WS_WEBSRV_RX_TASKCHANGE,
 	SAIS_WS_WEBSRV_RX_EVENTCHANGE,
 	SAIS_WS_WEBSRV_RX_SAI_BUILDERS,
-	SAIS_WS_WEBSRV_RX_OVERVIEW, /* deleted or added event */
-	SAIS_WS_WEBSRV_RX_TASKLOGS, /* new logs for task (ratelimited) */
-	SAIS_WS_WEBSRV_RX_LOADREPORT
+	SAIS_WS_WEBSRV_RX_OVERVIEW,	/* deleted or added event */
+	SAIS_WS_WEBSRV_RX_TASKLOGS,	/* new logs for task (ratelimited) */
+	SAIS_WS_WEBSRV_RX_LOADREPORT,	/* builder's cpu load report */
 };
 
 /*
@@ -58,7 +55,6 @@ enum {
  * This may come in chunks and is statefully parsed
  * so it's not directly sensitive to size or fragmentation
  */
-
 static int
 saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
@@ -67,41 +63,64 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	sai_browse_rx_evinfo_t *ei;
 	int n;
 
-//	lwsl_user("%s: RX from server -> sai-web: len %d, flags: %d\n", __func__, (int)len, flags);
-//	lwsl_hexdump_notice(buf, len);
+	// lwsl_warn("%s: len %d, flags %d\n", __func__, (int)len, flags);
 
 	if (flags & LWSSS_FLAG_SOM) {
-		m->deprecated = vhd->builders;
+		/* First fragment of a new message. Clear old parse results and init. */
+		lwsac_free(&m->a.ac);
 		memset(&m->a, 0, sizeof(m->a));
 		m->a.map_st[0] = lsm_schema_json_map;
 		m->a.map_entries_st[0] = lsm_schema_json_map_array_size;
-		m->a.map_entries_st[1] = lsm_schema_json_map_array_size;
 		m->a.ac_block_size = 4096;
 
 		lws_struct_json_init_parse(&m->ctx, NULL, &m->a);
 	}
 
+	// fprintf(stderr, "%s: rx: %.*s\n", __func__, (int)len, buf);
+
 	n = lejp_parse(&m->ctx, (uint8_t *)buf, (int)len);
-	if (n < LEJP_CONTINUE || (n >= 0 && !m->a.dest)) {
-		vhd->builders_owner = NULL;
-		lwsac_free(&m->a.ac);
+
+	/* Check for fatal error OR completion without an object */
+	if (n < 0 && n != LEJP_CONTINUE) {
 		lwsl_notice("%s: srv->web JSON decode failed '%s'\n",
 				__func__, lejp_error_to_string(n));
 		lwsl_hexdump_notice(buf, len);
-
-		return LWSSSSRET_DISCONNECT_ME;
+		goto cleanup_and_disconnect;
 	}
 
-//	if (!(flags & LWSSS_FLAG_EOM))
-//		return 0;
+	/*
+	 * This is the key: if the message is not yet complete, just return
+	 * and wait for the next fragment. Don't process anything yet.
+	 */
+	if (n == LEJP_CONTINUE) {
+		/*
+		 * Also forward this fragment to browsers if the message is for them.
+		 * We can check the schema index which is available after the
+		 * "schema" member is parsed, even on the first fragment.
+		 */
+		switch (m->a.top_schema_index) {
+		case SAIS_WS_WEBSRV_RX_LOADREPORT:
+			saiw_ws_broadcast_raw(vhd, buf, len, 0,
+				lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
+			break;
+		}
 
-	// lwsl_notice("%s: schema idx %d parsed correctly from sai-server\n", __func__, m->a.top_schema_index);
+		return 0;
+	}
+
+	/*
+	 * If we get here, the message is fully parsed (n >= 0).
+	 * Now we can safely process m->a.dest.
+	 */
+	if (!m->a.dest) {
+		lwsl_warn("%s: JSON parsed but produced no object\n", __func__);
+		goto cleanup_parse_allocs;
+	}
 
 	switch (m->a.top_schema_index) {
 
 	case SAIS_WS_WEBSRV_RX_TASKCHANGE:
 		ei = (sai_browse_rx_evinfo_t *)m->a.dest;
-		/* server has told us of a task change */
 		lwsl_notice("%s: TASKCHANGE %s\n", __func__, ei->event_hash);
 		saiw_browsers_task_state_change(vhd, ei->event_hash);
 		break;
@@ -113,64 +132,66 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		break;
 
 	case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
-
-		/* vhd holds a pointer to the active ac and a pointer to the owner (also lives in the ac) */
-
-		// lwsl_notice("%s: updated sai builder list\n", __func__);
-		if (vhd->builders)
-			lwsac_detach(&vhd->builders);
-
-		/* we take over ownership of the ac */
-
+		lwsac_free(&vhd->builders);
+		lws_dll2_owner_clear(&vhd->builders_owner);
 		vhd->builders = m->a.ac;
-		m->a.ac = NULL;
-		vhd->builders_owner = &((sai_plat_owner_t *)m->a.dest)->plat_owner;
-		if (lwsac_assert_valid(vhd->builders, vhd->builders_owner, sizeof(lws_dll2_owner_t)))
-			break;
-		saiw_ws_broadcast_raw(vhd, buf, len, 0,
-				      lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
+		m->a.ac = NULL; /* The vhd now owns this memory */
+
+		/* Move the parsed objects to the vhd's list */
+		lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
+					   ((sai_plat_owner_t *)m->a.dest)->plat_owner.head) {
+			sai_plat_t *cb = lws_container_of(p, sai_plat_t, sai_plat_list);
+
+			lws_dll2_remove(&cb->sai_plat_list);
+			lws_dll2_add_tail(&cb->sai_plat_list, &vhd->builders_owner);
+		} lws_end_foreach_dll_safe(p, p1);
+
+		/* schedule emitting the builder summary to each browser */
+		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
+			struct pss *pss = lws_container_of(p, struct pss, same);
+
+			saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
+		} lws_end_foreach_dll(p);
 		break;
 
 	case SAIS_WS_WEBSRV_RX_OVERVIEW:
 		lwsl_notice("%s: force overview\n", __func__);
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 			struct pss *pss = lws_container_of(p, struct pss, same);
-
 			saiw_alloc_sched(pss, WSS_PREPARE_OVERVIEW);
 		} lws_end_foreach_dll(p);
 		break;
 
 	case SAIS_WS_WEBSRV_RX_TASKLOGS:
 		ei = (sai_browse_rx_evinfo_t *)m->a.dest;
-		/*
-		 * ratelimited indication that logs for a particular task
-		 * changed... for each connected browser subscribed to logs for
-		 * that task, let them know
-		 */
-		lws_start_foreach_dll(struct lws_dll2 *, p,
-				      vhd->subs_owner.head) {
-			struct pss *pss = lws_container_of(p, struct pss,
-							   subs_list);
-
+		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->subs_owner.head) {
+			struct pss *pss = lws_container_of(p, struct pss, subs_list);
 			if (!strcmp(pss->sub_task_uuid, ei->event_hash))
 				lws_callback_on_writable(pss->wsi);
 		} lws_end_foreach_dll(p);
 		break;
 
 	case SAIS_WS_WEBSRV_RX_LOADREPORT:
-               /* A builder sent a load report, forward to all browsers */
-       //        lwsl_notice("%s: ===== Received load report, broadcasting to %d browsers\n",
-       //                    __func__, (int)vhd->browsers.count);
-               saiw_ws_broadcast_raw(vhd, buf, len, 2,
-			             lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
+		/* Forward the final fragment of the load report */
+		saiw_ws_broadcast_raw(vhd, buf, len, 2,
+			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 	}
 
-//	if (flags & LWSSS_FLAG_EOM && m->deprecated)
-//		lwsac_free(&m->deprecated);
-
+cleanup_parse_allocs:
+	/*
+	 * Free the memory used for THIS parse.
+	 * In the BUILDERS case, m->a.ac was transferred to vhd->builders,
+	 * so it will be NULL here and lwsac_free is a no-op.
+	 */
+	lwsac_free(&m->a.ac);
 	return 0;
+
+cleanup_and_disconnect:
+	lwsac_free(&m->a.ac);
+	return LWSSSSRET_DISCONNECT_ME;
 }
+
 
 static int
 saiw_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,

@@ -460,7 +460,8 @@ extern const lws_struct_map_t
 	lsm_schema_json_map_event[1],
 	lsm_resource[4]
 ;
-extern const lws_struct_map_t lsm_plat[8];
+extern const lws_struct_map_t lsm_plat[6];
+extern const lws_struct_map_t lsm_plat_for_json[8];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];
@@ -478,3 +479,5 @@ saicom_lp_callback_on_drain(saicom_drain_cb cb, void *opaque);
 
 void
 sul_idle_cb(lws_sorted_usec_list_t *sul);
+
+

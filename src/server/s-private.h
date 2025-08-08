@@ -315,3 +315,13 @@ sais_resource_rr_destroy(sai_resource_requisition_t *rr);
 
 int
 sais_platforms_with_tasks_pending(struct vhd *vhd);
+
+sai_plat_t *
+sais_builder_from_uuid(struct vhd *vhd, const char *hostname, const char *_file, int _line);
+
+void
+sais_builder_disconnected(struct vhd *vhd, struct lws *wsi);
+
+
+void
+sais_mark_all_builders_offline(struct vhd *vhd);

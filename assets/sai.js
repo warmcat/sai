@@ -845,124 +845,6 @@ function getBuilderGroupKey(platName) {
 	return hostname;
 }
 
-
-
-function createBuilderDiv(plat) {
-	const platDiv = document.createElement("div");
-	platDiv.className = "ibuil bdr";
-	platDiv.id = "binfo-" + plat.name;
-	platDiv.title = plat.platform + "@" + plat.name.split('.')[0] + " / " + plat.peer_ip;
-
-	let plat_parts = plat.platform.split('/');
-	let plat_os = plat_parts[0] || 'generic';
-	let plat_arch = plat_parts[1] || 'generic';
-	let plat_tc = plat_parts[2] || 'generic';
-
-	let innerHTML = `<table class="nomar"><tbody><tr><td class="bn">`;
-	innerHTML += `<img class="ip1 zup" src="/sai/${plat_os}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
-	innerHTML += `<img class="ip1 tread1" src="/sai/arch-${plat_arch}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
-	innerHTML += `<img class="ip1 tread2" src="/sai/tc-${plat_tc}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
-	innerHTML += `<br>${plat.peer_ip}`;
-	innerHTML += `<div class="instload" id="instload-${plat.name}">`; // Changed class name for clarity
-
-	// Create initial idle squares
-	for (let i = 0; i < plat.instances; i++) {
-		innerHTML += `<div class="inst_box inst_idle" title="instance ${i}: idle">` +
-		             `<div class="inst_bar"></div>` +
-		             `</div>`;
-	}
-
-	innerHTML += `</div></td></tr></tbody></table>`;
-
-	platDiv.innerHTML = innerHTML;
-	return platDiv;
-}
-
-function render_builders(jso)
-{
-	var s, n, conts = [], nc = 0;
-
-	s = "<table class=\"builders\"><tr><td>";
-		
-//	s = "<table class=\"builders\"><tr><td><img class=\"ip bsvg\" " +
-//		"src=\"/sai/builder.png\"></td><td>";
-		
-	for (n = 0; n < jso.builders.length; n++) {
-		var e = jso.builders[n], host;
-
-		host = e.name.split('.')[0];
-		if (host.split('-')[1]) {
-			var m;
-			
-			for (m = 0; m < conts.length; m++)
-				if (host.split('-')[1] === conts[m])
-					m = 999;
-			if (m < 999 || !conts.length)
-				conts.push(host.split('-')[1]);
-		}
-	}
-	
-	for (nc = 0; nc <= conts.length; nc++) {
-		var samplat = "";
-	
-		/*
-		 * nc == conts.length means those not
-		 * in a container
-		 */
-		 
-		if (nc < conts.length)
-			s += "<div class=\"ibuil ibuilctr bdr\"><div class=\"ibuilctrname bdr\">" + conts[nc] + "</div>";
-	
-		for (n = 0; n < jso.builders.length; n++) {
-			var e = jso.builders[n], nn, host, plat, cia, sen;
-	
-			sen = e.name;
-			host = sen.split('.')[0];
-			cia = host.split('-')[1];
-			
-			// console.log("host " + host + ", cia " + cia);
-			
-			if ((nc == conts.length && !cia) ||
-			    (cia && cia === conts[nc])) {
-			    	var did = 0, arc;
-	
-				if (!n ||
-				    host !== jso.builders[n - 1].name.split('.')[0] ||
-				    e.platform != samplat) {
-
- 				s += "<div class=\"ibuil bdr\" title=\"" +
-					san(e.platform) + "@" + san(host) + 
- 					(e.peer_ip ? " / " + san(e.peer_ip) : "") +
-					"\" id=\"binfo-" + san(e.name) + "\">" +
-					"<table class=\"nomar\"><tr><td class=\"bn\">" +
-					sai_plat_icon(e.platform, 1) +
-					(e.peer_ip ? "<br>" + san(e.peer_ip) : "");
-
-				/* Add a container for the instance load boxes */
-				s += "<div id=\"instload-" + san(e.name)/*.split('.')[0]*/ + "\">";
-				for (var i = 0; i < e.instances; i++) {
-					s += "<div class=\"inst_box inst_idle\" title=\"instance " + i + ": idle\"><div class=\"inst_bar\"></div></div>";
-				}
-				s += "</div>";
- 
-				samplat = e.platform;
-				did = 1;
-				}
-			
-				if (n + 1 == jso.builders.length || did)
-					s += "</td></tr></table></div>";
-			}
-		}
-		if (nc < conts.length)
-			s += "</div>";
-	}
-	
-	s += "</td></tr></table></td></tr>";
-	s = s + "</table>";
-				
-	return s;
-}
-
 function refresh_state(task_uuid, task_state)
 {
 	var tsi = document.getElementById("taskstate_" + task_uuid);
@@ -982,6 +864,40 @@ function refresh_state(task_uuid, task_state)
 
 function after_delete() {
 	location.reload();
+}
+
+function createBuilderDiv(plat) {
+	const platDiv = document.createElement("div");
+	platDiv.className = "ibuil bdr";
+	if (!plat.online)
+		platDiv.className += " offline";
+
+	platDiv.id = "binfo-" + plat.name;
+	platDiv.title = plat.platform + "@" + plat.name.split('.')[0] + " / " + plat.peer_ip;
+
+	let plat_parts = plat.platform.split('/');
+	let plat_os = plat_parts[0] || 'generic';
+	let plat_arch = plat_parts[1] || 'generic';
+	let plat_tc = plat_parts[2] || 'generic';
+
+	let innerHTML = `<table class="nomar"><tbody><tr><td class="bn">`;
+	innerHTML += `<img class="ip1 zup" src="/sai/${plat_os}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
+	innerHTML += `<img class="ip1 tread1" src="/sai/arch-${plat_arch}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
+	innerHTML += `<img class="ip1 tread2" src="/sai/tc-${plat_tc}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
+	innerHTML += `<br>${plat.peer_ip}`;
+	innerHTML += `<div class="instload" id="instload-${plat.name}">`;
+
+	// Create initial idle squares
+	for (let i = 0; i < plat.instances; i++) {
+		innerHTML += `<div class="inst_box inst_idle" title="instance ${i}: idle">` +
+		             `<div class="inst_bar"></div>` +
+		             `</div>`;
+	}
+
+	innerHTML += `</div></td></tr></tbody></table>`;
+
+	platDiv.innerHTML = innerHTML;
+	return platDiv;
 }
 
 function ws_open_sai()
@@ -1136,16 +1052,97 @@ function ws_open_sai()
 				return; // Stop processing this old message
 			}
 
-			switch (jso.schema) {
+			switch (jso.schema) {                 
 
-			case "com.warmcat.sai.builders":
+ 			case "com.warmcat.sai.builders":
+				const buildersContainer = document.getElementById("sai_builders");
+				if (!buildersContainer) { break; }
 
-				s = render_builders(jso);
-				
-				if (document.getElementById("sai_builders"))
-				document.getElementById("sai_builders").innerHTML = s;
-				break;
-			
+				let platformsArray = null;
+				if (jso.platforms && Array.isArray(jso.platforms)) {
+					platformsArray = jso.platforms;
+				} else if (jso.builders && Array.isArray(jso.builders)) {
+					platformsArray = jso.builders;
+				}
+				if (!platformsArray) {
+					buildersContainer.innerHTML = ""; // Clear display if data is invalid
+					break;
+				}
+
+				// --- Reconciliation Logic ---
+
+				// Step 1: Find the main content area (the TD). Create it if this is the first run.
+				let tdContainer = buildersContainer.querySelector("table td");
+				if (!tdContainer) {
+					buildersContainer.innerHTML = ""; // Clear for safety
+					const table = document.createElement("table");
+					table.className = "builders";
+					const tbody = document.createElement("tbody");
+					const tr = document.createElement("tr");
+					tdContainer = document.createElement("td");
+					tr.appendChild(tdContainer);
+					tbody.appendChild(tr);
+					table.appendChild(tbody);
+					buildersContainer.appendChild(table);
+				}
+
+				// Step 2: Detach all existing builder divs and store them in a map for reuse.
+				// This preserves them so their CSS transitions will work.
+				const existingDivs = new Map();
+				tdContainer.querySelectorAll(".bdr").forEach(div => {
+					const name = div.id.substring(6); // "binfo-" is 6 chars
+					if (name) {
+						existingDivs.set(name, div);
+					}
+				});
+				tdContainer.innerHTML = ""; // Clear the container, but the divs are still in memory.
+
+				// Step 3: Rebuild the group structure from scratch, reusing the old divs.
+				platformsArray.sort((a, b) => {
+					if (a.name && b.name) {
+						return a.name.localeCompare(b.name);
+					}
+					return 0; // Don't sort if names are missing
+				});
+
+				const platformsByGroup = {};
+				for (const plat of platformsArray) {
+					const groupKey = getBuilderGroupKey(plat.name);
+					if (!platformsByGroup[groupKey]) platformsByGroup[groupKey] = [];
+					platformsByGroup[groupKey].push(plat);
+				}
+
+               const groupKeys = Object.keys(platformsByGroup).sort();
+               for (const key of groupKeys) {
+                       const groupPlatforms = platformsByGroup[key];
+                       const nestedPlatforms = groupPlatforms.filter(p => getBuilderHostname(p.name) !== key);
+                       const mainPlatforms = groupPlatforms.filter(p => getBuilderHostname(p.name) === key);
+
+                       if (nestedPlatforms.length > 0) {
+                               const groupDiv = document.createElement("div");
+                               groupDiv.className = "ibuil ibuilctr bdr";
+                               
+                               const nameDiv = document.createElement("div");
+                               nameDiv.className = "ibuilctrname bdr";
+                               nameDiv.textContent = key;
+                               groupDiv.appendChild(nameDiv);
+
+                               nestedPlatforms.forEach(plat => {
+                                       const div = existingDivs.get(plat.name) || createBuilderDiv(plat);
+                                       div.classList.toggle('offline', !plat.online);
+                                       groupDiv.appendChild(div);
+                               });
+                               tdContainer.appendChild(groupDiv);
+                       }
+
+                       mainPlatforms.forEach(plat => {
+                               const div = existingDivs.get(plat.name) || createBuilderDiv(plat);
+                               div.classList.toggle('offline', !plat.online);
+                               tdContainer.appendChild(div);
+                       });
+               }
+ 				break;
+
 			case "sai.warmcat.com.overview":
 				/*
 				 * Sent with an array of e[] to start, but also
@@ -1423,82 +1420,6 @@ function ws_open_sai()
 					aging();
 				}
 				break;
-
-
-	case "sai-builders":
-		const buildersContainer = document.getElementById("sai_builders");
-		if (!buildersContainer) { break; }
-		buildersContainer.innerHTML = "";
-		if (!jso.platforms || !Array.isArray(jso.platforms) || jso.platforms.length === 0) {
-			break;
-		}
-
-		jso.platforms.sort((a, b) => {
-			if (a.name && b.name) {
-				return a.name.localeCompare(b.name);
-			}
-			return 0; // Don't sort if names are missing
-		});
-
-		// Step 1: Create a map of group keys to group container divs.
-		// Also create a list of standalone platforms.
-		const groups = {};
-		const standalones = [];
-		const platformsByGroup = {};
-
-		for (const plat of jso.platforms) {
-			const groupKey = getBuilderGroupKey(plat.name);
-			if (!platformsByGroup[groupKey]) {
-				platformsByGroup[groupKey] = [];
-			}
-			platformsByGroup[groupKey].push(plat);
-		}
-
-		// Step 2: Build the HTML structure
-		const table = document.createElement("table");
-		table.className = "builders";
-		const tbody = document.createElement("tbody");
-		const tr = document.createElement("tr");
-		const td = document.createElement("td");
-		tr.appendChild(td);
-		tbody.appendChild(tr);
-		table.appendChild(tbody);
-		
-		// Order of rendering matters. Let's process the groups first.
-		const groupKeys = Object.keys(platformsByGroup).sort();
-
-		for (const key of groupKeys) {
-			const groupPlatforms = platformsByGroup[key];
-			
-			// Find platforms that are nested (VMs, different hostnames)
-			const nestedPlatforms = groupPlatforms.filter(p => getBuilderHostname(p.name) !== key);
-			// Find platforms that are the main host itself
-			const mainPlatforms = groupPlatforms.filter(p => getBuilderHostname(p.name) === key);
-
-			// If there are nested platforms, create a group container for them.
-			if (nestedPlatforms.length > 0) {
-				const groupDiv = document.createElement("div");
-				groupDiv.className = "ibuil ibuilctr bdr";
-				
-				const nameDiv = document.createElement("div");
-				nameDiv.className = "ibuilctrname bdr";
-				nameDiv.textContent = key;
-				groupDiv.appendChild(nameDiv);
-
-				for (const plat of nestedPlatforms) {
-					groupDiv.appendChild(createBuilderDiv(plat));
-				}
-				td.appendChild(groupDiv);
-			}
-
-			// Render the main host platforms as standalones.
-			for (const plat of mainPlatforms) {
-				td.appendChild(createBuilderDiv(plat));
-			}
-		}
-
-		buildersContainer.appendChild(table);
-		break;
 
 	case "com.warmcat.sai.loadreport":
 		if (!jso.platforms || !Array.isArray(jso.platforms)) {

@@ -79,6 +79,21 @@ enum {
 	SAIS_WS_WEBSRV_RX_VIEWERCOUNT,
 };
 
+void
+sais_mark_all_builders_offline(struct vhd *vhd)
+{
+	char *err = NULL;
+
+	lwsl_notice("%s: marking all builders offline initially\n", __func__);
+
+	sqlite3_exec(vhd->server.pdb, "UPDATE builders SET online = 0;",
+		     NULL, NULL, &err);
+	if (err) {
+		lwsl_err("%s: sqlite error: %s\n", __func__, err);
+		sqlite3_free(err);
+	}
+}
+
 int
 sais_validate_id(const char *id, int reqlen)
 {
@@ -149,68 +164,74 @@ sais_websrv_broadcast(struct lws_ss_handle *hsrv, const char *str, size_t len)
 	lws_ss_server_foreach_client(hsrv, _sais_websrv_broadcast, &a);
 }
 
-
 int
 sais_list_builders(struct vhd *vhd)
 {
-	lws_dll2_owner_t dbo;
+	lws_dll2_owner_t db_builders_owner;
 	struct lwsac *ac = NULL;
 	char *p = vhd->json_builders, *end = p + sizeof(vhd->json_builders),
 	     subsequent = 0;
 	lws_struct_serialize_t *js;
-	sai_plat_t *b;
+	sai_plat_t *builder_from_db;
 	size_t w;
-	int n;
 
-	/*
-	 * Query the database for ALL builders, online and offline,
-	 * sorted by name.
-	 */
+	memset(&db_builders_owner, 0, sizeof(db_builders_owner));
+
 	if (lws_struct_sq3_deserialize(vhd->server.pdb, NULL, "name ",
-				       lsm_schema_sq3_map_plat, &dbo, &ac, 0, 100)) {
+				       lsm_schema_sq3_map_plat,
+				       &db_builders_owner, &ac, 0, 100)) {
 		lwsl_err("%s: Failed to query builders from DB\n", __func__);
 		return 1;
 	}
 
+	lwsl_warn("%s: count deserialized %d\n", __func__, (int)db_builders_owner.count);
+
 	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
-					"{\"schema\":\"sai-builders\","
-					"\"platforms\":[");
+			"{\"schema\":\"com.warmcat.sai.builders\",\"builders\":[");
 
-	lws_start_foreach_dll(struct lws_dll2 *, walk, dbo.head) {
+	lws_start_foreach_dll(struct lws_dll2 *, walk, db_builders_owner.head) {
+		sai_plat_t *live_builder;
 
-		b = lws_container_of(walk, sai_plat_t, sai_plat_list);
+		builder_from_db = lws_container_of(walk, sai_plat_t, sai_plat_list);
+
+		/*
+		 * Find this builder in the live list by name. This is safe because
+		 * builder_from_db->name is a valid string within the scope of this function.
+		 */
+		live_builder = sais_builder_from_uuid(vhd, builder_from_db->name, __FILE__, __LINE__);
+
+		if (live_builder) {
+			builder_from_db->online = 1;
+			builder_from_db->ongoing = live_builder->ongoing;
+			lws_strncpy(builder_from_db->peer_ip, live_builder->peer_ip,
+				    sizeof(builder_from_db->peer_ip));
+		} else {
+			builder_from_db->online = 0;
+			builder_from_db->ongoing = 0;
+		}
 
 		js = lws_struct_json_serialize_create(
 			lsm_schema_map_plat_simple,
 			LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),
-			0, b);
+			0, builder_from_db);
 		if (!js) {
-			lwsl_err("%s: json serialize create failed\n", __func__);
 			goto bail;
 		}
 		if (subsequent)
 			*p++ = ',';
 		subsequent = 1;
 
-		n = (int)lws_struct_json_serialize(js, (unsigned char *)p,
-						   lws_ptr_diff_size_t(end, p), &w);
-		p += w;
-		lws_struct_json_serialize_destroy(&js);
-
-		if (n == LSJS_RESULT_ERROR) {
-			lwsl_err("%s: json serialize failed\n", __func__);
+		if (lws_struct_json_serialize(js, (uint8_t *)p,
+					      lws_ptr_diff_size_t(end, p), &w) != LSJS_RESULT_FINISH) {
+			lws_struct_json_serialize_destroy(&js);
 			goto bail;
 		}
+		p += w;
+		lws_struct_json_serialize_destroy(&js);
 	} lws_end_foreach_dll(walk);
-
-	/* end of the list of builders */
 
 	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
 
-	/*
-	 * This is the SERVER's WEB daemon server, broadcasting to all connected
-	 * clients (the WEB daemons)... the list of BUILDERS
-	 */
 	sais_websrv_broadcast(vhd->h_ss_websrv, vhd->json_builders,
 			      lws_ptr_diff_size_t(p, vhd->json_builders));
 
@@ -550,6 +571,8 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	*flags = (som ? LWSSS_FLAG_SOM : 0) | (eom ? LWSSS_FLAG_EOM : 0);
 	*len = (size_t)used;
 
+	lwsl_warn("%s: srv -> web: len %d flags %d\n", __func__, (int)*len, (int)*flags);
+
 	if (m->bltx)
 		return lws_ss_request_tx(m->ss);
 
@@ -589,7 +612,7 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 				struct pss *pss_builder = lws_container_of(p, struct pss, same);
 				sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
 				if (vsend) {
-					vsend->viewers = new_viewers_present;
+					vsend->viewers = (unsigned int)new_viewers_present;
 					lws_dll2_add_tail(&vsend->list, &pss_builder->viewer_state_owner);
 					lws_callback_on_writable(pss_builder->wsi);
 				}

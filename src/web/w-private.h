@@ -205,13 +205,13 @@ typedef struct sais_sqlite_cache {
 } sais_sqlite_cache_t;
 
 struct vhd {
-	struct lws_context *context;
-	struct lws_vhost *vhost;
+	struct lws_context		*context;
+	struct lws_vhost		*vhost;
 
 	/* pss lists */
-	struct lws_dll2_owner browsers;
+	struct lws_dll2_owner		browsers;
 
-	struct lws_dll2_owner		*builders_owner;
+	struct lws_dll2_owner		builders_owner;
 	struct lwsac			*builders;
 
 	/* our keys */

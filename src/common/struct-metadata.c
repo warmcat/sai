@@ -41,23 +41,33 @@ const lws_struct_map_t lsm_load_report_members[] = {
 };
 
 const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/include/private.h in sync */
-	LSM_UNSIGNED	(sai_event_t, uid,		"uid"),
+	LSM_UNSIGNED	(sai_plat_t, uid,		"uid"),
 	LSM_STRING_PTR	(sai_plat_t, name,		"name"),
-	LSM_UNSIGNED	(sai_plat_t, ongoing,		"ongoing"),
 	LSM_UNSIGNED	(sai_plat_t, instances,		"instances"),
 	LSM_STRING_PTR	(sai_plat_t, platform,		"platform"),
-	LSM_SIGNED	(sai_plat_t, online,		"online"),
 	LSM_UNSIGNED	(sai_plat_t, last_seen,		"last_seen"),
 	LSM_CARRAY	(sai_plat_t, peer_ip,		"peer_ip"),
 };
 
+// This is the map for serializing to JSON
+const lws_struct_map_t lsm_plat_for_json[] = {
+    LSM_UNSIGNED(sai_plat_t, uid,       "uid"),
+    LSM_STRING_PTR(sai_plat_t, name,    "name"),
+    LSM_SIGNED(sai_plat_t, ongoing,     "ongoing"), // MUST be present
+    LSM_SIGNED(sai_plat_t, instances,   "instances"),
+    LSM_STRING_PTR(sai_plat_t, platform,"platform"),
+    LSM_SIGNED(sai_plat_t, online,      "online"), // MUST be present
+    LSM_UNSIGNED(sai_plat_t, last_seen, "last_seen"),
+    LSM_CARRAY(sai_plat_t, peer_ip,     "peer_ip"),
+};
+
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {
-	LSM_SCHEMA	(sai_plat_t, NULL, lsm_plat,	"com-warmcat-sai-ba"),
+	LSM_SCHEMA	(sai_plat_t, NULL, lsm_plat_for_json,	"com-warmcat-sai-ba"),
 };
 
 const lws_struct_map_t lsm_plat_list[] = {
 	LSM_LIST	(sai_plat_owner_t, plat_owner, sai_plat_t,
-			 sai_plat_list, NULL, lsm_plat, "platforms"),
+			 sai_plat_list, NULL, lsm_plat_for_json, "builders"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat[] = {
