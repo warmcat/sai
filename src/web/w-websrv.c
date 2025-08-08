@@ -36,6 +36,7 @@ typedef struct saiw_websrv {
 	struct lejp_ctx			ctx;
 	//lws_dll2_t
 	struct lws_buflist		*bltx;
+	struct lwsac			*deprecated;
 
 } saiw_websrv_t;
 
@@ -70,6 +71,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 //	lwsl_hexdump_notice(buf, len);
 
 	if (flags & LWSSS_FLAG_SOM) {
+		m->deprecated = vhd->builders;
 		memset(&m->a, 0, sizeof(m->a));
 		m->a.map_st[0] = lsm_schema_json_map;
 		m->a.map_entries_st[0] = lsm_schema_json_map_array_size;
@@ -81,6 +83,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 	n = lejp_parse(&m->ctx, (uint8_t *)buf, (int)len);
 	if (n < LEJP_CONTINUE || (n >= 0 && !m->a.dest)) {
+		vhd->builders_owner = NULL;
 		lwsac_free(&m->a.ac);
 		lwsl_notice("%s: srv->web JSON decode failed '%s'\n",
 				__func__, lejp_error_to_string(n));
@@ -110,13 +113,20 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		break;
 
 	case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
-		lwsl_notice("%s: updated sai builder list (%d browsers)\n", __func__, vhd->browsers.count);
+
+		/* vhd holds a pointer to the active ac and a pointer to the owner (also lives in the ac) */
+
+		// lwsl_notice("%s: updated sai builder list\n", __func__);
 		if (vhd->builders)
 			lwsac_detach(&vhd->builders);
+
+		/* we take over ownership of the ac */
+
 		vhd->builders = m->a.ac;
 		m->a.ac = NULL;
-		vhd->builders_owner =
-				&((sai_plat_owner_t *)m->a.dest)->plat_owner;
+		vhd->builders_owner = &((sai_plat_owner_t *)m->a.dest)->plat_owner;
+		if (lwsac_assert_valid(vhd->builders, vhd->builders_owner, sizeof(lws_dll2_owner_t)))
+			break;
 		saiw_ws_broadcast_raw(vhd, buf, len, 0,
 				      lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
@@ -156,8 +166,8 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		break;
 	}
 
-	if (flags & LWSSS_FLAG_EOM)
-		lwsac_free(&m->a.ac);
+//	if (flags & LWSSS_FLAG_EOM && m->deprecated)
+//		lwsac_free(&m->deprecated);
 
 	return 0;
 }

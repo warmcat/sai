@@ -200,12 +200,7 @@ sais_list_builders(struct vhd *vhd)
 
 			p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
 
-			/*
-			 * This is the SERVER's WEB daemon server, broadcasting to all connected clients (the WEB daemons)...
-			 * 		the list of BUILDERS
-			 */
-
-			lwsl_ss_err(vhd->h_ss_websrv, "sai-server's WEB daemon server broadcasting to all WEB daemons: %s\n", vhd->json_builders);
+			lwsl_ss_notice(vhd->h_ss_websrv, "sai-server's WEB daemon server broadcasting to all WEB daemons: %s\n", vhd->json_builders);
 
 			sais_websrv_broadcast(vhd->h_ss_websrv,
 					      vhd->json_builders,

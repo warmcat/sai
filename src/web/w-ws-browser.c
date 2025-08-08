@@ -54,8 +54,7 @@ saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int
 		}
 	} lws_end_foreach_dll(p);
 
-	lwsl_notice("%s: broadcast to %d / %d browsers\n", __func__,
-		        eff, (int)vhd->browsers.count);	
+	// lwsl_notice("%s: broadcast to %d / %d browsers\n", __func__, eff, (int)vhd->browsers.count);	
 }
 
 extern const lws_struct_map_t lsm_load_report_members[2]; 
@@ -1033,7 +1032,20 @@ so_finish:
 		if (vhd && vhd->builders) {
 			lwsac_reference(vhd->builders);
 			sch->walk = lws_dll2_get_head(vhd->builders_owner);
+
+			/* builders_owner must be inside vhd->builders ac */
+			if (lwsac_assert_valid(vhd->builders, vhd->builders_owner, sizeof(lws_dll2_owner_t)))
+				break;
+			/* HEAD of the owner list must be also inside the vhd->builders ac */
+			if (sch->walk && lwsac_assert_valid(vhd->builders, sch->walk, sizeof(sai_plat_t)))
+				break;
+		} else {
+			lwsl_notice("%s: BUILDER_SUMMARY: can't start walk\n", __func__);
+			sch->walk = 0;
 		}
+
+//		sch->walk = 0;
+
 		sch->subsequent = 0;
 		pss->send_state = WSS_SEND_BUILDER_SUMMARY;
 		first = 1;
@@ -1053,11 +1065,19 @@ so_finish:
 		 * builders / platforms we feel are connected to us
 		 */
 
+		lwsl_notice("%s: WSS_SEND_BUILDER_SUMMARY outside write loop, walk %p\n", __func__, sch->walk);
+
 		while (end - p > 512 && sch->walk &&
 		       pss->send_state == WSS_SEND_BUILDER_SUMMARY) {
 
+			/* every builder must be also inside the vhd->builders ac */
+			if (lwsac_assert_valid(vhd->builders, sch->walk, sizeof(sai_plat_t)))
+				break;
+
 			sai_plat_t *b = lws_container_of(sch->walk, sai_plat_t,
 						     sai_plat_list);
+
+			lwsl_notice("%s: serializing inside %s\n", __func__, b->name);
 
 			js = lws_struct_json_serialize_create(
 				lsm_schema_map_plat_simple,

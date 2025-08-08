@@ -329,7 +329,6 @@ handle:
 	switch (pss->a.top_schema_index) {
 	case SAIM_WSSCH_BUILDER_PLATS:
 
-		// lwsl_hexdump_notice(buf, bl);
 
 		/*
 		 * builder is sending us an array of platforms it provides us
@@ -337,7 +336,7 @@ handle:
 
 		pss->u.o = (sai_plat_owner_t *)pss->a.dest;
 
-		lwsl_notice("%s: seen platform list: count %d\n", __func__,
+		lwsl_notice("%s: SERVER: seen incoming platform list: count %d\n", __func__,
 				pss->u.o->plat_owner.count);
 
 		lws_start_foreach_dll(struct lws_dll2 *, pb,
@@ -520,7 +519,7 @@ bail:
 		break;
 
 	case SAIM_WSSCH_BUILDER_LOADREPORT:
-		lwsl_wsi_user(pss->wsi, "SAIM_WSSCH_BUILDER_LOADREPORT broadcasting\n");
+		// lwsl_wsi_user(pss->wsi, "SAIM_WSSCH_BUILDER_LOADREPORT broadcasting\n");
 		sais_websrv_broadcast(vhd->h_ss_websrv, (const char *)buf, bl);
 		break;
 

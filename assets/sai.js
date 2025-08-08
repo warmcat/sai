@@ -1669,7 +1669,7 @@ function ws_open_sai()
 //						"Server Status (Disconnected)";
 //			lws_gray_out(true,{"zindex":"499"});
 			
-			myVar = setTimeout(ws_open_sai, 10000);
+			myVar = setTimeout(ws_open_sai, 1000);
 		};
 	} catch(exception) {
 		alert("<p>Error" + exception);  
