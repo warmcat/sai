@@ -456,7 +456,7 @@ handle:
 			build->last_seen = (uint64_t)lws_now_secs();
 			lws_strncpy(build->peer_ip, pss->peer_ip, sizeof(build->peer_ip));
 			if (lws_struct_sq3_upsert(vhd->server.pdb, "builders", lsm_plat,
-						  build, "name")) {
+						  LWS_ARRAY_SIZE(lsm_plat), build, "name")) {
 				lwsl_err("%s: Failed to upsert builder %s\n",
  					 __func__, build->name);	
 			}
