@@ -330,6 +330,8 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi);
 
 void
 sais_set_builder_powering_up_status(struct vhd *vhd, const char *name, int status);
+void
+sais_set_builder_powering_down_status(struct vhd *vhd, const char *name, int status);
 
 void
 sais_mark_all_builders_offline(struct vhd *vhd);

@@ -405,6 +405,7 @@ typedef struct sai_plat {
 	int			online; /* 1 = connected, 0 = offline */
 	uint64_t		last_seen; /* unix time */
 	int			powering_up; /* 1 = sai-power is booting it */
+	int			powering_down;
 
 	int			instances;
 	int			ongoing;
@@ -440,10 +441,12 @@ typedef struct sai_browse_rx_taskinfo {
 } sai_browse_rx_taskinfo_t;
 
 /* sai-power -> sai-server, tells it that a platform is being powered up */
-typedef struct sai_powering_up {
+typedef struct sai_power_state {
 	lws_dll2_t	list; /* for parser */
 	char		name[256];
-} sai_powering_up_t;
+	int		powering_up;
+	int		powering_down;
+} sai_power_state_t;
 
 extern const lws_struct_map_t
 	lsm_schema_json_map_task[],
@@ -466,10 +469,10 @@ extern const lws_struct_map_t
 	lsm_schema_json_map_task[1],
 	lsm_schema_json_map_event[1],
 	lsm_resource[4],
-	lsm_powering_up[1]
+	lsm_power_state[3]
 ;
-extern const lws_struct_map_t lsm_plat[6];
-extern const lws_struct_map_t lsm_plat_for_json[9];
+extern const lws_struct_map_t lsm_plat[8];
+extern const lws_struct_map_t lsm_plat_for_json[10];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];

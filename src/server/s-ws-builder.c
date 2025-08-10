@@ -274,6 +274,22 @@ sais_set_builder_powering_up_status(struct vhd *vhd, const char *name, int statu
     sais_list_builders(vhd);
 }
 
+void
+sais_set_builder_powering_down_status(struct vhd *vhd, const char *name, int status)
+{
+    char q[512], esc_name[512];
+
+    lws_sql_purify(esc_name, name, sizeof(esc_name));
+    lws_snprintf(q, sizeof(q), "UPDATE builders SET powering_down = %d WHERE name = '%s'",
+                 status, esc_name);
+
+    // We can ignore the return; if the builder isn't in the DB yet, that's fine.
+    sai_sqlite3_statement(vhd->server.pdb, q, "set powering_down");
+
+    /* Broadcast the change to all web clients */
+    sais_list_builders(vhd);
+}
+
 /*
  * Called from the builder protocol LWS_CALLBACK_CLOSED handler
  */
@@ -408,7 +424,7 @@ handle:
 			build->last_seen = (uint64_t)lws_now_secs();
 			lws_strncpy(build->peer_ip, pss->peer_ip, sizeof(build->peer_ip));
 			if (lws_struct_sq3_upsert(vhd->server.pdb, "builders", lsm_plat,
-						  LWS_ARRAY_SIZE(lsm_plat), build, "name")) {
+						  build, "name")) {
 				lwsl_err("%s: Failed to upsert builder %s\n",
  					 __func__, build->name);	
 			}

@@ -777,7 +777,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			if (cb->wsi == wsi) {
 				lwsl_warn("%s: Builder '%s' disconnected. Removing from live list.\n",
 					  __func__, cb->name);
-				lws_snprintf(q, sizeof(q), "UPDATE builders SET online=0 WHERE name='%s'", cb->name);
+				lws_snprintf(q, sizeof(q), "UPDATE builders SET online=0, powering_up=0, powering_down=0 WHERE name='%s'", cb->name);
 				sai_sqlite3_statement(vhd->server.pdb, q, "set builder offline");
 
 				/* remove from active in-memory list */
@@ -818,18 +818,18 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (pss->is_power) {
 			struct lejp_ctx ctx;
 			lws_struct_args_t a;
-			sai_powering_up_t *pu;
-			const lws_struct_map_t lsm_schema_powering_up[] = {
-				LSM_SCHEMA(sai_powering_up_t, NULL, lsm_powering_up,
-					   "com.warmcat.sai.poweringup"),
+			sai_power_state_t *ps;
+			const lws_struct_map_t lsm_schema_power_state[] = {
+				LSM_SCHEMA(sai_power_state_t, NULL, lsm_power_state,
+					   "com.warmcat.sai.powerstate"),
 			};
 
 			/* This is a message from sai-power */
 			lwsl_notice("RX from sai-power: %.*s\n", (int)len, (const char *)in);
 
 			memset(&a, 0, sizeof(a));
-			a.map_st[0] = lsm_schema_powering_up;
-			a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_powering_up);
+			a.map_st[0] = lsm_schema_power_state;
+			a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_power_state);
 			a.ac_block_size = 512;
 
 			lws_struct_json_init_parse(&ctx, NULL, &a);
@@ -839,10 +839,16 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				break; // Exit case
 			}
 
-			pu = (sai_powering_up_t *)a.dest;
-			lwsl_notice("sai-power is powering up: %s\n", pu->name);
-
-			sais_set_builder_powering_up_status(vhd, pu->name, 1);
+			ps = (sai_power_state_t *)a.dest;
+			if (ps->powering_up) {
+				lwsl_notice("sai-power is powering up: %s\n", ps->name);
+				sais_set_builder_powering_up_status(vhd, ps->name, 1);
+				sais_set_builder_powering_down_status(vhd, ps->name, 0);
+			} else if (ps->powering_down) {
+				lwsl_notice("sai-power is powering down: %s\n", ps->name);
+				sais_set_builder_powering_down_status(vhd, ps->name, 1);
+				sais_set_builder_powering_up_status(vhd, ps->name, 0);
+			}
 
 			lwsac_free(&a.ac);
 			break; // Exit case
