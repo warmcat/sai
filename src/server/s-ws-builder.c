@@ -258,6 +258,22 @@ sais_builder_from_uuid(struct vhd *vhd, const char *hostname, const char *_file,
 	return NULL;
 }
 
+void
+sais_set_builder_powering_up_status(struct vhd *vhd, const char *name, int status)
+{
+    char q[512], esc_name[512];
+
+    lws_sql_purify(esc_name, name, sizeof(esc_name));
+    lws_snprintf(q, sizeof(q), "UPDATE builders SET powering_up = %d WHERE name = '%s'",
+                 status, esc_name);
+
+    // We can ignore the return; if the builder isn't in the DB yet, that's fine.
+    sai_sqlite3_statement(vhd->server.pdb, q, "set powering_up");
+
+    /* Broadcast the change to all web clients */
+    sais_list_builders(vhd);
+}
+
 /*
  * Called from the builder protocol LWS_CALLBACK_CLOSED handler
  */

@@ -50,6 +50,11 @@ typedef struct sai_platform {
 	/* build and name over-allocated here */
 } sai_platform_t;
 
+typedef struct sai_powering_up_plat {
+	lws_dll2_t list;
+	char name[256];
+} sai_powering_up_plat_t;
+
 typedef enum {
 	SAIN_ACTION_INVALID,
 	SAIN_ACTION_REPO_UPDATED
@@ -185,6 +190,7 @@ struct vhd {
 	struct lws_dll2_owner		builders;
 	struct lws_dll2_owner		sai_powers;
 	struct lws_dll2_owner		pending_plats;
+	lws_dll2_owner_t		powering_up_list; /* sai_powering_up_plat_t */
 
 	struct lwsac			*ac_plats;
 
@@ -322,6 +328,8 @@ sais_builder_from_uuid(struct vhd *vhd, const char *hostname, const char *_file,
 void
 sais_builder_disconnected(struct vhd *vhd, struct lws *wsi);
 
+void
+sais_set_builder_powering_up_status(struct vhd *vhd, const char *name, int status);
 
 void
 sais_mark_all_builders_offline(struct vhd *vhd);

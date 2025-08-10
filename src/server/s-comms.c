@@ -809,12 +809,47 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 	case LWS_CALLBACK_RECEIVE:
 
-		if (!pss->vhd)
-			pss->vhd = vhd;
-
-		lwsl_info("SWT_BUILDER RX: %d\n", (int)len);
 		/*
-		 * Builder sent us something on websockets
+		 * A ws client sent us something... it could be a builder or
+		 * it could be sai-power. We can tell which by the `is_power`
+		 * flag we set in the pss during ESTABLISHED.
+		 */
+
+		if (pss->is_power) {
+			struct lejp_ctx ctx;
+			lws_struct_args_t a;
+			sai_powering_up_t *pu;
+			const lws_struct_map_t lsm_schema_powering_up[] = {
+				LSM_SCHEMA(sai_powering_up_t, NULL, lsm_powering_up,
+					   "com.warmcat.sai.poweringup"),
+			};
+
+			/* This is a message from sai-power */
+			lwsl_notice("RX from sai-power: %.*s\n", (int)len, (const char *)in);
+
+			memset(&a, 0, sizeof(a));
+			a.map_st[0] = lsm_schema_powering_up;
+			a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_powering_up);
+			a.ac_block_size = 512;
+
+			lws_struct_json_init_parse(&ctx, NULL, &a);
+			if (lejp_parse(&ctx, (uint8_t *)in, (int)len) < 0 || !a.dest) {
+				lwsl_warn("Failed to parse msg from sai-power\n");
+				lwsac_free(&a.ac);
+				break; // Exit case
+			}
+
+			pu = (sai_powering_up_t *)a.dest;
+			lwsl_notice("sai-power is powering up: %s\n", pu->name);
+
+			sais_set_builder_powering_up_status(vhd, pu->name, 1);
+
+			lwsac_free(&a.ac);
+			break; // Exit case
+		}
+
+		/*
+		 * This is a message from a builder
 		 */
 		pss->wsi = wsi;
 		if (sais_ws_json_rx_builder(vhd, pss, in, len))

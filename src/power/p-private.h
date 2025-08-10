@@ -137,5 +137,6 @@ int
 saip_config_global(struct sai_power *power, const char *d);
 extern int saip_config(struct sai_power *power, const char *d);
 extern void saip_config_destroy(struct sai_power *power);
-
+extern void
+saip_notify_server_powering_up(const char *plat_name);
 

@@ -29,11 +29,56 @@
 
 #include "../common/struct-metadata.c"
 
+/* Map for the "powering up" message we send to the server */
+static const lws_struct_map_t lsm_schema_powering_up[] = {
+	LSM_SCHEMA(sai_powering_up_t, NULL, lsm_powering_up,
+		   "com.warmcat.sai.poweringup"),
+};
+
 LWS_SS_USER_TYPEDEF
         char                    payload[200];
         size_t                  size;
         size_t                  pos;
+
+	lws_dll2_owner_t	pu_owner;
 } saip_server_link_t;
+
+void
+saip_notify_server_powering_up(const char *plat_name)
+{
+	saip_server_t *sps;
+	sai_powering_up_t *pu;
+
+	/* Find the first (usually only) configured sai-server connection */
+	if (!power.sai_server_owner.head) {
+		lwsl_warn("%s: No sai-server configured to notify\n", __func__);
+		return;
+	}
+	sps = lws_container_of(power.sai_server_owner.head, saip_server_t, list);
+	if (!sps->ss) {
+		lwsl_warn("%s: Not connected to sai-server to notify\n", __func__);
+		return;
+	}
+
+	/* Allocate and queue the notification message */
+	pu = malloc(sizeof(*pu));
+	if (!pu)
+		return;
+
+	memset(pu, 0, sizeof(*pu));
+	lws_strncpy(pu->name, plat_name, sizeof(pu->name));
+	/* The per-connection user object for the server link is a saip_server_link_t */
+	{
+		saip_server_link_t *pss = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
+		lws_dll2_add_tail(&pu->list, &pss->pu_owner);
+	}
+
+	/* Request a writable callback to send the message */
+	if (lws_ss_request_tx(sps->ss))
+		lwsl_ss_warn(sps->ss, "Unable to request tx");
+
+	lwsl_notice("%s: Queued notification for %s\n", __func__, plat_name);
+}
 
 static lws_ss_state_return_t
 saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
@@ -98,6 +143,20 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			lwsl_notice("%s: Needed builders: %s\n", __func__, sp->name);
 
 			/*
+			 * This is a builder we need to power on. Queue a
+			 * notification message to be sent to the server.
+			 */
+			{
+				sai_powering_up_t *pu = malloc(sizeof(*pu));
+				if (pu) {
+					memset(pu, 0, sizeof(*pu));
+					lws_strncpy(pu->name, sp->name,
+						    sizeof(pu->name));
+					lws_dll2_add_tail(&pu->list, &pss->pu_owner);
+				}
+			}
+
+			/*
 			 * Server said this platform or at least one dependency
 			 * has pending jobs. sai-power config says this builder
 			 * can do jobs on that platform.  Let's make sure it
@@ -126,6 +185,11 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 	} lws_end_foreach_dll(px);
 
+	/* If we queued any notifications, request a writable callback to send them */
+	if (pss->pu_owner.count)
+		if (lws_ss_request_tx(sps->ss))
+			lwsl_ss_warn(sps->ss, "tx request failed");
+
 	if (bp)
 		lwsl_notice("%s:  Benched builders: %s\n", __func__, benched);
 
@@ -136,6 +200,35 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	return 0;
 }
 
+static lws_ss_state_return_t
+saip_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
+	  int *flags)
+{
+	saip_server_link_t *pss = (saip_server_link_t *)userobj;
+	lws_struct_serialize_t *js;
+
+	if (!pss->pu_owner.head)
+		return LWSSSSRET_TX_DONT_SEND;
+
+	/* Dequeue the first pending notification */
+	sai_powering_up_t *pu = lws_container_of(pss->pu_owner.head,
+						 sai_powering_up_t, list);
+
+	js = lws_struct_json_serialize_create(lsm_schema_powering_up, 1, 0, pu);
+	if (js && lws_struct_json_serialize(js, buf, *len, len) == LSJS_RESULT_FINISH) {
+		*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+		lws_dll2_remove(&pu->list);
+		free(pu);
+	}
+	lws_struct_json_serialize_destroy(&js);
+
+	/* If there are more to send, request another writable callback */
+	if (pss->pu_owner.head)
+		if (lws_ss_request_tx(lws_ss_from_user(pss)))
+			lwsl_ss_warn(lws_ss_from_user(pss), "tx request failed");
+
+	return LWSSSSRET_OK;
+}
 
 static int
 cleanup_on_ss_destroy(struct lws_dll2 *d, void *user)
@@ -218,6 +311,13 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		return lws_ss_request_tx(sps->ss);
 
 	case LWSSSCS_DISCONNECTED:
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, pss->pu_owner.head) {
+			sai_powering_up_t *pu = lws_container_of(d, sai_powering_up_t, list);
+
+			lws_dll2_remove(&pu->list);
+			free(pu);
+		} lws_end_foreach_dll_safe(d, d1);
+
 		/*
 		 * clean up any ongoing spawns related to this connection
 		 */
@@ -245,4 +345,5 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 LWS_SS_INFO("sai_power", saip_server_link_t)
 	.rx = saip_m_rx,
 	.state = saip_m_state,
+	.tx = saip_m_tx, /* We need a TX handler to send messages */
 };

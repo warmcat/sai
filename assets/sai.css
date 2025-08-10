@@ -696,6 +696,30 @@ div.bdr {
 	opacity: 0.35;
 }
 
+/* Style for the powering-up state */
+.powering-up {
+	position: relative; /* Needed for the ::after pseudo-element */
+}
+
+/* The spinner pseudo-element */
+.powering-up::after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: 24px; /* Adjust size as needed */
+	height: 24px;
+	margin-top: -12px; /* Half of height */
+	margin-left: -12px; /* Half of width */
+	border: 3px solid rgba(0, 0, 0, 0.2);
+	border-top-color: #007bff; /* Spinner color */
+	border-radius: 50%;
+	animation: spin 1s linear infinite;
+	z-index: 10; /* Ensure it's on top */
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
 
 img.branch {
 	display: inline-block;
