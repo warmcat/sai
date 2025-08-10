@@ -258,6 +258,70 @@ sais_builder_from_uuid(struct vhd *vhd, const char *hostname, const char *_file,
 	return NULL;
 }
 
+sai_plat_t *
+sais_builder_from_host(struct vhd *vhd, const char *host)
+{
+	lws_start_foreach_dll(struct lws_dll2 *, p,
+			      vhd->server.builder_owner.head) {
+		sai_plat_t *cb = lws_container_of(p, sai_plat_t,
+				sai_plat_list);
+		size_t host_len = strlen(host);
+
+		if (!strncmp(cb->name, host, host_len) &&
+		    cb->name[host_len] == '.')
+			return cb;
+
+	} lws_end_foreach_dll(p);
+
+	return NULL;
+}
+
+void
+sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down)
+{
+	sai_power_state_t *ps = NULL;
+	sai_plat_t *live_builder;
+
+	if (up) {
+		live_builder = sais_builder_from_host(vhd, name);
+		if (live_builder)
+			return;
+	}
+
+	if (down) {
+		live_builder = sais_builder_from_host(vhd, name);
+		if (!live_builder)
+			return;
+	}
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
+		ps = lws_container_of(p, sai_power_state_t, list);
+		if (!strcmp(ps->host, name))
+			break;
+		ps = NULL;
+	} lws_end_foreach_dll(p);
+
+	if (!ps && (up || down)) {
+		ps = malloc(sizeof(*ps));
+		if (!ps)
+			return;
+		memset(ps, 0, sizeof(*ps));
+		lws_strncpy(ps->host, name, sizeof(ps->host));
+		lws_dll2_add_tail(&ps->list, &vhd->server.power_state_owner);
+	}
+
+	if (ps) {
+		ps->powering_up = (char)up;
+		ps->powering_down = (char)down;
+		if (!ps->powering_up && !ps->powering_down) {
+			lws_dll2_remove(&ps->list);
+			free(ps);
+		}
+	}
+
+    sais_list_builders(vhd);
+}
+
 /*
  * Called from the builder protocol LWS_CALLBACK_CLOSED handler
  */
@@ -276,8 +340,27 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 		cb = lws_container_of(p, sai_plat_t, sai_plat_list);
 
 		if (cb->wsi == wsi) {
+			char q[256];
+
 			lwsl_notice("%s: Builder '%s' disconnected\n", __func__,
 				    cb->name);
+
+			lws_snprintf(q, sizeof(q), "UPDATE builders SET online=0 WHERE name='%s'", cb->name);
+			sai_sqlite3_statement(vhd->server.pdb, q, "set builder offline");
+
+			const char *dot = strchr(cb->name, '.');
+			if (dot) {
+				char host[128];
+				lws_strnncpy(host, cb->name, dot - cb->name, sizeof(host));
+				lws_start_foreach_dll_safe(struct lws_dll2 *, p2, p3, vhd->server.power_state_owner.head) {
+					sai_power_state_t *ps = lws_container_of(p2, sai_power_state_t, list);
+					if (!strcmp(ps->host, host)) {
+						lws_dll2_remove(&ps->list);
+						free(ps);
+						break;
+					}
+				} lws_end_foreach_dll_safe(p2, p3);
+			}
 
 			lws_dll2_remove(&cb->sai_plat_list);
 			free(cb);
@@ -432,6 +515,13 @@ handle:
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 					lws_dll2_add_tail(&live_cb->sai_plat_list, &vhd->server.builder_owner);
 				}
+			}
+
+			const char *dot = strchr(build->name, '.');
+			if (dot) {
+				char host[128];
+				lws_strnncpy(host, build->name, dot - build->name, sizeof(host));
+				sais_set_builder_power_state(vhd, host, 0, 0);
 			}
 		} lws_end_foreach_dll(pb);
 

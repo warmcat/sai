@@ -58,6 +58,8 @@ const lws_struct_map_t lsm_plat_for_json[] = {
     LSM_STRING_PTR(sai_plat_t, platform,"platform"),
     LSM_SIGNED(sai_plat_t, online,      "online"), // MUST be present
     LSM_UNSIGNED(sai_plat_t, last_seen, "last_seen"),
+    LSM_SIGNED(sai_plat_t, powering_up, "powering_up"),
+    LSM_SIGNED(sai_plat_t, powering_down, "powering_down"),
     LSM_CARRAY(sai_plat_t, peer_ip,     "peer_ip"),
 };
 
@@ -236,6 +238,13 @@ const lws_struct_map_t lsm_schema_json_map_artifact[] = {
 	LSM_SCHEMA_DLL2	(sai_artifact_t, list, NULL, lsm_artifact,
 			 "com-warmcat-sai-artifact"),
 };
+
+const lws_struct_map_t lsm_power_state[] = {
+	LSM_CARRAY(sai_power_state_t, host, "host"),
+	LSM_SIGNED(sai_power_state_t, powering_up, "powering_up"),
+	LSM_SIGNED(sai_power_state_t, powering_down, "powering_down"),
+};
+
 
 const lws_struct_map_t lsm_schema_sq3_map_artifact[] = {
 	LSM_SCHEMA_DLL2	(sai_artifact_t, list, NULL, lsm_artifact, "artifacts"),

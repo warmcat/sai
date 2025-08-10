@@ -31,6 +31,7 @@ struct sai_plat;
 typedef struct sai_platm {
 	lws_dll2_owner_t builder_owner;
 	lws_dll2_owner_t subs_owner;
+	lws_dll2_owner_t power_state_owner; /* sai_power_state_t */
 
 	/* the list of well-known, configured resources */
 	lws_dll2_owner_t resource_wellknown_owner; /* sai_resource_wellknown_t */
@@ -49,6 +50,11 @@ typedef struct sai_platform {
 
 	/* build and name over-allocated here */
 } sai_platform_t;
+
+typedef struct sai_powering_up_plat {
+	lws_dll2_t list;
+	char name[256];
+} sai_powering_up_plat_t;
 
 typedef enum {
 	SAIN_ACTION_INVALID,
@@ -185,6 +191,7 @@ struct vhd {
 	struct lws_dll2_owner		builders;
 	struct lws_dll2_owner		sai_powers;
 	struct lws_dll2_owner		pending_plats;
+	lws_dll2_owner_t		powering_up_list; /* sai_powering_up_plat_t */
 
 	struct lwsac			*ac_plats;
 
@@ -318,10 +325,14 @@ sais_platforms_with_tasks_pending(struct vhd *vhd);
 
 sai_plat_t *
 sais_builder_from_uuid(struct vhd *vhd, const char *hostname, const char *_file, int _line);
+sai_plat_t *
+sais_builder_from_host(struct vhd *vhd, const char *host);
 
 void
 sais_builder_disconnected(struct vhd *vhd, struct lws *wsi);
 
+void
+sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down);
 
 void
 sais_mark_all_builders_offline(struct vhd *vhd);

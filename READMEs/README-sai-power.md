@@ -122,14 +122,21 @@ or suspend at any time.
 To simplify that case, you can manually ask sai-power to start up a builder.
 
 ```
-# wget -O- http://10.199.0.10:3333/power-on/hostname
+$ wget -O- http://10.199.0.10:3333/power-on/hostname
 ```
 
 You can also manually turn off the builder from the same api.
 
 ```
-# wget -O- http://10.199.0.10:3333/power-off/hostname
+$ wget -O- http://10.199.0.10:3333/power-off/hostname
 ```
+
+You can get a list of controllable hostnames from sai-power, this
+info is coming from the JSON conf
+
+```
+$ wget -O- http://10.199.0.10:3333/ 2>/dev/null
+l2,w11-l2,b32,rpi5,rv2,ubuntu_rpi4,rpi3B_netbsdBE 
 
 Asking sai-power to do it has some advantages:
 
