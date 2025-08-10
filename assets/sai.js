@@ -871,6 +871,11 @@ function createBuilderDiv(plat) {
 	platDiv.className = "ibuil bdr";
 	if (!plat.online)
 		platDiv.className += " offline";
+	// Add a new class if the builder is powering up
+	if (plat.powering_up)
+		platDiv.className += " powering-up";
+	if (plat.powering_down)
+		platDiv.className += " powering-down";
 
 	platDiv.id = "binfo-" + plat.name;
 	platDiv.title = plat.platform + "@" + plat.name.split('.')[0] + " / " + plat.peer_ip;
@@ -1130,6 +1135,8 @@ function ws_open_sai()
                                nestedPlatforms.forEach(plat => {
                                        const div = existingDivs.get(plat.name) || createBuilderDiv(plat);
                                        div.classList.toggle('offline', !plat.online);
+                                       div.classList.toggle('powering-up', !!plat.powering_up);
+                                       div.classList.toggle('powering-down', !!plat.powering_down);
                                        groupDiv.appendChild(div);
                                });
                                tdContainer.appendChild(groupDiv);
@@ -1138,6 +1145,8 @@ function ws_open_sai()
                        mainPlatforms.forEach(plat => {
                                const div = existingDivs.get(plat.name) || createBuilderDiv(plat);
                                div.classList.toggle('offline', !plat.online);
+                               div.classList.toggle('powering-up', !!plat.powering_up);
+                               div.classList.toggle('powering-down', !!plat.powering_down);
                                tdContainer.appendChild(div);
                        });
                }

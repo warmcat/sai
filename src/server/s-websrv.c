@@ -167,6 +167,7 @@ sais_websrv_broadcast(struct lws_ss_handle *hsrv, const char *str, size_t len)
 int
 sais_list_builders(struct vhd *vhd)
 {
+	lwsl_warn("%s: ENTRY\n", __func__);
 	lws_dll2_owner_t db_builders_owner;
 	struct lwsac *ac = NULL;
 	char *p = vhd->json_builders, *end = p + sizeof(vhd->json_builders),
@@ -209,6 +210,21 @@ sais_list_builders(struct vhd *vhd)
 			builder_from_db->online = 0;
 			builder_from_db->ongoing = 0;
 		}
+
+		builder_from_db->powering_up = 0;
+		builder_from_db->powering_down = 0;
+
+		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
+			sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);
+			size_t host_len = strlen(ps->host);
+
+			if (!strncmp(builder_from_db->name, ps->host, host_len) &&
+			    builder_from_db->name[host_len] == '.') {
+				builder_from_db->powering_up = ps->powering_up;
+				builder_from_db->powering_down = ps->powering_down;
+				break;
+			}
+		} lws_end_foreach_dll(p);
 
 		js = lws_struct_json_serialize_create(
 			lsm_schema_map_plat_simple,

@@ -763,30 +763,6 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		sais_builder_disconnected(vhd, wsi);
 
-		/*
-		 * Find any builder-tracking objects that were using this departing
-		 * connection. Mark them as offline in the database.
-		 * Also remove from the in-memory list of active builders.
-		 */
-		lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
-				      vhd->server.builder_owner.head) {
-			sai_plat_t *cb = lws_container_of(p, sai_plat_t,
-							      sai_plat_list);
-			char q[256];
-
-			if (cb->wsi == wsi) {
-				lwsl_warn("%s: Builder '%s' disconnected. Removing from live list.\n",
-					  __func__, cb->name);
-				lws_snprintf(q, sizeof(q), "UPDATE builders SET online=0 WHERE name='%s'", cb->name);
-				sai_sqlite3_statement(vhd->server.pdb, q, "set builder offline");
-
-				/* remove from active in-memory list */
-				lws_dll2_remove(&cb->sai_plat_list);
-				free(cb);
-			}
-
-		} lws_end_foreach_dll_safe(p, p1);
-
 		sais_resource_wellknown_remove_pss(&pss->vhd->server, pss);
 
 		if (pss->blob_artifact) {
@@ -809,12 +785,51 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 	case LWS_CALLBACK_RECEIVE:
 
-		if (!pss->vhd)
-			pss->vhd = vhd;
-
-		lwsl_info("SWT_BUILDER RX: %d\n", (int)len);
 		/*
-		 * Builder sent us something on websockets
+		 * A ws client sent us something... it could be a builder or
+		 * it could be sai-power. We can tell which by the `is_power`
+		 * flag we set in the pss during ESTABLISHED.
+		 */
+
+		if (pss->is_power) {
+			struct lejp_ctx ctx;
+			lws_struct_args_t a;
+			sai_power_state_t *ps;
+			const lws_struct_map_t lsm_schema_power_state[] = {
+				LSM_SCHEMA(sai_power_state_t, NULL, lsm_power_state,
+					   "com.warmcat.sai.powerstate"),
+			};
+
+			/* This is a message from sai-power */
+			lwsl_notice("RX from sai-power: %.*s\n", (int)len, (const char *)in);
+
+			memset(&a, 0, sizeof(a));
+			a.map_st[0] = lsm_schema_power_state;
+			a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_power_state);
+			a.ac_block_size = 512;
+
+			lws_struct_json_init_parse(&ctx, NULL, &a);
+			if (lejp_parse(&ctx, (uint8_t *)in, (int)len) < 0 || !a.dest) {
+				lwsl_warn("Failed to parse msg from sai-power\n");
+				lwsac_free(&a.ac);
+				break; // Exit case
+			}
+
+			ps = (sai_power_state_t *)a.dest;
+			if (ps->powering_up) {
+				lwsl_notice("sai-power is powering up: %s\n", ps->host);
+				sais_set_builder_power_state(vhd, ps->host, 1, 0);
+			} else if (ps->powering_down) {
+				lwsl_notice("sai-power is powering down: %s\n", ps->host);
+				sais_set_builder_power_state(vhd, ps->host, 0, 1);
+			}
+
+			lwsac_free(&a.ac);
+			break; // Exit case
+		}
+
+		/*
+		 * This is a message from a builder
 		 */
 		pss->wsi = wsi;
 		if (sais_ws_json_rx_builder(vhd, pss, in, len))

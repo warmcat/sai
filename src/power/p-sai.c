@@ -195,6 +195,7 @@ saip_sul_action_power_off(struct lws_sorted_usec_list *sul)
 	}
 
 	lwsl_warn("%s: powering off host %s\n", __func__, sp->host);
+	saip_notify_server_power_state(sp->host, 0, 1);
 
 	if (lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,
 			  (void *)sp->power_off_url, NULL, NULL, NULL)) {
@@ -281,7 +282,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
         case LWSSSCS_SERVER_TXN:
 
 		lws_ss_get_metadata(lws_ss_from_user(g), "path", (const void **)&path, &len);
-		// lwsl_ss_user(lws_ss_from_user(g), "LWSSSCS_SERVER_TXN path %.*s", (int)len, path);
+		lwsl_ss_user(lws_ss_from_user(g), "LWSSSCS_SERVER_TXN path '%.*s' (%d)", (int)len, path, (int)len);
 
 		/*
 		 * path is containing a string like "/power-off/b32"
@@ -300,6 +301,28 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
                 lws_ss_server_ack(lws_ss_from_user(g), 0);
 
 		g->pos = 0;
+
+		if (len == 1 && path[0] == '/') {
+			/* print controllable platforms */
+
+			g->size = 0;
+
+			lws_start_foreach_dll(struct lws_dll2 *, px, power.sai_server_owner.head) {
+				saip_server_t *s = lws_container_of(px, saip_server_t, list);
+
+				lws_start_foreach_dll(struct lws_dll2 *, px1, s->sai_plat_owner.head) {
+					saip_server_plat_t *sp = lws_container_of(px1, saip_server_plat_t, list);
+
+					if (g->size)
+						g->payload[g->size++] = ',';
+					g->size = g->size + (size_t)lws_snprintf(g->payload + g->size, sizeof(g->payload) - g->size - 3, "%s", sp->host);
+
+				} lws_end_foreach_dll(px1);
+			} lws_end_foreach_dll(px);
+
+			g->payload[g->size] = '\0';
+			goto bail;
+		}
 
 		if (len > 6 && !strncmp(path, "/stay/", 6)) {
 			lws_strnncpy(pn, &path[6], len - 6, sizeof(pn));
@@ -324,6 +347,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 				goto bail;
 			}
 			if (sp->power_on_mac) {
+				saip_notify_server_power_state(sp->host, 1, 0);
 				if (write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
 					      sp->power_on_mac, strlen(sp->power_on_mac)) !=
 						(ssize_t)strlen(sp->power_on_mac))
@@ -347,9 +371,10 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
 					"power-on ss failed create %s", sp->host);
 				goto bail;
-			}
+			}	
 
 			lwsl_warn("%s: powered on host %s\n", __func__, sp->host);
+			saip_notify_server_power_state(sp->host, 1, 0);
 
 			g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
 				"Manually powered on %s", sp->host);
