@@ -167,6 +167,7 @@ sais_websrv_broadcast(struct lws_ss_handle *hsrv, const char *str, size_t len)
 int
 sais_list_builders(struct vhd *vhd)
 {
+	lwsl_warn("%s: ENTRY\n", __func__);
 	lws_dll2_owner_t db_builders_owner;
 	struct lwsac *ac = NULL;
 	char *p = vhd->json_builders, *end = p + sizeof(vhd->json_builders),
