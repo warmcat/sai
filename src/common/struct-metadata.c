@@ -47,8 +47,6 @@ const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/includ
 	LSM_STRING_PTR	(sai_plat_t, platform,		"platform"),
 	LSM_UNSIGNED	(sai_plat_t, last_seen,		"last_seen"),
 	LSM_CARRAY	(sai_plat_t, peer_ip,		"peer_ip"),
-	LSM_SIGNED(sai_plat_t, powering_up, "powering_up"),
-	LSM_SIGNED(sai_plat_t, powering_down, "powering_down"),
 };
 
 // This is the map for serializing to JSON

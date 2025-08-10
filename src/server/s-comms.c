@@ -777,8 +777,17 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			if (cb->wsi == wsi) {
 				lwsl_warn("%s: Builder '%s' disconnected. Removing from live list.\n",
 					  __func__, cb->name);
-				lws_snprintf(q, sizeof(q), "UPDATE builders SET online=0, powering_up=0, powering_down=0 WHERE name='%s'", cb->name);
+				lws_snprintf(q, sizeof(q), "UPDATE builders SET online=0 WHERE name='%s'", cb->name);
 				sai_sqlite3_statement(vhd->server.pdb, q, "set builder offline");
+
+				lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1, vhd->server.power_state_owner.head) {
+					sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);
+					if (!strcmp(ps->name, cb->name)) {
+						lws_dll2_remove(&ps->list);
+						free(ps);
+						break;
+					}
+				} lws_end_foreach_dll_safe(p, p1);
 
 				/* remove from active in-memory list */
 				lws_dll2_remove(&cb->sai_plat_list);

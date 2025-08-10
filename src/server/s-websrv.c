@@ -210,6 +210,18 @@ sais_list_builders(struct vhd *vhd)
 			builder_from_db->ongoing = 0;
 		}
 
+		builder_from_db->powering_up = 0;
+		builder_from_db->powering_down = 0;
+
+		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
+			sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);
+			if (!strcmp(ps->name, builder_from_db->name)) {
+				builder_from_db->powering_up = ps->powering_up;
+				builder_from_db->powering_down = ps->powering_down;
+				break;
+			}
+		} lws_end_foreach_dll(p);
+
 		js = lws_struct_json_serialize_create(
 			lsm_schema_map_plat_simple,
 			LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),

@@ -31,6 +31,7 @@ struct sai_plat;
 typedef struct sai_platm {
 	lws_dll2_owner_t builder_owner;
 	lws_dll2_owner_t subs_owner;
+	lws_dll2_owner_t power_state_owner; /* sai_power_state_t */
 
 	/* the list of well-known, configured resources */
 	lws_dll2_owner_t resource_wellknown_owner; /* sai_resource_wellknown_t */
