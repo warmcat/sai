@@ -37,7 +37,6 @@
 #endif
 #endif
 #include <pthread.h>
-#include <git2.h>
 
 #define SAI_LOAD_REPORT_US	(1 * LWS_US_PER_SEC)
 #define SAI_IDLE_GRACE_US	(30 * LWS_US_PER_SEC)
@@ -88,6 +87,12 @@ typedef struct sai_mirror_instance {
 	lws_dll2_owner_t		completed_req;
 
 	uint8_t				finish;
+
+	/* for sync spawn */
+	pthread_mutex_t			spawn_mut;
+	pthread_cond_t			spawn_cond;
+	int				spawn_exit_code;
+	char				spawn_done;
 } sai_mirror_instance_t;
 
 

@@ -23,9 +23,10 @@
 #include <string.h>
 #include <signal.h>
 #include <assert.h>
-#include <stdio.h>
 
 #include "b-private.h"
+
+#include <git2.h>
 
 enum {
 	SRFS_REQUESTING,
@@ -52,6 +53,68 @@ typedef struct sai_mirror_req {
 } sai_mirror_req_t;
 
 static void
+sai_git_helper_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
+		int we_killed_him)
+{
+	sai_mirror_instance_t *mi = (sai_mirror_instance_t *)opaque;
+
+	pthread_mutex_lock(&mi->spawn_mut);
+
+	mi->spawn_done = 1;
+
+	if (we_killed_him) {
+		mi->spawn_exit_code = -1;
+		goto bail;
+	}
+
+	switch (si->si_code) {
+	case CLD_EXITED:
+		mi->spawn_exit_code = si->si_status;
+		break;
+	case CLD_KILLED:
+	case CLD_DUMPED:
+		mi->spawn_exit_code = -1;
+		break;
+	}
+
+bail:
+	pthread_cond_broadcast(&mi->spawn_cond);
+	pthread_mutex_unlock(&mi->spawn_mut);
+}
+
+static int
+saib_spawn_sync(const char **args)
+{
+	sai_mirror_instance_t *mi = &builder.mi;
+	struct lws_spawn_piped_info info;
+
+	memset(&info, 0, sizeof(info));
+	info.vh			= builder.vhost;
+	info.exec_array		= args;
+	info.protocol_name	= "sai-stdxxx";
+	info.reap_cb		= sai_git_helper_reap_cb;
+	info.opaque		= mi;
+	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
+
+	pthread_mutex_lock(&mi->spawn_mut);
+
+	mi->spawn_done = 0;
+	mi->spawn_exit_code = -1;
+
+	if (!lws_spawn_piped(&info)) {
+		pthread_mutex_unlock(&mi->spawn_mut);
+		return -1;
+	}
+
+	while (!mi->spawn_done)
+		pthread_cond_wait(&mi->spawn_cond, &mi->spawn_mut);
+
+	pthread_mutex_unlock(&mi->spawn_mut);
+
+	return mi->spawn_exit_code;
+}
+
+static void
 sai_mirror_req_state_set(sai_mirror_req_t *req, int n)
 {
 	lwsl_notice("%s: req %p: %d -> %d\n", __func__, req, req->state, n);
@@ -67,59 +130,22 @@ enum {
 static int
 sai_mirror_local_checkout(struct sai_nspawn *ns)
 {
-	char cmd[512], inp[512];
-	FILE *fp;
+	char inp[512];
+	const char *args[] = {
+		"./scripts/sai-git-helper.sh",
+		"checkout",
+		ns->path,
+		inp,
+		ns->hash,
+		NULL
+	};
 
 	lws_strncpy(inp, ns->inp, sizeof(inp) - 1);
 	if (inp[strlen(inp) - 1] == '\\')
 		inp[strlen(inp) - 1] = '\0';
 
-	/*
-	 * Remove anything that was already in the build-specific dir
-	 */
-
-	lwsl_notice("%s: rm -rf %s\n", __func__, inp);
-	lws_dir(inp, NULL, lws_dir_rm_rf_cb);
-
-	/*
-	 * Make sure the build-specific dir itself is left standing in there.
-	 *
-	 * We can only create files and dirs using the global sai:nobody
-	 * credentials since we have dropped root long ago
-	 */
-
-	if (mkdir(inp, 0755))
-		lwsl_notice("%s: mkdir %s failed\n", __func__, ns->inp);
-
-
-	lws_snprintf(cmd, sizeof(cmd), "git clone --local %s %s",
-		     ns->path, inp);
-
-	lwsl_notice("%s: %s\n", __func__, cmd);
-
-	fp = popen(cmd, "r");
-	if (!fp)
+	if (saib_spawn_sync(args))
 		return SAIB_CHECKOUT_CHECKOUT_FAILED;
-
-	if (pclose(fp))
-		return SAIB_CHECKOUT_CHECKOUT_FAILED;
-
-	lws_snprintf(cmd, sizeof(cmd), "git -C %s checkout %s",
-		     inp, ns->hash);
-
-	lwsl_notice("%s: %s\n", __func__, cmd);
-
-	fp = popen(cmd, "r");
-	if (!fp)
-		return SAIB_CHECKOUT_CHECKOUT_FAILED;
-
-	if (pclose(fp))
-		/*
-		 * This can fail if the mirror doesn't have the hash yet
-		 */
-		return SAIB_CHECKOUT_NOT_IN_LOCAL_MIRROR;
-
-	lwsl_notice("%s: checkout OK\n", __func__);
 
 	return SAIB_CHECKOUT_OK;
 }
@@ -413,10 +439,6 @@ thread_repo(void *d)
 	lwsl_notice("%s: repo thread start\n", __func__);
 
 	while (!mi->finish) {
-		char cmd[512], spec[96];
-		struct stat st;
-		FILE *fp;
-
 		pthread_mutex_lock(&mi->mut);
 
 		/* we sleep if there are no requests pending or ongoing */
@@ -450,15 +472,6 @@ thread_repo(void *d)
 
 		} lws_end_foreach_dll_safe(d, d1);
 
-		//req = lws_dll2_get_head(&bi->requests);
-
-		//lws_dll2_remove(&->overall_list);
-
-		/*
-		 * The request object on the list might be removed and destroyed
-		 * while we do this long-term mirroring action.  So take a temp
-		 * copy of it to set the action up, before releasing the mutex.
-		 */
 		if (req)
 			rcopy = *req;
 
@@ -466,63 +479,23 @@ thread_repo(void *d)
 		if (!req)
 			continue;
 
-		/*
-		 * ... we cannot dereference req after releasing the mutex.
-		 * We made a temp copy of it in rcopy, to set the transaction
-		 * up we can use that so we can be sure it's around for that.
-		 */
-
 		new_state = SRFS_FAILED;
 
-		if (stat(rcopy.path, &st) == -1) {
-			lws_snprintf(cmd, sizeof(cmd), "git init --bare %s",
-				     rcopy.path);
-			if (system(cmd)) {
-				fprintf(stderr, "%s: unable to init sticky repo %s, errno %d\n",
-					 __func__, rcopy.path, errno);
+		{
+			const char *args[] = {
+				"./scripts/sai-git-helper.sh",
+				"mirror",
+				rcopy.url,
+				rcopy.ref,
+				rcopy.hash,
+				rcopy.path,
+				NULL
+			};
 
-				goto fail_out;
-			}
-		}
-
-		/*
-		 * Fetch over the branch or tag we're interested in from the
-		 * remote repo and into our local sticky mirror
-		 *
-		 *  git fetch <remote repo> +<ref>:<ref>
-		 */
-
-		lws_snprintf(spec, sizeof(spec), "%s:ref-%s", rcopy.ref, rcopy.hash);
-		lws_snprintf(cmd, sizeof(cmd), "git -C %s fetch %s %s",
-			     rcopy.path, rcopy.url, spec);
-
-		fprintf(stderr, "%s: fetching %s\n", __func__, cmd);
-
-		/*
-		 * This may take an open-ended amount of time
-		 */
-
-		fp = popen(cmd, "r");
-		if (fp) {
-			char line[256];
-
-			while (fgets(line, sizeof(line), fp))
-				fprintf(stderr, "sai-git: %s", line);
-
-			if (pclose(fp) == 0)
+			if (!saib_spawn_sync(args))
 				new_state = SRFS_SUCCEEDED;
 		}
 
-               if (new_state == SRFS_FAILED) {
-			fprintf(stderr, "%s: failed to fetch %s\n",
-				__func__, spec);
-			goto fail_out;
-		}
-
-		fprintf(stderr, "%s: syncing mirror fetch %s %s successful\n",
-			    __func__, rcopy.url, rcopy.hash);
-
-fail_out:
 		/*
 		 * We notify the threadpool monitoring thread
 		 */
