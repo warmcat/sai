@@ -288,6 +288,12 @@ sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down
 			return;
 	}
 
+	if (down) {
+		live_builder = sais_builder_from_host(vhd, name);
+		if (!live_builder)
+			return;
+	}
+
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
 		ps = lws_container_of(p, sai_power_state_t, list);
 		if (!strcmp(ps->host, name))
