@@ -135,11 +135,11 @@ sai_mirror_local_checkout(struct sai_nspawn *ns)
 
 #if defined(WIN32)
 	p = strrchr(builder.exe_path, '\\');
-	lws_snprintf(script_path, sizeof(script_path), "%.*s\\scripts\\sai-git-helper.bat",
+	lws_snprintf(script_path, sizeof(script_path), "%.*s\\sai-git-helper.bat",
 		     (int)(p - builder.exe_path), builder.exe_path);
 #else
 	p = strrchr(builder.exe_path, '/');
-	lws_snprintf(script_path, sizeof(script_path), "%.*s/scripts/sai-git-helper.sh",
+	lws_snprintf(script_path, sizeof(script_path), "%.*s/sai-git-helper.sh",
 		     (int)(p - builder.exe_path), builder.exe_path);
 #endif
 
@@ -499,11 +499,11 @@ thread_repo(void *d)
 
 #if defined(WIN32)
 			p = strrchr(builder.exe_path, '\\');
-			lws_snprintf(script_path, sizeof(script_path), "%.*s\\scripts\\sai-git-helper.bat",
+			lws_snprintf(script_path, sizeof(script_path), "%.*s\\sai-git-helper.bat",
 					(int)(p - builder.exe_path), builder.exe_path);
 #else
 			p = strrchr(builder.exe_path, '/');
-			lws_snprintf(script_path, sizeof(script_path), "%.*s/scripts/sai-git-helper.sh",
+			lws_snprintf(script_path, sizeof(script_path), "%.*s/sai-git-helper.sh",
 					(int)(p - builder.exe_path), builder.exe_path);
 #endif
 
