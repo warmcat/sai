@@ -448,6 +448,7 @@ handle:
 				if (dot) {
 					char host[128];
 					lws_strnncpy(host, live_cb->name, dot - live_cb->name, sizeof(host));
+					lwsl_warn("%s: Builder connected, clearing power state for host '%s'\n", __func__, host);
 					sais_set_builder_power_state(vhd, host, 0, 0);
 				}
 			} else {

@@ -780,14 +780,19 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				lws_snprintf(q, sizeof(q), "UPDATE builders SET online=0 WHERE name='%s'", cb->name);
 				sai_sqlite3_statement(vhd->server.pdb, q, "set builder offline");
 
-				lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1, vhd->server.power_state_owner.head) {
-					sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);
-					if (!strcmp(ps->host, cb->name)) {
-						lws_dll2_remove(&ps->list);
-						free(ps);
-						break;
-					}
-				} lws_end_foreach_dll_safe(p, p1);
+				const char *dot = strchr(cb->name, '.');
+				if (dot) {
+					char host[128];
+					lws_strnncpy(host, cb->name, dot - cb->name, sizeof(host));
+					lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1, vhd->server.power_state_owner.head) {
+						sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);
+						if (!strcmp(ps->host, host)) {
+							lws_dll2_remove(&ps->list);
+							free(ps);
+							break;
+						}
+					} lws_end_foreach_dll_safe(p, p1);
+				}
 
 				/* remove from active in-memory list */
 				lws_dll2_remove(&cb->sai_plat_list);
