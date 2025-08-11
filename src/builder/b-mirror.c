@@ -96,9 +96,14 @@ static int
 callback_git_helper_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		    void *user, void *in, size_t len)
 {
+	uint8_t buf[4096];
+	int n;
+
 	switch (reason) {
 	case LWS_CALLBACK_RAW_RX_FILE:
-		lwsl_warn("git-helper: %.*s", (int)len, (const char *)in);
+		n = read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf));
+		if (n > 0)
+			lwsl_warn("git-helper: %.*s", n, (const char *)buf);
 		break;
 	default:
 		break;
