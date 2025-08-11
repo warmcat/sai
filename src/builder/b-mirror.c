@@ -92,6 +92,23 @@ static const char * const git_helper_bat =
 	"exit /b 1\n";
 #endif
 
+static int
+callback_git_helper_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
+		    void *user, void *in, size_t len)
+{
+	switch (reason) {
+	case LWS_CALLBACK_RAW_RX_FILE:
+		lwsl_warn("git-helper: %.*s", (int)len, (const char *)in);
+		break;
+	default:
+		break;
+	}
+	return 0;
+}
+
+struct lws_protocols protocol_git_helper_stdxxx =
+		{ "sai-git-helper-stdxxx", callback_git_helper_stdwsi, 0, 0 };
+
 
 enum {
 	SRFS_REQUESTING,
@@ -195,7 +212,7 @@ saib_spawn_sync(struct sai_nspawn *ns, const char *op, const char **args)
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
 	info.exec_array		= pargs;
-	info.protocol_name	= "sai-stdxxx";
+	info.protocol_name	= "sai-git-helper-stdxxx";
 	info.reap_cb		= sai_git_helper_reap_cb;
 	info.opaque		= mi;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
