@@ -131,8 +131,13 @@ static int
 sai_mirror_local_checkout(struct sai_nspawn *ns)
 {
 	char inp[512];
+#if defined(WIN32)
+	const char *script_path = "scripts\\sai-git-helper.bat";
+#else
+	const char *script_path = "scripts/sai-git-helper.sh";
+#endif
 	const char *args[] = {
-		"./scripts/sai-git-helper.sh",
+		script_path,
 		"checkout",
 		ns->path,
 		inp,
@@ -482,8 +487,13 @@ thread_repo(void *d)
 		new_state = SRFS_FAILED;
 
 		{
+#if defined(WIN32)
+			const char *script_path = "scripts\\sai-git-helper.bat";
+#else
+			const char *script_path = "scripts/sai-git-helper.sh";
+#endif
 			const char *args[] = {
-				"./scripts/sai-git-helper.sh",
+				script_path,
 				"mirror",
 				rcopy.url,
 				rcopy.ref,
