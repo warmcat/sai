@@ -71,8 +71,10 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 	char log[100];
 	int n;
 
+	pthread_mutex_lock(&ns->mut);
 	ns->state = (uint8_t)state;
 	ns->state_changed = 1;
+	pthread_mutex_unlock(&ns->mut);
 
 	n = lws_snprintf(log, sizeof(log), ">saib> %s\n", nsstates[state]);
 
@@ -154,8 +156,8 @@ saib_task_destroy(struct sai_nspawn *ns)
 	}
 
 
+	pthread_mutex_lock(&ns->mut);
 	if (ns->task && ns->task->told_ongoing) {
-
 		/*
 		 * Account that we're not doing this task any more
 		 */
@@ -200,6 +202,7 @@ saib_task_destroy(struct sai_nspawn *ns)
 		lwsac_free(&ns->task->ac_task_container);
 		ns->task = NULL;
 	}
+	pthread_mutex_unlock(&ns->mut);
 }
 
 static void
@@ -521,9 +524,15 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 					   sp->nspawn_owner.head) {
 		       struct sai_nspawn *xns = lws_container_of(d,
 						 struct sai_nspawn, list);
+		       char found = 0;
 
 		       n++;
-		       if (!xns->task) {
+		       pthread_mutex_lock(&xns->mut);
+		       if (!xns->task)
+			       found = 1;
+		       pthread_mutex_unlock(&xns->mut);
+
+		       if (found) {
 			       ns = xns;
 			       break;
 		       }

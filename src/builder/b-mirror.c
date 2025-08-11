@@ -119,13 +119,6 @@ typedef struct sai_mirror_req {
 int saib_start_checkout(struct sai_nspawn *ns);
 
 static void
-sai_mirror_req_state_set(sai_mirror_req_t *req, int n)
-{
-	lwsl_notice("%s: req %p: %d -> %d\n", __func__, req, req->state, n);
-	req->state = n;
-}
-
-static void
 saib_start_mirror_fetch(struct sai_nspawn *ns)
 {
 	sai_mirror_instance_t *mi = &builder.mi;
