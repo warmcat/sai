@@ -136,6 +136,7 @@ struct sai_builder {
 	sai_mirror_instance_t	mi;
 
 	char			path[256];
+	char			exe_path[1024];
 
 #if defined(__linux__) || defined(__APPLE__)
 	/* For system-wide load calculation */

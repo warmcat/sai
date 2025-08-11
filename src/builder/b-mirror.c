@@ -130,12 +130,19 @@ enum {
 static int
 sai_mirror_local_checkout(struct sai_nspawn *ns)
 {
-	char inp[512];
+	char inp[512], script_path[1024];
+	const char *p;
+
 #if defined(WIN32)
-	const char *script_path = "scripts\\sai-git-helper.bat";
+	p = strrchr(builder.exe_path, '\\');
+	lws_snprintf(script_path, sizeof(script_path), "%.*s\\scripts\\sai-git-helper.bat",
+		     (int)(p - builder.exe_path), builder.exe_path);
 #else
-	const char *script_path = "scripts/sai-git-helper.sh";
+	p = strrchr(builder.exe_path, '/');
+	lws_snprintf(script_path, sizeof(script_path), "%.*s/scripts/sai-git-helper.sh",
+		     (int)(p - builder.exe_path), builder.exe_path);
 #endif
+
 	const char *args[] = {
 		script_path,
 		"checkout",
@@ -487,11 +494,19 @@ thread_repo(void *d)
 		new_state = SRFS_FAILED;
 
 		{
+			char script_path[1024];
+			const char *p;
+
 #if defined(WIN32)
-			const char *script_path = "scripts\\sai-git-helper.bat";
+			p = strrchr(builder.exe_path, '\\');
+			lws_snprintf(script_path, sizeof(script_path), "%.*s\\scripts\\sai-git-helper.bat",
+					(int)(p - builder.exe_path), builder.exe_path);
 #else
-			const char *script_path = "scripts/sai-git-helper.sh";
+			p = strrchr(builder.exe_path, '/');
+			lws_snprintf(script_path, sizeof(script_path), "%.*s/scripts/sai-git-helper.sh",
+					(int)(p - builder.exe_path), builder.exe_path);
 #endif
+
 			const char *args[] = {
 				script_path,
 				"mirror",
