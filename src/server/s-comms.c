@@ -851,12 +851,10 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			ps = (sai_power_state_t *)a.dest;
 			if (ps->powering_up) {
 				lwsl_notice("sai-power is powering up: %s\n", ps->name);
-				sais_set_builder_powering_up_status(vhd, ps->name, 1);
-				sais_set_builder_powering_down_status(vhd, ps->name, 0);
+				sais_set_builder_power_state(vhd, ps->name, 1, 0);
 			} else if (ps->powering_down) {
 				lwsl_notice("sai-power is powering down: %s\n", ps->name);
-				sais_set_builder_powering_down_status(vhd, ps->name, 1);
-				sais_set_builder_powering_up_status(vhd, ps->name, 0);
+				sais_set_builder_power_state(vhd, ps->name, 0, 1);
 			}
 
 			lwsac_free(&a.ac);

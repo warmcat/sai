@@ -259,7 +259,7 @@ sais_builder_from_uuid(struct vhd *vhd, const char *hostname, const char *_file,
 }
 
 void
-sais_set_builder_powering_up_status(struct vhd *vhd, const char *name, int status)
+sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down)
 {
 	sai_power_state_t *ps = NULL;
 
@@ -270,7 +270,7 @@ sais_set_builder_powering_up_status(struct vhd *vhd, const char *name, int statu
 		ps = NULL;
 	} lws_end_foreach_dll(p);
 
-	if (!ps && status) {
+	if (!ps && (up || down)) {
 		ps = malloc(sizeof(*ps));
 		if (!ps)
 			return;
@@ -280,39 +280,8 @@ sais_set_builder_powering_up_status(struct vhd *vhd, const char *name, int statu
 	}
 
 	if (ps) {
-		ps->powering_up = (char)status;
-		if (!ps->powering_up && !ps->powering_down) {
-			lws_dll2_remove(&ps->list);
-			free(ps);
-		}
-	}
-
-    sais_list_builders(vhd);
-}
-
-void
-sais_set_builder_powering_down_status(struct vhd *vhd, const char *name, int status)
-{
-	sai_power_state_t *ps = NULL;
-
-	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
-		ps = lws_container_of(p, sai_power_state_t, list);
-		if (!strcmp(ps->name, name))
-			break;
-		ps = NULL;
-	} lws_end_foreach_dll(p);
-
-	if (!ps && status) {
-		ps = malloc(sizeof(*ps));
-		if (!ps)
-			return;
-		memset(ps, 0, sizeof(*ps));
-		lws_strncpy(ps->name, name, sizeof(ps->name));
-		lws_dll2_add_tail(&ps->list, &vhd->server.power_state_owner);
-	}
-
-	if (ps) {
-		ps->powering_down = (char)status;
+		ps->powering_up = (char)up;
+		ps->powering_down = (char)down;
 		if (!ps->powering_up && !ps->powering_down) {
 			lws_dll2_remove(&ps->list);
 			free(ps);
@@ -475,8 +444,7 @@ handle:
 				live_cb->ongoing = 0; /* Reset ongoing task count on connect */
 				lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 				live_cb->online = 1;
-				sais_set_builder_powering_up_status(vhd, live_cb->name, 0);
-				sais_set_builder_powering_down_status(vhd, live_cb->name, 0);
+				sais_set_builder_power_state(vhd, live_cb->name, 0, 0);
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
 				size_t nlen = strlen(build->name) + 1;
