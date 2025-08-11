@@ -258,10 +258,35 @@ sais_builder_from_uuid(struct vhd *vhd, const char *hostname, const char *_file,
 	return NULL;
 }
 
+sai_plat_t *
+sais_builder_from_host(struct vhd *vhd, const char *host)
+{
+	lws_start_foreach_dll(struct lws_dll2 *, p,
+			      vhd->server.builder_owner.head) {
+		sai_plat_t *cb = lws_container_of(p, sai_plat_t,
+				sai_plat_list);
+		size_t host_len = strlen(host);
+
+		if (!strncmp(cb->name, host, host_len) &&
+		    cb->name[host_len] == '.')
+			return cb;
+
+	} lws_end_foreach_dll(p);
+
+	return NULL;
+}
+
 void
 sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down)
 {
 	sai_power_state_t *ps = NULL;
+	sai_plat_t *live_builder;
+
+	if (up) {
+		live_builder = sais_builder_from_host(vhd, name);
+		if (live_builder)
+			return;
+	}
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
 		ps = lws_container_of(p, sai_power_state_t, list);
@@ -444,13 +469,6 @@ handle:
 				live_cb->ongoing = 0; /* Reset ongoing task count on connect */
 				lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 				live_cb->online = 1;
-				const char *dot = strchr(live_cb->name, '.');
-				if (dot) {
-					char host[128];
-					lws_strnncpy(host, live_cb->name, dot - live_cb->name, sizeof(host));
-					lwsl_warn("%s: Builder connected, clearing power state for host '%s'\n", __func__, host);
-					sais_set_builder_power_state(vhd, host, 0, 0);
-				}
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
 				size_t nlen = strlen(build->name) + 1;
@@ -472,6 +490,13 @@ handle:
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 					lws_dll2_add_tail(&live_cb->sai_plat_list, &vhd->server.builder_owner);
 				}
+			}
+
+			const char *dot = strchr(build->name, '.');
+			if (dot) {
+				char host[128];
+				lws_strnncpy(host, build->name, dot - build->name, sizeof(host));
+				sais_set_builder_power_state(vhd, host, 0, 0);
 			}
 		} lws_end_foreach_dll(pb);
 

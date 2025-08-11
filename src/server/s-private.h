@@ -325,6 +325,8 @@ sais_platforms_with_tasks_pending(struct vhd *vhd);
 
 sai_plat_t *
 sais_builder_from_uuid(struct vhd *vhd, const char *hostname, const char *_file, int _line);
+sai_plat_t *
+sais_builder_from_host(struct vhd *vhd, const char *host);
 
 void
 sais_builder_disconnected(struct vhd *vhd, struct lws *wsi);
