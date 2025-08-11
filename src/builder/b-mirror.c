@@ -228,18 +228,16 @@ static int
 sai_mirror_local_checkout(struct sai_nspawn *ns)
 {
 	char inp[512];
-	const char *args[6];
-
-	lws_strncpy(inp, ns->inp, sizeof(inp) - 1);
-	if (inp[strlen(inp) - 1] == '\\')
-		inp[strlen(inp) - 1] = '\0';
-
 	const char *args[] = {
 		ns->path,
 		inp,
 		ns->hash,
 		NULL
 	};
+
+	lws_strncpy(inp, ns->inp, sizeof(inp) - 1);
+	if (inp[strlen(inp) - 1] == '\\')
+		inp[strlen(inp) - 1] = '\0';
 
 	if (saib_spawn_sync(ns, "checkout", args))
 		return SAIB_CHECKOUT_CHECKOUT_FAILED;
