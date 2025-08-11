@@ -216,7 +216,10 @@ sais_list_builders(struct vhd *vhd)
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
 			sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);
-			if (strstr(builder_from_db->name, ps->name)) {
+			size_t host_len = strlen(ps->host);
+
+			if (!strncmp(builder_from_db->name, ps->host, host_len) &&
+			    builder_from_db->name[host_len] == '.') {
 				builder_from_db->powering_up = ps->powering_up;
 				builder_from_db->powering_down = ps->powering_down;
 				break;

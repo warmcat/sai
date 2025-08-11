@@ -240,7 +240,7 @@ const lws_struct_map_t lsm_schema_json_map_artifact[] = {
 };
 
 const lws_struct_map_t lsm_power_state[] = {
-	LSM_CARRAY(sai_power_state_t, name, "name"),
+	LSM_CARRAY(sai_power_state_t, host, "host"),
 	LSM_SIGNED(sai_power_state_t, powering_up, "powering_up"),
 	LSM_SIGNED(sai_power_state_t, powering_down, "powering_down"),
 };

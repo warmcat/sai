@@ -66,7 +66,7 @@ saip_notify_server_power_state(const char *plat_name, int up, int down)
 		return;
 
 	memset(ps, 0, sizeof(*ps));
-	lws_strncpy(ps->name, plat_name, sizeof(ps->name));
+	lws_strncpy(ps->host, plat_name, sizeof(ps->host));
 	ps->powering_up = (char)up;
 	ps->powering_down = (char)down;
 

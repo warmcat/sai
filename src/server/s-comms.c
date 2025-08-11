@@ -782,7 +782,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 				lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1, vhd->server.power_state_owner.head) {
 					sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);
-					if (!strcmp(ps->name, cb->name)) {
+					if (!strcmp(ps->host, cb->name)) {
 						lws_dll2_remove(&ps->list);
 						free(ps);
 						break;
@@ -850,11 +850,11 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 			ps = (sai_power_state_t *)a.dest;
 			if (ps->powering_up) {
-				lwsl_notice("sai-power is powering up: %s\n", ps->name);
-				sais_set_builder_power_state(vhd, ps->name, 1, 0);
+				lwsl_notice("sai-power is powering up: %s\n", ps->host);
+				sais_set_builder_power_state(vhd, ps->host, 1, 0);
 			} else if (ps->powering_down) {
-				lwsl_notice("sai-power is powering down: %s\n", ps->name);
-				sais_set_builder_power_state(vhd, ps->name, 0, 1);
+				lwsl_notice("sai-power is powering down: %s\n", ps->host);
+				sais_set_builder_power_state(vhd, ps->host, 0, 1);
 			}
 
 			lwsac_free(&a.ac);

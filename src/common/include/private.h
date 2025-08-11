@@ -443,7 +443,7 @@ typedef struct sai_browse_rx_taskinfo {
 /* sai-power -> sai-server, tells it that a platform is being powered up */
 typedef struct sai_power_state {
 	lws_dll2_t	list; /* for parser */
-	char		name[256];
+	char		host[256];
 	int		powering_up;
 	int		powering_down;
 } sai_power_state_t;

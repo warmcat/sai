@@ -195,7 +195,7 @@ saip_sul_action_power_off(struct lws_sorted_usec_list *sul)
 	}
 
 	lwsl_warn("%s: powering off host %s\n", __func__, sp->host);
-	saip_notify_server_power_state(sp->name, 0, 1);
+	saip_notify_server_power_state(sp->host, 0, 1);
 
 	if (lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,
 			  (void *)sp->power_off_url, NULL, NULL, NULL)) {
@@ -347,7 +347,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 				goto bail;
 			}
 			if (sp->power_on_mac) {
-				saip_notify_server_power_state(sp->name, 1, 0);
+				saip_notify_server_power_state(sp->host, 1, 0);
 				if (write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
 					      sp->power_on_mac, strlen(sp->power_on_mac)) !=
 						(ssize_t)strlen(sp->power_on_mac))
@@ -374,7 +374,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 			}	
 
 			lwsl_warn("%s: powered on host %s\n", __func__, sp->host);
-			saip_notify_server_power_state(sp->name, 1, 0);
+			saip_notify_server_power_state(sp->host, 1, 0);
 
 			g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
 				"Manually powered on %s", sp->host);
