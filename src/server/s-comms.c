@@ -784,14 +784,14 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				if (dot) {
 					char host[128];
 					lws_strnncpy(host, cb->name, dot - cb->name, sizeof(host));
-					lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1, vhd->server.power_state_owner.head) {
-						sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);
+					lws_start_foreach_dll_safe(struct lws_dll2 *, p2, p3, vhd->server.power_state_owner.head) {
+						sai_power_state_t *ps = lws_container_of(p2, sai_power_state_t, list);
 						if (!strcmp(ps->host, host)) {
 							lws_dll2_remove(&ps->list);
 							free(ps);
 							break;
 						}
-					} lws_end_foreach_dll_safe(p, p1);
+					} lws_end_foreach_dll_safe(p2, p3);
 				}
 
 				/* remove from active in-memory list */
