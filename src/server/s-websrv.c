@@ -216,12 +216,9 @@ sais_list_builders(struct vhd *vhd)
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
 			sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);
-			lwsl_warn("%s: power state list has: %s, up: %d, down: %d\n", __func__,
-				  ps->name, ps->powering_up, ps->powering_down);
-			if (!strcmp(ps->name, builder_from_db->name)) {
+			if (strstr(builder_from_db->name, ps->name)) {
 				builder_from_db->powering_up = ps->powering_up;
 				builder_from_db->powering_down = ps->powering_down;
-				lwsl_warn("%s: MATCHED power state for %s\n", __func__, ps->name);
 				break;
 			}
 		} lws_end_foreach_dll(p);
@@ -247,8 +244,6 @@ sais_list_builders(struct vhd *vhd)
 	} lws_end_foreach_dll(walk);
 
 	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
-
-	lwsl_warn("%s: Broadcasting builders JSON: %s\n", __func__, vhd->json_builders);
 
 	sais_websrv_broadcast(vhd->h_ss_websrv, vhd->json_builders,
 			      lws_ptr_diff_size_t(p, vhd->json_builders));
