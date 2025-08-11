@@ -243,3 +243,5 @@ int
 saib_get_system_cpu(struct sai_builder *b);
 
 int saib_get_cpu_count(void);
+
+int saib_start_checkout(struct sai_nspawn *ns);

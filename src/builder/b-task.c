@@ -435,8 +435,6 @@ saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 int
 saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 {
-	struct lws_threadpool_create_args tca;
-	struct lws_threadpool_task_args tpa;
 	sai_plat_t *sp = NULL;
 	struct sai_nspawn *ns;
 	sai_resource_t *reso;
@@ -699,8 +697,6 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		 * bump our idea of what is ongoing... completing or failing
 		 * after that needs to adjust sp->ongoing accordingly
 		 */
-
-		lwsl_warn("%s: enqueued mirror thread, ns->tp_task %p\n", __func__, ns->tp_task);
 
 		lwsl_notice("%s: ongoing %d -> %d\n", __func__, sp->ongoing,
 			    sp->ongoing + 1);
