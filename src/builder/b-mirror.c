@@ -56,6 +56,7 @@ static const char * const git_helper_sh =
 	"fi\n"
 	"exit 0\n";
 
+#if defined(WIN32)
 static const char * const git_helper_bat =
 	"@echo off\n"
 	"setlocal\n"
@@ -89,6 +90,7 @@ static const char * const git_helper_bat =
 	"    exit /b 0\n"
 	")\n"
 	"exit /b 1\n";
+#endif
 
 
 enum {
@@ -158,8 +160,9 @@ saib_spawn_sync(struct sai_nspawn *ns, const char *op, const char **args)
 	sai_mirror_instance_t *mi = &builder.mi;
 	struct lws_spawn_piped_info info;
 	char script_path[1024];
-	const char * const * pargs;
-	int n, fd;
+	const char *pargs[10];
+	ssize_t n;
+	int fd, count = 0;
 
 #if defined(WIN32)
 	lws_snprintf(script_path, sizeof(script_path), "%s\\sai-git-helper-%d.bat",
@@ -183,9 +186,11 @@ saib_spawn_sync(struct sai_nspawn *ns, const char *op, const char **args)
 	if (n < 0)
 		return -1;
 
-	pargs = args - 2;
-	pargs[0] = script_path;
-	pargs[1] = op;
+	pargs[count++] = script_path;
+	pargs[count++] = op;
+	while (args && *args)
+		pargs[count++] = *args++;
+	pargs[count] = NULL;
 
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
@@ -229,12 +234,14 @@ sai_mirror_local_checkout(struct sai_nspawn *ns)
 	if (inp[strlen(inp) - 1] == '\\')
 		inp[strlen(inp) - 1] = '\0';
 
-	args[2] = ns->path;
-	args[3] = inp;
-	args[4] = ns->hash;
-	args[5] = NULL;
+	const char *args[] = {
+		ns->path,
+		inp,
+		ns->hash,
+		NULL
+	};
 
-	if (saib_spawn_sync(ns, "checkout", &args[2]))
+	if (saib_spawn_sync(ns, "checkout", args))
 		return SAIB_CHECKOUT_CHECKOUT_FAILED;
 
 	return SAIB_CHECKOUT_OK;
@@ -572,15 +579,15 @@ thread_repo(void *d)
 		new_state = SRFS_FAILED;
 
 		{
-			const char *args[7];
+			const char *args[] = {
+				rcopy.url,
+				rcopy.ref,
+				rcopy.hash,
+				rcopy.path,
+				NULL
+			};
 
-			args[2] = rcopy.url;
-			args[3] = rcopy.ref;
-			args[4] = rcopy.hash;
-			args[5] = rcopy.path;
-			args[6] = NULL;
-
-			if (!saib_spawn_sync(rcopy.ns, "mirror", &args[2]))
+			if (!saib_spawn_sync(rcopy.ns, "mirror", args))
 				new_state = SRFS_SUCCEEDED;
 		}
 
