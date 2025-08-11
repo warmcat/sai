@@ -23,10 +23,9 @@
 #include <string.h>
 #include <signal.h>
 #include <assert.h>
+#include <stdio.h>
 
 #include "b-private.h"
-
-#include <git2.h>
 
 enum {
 	SRFS_REQUESTING,
@@ -68,14 +67,8 @@ enum {
 static int
 sai_mirror_local_checkout(struct sai_nspawn *ns)
 {
-	git_checkout_options co_opts = GIT_CHECKOUT_OPTIONS_INIT;
-	git_fetch_options opts = GIT_FETCH_OPTIONS_INIT;
-	git_repository *git_repo_build_specific = NULL;
-	char dp[512], spec[256], *paths[] = { spec }, inp[512];
-	git_strarray rfs = { paths, 1 };
-	git_object *treeish;
-	git_remote *remote;
-	int n, tries = 2;
+	char cmd[512], inp[512];
+	FILE *fp;
 
 	lws_strncpy(inp, ns->inp, sizeof(inp) - 1);
 	if (inp[strlen(inp) - 1] == '\\')
@@ -98,118 +91,37 @@ sai_mirror_local_checkout(struct sai_nspawn *ns)
 	if (mkdir(inp, 0755))
 		lwsl_notice("%s: mkdir %s failed\n", __func__, ns->inp);
 
-	/*
-	 * Create the build-specific git dir and init it
-	 */
 
-	n = git_repository_init(&git_repo_build_specific, inp, 0);
-	if (n) {
-#if defined(SAI_HAVE_LIBGIT2_GIT_ERROR)
-		const git_error *e = git_error_last();
+	lws_snprintf(cmd, sizeof(cmd), "git clone --local %s %s",
+		     ns->path, inp);
 
-		lwsl_err("%s: unable to init temp repo %s: %d %s\n",
-			 __func__, ns->inp, n, e ? e->message : "?");
-#else
-		lwsl_err("%s: unable to init temp repo %s: %d\n",
-					 __func__, ns->inp, n);
-#endif
+	lwsl_notice("%s: %s\n", __func__, cmd);
 
+	fp = popen(cmd, "r");
+	if (!fp)
 		return SAIB_CHECKOUT_CHECKOUT_FAILED;
-	}
 
-	/*
-	 * Attempt to fetch the ref we are interested in from our local mirror
-	 *
-	 * Create a temp remote against the destination repo
-	 */
-
-	if (git_remote_create_anonymous(&remote, git_repo_build_specific,
-					ns->path)) {
-		lwsl_err("%s: cant find remote %s\n", __func__,
-			 ns->git_repo_url);
-
-		git_repository_free(git_repo_build_specific);
+	if (pclose(fp))
 		return SAIB_CHECKOUT_CHECKOUT_FAILED;
-	}
 
-	lws_snprintf(spec, sizeof(spec), "ref-%s:ref-%s", ns->hash, ns->hash);
+	lws_snprintf(cmd, sizeof(cmd), "git -C %s checkout %s",
+		     inp, ns->hash);
 
-	lwsl_notice("%s: Attempting to fetch %s from mirror to %s\n",
-		    __func__, spec, ns->inp);
+	lwsl_notice("%s: %s\n", __func__, cmd);
 
-	/*
-	 * Fetch the tree from the local mirror to our local build repo
-	 * This may take an open-ended amount of time
-	 */
+	fp = popen(cmd, "r");
+	if (!fp)
+		return SAIB_CHECKOUT_CHECKOUT_FAILED;
 
-#if defined(LIBGIT2_HAVE_GIT_PROXY_OPTIONS_INIT)
-	git_proxy_options_init(&opts.proxy_opts, GIT_PROXY_OPTIONS_VERSION);
-#endif
-
-	n = git_remote_fetch(remote, &rfs, &opts, "fetch");
-	git_remote_free(remote);
-	if (n) {
-		lwsl_notice("%s: git_remote_fetch() says %d\n", __func__, n);
-#if defined(SAI_HAVE_LIBGIT2_GIT_ERROR)
-		const git_error *e = git_error_last();
-
-		lwsl_err("%s: git_remote_fetch libgit err: %d %s\n",
-			 __func__, n, e ? e->message : "?");
-#endif
-		git_repository_free(git_repo_build_specific);
+	if (pclose(fp))
+		/*
+		 * This can fail if the mirror doesn't have the hash yet
+		 */
 		return SAIB_CHECKOUT_NOT_IN_LOCAL_MIRROR;
-	}
-
-	/*
-	 * Check out the commit we fetched into the ephemeral local build dir...
-	 * this should be a formality since we already retreived the ref into
-	 * ephemeral local build dir's repo.
-	 */
-
-	lws_snprintf(spec, sizeof(spec), "ref-%s", ns->hash);
-	n = git_revparse_single(&treeish, git_repo_build_specific, spec);
-	if (n) {
-		lwsl_notice("%s: revparse %s failed: %d\n", __func__, spec, n);
-		git_repository_free(git_repo_build_specific);
-		return SAIB_CHECKOUT_NOT_IN_LOCAL_MIRROR;
-	}
-
-again:
-	co_opts.checkout_strategy = GIT_CHECKOUT_FORCE;
-	n = git_checkout_tree(git_repo_build_specific, treeish, &co_opts);
-	git_object_free(treeish);
-	if (n) {
-		if (n == GIT_EUNBORNBRANCH && tries--) {
-			lwsl_warn("%s: git checkout says HEAD is empty branch\n",
-				  __func__);
-
-			/*
-			 * It's telling us we need to delete the local mirror
-			 * HEAD and retry
-			 */
-
-			lws_snprintf(dp, sizeof(dp), "%s/HEAD", ns->inp);
-			unlink(dp);
-
-			goto again;
-		}
-		goto co_failed;
-	}
-
-	lws_snprintf(spec, sizeof(spec), "refs/heads/ref-%s", ns->hash);
-	git_repository_set_head(git_repo_build_specific, spec);
 
 	lwsl_notice("%s: checkout OK\n", __func__);
 
-	git_repository_free(git_repo_build_specific);
-
 	return SAIB_CHECKOUT_OK;
-
-co_failed:
-	lwsl_err("%s: git checkout failed: %d\n", __func__, n);
-	git_repository_free(git_repo_build_specific);
-
-	return SAIB_CHECKOUT_CHECKOUT_FAILED;
 }
 
 
@@ -497,18 +409,13 @@ thread_repo(void *d)
 	sai_mirror_instance_t *mi = (sai_mirror_instance_t *)d;
 	sai_mirror_req_t *req, rcopy;
 	int new_state;
-	int n;
 
 	lwsl_notice("%s: repo thread start\n", __func__);
 
-	git_libgit2_init();
-
 	while (!mi->finish) {
-		git_fetch_options opts = GIT_FETCH_OPTIONS_INIT;
-		char spec[96], *paths[] = { spec };
-		git_strarray rfs = { paths, 1 };
-		git_repository *repo_mirror;
-		git_remote *remote;
+		char cmd[512], spec[96];
+		struct stat st;
+		FILE *fp;
 
 		pthread_mutex_lock(&mi->mut);
 
@@ -565,17 +472,17 @@ thread_repo(void *d)
 		 * up we can use that so we can be sure it's around for that.
 		 */
 
-		/*
-		 * git init --bare <path>
-		 */
-
 		new_state = SRFS_FAILED;
-		repo_mirror = NULL;
-		if (git_repository_init(&repo_mirror, rcopy.path, 1)) {
-			fprintf(stderr, "%s: unable to init sticky repo %s, errno %d\n",
-				 __func__, rcopy.path, errno);
 
-			goto fail_out;
+		if (stat(rcopy.path, &st) == -1) {
+			lws_snprintf(cmd, sizeof(cmd), "git init --bare %s",
+				     rcopy.path);
+			if (system(cmd)) {
+				fprintf(stderr, "%s: unable to init sticky repo %s, errno %d\n",
+					 __func__, rcopy.path, errno);
+
+				goto fail_out;
+			}
 		}
 
 		/*
@@ -585,49 +492,35 @@ thread_repo(void *d)
 		 *  git fetch <remote repo> +<ref>:<ref>
 		 */
 
-		if (git_remote_create_anonymous(&remote, repo_mirror, rcopy.url)) {
-			fprintf(stderr, "%s: cant find remote %s\n", __func__,
-				 rcopy.url);
-
-			git_repository_free(repo_mirror);
-			goto fail_out;
-		}
-
 		lws_snprintf(spec, sizeof(spec), "%s:ref-%s", rcopy.ref, rcopy.hash);
-		fprintf(stderr, "%s: fetching %s %s\n", __func__, rcopy.url, spec);
+		lws_snprintf(cmd, sizeof(cmd), "git -C %s fetch %s %s",
+			     rcopy.path, rcopy.url, spec);
 
-#if defined(LIBGIT2_HAVE_GIT_PROXY_OPTIONS_INIT)
-	git_proxy_options_init(&opts.proxy_opts, GIT_PROXY_OPTIONS_VERSION);
-#endif
+		fprintf(stderr, "%s: fetching %s\n", __func__, cmd);
 
 		/*
 		 * This may take an open-ended amount of time
 		 */
 
-		n = git_remote_fetch(remote, &rfs, &opts, "fetch");
-#if defined(SAI_HAVE_LIBGIT2_GIT_ERROR)
-               if (n) {
-			const git_error *e = git_error_last();
+		fp = popen(cmd, "r");
+		if (fp) {
+			char line[256];
 
-			if (e)
-				fprintf(stderr, "%s: git error %s\n", __func__,
-						e->message);
-               }
-#endif
+			while (fgets(line, sizeof(line), fp))
+				fprintf(stderr, "sai-git: %s", line);
 
-               git_remote_free(remote);
-               git_repository_free(repo_mirror);
+			if (pclose(fp) == 0)
+				new_state = SRFS_SUCCEEDED;
+		}
 
-               if (n) {
-			fprintf(stderr, "%s: failed to fetch %s, n: %d\n",
-				__func__, spec, n);
+               if (new_state == SRFS_FAILED) {
+			fprintf(stderr, "%s: failed to fetch %s\n",
+				__func__, spec);
 			goto fail_out;
 		}
 
 		fprintf(stderr, "%s: syncing mirror fetch %s %s successful\n",
 			    __func__, rcopy.url, rcopy.hash);
-
-		new_state = SRFS_SUCCEEDED;
 
 fail_out:
 		/*
@@ -674,7 +567,6 @@ fail_out:
 
 	lwsl_notice("%s: repo thread exiting\n", __func__);
 
-	git_libgit2_shutdown();
 	pthread_exit(NULL);
 
 	return NULL;
