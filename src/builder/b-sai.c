@@ -148,7 +148,6 @@ static const struct lws_protocols *pprotocols[] = {
 	&protocol_stdxxx,
 	&protocol_logproxy,
 	&protocol_resproxy,
-	&protocol_git_helper_stdxxx,
 #if defined(LWS_WITH_SYS_METRICS) && defined(LWS_WITH_PLUGINS_BUILTIN)
 	&lws_openmetrics_export_protocols[LWSOMPROIDX_PROX_WS_CLIENT],
 #else

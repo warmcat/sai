@@ -92,28 +92,6 @@ static const char * const git_helper_bat =
 	"exit /b 1\n";
 #endif
 
-static int
-callback_git_helper_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
-		    void *user, void *in, size_t len)
-{
-	uint8_t buf[4096];
-	int n;
-
-	switch (reason) {
-	case LWS_CALLBACK_RAW_RX_FILE:
-		n = read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf));
-		if (n > 0)
-			lwsl_warn("git-helper: %.*s", n, (const char *)buf);
-		break;
-	default:
-		break;
-	}
-	return 0;
-}
-
-struct lws_protocols protocol_git_helper_stdxxx =
-		{ "sai-git-helper-stdxxx", callback_git_helper_stdwsi, 0, 0 };
-
 
 enum {
 	SRFS_REQUESTING,
@@ -150,7 +128,7 @@ static void
 sai_git_helper_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 		int we_killed_him)
 {
-	sai_mirror_instance_t *mi = (sai_mirror_instance_t *)opaque;
+	sai_mirror_instance_t *mi = &builder.mi;
 
 	pthread_mutex_lock(&mi->spawn_mut);
 
@@ -217,9 +195,9 @@ saib_spawn_sync(struct sai_nspawn *ns, const char *op, const char **args)
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
 	info.exec_array		= pargs;
-	info.protocol_name	= "sai-git-helper-stdxxx";
+	info.protocol_name	= "sai-stdxxx";
 	info.reap_cb		= sai_git_helper_reap_cb;
-	info.opaque		= mi;
+	info.opaque		= ns;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 
 	pthread_mutex_lock(&mi->spawn_mut);
