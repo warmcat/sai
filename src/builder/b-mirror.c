@@ -223,6 +223,7 @@ saib_start_checkout(struct sai_nspawn *ns)
 	info.reap_cb		= sai_git_checkout_reap_cb;
 	info.opaque		= ns;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
+	info.plsp		= &ns->lsp;
 
 	if (!lws_spawn_piped(&info))
 		return -1;
