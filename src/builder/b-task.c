@@ -153,14 +153,6 @@ saib_task_destroy(struct sai_nspawn *ns)
 			return;
 	}
 
-	if (ns->tp) {
-		ns->tp_task = NULL;
-		lwsl_notice("%s: calling threadpool_finish\n", __func__);
-		lws_threadpool_finish(ns->tp);
-		lwsl_notice("%s: calling threadpool_destroy\n", __func__);
-		lws_threadpool_destroy(ns->tp);
-		ns->tp = NULL;
-	}
 
 	if (ns->task && ns->task->told_ongoing) {
 
@@ -556,13 +548,6 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 //		lwsl_hexdump_warn(task->build, strlen(task->build));
 
-		/* create a taskqueue just for preparing this specific spawn */
-
-		memset(&tpa, 0, sizeof(tpa));
-		tca.threads = 1;
-		tca.max_queue_depth = 1;
-		ns->tp = lws_threadpool_create(builder.context, &tca, "nsp-%s",
-					       task->uuid);
 
 		lws_strncpy(ns->fsm.distro, task->platform,
 			    sizeof(ns->fsm.distro));
@@ -692,21 +677,11 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		saib_set_ns_state(ns, NSSTATE_STARTING_MIRROR);
 
-		memset(&tpa, 0, sizeof(tpa));
-		tpa.ss = spm->ss;
-		tpa.user = ns;
-		tpa.name = "nsp";
-		tpa.task = saib_mirror_task;
-
 		ns->user_cancel = 0;
 		ns->spins = 0;
 
-		lwsl_warn("%s: enqueuing mirror thread\n", __func__);
-
-		ns->tp_task = lws_threadpool_enqueue(ns->tp, &tpa, "tptask-%s",
-						     task->uuid);
-		if (!ns->tp_task) {
-			lwsl_err("%s: threadpool enqueue failed\n", __func__);
+		if (saib_start_checkout(ns)) {
+			lwsl_err("%s: saib_start_checkout failed\n", __func__);
 			goto bail;
 		}
 

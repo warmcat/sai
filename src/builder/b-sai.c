@@ -989,8 +989,6 @@ int main(int argc, const char **argv)
 	pthread_mutex_init(&builder.mi.mut, NULL);
 	pthread_cond_init(&builder.mi.cond, NULL);
 
-	pthread_mutex_init(&builder.mi.spawn_mut, NULL);
-	pthread_cond_init(&builder.mi.spawn_cond, NULL);
 
 	/*
 	 * Our approach is to split off a thread to do the git remote handling
@@ -1072,9 +1070,6 @@ bail:
 
 	pthread_mutex_destroy(&builder.mi.mut);
 	pthread_cond_destroy(&builder.mi.cond);
-
-	pthread_mutex_destroy(&builder.mi.spawn_mut);
-	pthread_cond_destroy(&builder.mi.spawn_cond);
 
 	lws_context_destroy(builder.context);
 

@@ -160,8 +160,6 @@ struct sai_nspawn {
 
 	lws_dll2_owner_t		artifact_owner; /* struct artifact_path */
 
-	struct lws_threadpool		*tp;
-	struct lws_threadpool_task	*tp_task;
 	lws_sorted_usec_list_t		sul_cleaner;
 	lws_sorted_usec_list_t		sul_task_cancel;
 
