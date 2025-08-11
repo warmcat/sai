@@ -47,14 +47,14 @@ static const char * const git_helper_sh =
 	"    MIRROR_PATH=$1\n"
 	"    BUILD_DIR=$2\n"
 	"    HASH=$3\n"
-	"    rm -rf \"$BUILD_DIR\"\n"
-	"    mkdir -p \"$(dirname \"$BUILD_DIR\")\"\n"
 	"    if [ ! -d \"$BUILD_DIR/.git\" ]; then\n"
 	"        rm -rf \"$BUILD_DIR\"\n"
-	"        mkdir -p \"$(dirname \"$BUILD_DIR\")\"\n"
-	"        git clone --local \"$MIRROR_PATH\" \"$BUILD_DIR\"\n"
+	"        mkdir -p \"$BUILD_DIR\"\n"
+	"        git -C \"$BUILD_DIR\" init\n"
 	"    fi\n"
-	"    git -C \"$BUILD_DIR\" fetch \"$MIRROR_PATH\" \"ref-$HASH\"\n"
+	"    if ! git -C \"$BUILD_DIR\" fetch \"$MIRROR_PATH\" \"ref-$HASH\"; then\n"
+	"        exit 2\n"
+	"    fi\n"
 	"    git -C \"$BUILD_DIR\" checkout -f \"$HASH\"\n"
 	"else\n"
 	"    exit 1\n"
@@ -86,11 +86,12 @@ static const char * const git_helper_bat =
 	"    set \"HASH=%~4\"\n"
 	"    if not exist \"%BUILD_DIR%\\.git\" (\n"
 	"        if exist \"%BUILD_DIR%\\\" rmdir /s /q \"%BUILD_DIR%\"\n"
-	"        git clone --local \"%MIRROR_PATH%\" \"%BUILD_DIR%\"\n"
+	"        mkdir \"%BUILD_DIR%\"\n"
+	"        git -C \"%BUILD_DIR%\" init\n"
 	"        if errorlevel 1 exit /b 1\n"
 	"    )\n"
 	"    git -C \"%BUILD_DIR%\" fetch \"%MIRROR_PATH%\" \"ref-%HASH%\"\n"
-	"    if errorlevel 1 exit /b 1\n"
+	"    if errorlevel 1 exit /b 2\n"
 	"    git -C \"%BUILD_DIR%\" checkout -f \"%HASH%\"\n"
 	"    if errorlevel 1 exit /b 1\n"
 	"    exit /b 0\n"
@@ -245,10 +246,15 @@ sai_mirror_local_checkout(struct sai_nspawn *ns)
 	if (inp[strlen(inp) - 1] == '\\')
 		inp[strlen(inp) - 1] = '\0';
 
-	if (saib_spawn_sync(ns, "checkout", args))
-		return SAIB_CHECKOUT_CHECKOUT_FAILED;
+	int exit_code = saib_spawn_sync(ns, "checkout", args);
 
-	return SAIB_CHECKOUT_OK;
+	if (!exit_code)
+		return SAIB_CHECKOUT_OK;
+
+	if (exit_code == 2)
+		return SAIB_CHECKOUT_NOT_IN_LOCAL_MIRROR;
+
+	return SAIB_CHECKOUT_CHECKOUT_FAILED;
 }
 
 
