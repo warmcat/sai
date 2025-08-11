@@ -334,8 +334,27 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 		cb = lws_container_of(p, sai_plat_t, sai_plat_list);
 
 		if (cb->wsi == wsi) {
+			char q[256];
+
 			lwsl_notice("%s: Builder '%s' disconnected\n", __func__,
 				    cb->name);
+
+			lws_snprintf(q, sizeof(q), "UPDATE builders SET online=0 WHERE name='%s'", cb->name);
+			sai_sqlite3_statement(vhd->server.pdb, q, "set builder offline");
+
+			const char *dot = strchr(cb->name, '.');
+			if (dot) {
+				char host[128];
+				lws_strnncpy(host, cb->name, dot - cb->name, sizeof(host));
+				lws_start_foreach_dll_safe(struct lws_dll2 *, p2, p3, vhd->server.power_state_owner.head) {
+					sai_power_state_t *ps = lws_container_of(p2, sai_power_state_t, list);
+					if (!strcmp(ps->host, host)) {
+						lws_dll2_remove(&ps->list);
+						free(ps);
+						break;
+					}
+				} lws_end_foreach_dll_safe(p2, p3);
+			}
 
 			lws_dll2_remove(&cb->sai_plat_list);
 			free(cb);

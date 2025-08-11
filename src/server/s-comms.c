@@ -763,44 +763,6 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		sais_builder_disconnected(vhd, wsi);
 
-		/*
-		 * Find any builder-tracking objects that were using this departing
-		 * connection. Mark them as offline in the database.
-		 * Also remove from the in-memory list of active builders.
-		 */
-		lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
-				      vhd->server.builder_owner.head) {
-			sai_plat_t *cb = lws_container_of(p, sai_plat_t,
-							      sai_plat_list);
-			char q[256];
-
-			if (cb->wsi == wsi) {
-				lwsl_warn("%s: Builder '%s' disconnected. Removing from live list.\n",
-					  __func__, cb->name);
-				lws_snprintf(q, sizeof(q), "UPDATE builders SET online=0 WHERE name='%s'", cb->name);
-				sai_sqlite3_statement(vhd->server.pdb, q, "set builder offline");
-
-				const char *dot = strchr(cb->name, '.');
-				if (dot) {
-					char host[128];
-					lws_strnncpy(host, cb->name, dot - cb->name, sizeof(host));
-					lws_start_foreach_dll_safe(struct lws_dll2 *, p2, p3, vhd->server.power_state_owner.head) {
-						sai_power_state_t *ps = lws_container_of(p2, sai_power_state_t, list);
-						if (!strcmp(ps->host, host)) {
-							lws_dll2_remove(&ps->list);
-							free(ps);
-							break;
-						}
-					} lws_end_foreach_dll_safe(p2, p3);
-				}
-
-				/* remove from active in-memory list */
-				lws_dll2_remove(&cb->sai_plat_list);
-				free(cb);
-			}
-
-		} lws_end_foreach_dll_safe(p, p1);
-
 		sais_resource_wellknown_remove_pss(&pss->vhd->server, pss);
 
 		if (pss->blob_artifact) {
