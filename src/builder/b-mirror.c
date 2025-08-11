@@ -23,10 +23,73 @@
 #include <string.h>
 #include <signal.h>
 #include <assert.h>
+#include <fcntl.h>
 
 #include "b-private.h"
 
-#include <git2.h>
+static const char * const git_helper_sh =
+	"#!/bin/bash\n"
+	"export PATH=/usr/local/bin:$PATH\n"
+	"set -e\n"
+	"OPERATION=$1\n"
+	"shift\n"
+	"if [ \"$OPERATION\" == \"mirror\" ]; then\n"
+	"    REMOTE_URL=$1\n"
+	"    REF=$2\n"
+	"    HASH=$3\n"
+	"    MIRROR_PATH=$4\n"
+	"    if [ ! -d \"$MIRROR_PATH\" ]; then\n"
+	"        git init --bare \"$MIRROR_PATH\"\n"
+	"    fi\n"
+	"    REFSPEC=\"$REF:ref-$HASH\"\n"
+	"    git -C \"$MIRROR_PATH\" fetch \"$REMOTE_URL\" \"$REFSPEC\"\n"
+	"elif [ \"$OPERATION\" == \"checkout\" ]; then\n"
+	"    MIRROR_PATH=$1\n"
+	"    BUILD_DIR=$2\n"
+	"    HASH=$3\n"
+	"    rm -rf \"$BUILD_DIR\"\n"
+	"    mkdir -p \"$(dirname \"$BUILD_DIR\")\"\n"
+	"    git clone --local \"$MIRROR_PATH\" \"$BUILD_DIR\"\n"
+	"    git -C \"$BUILD_DIR\" checkout \"$HASH\"\n"
+	"else\n"
+	"    exit 1\n"
+	"fi\n"
+	"exit 0\n";
+
+static const char * const git_helper_bat =
+	"@echo off\n"
+	"setlocal\n"
+	"set \"OPERATION=%~1\"\n"
+	"if /i \"%OPERATION%\"==\"mirror\" (\n"
+	"    set \"REMOTE_URL=%~2\"\n"
+	"    set \"REF=%~3\"\n"
+	"    set \"HASH=%~4\"\n"
+	"    set \"MIRROR_PATH=%~5\"\n"
+	"    if not exist \"%MIRROR_PATH%\\.\" (\n"
+	"        git init --bare \"%MIRROR_PATH%\"\n"
+	"        if errorlevel 1 exit /b 1\n"
+	"    )\n"
+	"    set \"REFSPEC=%REF%:ref-%HASH%\"\n"
+	"    git -C \"%MIRROR_PATH%\" fetch \"%REMOTE_URL%\" %REFSPEC%\n"
+	"    if errorlevel 1 exit /b 1\n"
+	"    exit /b 0\n"
+	")\n"
+	"if /i \"%OPERATION%\"==\"checkout\" (\n"
+	"    set \"MIRROR_PATH=%~2\"\n"
+	"    set \"BUILD_DIR=%~3\"\n"
+	"    set \"HASH=%~4\"\n"
+	"    if exist \"%BUILD_DIR%\\\" (\n"
+	"        rmdir /s /q \"%BUILD_DIR%\"\n"
+	"        if errorlevel 1 exit /b 1\n"
+	"    )\n"
+	"    git clone --local \"%MIRROR_PATH%\" \"%BUILD_DIR%\"\n"
+	"    if errorlevel 1 exit /b 1\n"
+	"    git -C \"%BUILD_DIR%\" checkout \"%HASH%\"\n"
+	"    if errorlevel 1 exit /b 1\n"
+	"    exit /b 0\n"
+	")\n"
+	"exit /b 1\n";
+
 
 enum {
 	SRFS_REQUESTING,
@@ -51,6 +114,13 @@ typedef struct sai_mirror_req {
 
 	int			state;
 } sai_mirror_req_t;
+
+static void
+sai_mirror_req_state_set(sai_mirror_req_t *req, int n)
+{
+	lwsl_notice("%s: req %p: %d -> %d\n", __func__, req, req->state, n);
+	req->state = n;
+}
 
 static void
 sai_git_helper_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
@@ -83,14 +153,43 @@ bail:
 }
 
 static int
-saib_spawn_sync(const char **args)
+saib_spawn_sync(struct sai_nspawn *ns, const char *op, const char **args)
 {
 	sai_mirror_instance_t *mi = &builder.mi;
 	struct lws_spawn_piped_info info;
+	char script_path[1024];
+	const char * const * pargs;
+	int n, fd;
+
+#if defined(WIN32)
+	lws_snprintf(script_path, sizeof(script_path), "%s\\sai-git-helper-%d.bat",
+		     builder.home, ns->instance_idx);
+#else
+	lws_snprintf(script_path, sizeof(script_path), "%s/sai-git-helper-%d.sh",
+		     builder.home, ns->instance_idx);
+#endif
+
+	fd = open(script_path, O_CREAT | O_TRUNC | O_WRONLY, 0755);
+	if (fd < 0)
+		return -1;
+
+#if defined(WIN32)
+	n = write(fd, git_helper_bat, strlen(git_helper_bat));
+#else
+	n = write(fd, git_helper_sh, strlen(git_helper_sh));
+#endif
+	close(fd);
+
+	if (n < 0)
+		return -1;
+
+	pargs = args - 2;
+	pargs[0] = script_path;
+	pargs[1] = op;
 
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
-	info.exec_array		= args;
+	info.exec_array		= pargs;
 	info.protocol_name	= "sai-stdxxx";
 	info.reap_cb		= sai_git_helper_reap_cb;
 	info.opaque		= mi;
@@ -114,13 +213,6 @@ saib_spawn_sync(const char **args)
 	return mi->spawn_exit_code;
 }
 
-static void
-sai_mirror_req_state_set(sai_mirror_req_t *req, int n)
-{
-	lwsl_notice("%s: req %p: %d -> %d\n", __func__, req, req->state, n);
-	req->state = n;
-}
-
 enum {
 	SAIB_CHECKOUT_OK,
 	SAIB_CHECKOUT_NOT_IN_LOCAL_MIRROR,
@@ -130,33 +222,19 @@ enum {
 static int
 sai_mirror_local_checkout(struct sai_nspawn *ns)
 {
-	char inp[512], script_path[1024];
-	const char *p;
-
-#if defined(WIN32)
-	p = strrchr(builder.exe_path, '\\');
-	lws_snprintf(script_path, sizeof(script_path), "%.*s\\sai-git-helper.bat",
-		     (int)(p - builder.exe_path), builder.exe_path);
-#else
-	p = strrchr(builder.exe_path, '/');
-	lws_snprintf(script_path, sizeof(script_path), "%.*s/sai-git-helper.sh",
-		     (int)(p - builder.exe_path), builder.exe_path);
-#endif
-
-	const char *args[] = {
-		script_path,
-		"checkout",
-		ns->path,
-		inp,
-		ns->hash,
-		NULL
-	};
+	char inp[512];
+	const char *args[6];
 
 	lws_strncpy(inp, ns->inp, sizeof(inp) - 1);
 	if (inp[strlen(inp) - 1] == '\\')
 		inp[strlen(inp) - 1] = '\0';
 
-	if (saib_spawn_sync(args))
+	args[2] = ns->path;
+	args[3] = inp;
+	args[4] = ns->hash;
+	args[5] = NULL;
+
+	if (saib_spawn_sync(ns, "checkout", &args[2]))
 		return SAIB_CHECKOUT_CHECKOUT_FAILED;
 
 	return SAIB_CHECKOUT_OK;
@@ -494,30 +572,15 @@ thread_repo(void *d)
 		new_state = SRFS_FAILED;
 
 		{
-			char script_path[1024];
-			const char *p;
+			const char *args[7];
 
-#if defined(WIN32)
-			p = strrchr(builder.exe_path, '\\');
-			lws_snprintf(script_path, sizeof(script_path), "%.*s\\sai-git-helper.bat",
-					(int)(p - builder.exe_path), builder.exe_path);
-#else
-			p = strrchr(builder.exe_path, '/');
-			lws_snprintf(script_path, sizeof(script_path), "%.*s/sai-git-helper.sh",
-					(int)(p - builder.exe_path), builder.exe_path);
-#endif
+			args[2] = rcopy.url;
+			args[3] = rcopy.ref;
+			args[4] = rcopy.hash;
+			args[5] = rcopy.path;
+			args[6] = NULL;
 
-			const char *args[] = {
-				script_path,
-				"mirror",
-				rcopy.url,
-				rcopy.ref,
-				rcopy.hash,
-				rcopy.path,
-				NULL
-			};
-
-			if (!saib_spawn_sync(args))
+			if (!saib_spawn_sync(rcopy.ns, "mirror", &args[2]))
 				new_state = SRFS_SUCCEEDED;
 		}
 

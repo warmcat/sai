@@ -890,11 +890,8 @@ int main(int argc, const char **argv)
 	/* if we don't do this, libgit2 looks in /root/.gitconfig */
 #if defined(WIN32)
 	_putenv_s("HOME", builder.home);
-	GetModuleFileNameA(NULL, builder.exe_path, sizeof(builder.exe_path));
 #else
 	setenv("HOME", builder.home, 1);
-	if (realpath(argv[0], builder.exe_path))
-		lwsl_notice("exe_path: %s\n", builder.exe_path);
 #endif
 
 	lwsl_user("Sai Builder - "

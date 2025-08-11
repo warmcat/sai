@@ -79,12 +79,5 @@ if (requirements)
 	install(TARGETS "sai-builder"
 		RUNTIME DESTINATION "${BIN_DIR}" COMPONENT builder)
 
-	install(FILES ${PROJECT_SOURCE_DIR}/scripts/sai-git-helper.sh
-		DESTINATION "${BIN_DIR}" COMPONENT builder
-		PERMISSIONS OWNER_EXECUTE OWNER_READ GROUP_EXECUTE GROUP_READ WORLD_EXECUTE WORLD_READ
-		)
-	install(FILES ${PROJECT_SOURCE_DIR}/scripts/sai-git-helper.bat
-		DESTINATION "${BIN_DIR}" COMPONENT builder)
-
 endif(requirements)
 include(CPack)
