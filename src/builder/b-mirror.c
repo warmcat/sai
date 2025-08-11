@@ -151,6 +151,9 @@ sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	struct sai_nspawn *ns = (struct sai_nspawn *)opaque;
 	int exit_code = -1;
 
+	lwsl_warn("%s: reap: we_killed_him: %d, si_code: %d, si_status: %d\n",
+		  __func__, we_killed_him, si->si_code, si->si_status);
+
 	if (we_killed_him)
 		goto fail;
 
