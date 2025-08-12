@@ -97,7 +97,9 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		if (ns) {
 			saib_log_chunk_create(ns, buf, (size_t)ilen, 3);
 			if (ns->spm)
-				lws_ss_request_tx(ns->spm->ss);
+				if (lws_ss_request_tx(ns->spm->ss))
+					lwsl_warn("%s: lws_ss_request_tx failed\n",
+						  __func__);
 		}
 
 		if (op && op->lsp) {
@@ -265,7 +267,6 @@ saib_spawn(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
-	struct lws_spawn_piped *lsp;
 	char args[290], st[2048], *p;
 	const char *respath = "unk";
 	const char * cmd[] = {

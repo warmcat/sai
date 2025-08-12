@@ -176,7 +176,6 @@ saib_start_mirror(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
-	struct lws_spawn_piped *lsp;
 	char script_path[1024];
 	const char *pargs[7];
 	int count = 0;
@@ -241,7 +240,6 @@ saib_start_checkout(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
-	struct lws_spawn_piped *lsp;
 	char script_path[1024], inp[512];
 	const char *pargs[6];
 	ssize_t n;
