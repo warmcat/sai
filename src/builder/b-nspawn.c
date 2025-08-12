@@ -78,7 +78,9 @@ static int
 callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		    void *user, void *in, size_t len)
 {
-	struct sai_nspawn *ns = (struct sai_nspawn *)lws_get_opaque_user_data(wsi);
+	struct saib_opaque_spawn *op =
+		(struct saib_opaque_spawn *)lws_get_opaque_user_data(wsi);
+	struct sai_nspawn *ns = op ? op->ns : NULL;
 	uint8_t buf[600];
 	int ilen;
 
@@ -98,9 +100,10 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 				lws_ss_request_tx(ns->spm->ss);
 		}
 
-		if (ns && ns->lsp) {
-			lws_spawn_stdwsi_closed(ns->lsp, wsi);
-			lws_cancel_service(ns->builder->context);
+		if (op && op->lsp) {
+			lws_spawn_stdwsi_closed(op->lsp, wsi);
+			if (ns)
+				lws_cancel_service(ns->builder->context);
 		}
 		break;
 
@@ -124,15 +127,15 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 		len = (unsigned int)ilen;
 
-		if (!ns || !ns->spm) {
+		if (!op || !op->ns || !op->ns->spm) {
 			printf("%s: (%d) %.*s\n", __func__, (int)lws_spawn_get_stdfd(wsi), (int)len, buf);
 			return -1;
 		}
 
-		if (!saib_log_chunk_create(ns, buf, len, lws_spawn_get_stdfd(wsi)))
+		if (!saib_log_chunk_create(op->ns, buf, len, lws_spawn_get_stdfd(wsi)))
 			return -1;
 
-		return lws_ss_request_tx(ns->spm->ss) ? -1 : 0;
+		return lws_ss_request_tx(op->ns->spm->ss) ? -1 : 0;
 
 	default:
 		break;
@@ -149,7 +152,8 @@ static void
 sai_lsp_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 		int we_killed_him)
 {
-	struct sai_nspawn *ns = (struct sai_nspawn *)opaque;
+	struct saib_opaque_spawn *op = (struct saib_opaque_spawn *)opaque;
+	struct sai_nspawn *ns = op ? op->ns : NULL;
 
 	lwsl_warn("%s: reap at %llu: we_killed_him: %d\n", __func__,
 		  (unsigned long long)lws_now_usecs(), we_killed_him);
@@ -210,6 +214,10 @@ ok:
 	lwsl_notice("%s: finished, waiting to drain logs (this ns %d, spm in flight %d)\n",
 			__func__, ns->chunk_cache.count,
 			ns->spm ? ns->spm->logs_in_flight : -99);
+
+	if (ns)
+		ns->op = NULL;
+	free(op);
 }
 
 #if defined(WIN32)
@@ -256,6 +264,8 @@ int
 saib_spawn(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
+	struct saib_opaque_spawn *op;
+	struct lws_spawn_piped *lsp;
 	char args[290], st[2048], *p;
 	const char *respath = "unk";
 	const char * cmd[] = {
@@ -347,22 +357,34 @@ saib_spawn(struct sai_nspawn *ns)
 	info.max_log_lines	= 10000;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.reap_cb		= sai_lsp_reap_cb;
-	info.opaque		= ns;
-	info.plsp		= &ns->lsp;
+	info.opaque		= op;
+	info.plsp		= &lsp;
 #if defined(__linux__)
 	info.cgroup_name_suffix = cgroup;
 	info.p_cgroup_ret	= &in_cgroup;
 #endif
 
+	op = lws_zalloc(sizeof(*op), "spawn-opaque");
+	if (!op)
+		return 1;
+
+	op->ns = ns;
+	ns->op = op;
+
+	info.opaque = op;
+
 	lwsl_warn("%s: spawning build script at %llu\n", __func__,
 		  (unsigned long long)lws_now_usecs());
 
-	ns->lsp = lws_spawn_piped(&info);
-	if (!ns->lsp) {
+	lsp = lws_spawn_piped(&info);
+	if (!lsp) {
+		ns->op = NULL;
+		free(op);
 		lwsl_err("%s: failed\n", __func__);
 
 		return 1;
 	}
+	op->lsp = lsp;
 
 	lwsl_warn("%s: build script spawn returned at %llu\n", __func__,
 		  (unsigned long long)lws_now_usecs());

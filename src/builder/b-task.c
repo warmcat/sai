@@ -418,13 +418,13 @@ saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 	char s[64];
 	int n;
 
-	if (!ns->lsp)
+	if (!ns->op || !ns->op->lsp)
 		return;
 
 	n = lws_snprintf(s, sizeof(s), ">saib> Cancelling...\n");
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
-	lws_spawn_piped_kill_child_process(ns->lsp);
+	lws_spawn_piped_kill_child_process(ns->op->lsp);
 	if (!--ns->term_budget)
 		return;
 

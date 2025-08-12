@@ -38,6 +38,14 @@
 #endif
 #include <pthread.h>
 
+struct lws_spawn_piped;
+struct sai_nspawn;
+
+struct saib_opaque_spawn {
+	struct sai_nspawn	*ns;
+	struct lws_spawn_piped	*lsp;
+};
+
 #define SAI_LOAD_REPORT_US	(1 * LWS_US_PER_SEC)
 #define SAI_IDLE_GRACE_US	(30 * LWS_US_PER_SEC)
 #define SAI_STAY_POLL_US	(20 * LWS_US_PER_SEC)
