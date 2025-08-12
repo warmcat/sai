@@ -56,6 +56,7 @@ static const char * const git_helper_sh =
 	"        exit 2\n"
 	"    fi\n"
 	"    git -C \"$BUILD_DIR\" checkout -f \"$HASH\"\n"
+	"    git -C \"$BUILD_DIR\" clean -fdx\n"
 	"else\n"
 	"    exit 1\n"
 	"fi\n"
