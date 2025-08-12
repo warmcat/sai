@@ -31,7 +31,6 @@
 #define mkdir(x,y) _mkdir(x)
 #define rmdir _rmdir
 #define unlink _unlink
-#define HAVE_STRUCT_TIMESPEC
 #if defined(pid_t)
 #undef pid_t
 #endif

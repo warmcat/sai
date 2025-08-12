@@ -21,6 +21,9 @@
  * structs common to builder and server
  */
 
+#if defined(WIN32)
+#define HAVE_STRUCT_TIMESPEC
+#endif
 #include <pthread.h>
 
 //#include <sai_config_private.h>
