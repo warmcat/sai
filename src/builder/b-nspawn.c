@@ -82,6 +82,8 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 	uint8_t buf[600];
 	int ilen;
 
+	lwsl_warn("%s: reason %d\n", __func__, reason);
+
 	switch (reason) {
 
 	case LWS_CALLBACK_RAW_CLOSE_FILE:
@@ -90,9 +92,10 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 			  lws_spawn_get_stdfd(wsi));
 
 		ilen = lws_snprintf((char *)buf, sizeof(buf), "Stdwsi %d close\n", lws_spawn_get_stdfd(wsi));
-		saib_log_chunk_create(ns, buf, (size_t)ilen, 3);
+		if (ns)
+			saib_log_chunk_create(ns, buf, (size_t)ilen, 3);
 
-		if (ns->lsp)
+		if (ns && ns->lsp)
 			lws_spawn_stdwsi_closed(ns->lsp, wsi);
 		break;
 
@@ -116,7 +119,7 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 		len = (unsigned int)ilen;
 
-		if (!ns->spm) {
+		if (!ns || !ns->spm) {
 			printf("%s: (%d) %.*s\n", __func__, (int)lws_spawn_get_stdfd(wsi), (int)len, buf);
 			return -1;
 		}

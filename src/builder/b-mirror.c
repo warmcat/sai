@@ -59,6 +59,7 @@ static const char * const git_helper_sh =
 	"else\n"
 	"    exit 1\n"
 	"fi\n"
+	"echo \">>> Git helper script finished.\"\n"
 	"exit 0\n";
 
 #if defined(WIN32)
@@ -94,6 +95,7 @@ static const char * const git_helper_bat =
 	"    if errorlevel 1 exit /b 2\n"
 	"    git -C \"%BUILD_DIR%\" checkout -f \"%HASH%\"\n"
 	"    if errorlevel 1 exit /b 1\n"
+	"    echo \">>> Git helper script finished.\"\n"
 	"    exit /b 0\n"
 	")\n"
 	"exit /b 1\n";
