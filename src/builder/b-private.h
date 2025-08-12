@@ -77,19 +77,6 @@ enum {
 
 
 
-typedef struct sai_mirror_instance {
-	pthread_mutex_t			mut;
-	pthread_cond_t			cond;
-
-	pthread_t			repo_thread;
-
-	lws_dll2_owner_t		pending_req;
-	lws_dll2_owner_t		completed_req;
-
-	uint8_t				finish;
-} sai_mirror_instance_t;
-
-
 /*
  * This represents this builder process as a whole
  */
@@ -126,8 +113,6 @@ struct sai_builder {
 	const char		*perms;		/* user:group */
 
 	const char		*host;		/* prepended before hostname */
-
-	sai_mirror_instance_t	mi;
 
 	char			path[256];
 
@@ -218,9 +203,6 @@ int
 rm_rf_cb(const char *dirpath, void *user, struct lws_dir_entry *lde);
 
 extern const struct lws_protocols protocol_logproxy, protocol_resproxy;
-
-void *
-thread_repo(void *d);
 
 void *
 thread_suspend(void *d);

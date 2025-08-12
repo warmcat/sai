@@ -101,50 +101,9 @@ static const char * const git_helper_bat =
 	"exit /b 1\n";
 #endif
 
-enum {
-	SRFS_REQUESTING,
-	SRFS_PROCESSING,
-	SRFS_FAILED,
-	SRFS_SUCCEEDED,
-};
-
-typedef struct sai_mirror_req {
-	lws_dll2_t		list;
-	char			path[100]; /* local mirror path */
-	char			url[100];
-	char			hash[130];
-	char			ref[96];
-	int			state;
-	struct sai_nspawn	*ns;
-} sai_mirror_req_t;
-
-int saib_start_checkout(struct sai_nspawn *ns);
-
-static void
-saib_start_mirror_fetch(struct sai_nspawn *ns)
-{
-	sai_mirror_instance_t *mi = &builder.mi;
-	sai_mirror_req_t *req = malloc(sizeof(*req));
-
-	if (!req)
-		return;
-
-	lwsl_notice("%s: Queuing remote mirror fetch for %s\n", __func__, ns->ref);
-	memset(req, 0, sizeof(*req));
-	req->state = SRFS_REQUESTING;
-	req->ns = ns;
-	lws_strncpy(req->url, ns->git_repo_url, sizeof(req->url));
-	lws_strncpy(req->hash, ns->hash, sizeof(req->hash));
-	lws_strncpy(req->ref, ns->ref, sizeof(req->ref));
-	lws_strncpy(req->path, ns->path, sizeof(req->path));
-
-	pthread_mutex_lock(&mi->mut);
-	lws_dll2_add_tail(&req->list, &mi->pending_req);
-	pthread_cond_broadcast(&mi->cond);
-	pthread_mutex_unlock(&mi->mut);
-
-	saib_set_ns_state(ns, NSSTATE_WAIT_REMOTE_MIRROR);
-}
+static void sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting,
+				   siginfo_t *si, int we_killed_him);
+static int saib_start_mirror(struct sai_nspawn *ns);
 
 static void
 sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
@@ -156,6 +115,8 @@ sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	lwsl_warn("%s: reap at %llu: we_killed_him: %d, si_code: %d, si_status: %d\n",
 		  __func__, (unsigned long long)lws_now_usecs(),
 		  we_killed_him, si->si_code, si->si_status);
+
+	ns->lsp = NULL;
 
 	if (we_killed_him)
 		goto fail;
@@ -169,12 +130,91 @@ sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	}
 
 	if (exit_code == 2) {
-		saib_start_mirror_fetch(ns);
+		saib_start_mirror(ns);
 		return;
 	}
 
 fail:
 	saib_set_ns_state(ns, NSSTATE_FAILED);
+}
+
+static void
+sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
+		int we_killed_him)
+{
+	struct sai_nspawn *ns = (struct sai_nspawn *)opaque;
+	int exit_code = -1;
+
+	lwsl_warn("%s: reap at %llu: we_killed_him: %d, si_code: %d, si_status: %d\n",
+		  __func__, (unsigned long long)lws_now_usecs(),
+		  we_killed_him, si->si_code, si->si_status);
+
+	ns->lsp = NULL;
+
+	if (we_killed_him)
+		goto fail;
+
+	if (si->si_code == CLD_EXITED)
+		exit_code = si->si_status;
+
+	if (exit_code == 0) {
+		/* mirror succeeded, now try checkout again */
+		saib_start_checkout(ns);
+		return;
+	}
+
+fail:
+	saib_set_ns_state(ns, NSSTATE_FAILED);
+}
+
+static int
+saib_start_mirror(struct sai_nspawn *ns)
+{
+	struct lws_spawn_piped_info info;
+	char script_path[1024];
+	const char *pargs[7];
+	int count = 0;
+
+#if defined(WIN32)
+	lws_snprintf(script_path, sizeof(script_path), "%s\\sai-git-helper-%d.bat",
+		     builder.home, ns->instance_idx);
+#else
+	lws_snprintf(script_path, sizeof(script_path), "%s/sai-git-helper-%d.sh",
+		     builder.home, ns->instance_idx);
+#endif
+
+	pargs[count++] = script_path;
+	pargs[count++] = "mirror";
+	pargs[count++] = ns->git_repo_url;
+	pargs[count++] = ns->ref;
+	pargs[count++] = ns->hash;
+	pargs[count++] = ns->path;
+	pargs[count++] = NULL;
+
+	memset(&info, 0, sizeof(info));
+	info.vh			= builder.vhost;
+	info.exec_array		= pargs;
+	info.protocol_name	= "sai-stdxxx";
+	info.reap_cb		= sai_git_mirror_reap_cb;
+	info.opaque		= ns;
+	info.timeout_us		= 5 * 60 * LWS_US_PER_SEC;
+	info.plsp		= &ns->lsp;
+
+	lwsl_warn("%s: spawning git-helper for mirror at %llu\n", __func__,
+		  (unsigned long long)lws_now_usecs());
+
+	if (!lws_spawn_piped(&info)) {
+		lwsl_warn("%s: lws_spawn_piped for mirror failed at %llu\n", __func__,
+			  (unsigned long long)lws_now_usecs());
+		return -1;
+	}
+
+	lwsl_warn("%s: git-helper mirror spawn returned at %llu\n", __func__,
+		  (unsigned long long)lws_now_usecs());
+
+	saib_set_ns_state(ns, NSSTATE_WAIT_REMOTE_MIRROR);
+
+	return 0;
 }
 
 int
@@ -225,7 +265,7 @@ saib_start_checkout(struct sai_nspawn *ns)
 	info.protocol_name	= "sai-stdxxx";
 	info.reap_cb		= sai_git_checkout_reap_cb;
 	info.opaque		= ns;
-	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
+	info.timeout_us		= 5 * 60 * LWS_US_PER_SEC;
 	info.plsp		= &ns->lsp;
 
 	lwsl_warn("%s: spawning git-helper at %llu\n", __func__,
@@ -242,60 +282,4 @@ saib_start_checkout(struct sai_nspawn *ns)
 
 
 	return 0;
-}
-
-void *
-thread_repo(void *d)
-{
-	sai_mirror_instance_t *mi = (sai_mirror_instance_t *)d;
-	sai_mirror_req_t *req;
-
-	lwsl_notice("%s: repo thread start\n", __func__);
-
-	while (!mi->finish) {
-		pthread_mutex_lock(&mi->mut);
-
-		while (!mi->pending_req.count && !mi->finish)
-			pthread_cond_wait(&mi->cond, &mi->mut);
-
-		if (mi->finish) {
-			pthread_mutex_unlock(&mi->mut);
-			break;
-		}
-
-		req = lws_container_of(lws_dll2_get_head(&mi->pending_req),
-				       sai_mirror_req_t, list);
-		lws_dll2_remove(&req->list);
-
-		pthread_mutex_unlock(&mi->mut);
-
-		if (req) {
-			char cmd[1024];
-			int n;
-
-#if defined(WIN32)
-			lws_snprintf(cmd, sizeof(cmd),
-				     "\"%s\\sai-git-helper-%d.bat\" mirror \"%s\" %s %s \"%s\"",
-				     builder.home, req->ns->instance_idx,
-				     req->url, req->ref, req->hash, req->path);
-#else
-			lws_snprintf(cmd, sizeof(cmd),
-				     "\"%s/sai-git-helper-%d.sh\" mirror \"%s\" %s %s \"%s\"",
-				     builder.home, req->ns->instance_idx,
-				     req->url, req->ref, req->hash, req->path);
-#endif
-			n = system(cmd);
-			if (!n)
-				saib_start_checkout(req->ns);
-			else
-				saib_set_ns_state(req->ns, NSSTATE_FAILED);
-
-			free(req);
-		}
-	}
-
-	lwsl_notice("%s: repo thread exiting\n", __func__);
-	pthread_exit(NULL);
-
-	return NULL;
 }
