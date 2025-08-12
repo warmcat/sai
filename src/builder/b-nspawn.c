@@ -98,8 +98,10 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 				lws_ss_request_tx(ns->spm->ss);
 		}
 
-		if (ns && ns->lsp)
+		if (ns && ns->lsp) {
 			lws_spawn_stdwsi_closed(ns->lsp, wsi);
+			lws_cancel_service(ns->builder->context);
+		}
 		break;
 
 	case LWS_CALLBACK_RAW_RX_FILE:
