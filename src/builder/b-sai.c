@@ -734,8 +734,6 @@ sai_ns_destroy(struct sai_nspawn *ns)
 
 int main(int argc, const char **argv)
 {
-	memset(&builder, 0, sizeof(builder));
-
 	int logs = LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE;
 	struct lws_context_creation_info info;
 #if defined(WIN32)

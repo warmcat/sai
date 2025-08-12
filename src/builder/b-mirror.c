@@ -172,76 +172,12 @@ onward:
 }
 
 static int
-saib_start_mirror(struct sai_nspawn *ns)
-{
-	struct lws_spawn_piped_info info;
-	struct saib_opaque_spawn *op;
-	char script_path[1024];
-	const char *pargs[7];
-	int count = 0;
-
-#if defined(WIN32)
-	lws_snprintf(script_path, sizeof(script_path), "%s\\sai-git-helper-%d.bat",
-		     builder.home, ns->instance_idx);
-#else
-	lws_snprintf(script_path, sizeof(script_path), "%s/sai-git-helper-%d.sh",
-		     builder.home, ns->instance_idx);
-#endif
-
-	pargs[count++] = script_path;
-	pargs[count++] = "mirror";
-	pargs[count++] = ns->git_repo_url;
-	pargs[count++] = ns->ref;
-	pargs[count++] = ns->hash;
-	pargs[count++] = ns->path;
-	pargs[count++] = NULL;
-
-	memset(&info, 0, sizeof(info));
-	info.vh			= builder.vhost;
-	info.exec_array		= pargs;
-	info.protocol_name	= "sai-stdxxx";
-	info.reap_cb		= sai_git_mirror_reap_cb;
-	info.timeout_us		= 5 * 60 * LWS_US_PER_SEC;
-
-	op = malloc(sizeof(*op));
-	if (!op)
-		return -1;
-	memset(op, 0, sizeof(*op));
-
-	op->ns = ns;
-	ns->op = op;
-
-	info.opaque = op;
-	info.owner = &builder.lsp_owner;
-	info.plsp = &op->lsp;
-
-	lwsl_warn("%s: spawning git-helper for mirror at %llu\n", __func__,
-		  (unsigned long long)lws_now_usecs());
-
-	lws_spawn_piped(&info);
-	if (!op->lsp) {
-		lwsl_warn("%s: lws_spawn_piped for mirror failed at %llu\n", __func__,
-			  (unsigned long long)lws_now_usecs());
-		ns->op = NULL;
-		/* op is attached to wsi and will be freed in reap cb */
-		return -1;
-	}
-
-	lwsl_warn("%s: git-helper mirror spawn returned at %llu\n", __func__,
-		  (unsigned long long)lws_now_usecs());
-
-	saib_set_ns_state(ns, NSSTATE_WAIT_REMOTE_MIRROR);
-
-	return 0;
-}
-
-int
-saib_start_checkout(struct sai_nspawn *ns)
+saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
 	char script_path[1024], inp[512];
-	const char *pargs[6];
+	const char *pargs[7];
 	ssize_t n;
 	int fd, count = 0;
 
@@ -267,23 +203,34 @@ saib_start_checkout(struct sai_nspawn *ns)
 	if (n < 0)
 		return -1;
 
-	lws_strncpy(inp, ns->inp, sizeof(inp) - 1);
-	if (inp[strlen(inp) - 1] == '\\')
-		inp[strlen(inp) - 1] = '\0';
-
 	pargs[count++] = script_path;
-	pargs[count++] = "checkout";
-	pargs[count++] = ns->path;
-	pargs[count++] = inp;
-	pargs[count++] = ns->hash;
+	pargs[count++] = operation;
+
+	if (!strcmp(operation, "mirror")) {
+		pargs[count++] = ns->git_repo_url;
+		pargs[count++] = ns->ref;
+		pargs[count++] = ns->hash;
+		pargs[count++] = ns->path;
+	} else { /* checkout */
+		lws_strncpy(inp, ns->inp, sizeof(inp) - 1);
+		if (inp[strlen(inp) - 1] == '\\')
+			inp[strlen(inp) - 1] = '\0';
+		pargs[count++] = ns->path;
+		pargs[count++] = inp;
+		pargs[count++] = ns->hash;
+	}
 	pargs[count++] = NULL;
 
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
 	info.exec_array		= pargs;
 	info.protocol_name	= "sai-stdxxx";
-	info.reap_cb		= sai_git_checkout_reap_cb;
 	info.timeout_us		= 5 * 60 * LWS_US_PER_SEC;
+
+	if (!strcmp(operation, "mirror"))
+		info.reap_cb = sai_git_mirror_reap_cb;
+	else
+		info.reap_cb = sai_git_checkout_reap_cb;
 
 	op = malloc(sizeof(*op));
 	if (!op)
@@ -297,22 +244,31 @@ saib_start_checkout(struct sai_nspawn *ns)
 	info.owner = &builder.lsp_owner;
 	info.plsp = &op->lsp;
 
+	lwsl_warn("%s: spawning git-helper for %s at %llu\n", __func__,
+		  operation, (unsigned long long)lws_now_usecs());
 
-	lwsl_warn("%s: spawning git-helper at %llu\n", __func__,
-		  (unsigned long long)lws_now_usecs());
-
-	lws_spawn_piped(&info);
-	if (!op->lsp) {
-		lwsl_warn("%s: lws_spawn_piped failed at %llu\n", __func__,
-			  (unsigned long long)lws_now_usecs());
+	if (lws_spawn_piped(&info) == NULL) {
+		lwsl_err("%s: lws_spawn_piped for %s failed\n", __func__,
+			 operation);
 		ns->op = NULL;
-		/* op is attached to wsi and will be freed in reap cb */
+		/* op is attached to wsi and will be freed later */
 		return -1;
 	}
 
-	lwsl_warn("%s: git-helper spawn returned at %llu\n", __func__,
-		  (unsigned long long)lws_now_usecs());
-
+	if (!strcmp(operation, "mirror"))
+		saib_set_ns_state(ns, NSSTATE_WAIT_REMOTE_MIRROR);
 
 	return 0;
+}
+
+static int
+saib_start_mirror(struct sai_nspawn *ns)
+{
+	return saib_spawn_git_helper(ns, "mirror");
+}
+
+int
+saib_start_checkout(struct sai_nspawn *ns)
+{
+	return saib_spawn_git_helper(ns, "checkout");
 }
