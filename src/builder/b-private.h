@@ -93,6 +93,7 @@ struct sai_builder {
 	lws_dll2_owner_t	sai_plat_owner; /* list of platforms we offer */
 	lws_dll2_owner_t	sai_plat_server_owner; /* servers we connect to */
 	lws_dll2_owner_t	devices_owner; /* sai_serial_t */
+	lws_dll2_owner_t	lsp_owner; /* list of lws_spawn_piped */
 
 	struct lws_ss_handle	*ss_stay;
 

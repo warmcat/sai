@@ -203,7 +203,6 @@ saib_start_mirror(struct sai_nspawn *ns)
 	info.protocol_name	= "sai-stdxxx";
 	info.reap_cb		= sai_git_mirror_reap_cb;
 	info.timeout_us		= 5 * 60 * LWS_US_PER_SEC;
-	info.plsp		= &lsp;
 
 	op = malloc(sizeof(*op));
 	if (!op)
@@ -212,20 +211,22 @@ saib_start_mirror(struct sai_nspawn *ns)
 
 	op->ns = ns;
 	ns->op = op;
+
 	info.opaque = op;
+	info.owner = &builder.lsp_owner;
+	info.plsp = &op->lsp;
 
 	lwsl_warn("%s: spawning git-helper for mirror at %llu\n", __func__,
 		  (unsigned long long)lws_now_usecs());
 
-	lsp = lws_spawn_piped(&info);
-	if (!lsp) {
+	lws_spawn_piped(&info);
+	if (!op->lsp) {
 		lwsl_warn("%s: lws_spawn_piped for mirror failed at %llu\n", __func__,
 			  (unsigned long long)lws_now_usecs());
 		ns->op = NULL;
 		free(op);
 		return -1;
 	}
-	op->lsp = lsp;
 
 	lwsl_warn("%s: git-helper mirror spawn returned at %llu\n", __func__,
 		  (unsigned long long)lws_now_usecs());
@@ -285,7 +286,6 @@ saib_start_checkout(struct sai_nspawn *ns)
 	info.protocol_name	= "sai-stdxxx";
 	info.reap_cb		= sai_git_checkout_reap_cb;
 	info.timeout_us		= 5 * 60 * LWS_US_PER_SEC;
-	info.plsp		= &lsp;
 
 	op = malloc(sizeof(*op));
 	if (!op)
@@ -294,21 +294,23 @@ saib_start_checkout(struct sai_nspawn *ns)
 
 	op->ns = ns;
 	ns->op = op;
+
 	info.opaque = op;
+	info.owner = &builder.lsp_owner;
+	info.plsp = &op->lsp;
 
 
 	lwsl_warn("%s: spawning git-helper at %llu\n", __func__,
 		  (unsigned long long)lws_now_usecs());
 
-	lsp = lws_spawn_piped(&info);
-	if (!lsp) {
+	lws_spawn_piped(&info);
+	if (!op->lsp) {
 		lwsl_warn("%s: lws_spawn_piped failed at %llu\n", __func__,
 			  (unsigned long long)lws_now_usecs());
 		ns->op = NULL;
 		free(op);
 		return -1;
 	}
-	op->lsp = lsp;
 
 	lwsl_warn("%s: git-helper spawn returned at %llu\n", __func__,
 		  (unsigned long long)lws_now_usecs());

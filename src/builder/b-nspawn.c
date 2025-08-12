@@ -357,7 +357,6 @@ saib_spawn(struct sai_nspawn *ns)
 	info.max_log_lines	= 10000;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.reap_cb		= sai_lsp_reap_cb;
-	info.plsp		= &lsp;
 #if defined(__linux__)
 	info.cgroup_name_suffix = cgroup;
 	info.p_cgroup_ret	= &in_cgroup;
@@ -372,19 +371,20 @@ saib_spawn(struct sai_nspawn *ns)
 	ns->op = op;
 
 	info.opaque = op;
+	info.owner = &builder.lsp_owner;
+	info.plsp = &op->lsp;
 
 	lwsl_warn("%s: spawning build script at %llu\n", __func__,
 		  (unsigned long long)lws_now_usecs());
 
-	lsp = lws_spawn_piped(&info);
-	if (!lsp) {
+	lws_spawn_piped(&info);
+	if (!op->lsp) {
 		ns->op = NULL;
 		free(op);
 		lwsl_err("%s: failed\n", __func__);
 
 		return 1;
 	}
-	op->lsp = lsp;
 
 	lwsl_warn("%s: build script spawn returned at %llu\n", __func__,
 		  (unsigned long long)lws_now_usecs());
