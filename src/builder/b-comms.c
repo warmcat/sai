@@ -277,7 +277,29 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 			star = walk;
 
 		ns = lws_container_of(walk, struct sai_nspawn, list);
-		if (spm != ns->spm || !ns->chunk_cache.count || !ns->chunk_cache.tail)
+		if (spm != ns->spm)
+			continue;
+
+		if (ns->state_changed) {
+			pthread_mutex_lock(&ns->mut);
+			ns->state_changed = 0;
+			pthread_mutex_unlock(&ns->mut);
+
+			switch (ns->state) {
+			case NSSTATE_CHECKEDOUT:
+				saib_set_ns_state(ns, NSSTATE_BUILD);
+				if (saib_spawn(ns)) {
+					lwsl_err("%s: saib_spawn failed\n",
+						 __func__);
+					saib_set_ns_state(ns, NSSTATE_FAILED);
+				}
+				break;
+			default:
+				break;
+			}
+		}
+
+		if (!ns->chunk_cache.count || !ns->chunk_cache.tail)
 			continue;
 
 		/*
