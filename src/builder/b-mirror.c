@@ -153,8 +153,9 @@ sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	struct sai_nspawn *ns = (struct sai_nspawn *)opaque;
 	int exit_code = -1;
 
-	lwsl_warn("%s: reap: we_killed_him: %d, si_code: %d, si_status: %d\n",
-		  __func__, we_killed_him, si->si_code, si->si_status);
+	lwsl_warn("%s: reap at %llu: we_killed_him: %d, si_code: %d, si_status: %d\n",
+		  __func__, (unsigned long long)lws_now_usecs(),
+		  we_killed_him, si->si_code, si->si_status);
 
 	if (we_killed_him)
 		goto fail;
@@ -227,8 +228,18 @@ saib_start_checkout(struct sai_nspawn *ns)
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.plsp		= &ns->lsp;
 
-	if (!lws_spawn_piped(&info))
+	lwsl_warn("%s: spawning git-helper at %llu\n", __func__,
+		  (unsigned long long)lws_now_usecs());
+
+	if (!lws_spawn_piped(&info)) {
+		lwsl_warn("%s: lws_spawn_piped failed at %llu\n", __func__,
+			  (unsigned long long)lws_now_usecs());
 		return -1;
+	}
+
+	lwsl_warn("%s: git-helper spawn returned at %llu\n", __func__,
+		  (unsigned long long)lws_now_usecs());
+
 
 	return 0;
 }

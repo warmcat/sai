@@ -87,9 +87,9 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 	switch (reason) {
 
 	case LWS_CALLBACK_RAW_CLOSE_FILE:
-		lwsl_user("%s: RAW_CLOSE_FILE wsi %p: fd: %d, stdfd: %d\n",
-			  __func__, wsi, lws_get_socket_fd(wsi),
-			  lws_spawn_get_stdfd(wsi));
+		lwsl_warn("%s: RAW_CLOSE_FILE at %llu, wsi %p: fd: %d, stdfd: %d\n",
+			  __func__, (unsigned long long)lws_now_usecs(), wsi,
+			  lws_get_socket_fd(wsi), lws_spawn_get_stdfd(wsi));
 
 		ilen = lws_snprintf((char *)buf, sizeof(buf), "Stdwsi %d close\n", lws_spawn_get_stdfd(wsi));
 		if (ns)
@@ -145,6 +145,9 @@ sai_lsp_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 		int we_killed_him)
 {
 	struct sai_nspawn *ns = (struct sai_nspawn *)opaque;
+
+	lwsl_warn("%s: reap at %llu: we_killed_him: %d\n", __func__,
+		  (unsigned long long)lws_now_usecs(), we_killed_him);
 
 	saib_log_chunk_create(ns, ">saib> Reaping build process\n", 29, 3);
 
@@ -346,12 +349,18 @@ saib_spawn(struct sai_nspawn *ns)
 	info.p_cgroup_ret	= &in_cgroup;
 #endif
 
+	lwsl_warn("%s: spawning build script at %llu\n", __func__,
+		  (unsigned long long)lws_now_usecs());
+
 	ns->lsp = lws_spawn_piped(&info);
 	if (!ns->lsp) {
 		lwsl_err("%s: failed\n", __func__);
 
 		return 1;
 	}
+
+	lwsl_warn("%s: build script spawn returned at %llu\n", __func__,
+		  (unsigned long long)lws_now_usecs());
 
 #if defined(__linux__)
 	lwsl_notice("%s: lws_spawn_piped started (cgroup: %d)\n", __func__, in_cgroup);
