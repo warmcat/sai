@@ -29,7 +29,11 @@
 
 static const char * const git_helper_sh =
 	"#!/bin/bash\n"
+#if defined(__APPLE__)
+	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
+#else
 	"export PATH=/usr/local/bin:$PATH\n"
+#endif
 	"set -e\n"
 	"OPERATION=$1\n"
 	"shift\n"
