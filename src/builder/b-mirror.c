@@ -223,7 +223,7 @@ saib_start_mirror(struct sai_nspawn *ns)
 		lwsl_warn("%s: lws_spawn_piped for mirror failed at %llu\n", __func__,
 			  (unsigned long long)lws_now_usecs());
 		ns->op = NULL;
-		free(op);
+		/* op is attached to wsi and will be freed in reap cb */
 		return -1;
 	}
 
@@ -306,7 +306,7 @@ saib_start_checkout(struct sai_nspawn *ns)
 		lwsl_warn("%s: lws_spawn_piped failed at %llu\n", __func__,
 			  (unsigned long long)lws_now_usecs());
 		ns->op = NULL;
-		free(op);
+		/* op is attached to wsi and will be freed in reap cb */
 		return -1;
 	}
 

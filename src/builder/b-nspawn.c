@@ -380,8 +380,11 @@ saib_spawn(struct sai_nspawn *ns)
 
 	lws_spawn_piped(&info);
 	if (!op->lsp) {
+		/*
+		 * op is attached to wsi and will be freed in reap cb,
+		 * we can't free it here
+		 */
 		ns->op = NULL;
-		free(op);
 		lwsl_err("%s: failed\n", __func__);
 
 		return 1;
