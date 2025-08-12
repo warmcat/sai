@@ -741,7 +741,6 @@ int main(int argc, const char **argv)
 #endif
 	struct stat sb;
 	const char *p;
-	void *retval;
 
 #if !defined(WIN32)
 

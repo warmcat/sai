@@ -92,8 +92,11 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 			  lws_get_socket_fd(wsi), lws_spawn_get_stdfd(wsi));
 
 		ilen = lws_snprintf((char *)buf, sizeof(buf), "Stdwsi %d close\n", lws_spawn_get_stdfd(wsi));
-		if (ns)
+		if (ns) {
 			saib_log_chunk_create(ns, buf, (size_t)ilen, 3);
+			if (ns->spm)
+				lws_ss_request_tx(ns->spm->ss);
+		}
 
 		if (ns && ns->lsp)
 			lws_spawn_stdwsi_closed(ns->lsp, wsi);
