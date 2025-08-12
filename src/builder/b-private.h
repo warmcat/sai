@@ -39,7 +39,6 @@
 #include <pthread.h>
 
 struct lws_spawn_piped;
-struct sai_nspawn;
 
 struct saib_opaque_spawn {
 	struct sai_nspawn	*ns;

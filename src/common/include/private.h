@@ -21,6 +21,8 @@
  * structs common to builder and server
  */
 
+#include <pthread.h>
+
 //#include <sai_config_private.h>
 
 #if defined(__linux__)

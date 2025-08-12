@@ -121,8 +121,12 @@ sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	if (we_killed_him)
 		goto fail;
 
+#if !defined(WIN32)
 	if (si->si_code == CLD_EXITED)
 		exit_code = si->si_status;
+#else
+	exit_code = si->retcode;
+#endif
 
 	if (exit_code == 0) {
 		saib_set_ns_state(ns, NSSTATE_CHECKEDOUT);
@@ -156,8 +160,12 @@ sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	if (we_killed_him)
 		goto fail;
 
+#if !defined(WIN32)
 	if (si->si_code == CLD_EXITED)
 		exit_code = si->si_status;
+#else
+	exit_code = si->retcode;
+#endif
 
 	if (exit_code == 0) {
 		/* mirror succeeded, now try checkout again */
