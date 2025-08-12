@@ -357,16 +357,16 @@ saib_spawn(struct sai_nspawn *ns)
 	info.max_log_lines	= 10000;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.reap_cb		= sai_lsp_reap_cb;
-	info.opaque		= op;
 	info.plsp		= &lsp;
 #if defined(__linux__)
 	info.cgroup_name_suffix = cgroup;
 	info.p_cgroup_ret	= &in_cgroup;
 #endif
 
-	op = lws_zalloc(sizeof(*op), "spawn-opaque");
+	op = malloc(sizeof(*op));
 	if (!op)
 		return 1;
+	memset(op, 0, sizeof(*op));
 
 	op->ns = ns;
 	ns->op = op;

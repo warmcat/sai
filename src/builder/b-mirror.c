@@ -205,9 +205,10 @@ saib_start_mirror(struct sai_nspawn *ns)
 	info.timeout_us		= 5 * 60 * LWS_US_PER_SEC;
 	info.plsp		= &lsp;
 
-	op = lws_zalloc(sizeof(*op), "mirror-opaque");
+	op = malloc(sizeof(*op));
 	if (!op)
 		return -1;
+	memset(op, 0, sizeof(*op));
 
 	op->ns = ns;
 	ns->op = op;
@@ -286,9 +287,10 @@ saib_start_checkout(struct sai_nspawn *ns)
 	info.timeout_us		= 5 * 60 * LWS_US_PER_SEC;
 	info.plsp		= &lsp;
 
-	op = lws_zalloc(sizeof(*op), "checkout-opaque");
+	op = malloc(sizeof(*op));
 	if (!op)
 		return -1;
+	memset(op, 0, sizeof(*op));
 
 	op->ns = ns;
 	ns->op = op;
