@@ -24,7 +24,6 @@
 #if defined(WIN32)
 #define HAVE_STRUCT_TIMESPEC
 #endif
-#include <pthread.h>
 
 //#include <sai_config_private.h>
 
@@ -196,7 +195,6 @@ struct sai_nspawn {
 	uint8_t				state_changed:1;
 	uint8_t				user_cancel:1;
 
-	pthread_mutex_t			mut;
 };
 
 /*

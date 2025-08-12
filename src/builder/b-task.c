@@ -71,10 +71,8 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 	char log[100];
 	int n;
 
-	pthread_mutex_lock(&ns->mut);
 	ns->state = (uint8_t)state;
 	ns->state_changed = 1;
-	pthread_mutex_unlock(&ns->mut);
 
 	n = lws_snprintf(log, sizeof(log), ">saib> %s\n", nsstates[state]);
 
@@ -156,7 +154,6 @@ saib_task_destroy(struct sai_nspawn *ns)
 	}
 
 
-	pthread_mutex_lock(&ns->mut);
 	if (ns->task && ns->task->told_ongoing) {
 		/*
 		 * Account that we're not doing this task any more
@@ -202,7 +199,6 @@ saib_task_destroy(struct sai_nspawn *ns)
 		lwsac_free(&ns->task->ac_task_container);
 		ns->task = NULL;
 	}
-	pthread_mutex_unlock(&ns->mut);
 }
 
 static void

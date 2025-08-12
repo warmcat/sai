@@ -35,6 +35,9 @@ static const char * const git_helper_sh =
 	"export PATH=/usr/local/bin:$PATH\n"
 #endif
 	"set -e\n"
+	"id\n"
+	"pwd\n"
+	"ls -lsa\n"
 	"OPERATION=$1\n"
 	"shift\n"
 	"if [ \"$OPERATION\" == \"mirror\" ]; then\n"
