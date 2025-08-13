@@ -85,7 +85,7 @@ static const char * const git_helper_bat =
 	"        if errorlevel 1 exit /b 1\n"
 	"    )\n"
 	"    set \"REFSPEC=%REF%:ref-%HASH%\"\n"
-	"    git -C \"%MIRROR_PATH%\" fetch \"%REMOTE_URL%\" %REFSPEC%\n"
+	"    git -C \"%MIRROR_PATH%\" fetch \"%REMOTE_URL%\" \"%REFSPEC%\"\n"
 	"    if errorlevel 1 exit /b 1\n"
 	"    exit /b 0\n"
 	")\n"
