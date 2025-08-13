@@ -77,6 +77,7 @@ static const char * const git_helper_bat =
 	"    )\n"
 	"    set \"REFSPEC=!REF!:ref-!HASH!\"\n"
 	"    git -C \"!MIRROR_PATH!\" fetch \"!REMOTE_URL!\" \"!REFSPEC!\" 2>&1\n"
+	"    echo \"git fetch completed with errorlevel !ERRORLEVEL!\"\n"
 	"    if !ERRORLEVEL! neq 0 (\n"
 	"        echo \"git fetch failed with errorlevel !ERRORLEVEL!\"\n"
 	"        exit /b 1\n"

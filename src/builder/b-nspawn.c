@@ -78,11 +78,26 @@ static int
 callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		    void *user, void *in, size_t len)
 {
-	struct saib_opaque_spawn *op =
-		(struct saib_opaque_spawn *)lws_get_opaque_user_data(wsi);
-	struct sai_nspawn *ns = op ? op->ns : NULL;
+	struct saib_opaque_spawn *op = NULL;
+	struct lws_spawn_piped *lsp = NULL;
+	struct sai_nspawn *ns = NULL;
 	uint8_t buf[600];
 	int ilen;
+
+	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+				   builder.lsp_owner.head) {
+		lsp = lws_container_of(d, struct lws_spawn_piped, list);
+
+		if (lsp->stdwsi[0] == wsi || lsp->stdwsi[1] == wsi ||
+		    lsp->stdwsi[2] == wsi) {
+			op = lws_spawn_get_opaque(lsp);
+			break;
+		}
+		lsp = NULL;
+	} lws_end_foreach_dll_safe(d, d1);
+
+	if (op)
+		ns = op->ns;
 
 	lwsl_warn("%s: reason %d\n", __func__, reason);
 
@@ -102,8 +117,8 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 						  __func__);
 		}
 
-		if (op && op->lsp) {
-			lws_spawn_stdwsi_closed(op->lsp, wsi);
+		if (lsp) {
+			lws_spawn_stdwsi_closed(lsp, wsi);
 			if (ns)
 				lws_cancel_service(ns->builder->context);
 		}
@@ -129,15 +144,15 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 		len = (unsigned int)ilen;
 
-		if (!op || !op->ns || !op->ns->spm) {
+		if (!op || !ns || !ns->spm) {
 			printf("%s: (%d) %.*s\n", __func__, (int)lws_spawn_get_stdfd(wsi), (int)len, buf);
 			return -1;
 		}
 
-		if (!saib_log_chunk_create(op->ns, buf, len, lws_spawn_get_stdfd(wsi)))
+		if (!saib_log_chunk_create(ns, buf, len, lws_spawn_get_stdfd(wsi)))
 			return -1;
 
-		return lws_ss_request_tx(op->ns->spm->ss) ? -1 : 0;
+		return lws_ss_request_tx(ns->spm->ss) ? -1 : 0;
 
 	default:
 		break;
