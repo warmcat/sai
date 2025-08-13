@@ -21,6 +21,10 @@
  * structs common to builder and server
  */
 
+#if defined(WIN32)
+#define HAVE_STRUCT_TIMESPEC
+#endif
+
 //#include <sai_config_private.h>
 
 #if defined(__linux__)
@@ -33,6 +37,7 @@
 
 struct sai_plat;
 struct sai_builder;
+struct saib_opaque_spawn;
 
 typedef enum {
 	SAIES_WAITING				= 0,
@@ -155,13 +160,11 @@ struct sai_nspawn {
 	lws_dll2_t			list;		/* sai_plat owner lists sai_nspawns */
 	struct sai_builder		*builder;
 	struct lws_fsmount		fsm;
-	struct lws_spawn_piped		*lsp;
+	struct saib_opaque_spawn	*op;
 	sai_task_t			*task;
 
 	lws_dll2_owner_t		artifact_owner; /* struct artifact_path */
 
-	struct lws_threadpool		*tp;
-	struct lws_threadpool_task	*tp_task;
 	lws_sorted_usec_list_t		sul_cleaner;
 	lws_sorted_usec_list_t		sul_task_cancel;
 
@@ -191,6 +194,7 @@ struct sai_nspawn {
 	uint8_t				finished_when_logs_drained:1;
 	uint8_t				state_changed:1;
 	uint8_t				user_cancel:1;
+
 };
 
 /*

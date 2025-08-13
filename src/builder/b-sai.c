@@ -726,7 +726,6 @@ void sigint_handler(int sig)
 void
 sai_ns_destroy(struct sai_nspawn *ns)
 {
-
 	lws_dll2_remove(&ns->list);
 	free(ns);
 }
@@ -741,7 +740,6 @@ int main(int argc, const char **argv)
 #endif
 	struct stat sb;
 	const char *p;
-	void *retval;
 
 #if !defined(WIN32)
 
@@ -986,28 +984,6 @@ int main(int argc, const char **argv)
 	}
 #endif
 
-	pthread_mutex_init(&builder.mi.mut, NULL);
-	pthread_cond_init(&builder.mi.cond, NULL);
-
-
-	/*
-	 * Our approach is to split off a thread to do the git remote handling
-	 * in a serialized way blocking the related threadpool threads until it
-	 * completes, without blocking the main (lws) event loop thread.
-	 *
-	 * It has to be segregated because there is a repo write lock with one
-	 * owner at a time for remote -> local mirror write operation.
-	 *
-	 * local mirror -> build-specific checkout doesn't need the write lock
-	 * and can happen concurrently at the threadpool threads.
-	 */
-
-	if (pthread_create(&builder.mi.repo_thread, NULL, thread_repo,
-			   &builder.mi)) {
-		lwsl_err("%s: repo thread creation failed\n", __func__);
-		return 1;
-	}
-
 	while (!lws_service(builder.context, 0) && !interrupted)
 		;
 
@@ -1056,20 +1032,6 @@ bail:
 	saib_config_destroy(&builder);
 
 	lws_sul_cancel(&builder.sul_idle);
-
-	/*
-	 * Clean up after the spawn threads
-	 */
-
-	pthread_mutex_lock(&builder.mi.mut);
-	builder.mi.finish = 1;
-	pthread_cond_broadcast(&builder.mi.cond);
-	pthread_mutex_unlock(&builder.mi.mut);
-
-	pthread_join(builder.mi.repo_thread, &retval);
-
-	pthread_mutex_destroy(&builder.mi.mut);
-	pthread_cond_destroy(&builder.mi.cond);
 
 	lws_context_destroy(builder.context);
 

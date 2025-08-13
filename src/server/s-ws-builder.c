@@ -1092,7 +1092,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	}
 
 
-	if (!pss->issue_task_owner.count)
+       if (!pss->issue_task_owner.count || !pss->issue_task_owner.head)
 		return 0; /* nothing to send */
 
 	/*

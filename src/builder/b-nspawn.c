@@ -78,22 +78,36 @@ static int
 callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		    void *user, void *in, size_t len)
 {
-	struct sai_nspawn *ns = (struct sai_nspawn *)lws_get_opaque_user_data(wsi);
+	struct saib_opaque_spawn *op =
+		(struct saib_opaque_spawn *)lws_get_opaque_user_data(wsi);
+	struct sai_nspawn *ns = op ? op->ns : NULL;
 	uint8_t buf[600];
 	int ilen;
+
+	// lwsl_warn("%s: reason %d\n", __func__, reason);
 
 	switch (reason) {
 
 	case LWS_CALLBACK_RAW_CLOSE_FILE:
-		lwsl_user("%s: RAW_CLOSE_FILE wsi %p: fd: %d, stdfd: %d\n",
-			  __func__, wsi, lws_get_socket_fd(wsi),
-			  lws_spawn_get_stdfd(wsi));
+		lwsl_warn("%s: RAW_CLOSE_FILE at %llu, wsi %p: fd: %d, stdfd: %d\n",
+			  __func__, (unsigned long long)lws_now_usecs(), wsi,
+			  lws_get_socket_fd(wsi), lws_spawn_get_stdfd(wsi));
 
 		ilen = lws_snprintf((char *)buf, sizeof(buf), "Stdwsi %d close\n", lws_spawn_get_stdfd(wsi));
-		saib_log_chunk_create(ns, buf, (size_t)ilen, 3);
+		if (ns) {
+			saib_log_chunk_create(ns, buf, (size_t)ilen, 3);
+			if (ns->spm)
+				if (lws_ss_request_tx(ns->spm->ss))
+					lwsl_warn("%s: lws_ss_request_tx failed\n",
+						  __func__);
+		}
 
-		if (ns->lsp)
-			lws_spawn_stdwsi_closed(ns->lsp, wsi);
+               lwsl_wsi_err(wsi, "CLOSING: op %p, op->lsp %p", op, op ? op->lsp : NULL);
+		if (op && op->lsp) {
+			lws_spawn_stdwsi_closed(op->lsp, wsi);
+			if (ns)
+				lws_cancel_service(ns->builder->context);
+		}
 		break;
 
 	case LWS_CALLBACK_RAW_RX_FILE:
@@ -116,15 +130,15 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 		len = (unsigned int)ilen;
 
-		if (!ns->spm) {
+		if (!op || !op->ns || !op->ns->spm) {
 			printf("%s: (%d) %.*s\n", __func__, (int)lws_spawn_get_stdfd(wsi), (int)len, buf);
 			return -1;
 		}
 
-		if (!saib_log_chunk_create(ns, buf, len, lws_spawn_get_stdfd(wsi)))
+		if (!saib_log_chunk_create(op->ns, buf, len, lws_spawn_get_stdfd(wsi)))
 			return -1;
 
-		return lws_ss_request_tx(ns->spm->ss) ? -1 : 0;
+		return lws_ss_request_tx(op->ns->spm->ss) ? -1 : 0;
 
 	default:
 		break;
@@ -141,7 +155,11 @@ static void
 sai_lsp_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 		int we_killed_him)
 {
-	struct sai_nspawn *ns = (struct sai_nspawn *)opaque;
+	struct saib_opaque_spawn *op = (struct saib_opaque_spawn *)opaque;
+	struct sai_nspawn *ns = op ? op->ns : NULL;
+
+	// lwsl_warn("%s: reap at %llu: we_killed_him: %d\n", __func__,
+	//	  (unsigned long long)lws_now_usecs(), we_killed_him);
 
 	saib_log_chunk_create(ns, ">saib> Reaping build process\n", 29, 3);
 
@@ -199,6 +217,10 @@ ok:
 	lwsl_notice("%s: finished, waiting to drain logs (this ns %d, spm in flight %d)\n",
 			__func__, ns->chunk_cache.count,
 			ns->spm ? ns->spm->logs_in_flight : -99);
+
+	if (ns)
+		ns->op = NULL;
+	free(op);
 }
 
 #if defined(WIN32)
@@ -211,6 +233,7 @@ static const char * const runscript =
 	"set SAI_LOGPROXY_TTY1=%s\n"
 	"set HOME=%s\n"
 	"cd %s\\jobs\\%s\\%s &&"
+	" rmdir /s /q build & "
 	"%s"
 ;
 
@@ -234,7 +257,7 @@ static const char * const runscript =
 	"export SAI_LOGPROXY_TTY1=%s\n"
 	"set -e\n"
 	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
-
+	"rm -rf build\n"
 	"%s\n"
 	"exit $?\n"
 ;
@@ -245,6 +268,7 @@ int
 saib_spawn(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
+	struct saib_opaque_spawn *op;
 	char args[290], st[2048], *p;
 	const char *respath = "unk";
 	const char * cmd[] = {
@@ -252,7 +276,7 @@ saib_spawn(struct sai_nspawn *ns)
 		NULL
 	};
 	const char *env[] = {
-		"PATH=/usr/bin:/bin",
+		"PATH=/usr/local/bin:/usr/bin:/bin",
 		"LANG=en_US.UTF-8",
 		NULL
 	};
@@ -336,19 +360,40 @@ saib_spawn(struct sai_nspawn *ns)
 	info.max_log_lines	= 10000;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.reap_cb		= sai_lsp_reap_cb;
-	info.opaque		= ns;
-	info.plsp		= &ns->lsp;
 #if defined(__linux__)
 	info.cgroup_name_suffix = cgroup;
 	info.p_cgroup_ret	= &in_cgroup;
 #endif
 
-	ns->lsp = lws_spawn_piped(&info);
-	if (!ns->lsp) {
+	op = malloc(sizeof(*op));
+	if (!op)
+		return 1;
+	memset(op, 0, sizeof(*op));
+
+	op->ns = ns;
+	ns->op = op;
+
+	info.opaque = op;
+	info.owner = &builder.lsp_owner;
+	info.plsp = &op->lsp;
+
+	// lwsl_warn("%s: spawning build script at %llu\n", __func__,
+	//	  (unsigned long long)lws_now_usecs());
+
+	lws_spawn_piped(&info);
+	if (!op->lsp) {
+		/*
+		 * op is attached to wsi and will be freed in reap cb,
+		 * we can't free it here
+		 */
+		ns->op = NULL;
 		lwsl_err("%s: failed\n", __func__);
 
 		return 1;
 	}
+
+	// lwsl_warn("%s: build script spawn returned at %llu\n", __func__,
+	//	  (unsigned long long)lws_now_usecs());
 
 #if defined(__linux__)
 	lwsl_notice("%s: lws_spawn_piped started (cgroup: %d)\n", __func__, in_cgroup);
