@@ -29,13 +29,7 @@
 
 static const char * const git_helper_sh =
 	"#!/bin/bash\n"
-#if defined(__APPLE__)
-	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
-#else
-	"export PATH=/usr/local/bin:$PATH\n"
-#endif
 	"set -e\n"
-	"echo \"git_helper_sh: starting\"\n"
 	"OPERATION=$1\n"
 	"shift\n"
 	"if [ \"$OPERATION\" == \"mirror\" ]; then\n"
@@ -65,31 +59,23 @@ static const char * const git_helper_sh =
 	"else\n"
 	"    exit 1\n"
 	"fi\n"
-	"echo \">>> Git helper script finished.\"\n"
 	"exit 0\n";
 
 #if defined(WIN32)
 static const char * const git_helper_bat =
-	"@echo on\n"
+	"@echo off\n"
 	"setlocal EnableDelayedExpansion\n"
-	"echo \"git_helper_bat: starting\"\n"
 	"set \"OPERATION=%~1\"\n"
-	"echo \"OPERATION: !OPERATION!\"\n"
 	"if /i \"!OPERATION!\"==\"mirror\" (\n"
 	"    set \"REMOTE_URL=%~2\"\n"
 	"    set \"REF=%~3\"\n"
 	"    set \"HASH=%~4\"\n"
 	"    set \"MIRROR_PATH=%~5\"\n"
-	"    echo \"REMOTE_URL: !REMOTE_URL!\"\n"
-	"    echo \"REF: !REF!\"\n"
-	"    echo \"HASH: !HASH!\"\n"
-	"    echo \"MIRROR_PATH: !MIRROR_PATH!\"\n"
 	"    if not exist \"!MIRROR_PATH!\\.\" (\n"
 	"        git init --bare \"!MIRROR_PATH!\"\n"
 	"        if errorlevel 1 exit /b 1\n"
 	"    )\n"
 	"    set \"REFSPEC=!REF!:ref-!HASH!\"\n"
-	"    echo \"REFSPEC: !REFSPEC!\"\n"
 	"    git -C \"!MIRROR_PATH!\" fetch \"!REMOTE_URL!\" \"!REFSPEC!\"\n"
 	"    if errorlevel 1 exit /b 1\n"
 	"    exit /b 0\n"
@@ -98,9 +84,6 @@ static const char * const git_helper_bat =
 	"    set \"MIRROR_PATH=%~2\"\n"
 	"    set \"BUILD_DIR=%~3\"\n"
 	"    set \"HASH=%~4\"\n"
-	"    echo \"MIRROR_PATH: !MIRROR_PATH!\"\n"
-	"    echo \"BUILD_DIR: !BUILD_DIR!\"\n"
-	"    echo \"HASH: !HASH!\"\n"
 	"    if not exist \"!BUILD_DIR!\\.git\" (\n"
 	"        if exist \"!BUILD_DIR!\\\" rmdir /s /q \"!BUILD_DIR!\"\n"
 	"        mkdir \"!BUILD_DIR!\"\n"
@@ -111,7 +94,6 @@ static const char * const git_helper_bat =
 	"    if errorlevel 1 exit /b 2\n"
 	"    git -C \"!BUILD_DIR!\" checkout -f \"!HASH!\"\n"
 	"    if errorlevel 1 exit /b 1\n"
-	"    echo \">>> Git helper script finished.\"\n"
 	"    exit /b 0\n"
 	")\n"
 	"exit /b 1\n";
@@ -119,6 +101,7 @@ static const char * const git_helper_bat =
 
 static void sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting,
 				   siginfo_t *si, int we_killed_him);
+static int saib_start_mirror(struct sai_nspawn *ns);
 
 static void
 sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
@@ -128,11 +111,15 @@ sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	struct sai_nspawn *ns = op->ns;
 	int exit_code = -1;
 
-	lwsl_notice("%s: mirror reap callback started\n", __func__);
-
+#if !defined(WIN32)
 	lwsl_warn("%s: reap at %llu: we_killed_him: %d, si_code: %d, si_status: %d\n",
 		  __func__, (unsigned long long)lws_now_usecs(),
 		  we_killed_him, si->si_code, si->si_status);
+#else
+	lwsl_warn("%s: reap at %llu: we_killed_him: %d, retcode: %d\n",
+		  __func__, (unsigned long long)lws_now_usecs(),
+		  we_killed_him, si->retcode);
+#endif
 
 	if (we_killed_him)
 		goto fail;
@@ -169,9 +156,15 @@ sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	struct sai_nspawn *ns = op->ns;
 	int exit_code = -1;
 
+#if !defined(WIN32)
 	lwsl_warn("%s: reap at %llu: we_killed_him: %d, si_code: %d, si_status: %d\n",
 		  __func__, (unsigned long long)lws_now_usecs(),
 		  we_killed_him, si->si_code, si->si_status);
+#else
+	lwsl_warn("%s: reap at %llu: we_killed_him: %d, retcode: %d\n",
+		  __func__, (unsigned long long)lws_now_usecs(),
+		  we_killed_him, si->retcode);
+#endif
 
 	if (we_killed_him)
 		goto fail;
@@ -185,7 +178,6 @@ sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 
 	if (exit_code == 0) {
 		/* mirror succeeded, now try checkout again */
-		lwsl_notice("%s: mirror success, starting checkout\n", __func__);
 		saib_start_checkout(ns);
 		goto onward;
 	}
@@ -202,19 +194,39 @@ saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
-	char script_path[1024], inp[512];
-	const char *pargs[8];
+	char script_path[1024], inp[512], path_env[256];
+	const char *pargs[8], * const *env;
+	const char *env_array[2];
 	ssize_t n;
 	int fd, count = 0;
 
-#if defined(__APPLE__)
-	pargs[count++] = "/bin/bash";
-#endif
-
 #if defined(WIN32)
+	lws_snprintf(path_env, sizeof(path_env),
+		     "PATH=C:\\Program Files\\Git\\bin;%s", getenv("PATH"));
+	env_array[0] = path_env;
+	env_array[1] = NULL;
+	env = env_array;
 	lws_snprintf(script_path, sizeof(script_path), "%s\\sai-git-helper-%d.bat",
 		     builder.home, ns->instance_idx);
+#elif defined(__APPLE__)
+	lws_snprintf(path_env, sizeof(path_env),
+		     "PATH=/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin");
+	env_array[0] = path_env;
+	env_array[1] = NULL;
+	env = env_array;
+	lws_snprintf(script_path, sizeof(script_path), "%s/sai-git-helper-%d.sh",
+		     builder.home, ns->instance_idx);
 #else
+	/*
+	 * Let's take our own environment, but with a default path in case
+	 * we don't have one
+	 */
+	lws_snprintf(path_env, sizeof(path_env), "PATH=/usr/local/bin:/usr/bin:/bin");
+	if (getenv("PATH"))
+		lws_snprintf(path_env, sizeof(path_env), "PATH=%s", getenv("PATH"));
+	env_array[0] = path_env;
+	env_array[1] = NULL;
+	env = env_array;
 	lws_snprintf(script_path, sizeof(script_path), "%s/sai-git-helper-%d.sh",
 		     builder.home, ns->instance_idx);
 #endif
@@ -254,6 +266,7 @@ saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
 	info.exec_array		= pargs;
+	info.env_array		= env;
 	info.protocol_name	= "sai-stdxxx";
 	info.timeout_us		= 5 * 60 * LWS_US_PER_SEC;
 
@@ -291,7 +304,7 @@ saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 	return 0;
 }
 
-int
+static int
 saib_start_mirror(struct sai_nspawn *ns)
 {
 	return saib_spawn_git_helper(ns, "mirror");
@@ -300,6 +313,5 @@ saib_start_mirror(struct sai_nspawn *ns)
 int
 saib_start_checkout(struct sai_nspawn *ns)
 {
-	lwsl_notice("%s: starting checkout\n", __func__);
 	return saib_spawn_git_helper(ns, "checkout");
 }
