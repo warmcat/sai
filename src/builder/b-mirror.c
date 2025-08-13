@@ -76,7 +76,7 @@ static const char * const git_helper_bat =
 	"        if errorlevel 1 exit /b 1\n"
 	"    )\n"
 	"    set \"REFSPEC=!REF!:ref-!HASH!\"\n"
-	"    git -C \"!MIRROR_PATH!\" fetch \"!REMOTE_URL!\" \"!REFSPEC!\"\n"
+	"    git -C \"!MIRROR_PATH!\" fetch \"!REMOTE_URL!\" \"!REFSPEC!\" 2>&1\n"
 	"    if !ERRORLEVEL! neq 0 (\n"
 	"        echo \"git fetch failed with errorlevel !ERRORLEVEL!\"\n"
 	"        exit /b 1\n"
@@ -93,7 +93,7 @@ static const char * const git_helper_bat =
 	"        git -C \"!BUILD_DIR!\" init\n"
 	"        if errorlevel 1 exit /b 1\n"
 	"    )\n"
-	"    git -C \"!BUILD_DIR!\" fetch \"!MIRROR_PATH!\" \"ref-!HASH!\"\n"
+	"    git -C \"!BUILD_DIR!\" fetch \"!MIRROR_PATH!\" \"ref-!HASH!\" 2>&1\n"
 	"    if errorlevel 1 exit /b 2\n"
 	"    git -C \"!BUILD_DIR!\" checkout -f \"!HASH!\"\n"
 	"    if errorlevel 1 exit /b 1\n"
@@ -101,9 +101,6 @@ static const char * const git_helper_bat =
 	")\n"
 	"exit /b 1\n";
 #endif
-
-static void sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting,
-				   siginfo_t *si, int we_killed_him);
 
 static void
 sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
@@ -113,15 +110,9 @@ sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	struct sai_nspawn *ns = op->ns;
 	int exit_code = -1;
 
-#if !defined(WIN32)
-	lwsl_warn("%s: reap at %llu: we_killed_him: %d, si_code: %d, si_status: %d\n",
+	lwsl_warn("%s: reap at %llu: we_killed_him: %d\n",
 		  __func__, (unsigned long long)lws_now_usecs(),
-		  we_killed_him, si->si_code, si->si_status);
-#else
-	lwsl_warn("%s: reap at %llu: we_killed_him: %d, retcode: %d\n",
-		  __func__, (unsigned long long)lws_now_usecs(),
-		  we_killed_him, si->retcode);
-#endif
+		  we_killed_him);
 
 	if (we_killed_him)
 		goto fail;
@@ -158,15 +149,7 @@ sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	struct sai_nspawn *ns = op->ns;
 	int exit_code = -1;
 
-#if !defined(WIN32)
-	lwsl_warn("%s: reap at %llu: we_killed_him: %d, si_code: %d, si_status: %d\n",
-		  __func__, (unsigned long long)lws_now_usecs(),
-		  we_killed_him, si->si_code, si->si_status);
-#else
-	lwsl_warn("%s: reap at %llu: we_killed_him: %d, retcode: %d\n",
-		  __func__, (unsigned long long)lws_now_usecs(),
-		  we_killed_him, si->retcode);
-#endif
+	lwsl_notice("%s: mirror reap callback started\n", __func__);
 
 	if (we_killed_him)
 		goto fail;
@@ -178,8 +161,11 @@ sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	exit_code = si->retcode;
 #endif
 
+	lwsl_notice("%s: exit_code %d\n", __func__, exit_code);
+
 	if (exit_code == 0) {
 		/* mirror succeeded, now try checkout again */
+		lwsl_notice("%s: mirror success, starting checkout\n", __func__);
 		saib_start_checkout(ns);
 		goto onward;
 	}
@@ -196,19 +182,13 @@ saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
-	char script_path[1024], inp[512], path_env[256];
-	const char *pargs[9];
-	const char **env = NULL;
-	const char *env_array[2];
+	char script_path[1024], inp[512];
+	const char *pargs[8];
 	ssize_t n;
 	int fd, count = 0;
 
 #if defined(__APPLE__)
-	lws_snprintf(path_env, sizeof(path_env),
-		     "PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/sbin:/usr/sbin");
-	env_array[0] = path_env;
-	env_array[1] = NULL;
-	env = (const char **)env_array;
+	pargs[count++] = "/bin/bash";
 #endif
 
 #if defined(WIN32)
@@ -254,7 +234,6 @@ saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
 	info.exec_array		= pargs;
-	info.env_array		= env;
 	info.protocol_name	= "sai-stdxxx";
 	info.timeout_us		= 5 * 60 * LWS_US_PER_SEC;
 
@@ -301,5 +280,6 @@ saib_start_mirror(struct sai_nspawn *ns)
 int
 saib_start_checkout(struct sai_nspawn *ns)
 {
+	lwsl_notice("%s: starting checkout\n", __func__);
 	return saib_spawn_git_helper(ns, "checkout");
 }
