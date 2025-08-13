@@ -247,6 +247,7 @@ static const char * const runscript =
 	"set SAI_LOGPROXY_TTY1=%s\n"
 	"set HOME=%s\n"
 	"cd %s\\jobs\\%s\\%s &&"
+	" rmdir /s /q build & "
 	"%s"
 ;
 
@@ -270,7 +271,7 @@ static const char * const runscript =
 	"export SAI_LOGPROXY_TTY1=%s\n"
 	"set -e\n"
 	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
-
+	"rm -rf build\n"
 	"%s\n"
 	"exit $?\n"
 ;
