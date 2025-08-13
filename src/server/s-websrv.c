@@ -587,7 +587,7 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	*flags = (som ? LWSSS_FLAG_SOM : 0) | (eom ? LWSSS_FLAG_EOM : 0);
 	*len = (size_t)used;
 
-	lwsl_warn("%s: srv -> web: len %d flags %d\n", __func__, (int)*len, (int)*flags);
+	// lwsl_warn("%s: srv -> web: len %d flags %d\n", __func__, (int)*len, (int)*flags);
 
 	if (m->bltx)
 		return lws_ss_request_tx(m->ss);

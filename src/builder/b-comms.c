@@ -51,157 +51,6 @@ saib_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 }
 
 /*
- * We come here for every platform's threadpool sync
- */
-
-static int
-tp_sync_check(struct lws_dll2 *d, void *user)
-{
-	sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);
-	struct sai_plat_server *spm = (struct sai_plat_server *)user;
-	struct sai_nspawn *ns;
-	int n, soe;
-	void *vp;
-
-	/*
-	 * Let's look into every nspawn for each platform then...
-	 */
-
-	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
-				   sp->nspawn_owner.head) {
-
-		ns = lws_container_of(d, struct sai_nspawn, list);
-		soe = ns->state;
-
-		/*
-		 * We can't deal with nspawns bound to a different server or
-		 * nspawns not with an active threadpool task
-		 */
-
-		if (!ns->tp_task || spm != ns->spm)
-			goto next;
-
-		/*
-		 * We may not be the only threadpool task that wants
-		 * to sync... so bear in mind we want to loop after
-		 * handling this particular one
-		 */
-
-		// lwsl_notice("%s: tp svc, state %d '%s'\n", __func__,
-		//	    ns->state, ns->pending_mirror_log);
-
-		/*
-		 * We got here by threadpool sync... logify the
-		 * >saib> message from the thread...
-		 */
-
-		if (ns->pending_mirror_log[0]) {
-			lwsl_notice("%s: logging %s\n", __func__,
-					ns->pending_mirror_log);
-			saib_log_chunk_create(ns, ns->pending_mirror_log,
-					strlen(ns->pending_mirror_log), 3);
-			ns->pending_mirror_log[0] = 0;
-		}
-
-		//(soe == NSSTATE_WAIT_REMOTE_MIRROR ||
-		//	    soe == NSSTATE_FAILED ||
-		//	    soe == NSSTATE_CHECKOUT ||
-		//	    soe == NSSTATE_CHECKEDOUT) &&
-
-		n = (int)lws_threadpool_task_status(ns->tp_task, &vp);
-		lwsl_info("%s: WRITEABLE: ss=%p: "
-			   "task %p, priv %p, status %d\n", __func__, spm->ss,
-			   ns->tp_task, vp, n);
-		switch (n) {
-		case LWS_TP_STATUS_FINISHED:
-		case LWS_TP_STATUS_STOPPED:
-		case LWS_TP_STATUS_QUEUED:
-		case LWS_TP_STATUS_RUNNING:
-		case LWS_TP_STATUS_STOPPING:
-			goto next;
-
-		case LWS_TP_STATUS_SYNCING:
-			/*
-			 * This is what the threadpool thread wants to hear from
-			 * us in order to continue on.  The choice in the second
-			 * arg is whether to ask the thread to stop or not.
-			 *
-			 * MIRROR: let thread continue on to CHECKOUT
-			 * WAIT_REMOTE_MIRROR: continue to wait
-			 * CHECKOUT: go back into CHECKOUT
-			 * FAILED or CHECKEDOUT: we're done, stop the thread
-			 *
-			 * This wakes the stalled task, we can't read its
-			 * state after this
-			 */
-
-			lws_threadpool_task_sync(ns->tp_task,
-					soe == NSSTATE_CHECKEDOUT ||
-					soe == NSSTATE_FAILED);
-
-			if (soe != NSSTATE_CHECKEDOUT &&
-			    soe != NSSTATE_FAILED) {
-				lwsl_notice("%s: task still going, status %d, "
-						"sp = %p, sp->ss = %p\n",
-						__func__, n, sp, ns->spm->ss);
-				goto next;
-			}
-			/*
-			 * We asked for the task to stop... let's move on
-			 * while that's happening
-			 */
-			break;
-
-		default:
-			return 1;
-		}
-
-		/*
-		 * The thread is over... either FAILED...
-		 */
-
-		if (soe == NSSTATE_FAILED) {
-			lwsl_notice("%s: thread over with FAILED\n",
-					__func__);
-			goto failer;
-		}
-
-		/*
-		 * ...or we did the mirror and let's spawn the actual task now
-		 */
-
-		lwsl_notice("%s: Destroying checkout thread, spawning task\n",
-				__func__);
-		ns->tp_task = NULL;
-
-		lws_sul_cancel(&ns->sul_task_cancel);
-		saib_set_ns_state(ns, NSSTATE_BUILD);
-
-		n = saib_spawn(ns);
-		if (n) {
-			lwsl_err("%s: spawn failed: %d\n", __func__, n);
-failer:
-			saib_set_ns_state(ns, NSSTATE_FAILED);
-			saib_task_grace(ns);
-			saib_queue_task_status_update(ns->sp, ns->spm, NULL);
-		}
-
-next:
-
-		if (ns->artifact_owner.head) {
-			/*
-			 * This nspawn has an outstanding artifact to upload
-			 */
-		}
-
-		lwsl_debug("%s: next tp sync\n", __func__);
-
-	} lws_end_foreach_dll_safe(d, d1);
-
-	return 0;
-}
-
-/*
  * We cover requested tx for any instance of a platform that can takes tasks
  * from the same server... it means just by coming here, no particular
  * platform / sai_plat is implied...
@@ -221,14 +70,6 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	struct sai_nspawn *ns;
 	size_t w = 0;
 	int n = 0;
-
-	/*
-	 * We are the ss / wsi that any threadpool instances on any platform
-	 * with tasks for this server are trying to sync to.  We need to handle
-	 * and resume them all.
-	 */
-
-	lws_dll2_foreach_safe(&builder.sai_plat_owner, spm, tp_sync_check);
 
 	/*
 	 * Any builder state updates / rejections to process?
@@ -436,7 +277,27 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 			star = walk;
 
 		ns = lws_container_of(walk, struct sai_nspawn, list);
-		if (spm != ns->spm || !ns->chunk_cache.count || !ns->chunk_cache.tail)
+		if (spm != ns->spm)
+			continue;
+
+		if (ns->state_changed) {
+			ns->state_changed = 0;
+
+			switch (ns->state) {
+			case NSSTATE_CHECKEDOUT:
+				saib_set_ns_state(ns, NSSTATE_BUILD);
+				if (saib_spawn(ns)) {
+					lwsl_err("%s: saib_spawn failed\n",
+						 __func__);
+					saib_set_ns_state(ns, NSSTATE_FAILED);
+				}
+				break;
+			default:
+				break;
+			}
+		}
+
+		if (!ns->chunk_cache.count || !ns->chunk_cache.tail)
 			continue;
 
 		/*
@@ -530,12 +391,12 @@ cleanup_on_ss_destroy(struct lws_dll2 *d, void *user)
 		struct sai_nspawn *ns =
 			lws_container_of(d, struct sai_nspawn, list);
 
-		if (ns->spm == spm && ns->tp) {
-			lwsl_notice("%s: calling threadpool_destroy\n", __func__);
-			lws_threadpool_finish(ns->tp);
-			lws_threadpool_destroy(ns->tp);
-			ns->tp = NULL;
-			ns->tp_task = NULL;
+		if (ns->spm == spm) {
+			/*
+			 * This pss is about to go away, make sure the ns
+			 * can't reference it any more no matter what happens
+			 */
+			ns->spm = NULL;
 		}
 	} lws_end_foreach_dll_safe(d, d1);
 

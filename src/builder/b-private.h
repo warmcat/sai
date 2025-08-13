@@ -31,13 +31,18 @@
 #define mkdir(x,y) _mkdir(x)
 #define rmdir _rmdir
 #define unlink _unlink
-#define HAVE_STRUCT_TIMESPEC
 #if defined(pid_t)
 #undef pid_t
 #endif
 #endif
 #include <pthread.h>
-#include <git2.h>
+
+struct lws_spawn_piped;
+
+struct saib_opaque_spawn {
+	struct sai_nspawn	*ns;
+	struct lws_spawn_piped	*lsp;
+};
 
 #define SAI_LOAD_REPORT_US	(1 * LWS_US_PER_SEC)
 #define SAI_IDLE_GRACE_US	(30 * LWS_US_PER_SEC)
@@ -78,19 +83,6 @@ enum {
 
 
 
-typedef struct sai_mirror_instance {
-	pthread_mutex_t			mut;
-	pthread_cond_t			cond;
-
-	pthread_t			repo_thread;
-
-	lws_dll2_owner_t		pending_req;
-	lws_dll2_owner_t		completed_req;
-
-	uint8_t				finish;
-} sai_mirror_instance_t;
-
-
 /*
  * This represents this builder process as a whole
  */
@@ -99,6 +91,7 @@ struct sai_builder {
 	lws_dll2_owner_t	sai_plat_owner; /* list of platforms we offer */
 	lws_dll2_owner_t	sai_plat_server_owner; /* servers we connect to */
 	lws_dll2_owner_t	devices_owner; /* sai_serial_t */
+	lws_dll2_owner_t	lsp_owner; /* list of lws_spawn_piped */
 
 	struct lws_ss_handle	*ss_stay;
 
@@ -127,8 +120,6 @@ struct sai_builder {
 	const char		*perms;		/* user:group */
 
 	const char		*host;		/* prepended before hostname */
-
-	sai_mirror_instance_t	mi;
 
 	char			path[256];
 
@@ -221,9 +212,6 @@ rm_rf_cb(const char *dirpath, void *user, struct lws_dir_entry *lde);
 extern const struct lws_protocols protocol_logproxy, protocol_resproxy;
 
 void *
-thread_repo(void *d);
-
-void *
 thread_suspend(void *d);
 
 
@@ -244,3 +232,6 @@ int
 saib_get_system_cpu(struct sai_builder *b);
 
 int saib_get_cpu_count(void);
+
+int saib_start_mirror(struct sai_nspawn *ns);
+int saib_start_checkout(struct sai_nspawn *ns);

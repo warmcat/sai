@@ -329,7 +329,7 @@ Feature|dependency
 ---|---
 either|libwebsockets
 server|libsqlite3
-builder|libgit2 pthreads
+builder|pthreads
 jig (linux only)|libgpiod
 
 #### Unix / Linux
@@ -346,17 +346,10 @@ $ sudo systemctl enable sai-builder
 
 #### Windows builder only
 
-Build libgit2 via vcpkg, this takes <10mins
-
-```
-> vcpkg install libgit2:x64-windows
-```
-
 You have to make git2.dll and some deps visible, in /windows/system32 or similar
 
 ```
 > sudo cp "\Users\<user>\vcpkg\installed\x64-windows\bin\pcre.dll" "\windows\system32"
-> sudo cp "\Users\<user>\vcpkg\libgit2_x64-windows\bin\git2.dll" "\windows\system32"
 ```
 
 Build lws the same way as for unix, except with
@@ -369,7 +362,7 @@ Build lws the same way as for unix, except with
 For sai it's also very similar to unix, but with
 
 ```
-> cmake .. -DSAI_SERVER=0 -DSAI_LWS_INC_PATH="\Users\<user>\libwebsockets\build\include" -DSAI_LWS_LIB_PATH="\Users\<user>\libwebsockets\build\lib\Debug\websockets.lib" -DSAI_GIT2_INC_PATH="\Users\<user>\vcpkg\packages\libgit2_x64-windows\include" -DSAI_GIT2_LIB_PATH="\Users\<user>\vcpkg\packages\libgit2_x64-windows\lib\git2.lib" -DSAI_EXT_PTHREAD_INCLUDE_DIR="C:\Program Files (x86)\pthreads\include" -DSAI_EXT_PTHREAD_LIBRARIES="C:\Program Files (x86)\pthreads\lib\x64\libpthreadGC2.a"
+> cmake .. -DSAI_SERVER=0 -DSAI_LWS_INC_PATH="\Users\<user>\libwebsockets\build\include" -DSAI_LWS_LIB_PATH="\Users\<user>\libwebsockets\build\lib\Debug\websockets.lib" -DSAI_EXT_PTHREAD_INCLUDE_DIR="C:\Program Files (x86)\pthreads\include" -DSAI_EXT_PTHREAD_LIBRARIES="C:\Program Files (x86)\pthreads\lib\x64\libpthreadGC2.a"
 > cmake --build . --config DEBUG
 > sudo cmake --install . --config DEBUG 
 ```
