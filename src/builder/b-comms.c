@@ -281,9 +281,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 			continue;
 
 		if (ns->state_changed) {
-			pthread_mutex_lock(&ns->mut);
 			ns->state_changed = 0;
-			pthread_mutex_unlock(&ns->mut);
 
 			switch (ns->state) {
 			case NSSTATE_CHECKEDOUT:

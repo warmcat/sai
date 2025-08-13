@@ -726,7 +726,6 @@ void sigint_handler(int sig)
 void
 sai_ns_destroy(struct sai_nspawn *ns)
 {
-	pthread_mutex_destroy(&ns->mut);
 	lws_dll2_remove(&ns->list);
 	free(ns);
 }

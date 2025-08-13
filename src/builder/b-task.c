@@ -521,10 +521,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		       char found = 0;
 
 		       n++;
-		       pthread_mutex_lock(&xns->mut);
 		       if (!xns->task)
 			       found = 1;
-		       pthread_mutex_unlock(&xns->mut);
 
 		       if (found) {
 			       ns = xns;
