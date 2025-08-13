@@ -99,9 +99,6 @@ static const char * const git_helper_bat =
 	"exit /b 1\n";
 #endif
 
-static void sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting,
-				   siginfo_t *si, int we_killed_him);
-
 static void
 sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 		int we_killed_him)
@@ -110,15 +107,9 @@ sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	struct sai_nspawn *ns = op->ns;
 	int exit_code = -1;
 
-#if !defined(WIN32)
-	lwsl_warn("%s: reap at %llu: we_killed_him: %d, si_code: %d, si_status: %d\n",
+	lwsl_warn("%s: reap at %llu: we_killed_him: %d\n",
 		  __func__, (unsigned long long)lws_now_usecs(),
-		  we_killed_him, si->si_code, si->si_status);
-#else
-	lwsl_warn("%s: reap at %llu: we_killed_him: %d, retcode: %d\n",
-		  __func__, (unsigned long long)lws_now_usecs(),
-		  we_killed_him, si->retcode);
-#endif
+		  we_killed_him);
 
 	if (we_killed_him)
 		goto fail;
@@ -155,15 +146,9 @@ sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	struct sai_nspawn *ns = op->ns;
 	int exit_code = -1;
 
-#if !defined(WIN32)
-	lwsl_warn("%s: reap at %llu: we_killed_him: %d, si_code: %d, si_status: %d\n",
+	lwsl_warn("%s: reap at %llu: we_killed_him: %d\n",
 		  __func__, (unsigned long long)lws_now_usecs(),
-		  we_killed_him, si->si_code, si->si_status);
-#else
-	lwsl_warn("%s: reap at %llu: we_killed_him: %d, retcode: %d\n",
-		  __func__, (unsigned long long)lws_now_usecs(),
-		  we_killed_him, si->retcode);
-#endif
+		  we_killed_him);
 
 	if (we_killed_him)
 		goto fail;
@@ -194,34 +179,24 @@ saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
 	char script_path[1024], inp[512], path_env[256];
-	const char *pargs[8], * const *env;
+	const char *pargs[8];
+	const char **env = NULL;
 	const char *env_array[2];
 	ssize_t n;
 	int fd, count = 0;
 
+#if defined(__APPLE__)
+	lws_snprintf(path_env, sizeof(path_env),
+		     "PATH=/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/sbin:/usr/sbin");
+	env_array[0] = path_env;
+	env_array[1] = NULL;
+	env = (const char **)env_array;
+#endif
+
 #if defined(WIN32)
-	env = NULL;
 	lws_snprintf(script_path, sizeof(script_path), "%s\\sai-git-helper-%d.bat",
 		     builder.home, ns->instance_idx);
-#elif defined(__APPLE__)
-	lws_snprintf(path_env, sizeof(path_env),
-		     "PATH=/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin");
-	env_array[0] = path_env;
-	env_array[1] = NULL;
-	env = env_array;
-	lws_snprintf(script_path, sizeof(script_path), "%s/sai-git-helper-%d.sh",
-		     builder.home, ns->instance_idx);
 #else
-	/*
-	 * Let's take our own environment, but with a default path in case
-	 * we don't have one
-	 */
-	lws_snprintf(path_env, sizeof(path_env), "PATH=/usr/local/bin:/usr/bin:/bin");
-	if (getenv("PATH"))
-		lws_snprintf(path_env, sizeof(path_env), "PATH=%s", getenv("PATH"));
-	env_array[0] = path_env;
-	env_array[1] = NULL;
-	env = env_array;
 	lws_snprintf(script_path, sizeof(script_path), "%s/sai-git-helper-%d.sh",
 		     builder.home, ns->instance_idx);
 #endif
@@ -261,7 +236,7 @@ saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
 	info.exec_array		= pargs;
-	info.env_array		= (const char **)env;
+	info.env_array		= env;
 	info.protocol_name	= "sai-stdxxx";
 	info.timeout_us		= 5 * 60 * LWS_US_PER_SEC;
 
