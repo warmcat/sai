@@ -29,31 +29,42 @@
 
 static const char * const git_helper_sh =
 	"#!/bin/bash\n"
+	"set -x\n"
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
 #else
 	"export PATH=/usr/local/bin:$PATH\n"
 #endif
 	"set -e\n"
+	"echo \"git_helper_sh: starting\"\n"
 	"id\n"
 	"pwd\n"
 	"ls -lsa\n"
 	"OPERATION=$1\n"
+	"echo \"OPERATION: ${OPERATION}\"\n"
 	"shift\n"
 	"if [ \"$OPERATION\" == \"mirror\" ]; then\n"
 	"    REMOTE_URL=$1\n"
 	"    REF=$2\n"
 	"    HASH=$3\n"
 	"    MIRROR_PATH=$4\n"
+	"    echo \"REMOTE_URL: ${REMOTE_URL}\"\n"
+	"    echo \"REF: ${REF}\"\n"
+	"    echo \"HASH: ${HASH}\"\n"
+	"    echo \"MIRROR_PATH: ${MIRROR_PATH}\"\n"
 	"    if [ ! -d \"$MIRROR_PATH\" ]; then\n"
 	"        git init --bare \"$MIRROR_PATH\"\n"
 	"    fi\n"
 	"    REFSPEC=\"$REF:ref-$HASH\"\n"
+	"    echo \"REFSPEC: ${REFSPEC}\"\n"
 	"    git -C \"$MIRROR_PATH\" fetch \"$REMOTE_URL\" \"$REFSPEC\"\n"
 	"elif [ \"$OPERATION\" == \"checkout\" ]; then\n"
 	"    MIRROR_PATH=$1\n"
 	"    BUILD_DIR=$2\n"
 	"    HASH=$3\n"
+	"    echo \"MIRROR_PATH: ${MIRROR_PATH}\"\n"
+	"    echo \"BUILD_DIR: ${BUILD_DIR}\"\n"
+	"    echo \"HASH: ${HASH}\"\n"
 	"    if [ ! -d \"$BUILD_DIR/.git\" ]; then\n"
 	"        rm -rf \"$BUILD_DIR\"\n"
 	"        mkdir -p \"$BUILD_DIR\"\n"
@@ -72,19 +83,26 @@ static const char * const git_helper_sh =
 
 #if defined(WIN32)
 static const char * const git_helper_bat =
-	"@echo off\n"
+	"@echo on\n"
 	"setlocal\n"
+	"echo \"git_helper_bat: starting\"\n"
 	"set \"OPERATION=%~1\"\n"
+	"echo \"OPERATION: %OPERATION%\"\n"
 	"if /i \"%OPERATION%\"==\"mirror\" (\n"
 	"    set \"REMOTE_URL=%~2\"\n"
 	"    set \"REF=%~3\"\n"
 	"    set \"HASH=%~4\"\n"
 	"    set \"MIRROR_PATH=%~5\"\n"
+	"    echo \"REMOTE_URL: %REMOTE_URL%\"\n"
+	"    echo \"REF: %REF%\"\n"
+	"    echo \"HASH: %HASH%\"\n"
+	"    echo \"MIRROR_PATH: %MIRROR_PATH%\"\n"
 	"    if not exist \"%MIRROR_PATH%\\.\" (\n"
 	"        git init --bare \"%MIRROR_PATH%\"\n"
 	"        if errorlevel 1 exit /b 1\n"
 	"    )\n"
 	"    set \"REFSPEC=%REF%:ref-%HASH%\"\n"
+	"    echo \"REFSPEC: %REFSPEC%\"\n"
 	"    git -C \"%MIRROR_PATH%\" fetch \"%REMOTE_URL%\" \"%REFSPEC%\"\n"
 	"    if errorlevel 1 exit /b 1\n"
 	"    exit /b 0\n"
@@ -93,6 +111,9 @@ static const char * const git_helper_bat =
 	"    set \"MIRROR_PATH=%~2\"\n"
 	"    set \"BUILD_DIR=%~3\"\n"
 	"    set \"HASH=%~4\"\n"
+	"    echo \"MIRROR_PATH: %MIRROR_PATH%\"\n"
+	"    echo \"BUILD_DIR: %BUILD_DIR%\"\n"
+	"    echo \"HASH: %HASH%\"\n"
 	"    if not exist \"%BUILD_DIR%\\.git\" (\n"
 	"        if exist \"%BUILD_DIR%\\\" rmdir /s /q \"%BUILD_DIR%\"\n"
 	"        mkdir \"%BUILD_DIR%\"\n"
@@ -111,7 +132,6 @@ static const char * const git_helper_bat =
 
 static void sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting,
 				   siginfo_t *si, int we_killed_him);
-static int saib_start_mirror(struct sai_nspawn *ns);
 
 static void
 sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
@@ -277,7 +297,7 @@ saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 	return 0;
 }
 
-static int
+int
 saib_start_mirror(struct sai_nspawn *ns)
 {
 	return saib_spawn_git_helper(ns, "mirror");
