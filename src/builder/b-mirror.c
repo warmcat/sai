@@ -77,7 +77,10 @@ static const char * const git_helper_bat =
 	"    )\n"
 	"    set \"REFSPEC=!REF!:ref-!HASH!\"\n"
 	"    git -C \"!MIRROR_PATH!\" fetch \"!REMOTE_URL!\" \"!REFSPEC!\"\n"
-	"    if errorlevel 1 exit /b 1\n"
+	"    if !ERRORLEVEL! neq 0 (\n"
+	"        echo \"git fetch failed with errorlevel !ERRORLEVEL!\"\n"
+	"        exit /b 1\n"
+	"    )\n"
 	"    exit /b 0\n"
 	")\n"
 	"if /i \"!OPERATION!\"==\"checkout\" (\n"
@@ -99,6 +102,9 @@ static const char * const git_helper_bat =
 	"exit /b 1\n";
 #endif
 
+static void sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting,
+				   siginfo_t *si, int we_killed_him);
+
 static void
 sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 		int we_killed_him)
@@ -107,9 +113,15 @@ sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	struct sai_nspawn *ns = op->ns;
 	int exit_code = -1;
 
-	lwsl_warn("%s: reap at %llu: we_killed_him: %d\n",
+#if !defined(WIN32)
+	lwsl_warn("%s: reap at %llu: we_killed_him: %d, si_code: %d, si_status: %d\n",
 		  __func__, (unsigned long long)lws_now_usecs(),
-		  we_killed_him);
+		  we_killed_him, si->si_code, si->si_status);
+#else
+	lwsl_warn("%s: reap at %llu: we_killed_him: %d, retcode: %d\n",
+		  __func__, (unsigned long long)lws_now_usecs(),
+		  we_killed_him, si->retcode);
+#endif
 
 	if (we_killed_him)
 		goto fail;
@@ -146,9 +158,15 @@ sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	struct sai_nspawn *ns = op->ns;
 	int exit_code = -1;
 
-	lwsl_warn("%s: reap at %llu: we_killed_him: %d\n",
+#if !defined(WIN32)
+	lwsl_warn("%s: reap at %llu: we_killed_him: %d, si_code: %d, si_status: %d\n",
 		  __func__, (unsigned long long)lws_now_usecs(),
-		  we_killed_him);
+		  we_killed_him, si->si_code, si->si_status);
+#else
+	lwsl_warn("%s: reap at %llu: we_killed_him: %d, retcode: %d\n",
+		  __func__, (unsigned long long)lws_now_usecs(),
+		  we_killed_him, si->retcode);
+#endif
 
 	if (we_killed_him)
 		goto fail;
@@ -179,7 +197,7 @@ saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
 	char script_path[1024], inp[512], path_env[256];
-	const char *pargs[8];
+	const char *pargs[9];
 	const char **env = NULL;
 	const char *env_array[2];
 	ssize_t n;
