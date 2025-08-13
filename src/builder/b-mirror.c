@@ -101,7 +101,6 @@ static const char * const git_helper_bat =
 
 static void sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting,
 				   siginfo_t *si, int we_killed_him);
-static int saib_start_mirror(struct sai_nspawn *ns);
 
 static void
 sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
@@ -201,11 +200,7 @@ saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 	int fd, count = 0;
 
 #if defined(WIN32)
-	lws_snprintf(path_env, sizeof(path_env),
-		     "PATH=C:\\Program Files\\Git\\bin;%s", getenv("PATH"));
-	env_array[0] = path_env;
-	env_array[1] = NULL;
-	env = env_array;
+	env = NULL;
 	lws_snprintf(script_path, sizeof(script_path), "%s\\sai-git-helper-%d.bat",
 		     builder.home, ns->instance_idx);
 #elif defined(__APPLE__)
@@ -266,7 +261,7 @@ saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
 	info.exec_array		= pargs;
-	info.env_array		= env;
+	info.env_array		= (const char **)env;
 	info.protocol_name	= "sai-stdxxx";
 	info.timeout_us		= 5 * 60 * LWS_US_PER_SEC;
 
@@ -304,7 +299,7 @@ saib_spawn_git_helper(struct sai_nspawn *ns, const char *operation)
 	return 0;
 }
 
-static int
+int
 saib_start_mirror(struct sai_nspawn *ns)
 {
 	return saib_spawn_git_helper(ns, "mirror");
