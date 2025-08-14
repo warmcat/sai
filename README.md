@@ -346,6 +346,15 @@ $ sudo systemctl enable sai-builder
 
 #### Windows builder only
 
+Windows is such a steaming pile of crap it has a registry setting to turn off the default-on insane file name limits it turns out.
+If you do in an admin powershell:
+
+```
+New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+```
+
+you will avoid problems with cmake failing silently towards the end of the main build with a `1` error code.
+
 You have to make git2.dll and some deps visible, in /windows/system32 or similar
 
 ```
