@@ -232,7 +232,7 @@ static const char * const runscript =
 	"set SAI_LOGPROXY_TTY0=%s\n"
 	"set SAI_LOGPROXY_TTY1=%s\n"
 	"set HOME=%s\n"
-	"cd %s\\jobs\\%s\\%s &&"
+	"cd %s &&"
 	" rmdir /s /q build & "
 	"%s"
 ;
@@ -326,8 +326,7 @@ saib_spawn(struct sai_nspawn *ns)
 	n = lws_snprintf(st, sizeof(st), runscript, ns->instance_idx,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
-			 builder.home, ns->fsm.ovname, ns->project_name,
-			 ns->task->build);
+			 ns->inp, ns->task->build);
 #else
 	n = lws_snprintf(st, sizeof(st), runscript, builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_idx,
