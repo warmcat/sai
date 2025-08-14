@@ -26,9 +26,6 @@
 #include "p-private.h"
 
 LWS_SS_USER_TYPEDEF
-        char                    payload[200];
-        size_t                  size;
-        size_t                  pos;
 } saip_smartplug_t;
 
 static lws_ss_state_return_t
@@ -44,18 +41,12 @@ saip_spc_state(void *userobj, void *sh, lws_ss_constate_t state,
 	switch (state) {
 
 	case LWSSSCS_CREATING:
-		lwsl_user("%s: binding ss to %s\n", __func__, op_url);
+		lwsl_notice("%s: binding ss to %s\n", __func__, op_url);
 
 		if (lws_ss_set_metadata(lws_ss_from_user(pss),
 					"url", op_url, strlen(op_url)))
 			lwsl_warn("%s: unable to set metadata\n", __func__);
-
-		return lws_ss_client_connect(lws_ss_from_user(pss));
-
-	case LWSSSCS_QOS_ACK_REMOTE:
-	case LWSSSCS_QOS_NACK_REMOTE:
-	case LWSSSCS_ALL_RETRIES_FAILED:
-		return LWSSSSRET_DESTROY_ME;
+		break;
 
 	default:
 		break;

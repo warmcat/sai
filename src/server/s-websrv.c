@@ -143,6 +143,14 @@ _sais_websrv_broadcast(struct lws_ss_handle *h, void *arg)
 	websrvss_srv_t *m = (websrvss_srv_t *)lws_ss_to_user_object(h);
 	sais_websrv_broadcast_t *a = (sais_websrv_broadcast_t *)arg;
 
+	/* sai-web might not be taking it.. */
+
+	if (lws_buflist_total_len(&m->bltx) > 5000000u) {
+		lwsl_ss_warn(h, "server->web buflist reached 5MB");
+		lws_ss_start_timeout(h, 1);
+		return;
+	}
+
 	if (lws_buflist_append_segment(&m->bltx, a->buf, a->len) < 0) {
 		lwsl_warn("%s: buflist append fail\n", __func__);
 

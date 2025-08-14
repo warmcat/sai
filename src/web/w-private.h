@@ -163,7 +163,6 @@ struct pss {
 	lws_dll2_owner_t	sched;	/* scheduled messages */
 
 	struct lwsac		*logs_ac;
-	lws_dll2_owner_t	issue_task_owner; /* list of sai_task_t */
 
 	int			log_cache_index;
 	int			log_cache_size;

@@ -197,11 +197,8 @@ saip_sul_action_power_off(struct lws_sorted_usec_list *sul)
 	lwsl_warn("%s: powering off host %s\n", __func__, sp->host);
 	saip_notify_server_power_state(sp->host, 0, 1);
 
-	if (lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,
-			  (void *)sp->power_off_url, NULL, NULL, NULL)) {
-		lwsl_err("%s: failed to create smartplug secure stream\n",
-				__func__);
-	}
+	if (lws_ss_client_connect(sp->ss_tasmota_off))
+		lwsl_ss_err(sp->ss_tasmota_off, "failed to connect tasmota OFF secure stream");
 }
 
 saip_server_plat_t *
@@ -364,10 +361,9 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 						"no power-on-url entry for %s", pn);
 				goto bail;
 			}
-			if (lws_ss_create(power.context, 0,
-					&ssi_saip_smartplug_t,
-					(void *)sp->power_on_url,
-					NULL, NULL, NULL)) {
+
+			if (lws_ss_client_connect(sp->ss_tasmota_on)) {
+				lwsl_ss_err(sp->ss_tasmota_off, "failed to connect tasmota ON secure stream");
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
 					"power-on ss failed create %s", sp->host);
 				goto bail;
@@ -683,6 +679,30 @@ int main(int argc, const char **argv)
 		lwsl_err("Failed to create tls vhost\n");
 		goto bail;
 	}
+
+	/* let's create any needed tasmota ss */
+
+	lws_start_foreach_dll(struct lws_dll2 *, px, power.sai_server_owner.head) {
+		saip_server_t *s = lws_container_of(px, saip_server_t, list);
+
+		lws_start_foreach_dll(struct lws_dll2 *, px1, s->sai_plat_owner.head) {
+			saip_server_plat_t *sp = lws_container_of(px1, saip_server_plat_t, list);
+
+			if (!strcmp(sp->power_on_type, "tasmota") && sp->power_on_url &&
+			    lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,
+				  (void *)sp->power_on_url, &sp->ss_tasmota_on, NULL, NULL)) {
+				lwsl_err("%s: failed to create ON smartplug secure stream\n", __func__);
+			}
+
+			if (!strcmp(sp->power_off_type, "tasmota") && sp->power_off_url &&
+			    lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,
+				  (void *)sp->power_off_url, &sp->ss_tasmota_off, NULL, NULL)) {
+				lwsl_err("%s: failed to create OFF smartplug secure stream\n", __func__);
+			}
+
+		} lws_end_foreach_dll(px1);
+	} lws_end_foreach_dll(px);
+
 
 	{
 		struct lws_spawn_piped_info info;

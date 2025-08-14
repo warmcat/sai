@@ -63,6 +63,9 @@ typedef struct saip_server_plat {
 
 	lws_sorted_usec_list_t	sul_delay_off;
 
+	struct lws_ss_handle	*ss_tasmota_on;
+	struct lws_ss_handle	*ss_tasmota_off;
+
 	const char		*name;
 	const char		*host;
 	const char		*depends; /* depended-on plat must stay powered if we need power */

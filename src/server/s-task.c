@@ -825,6 +825,8 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	 */
 	cb->ongoing++;
 
+	lwsl_notice("%s: pre pss->issue_task_owner count %d\n", __func__, pss->issue_task_owner.count);
+
 	lws_dll2_add_tail(&task->pending_assign_list, &pss->issue_task_owner);
 	lws_callback_on_writable(pss->wsi);
 
