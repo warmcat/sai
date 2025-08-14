@@ -167,7 +167,6 @@ struct sai_nspawn {
 
 	lws_sorted_usec_list_t		sul_cleaner;
 	lws_sorted_usec_list_t		sul_task_cancel;
-	lws_sorted_usec_list_t		sul_build_delay;
 
 	sai_plat_t			*sp; /* the sai_plat */
 	struct sai_plat_server		*spm; /* the sai plat / server with the ss / wsi */

@@ -35,19 +35,6 @@ static const lws_struct_map_t lsm_schema_json_loadreport[] = {
 	LSM_SCHEMA	(sai_load_report_t, NULL, lsm_load_report_members, "com.warmcat.sai.loadreport"),
 };
 
-static void
-sul_spawn_cb(lws_sorted_usec_list_t *sul)
-{
-	struct sai_nspawn *ns = lws_container_of(sul, struct sai_nspawn,
-						 sul_build_delay);
-
-	saib_set_ns_state(ns, NSSTATE_BUILD);
-	if (saib_spawn(ns)) {
-		lwsl_err("%s: saib_spawn failed\n", __func__);
-		saib_set_ns_state(ns, NSSTATE_FAILED);
-	}
-}
-
 static lws_ss_state_return_t
 saib_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
@@ -298,19 +285,12 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 
 			switch (ns->state) {
 			case NSSTATE_CHECKEDOUT:
-#if defined(WIN32)
-				lws_sul_schedule(ns->builder->context, 0,
-						 &ns->sul_build_delay,
-						 sul_spawn_cb,
-						 2 * LWS_US_PER_SEC);
-#else
 				saib_set_ns_state(ns, NSSTATE_BUILD);
 				if (saib_spawn(ns)) {
 					lwsl_err("%s: saib_spawn failed\n",
 						 __func__);
 					saib_set_ns_state(ns, NSSTATE_FAILED);
 				}
-#endif
 				break;
 			default:
 				break;

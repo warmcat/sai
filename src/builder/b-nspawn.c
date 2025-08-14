@@ -232,8 +232,9 @@ static const char * const runscript =
 	"set SAI_LOGPROXY_TTY0=%s\n"
 	"set SAI_LOGPROXY_TTY1=%s\n"
 	"set HOME=%s\n"
-	"cd %s\\jobs\\%s\\%s &&"
-	" rmdir /s /q build & "
+	"cd %s\\jobs\\%s\\%s && "
+	"(if exist build.old (rmdir /s /q build.old)) & "
+	"(if exist build (move build build.old)) & "
 	"%s"
 ;
 
