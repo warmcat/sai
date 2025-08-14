@@ -619,8 +619,9 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		if (mkdir(ns->inp, 0755) && errno != EEXIST)
 			goto ebail;
 
-		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
-				  ns->project_name, csep);
+		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n,
+				  "%s-%llu%c", ns->project_name,
+				  (unsigned long long)lws_now_usecs(), csep);
 		lws_filename_purify_inplace(ns->inp);
 		if (mkdir(ns->inp, 0755) && errno != EEXIST)
 			goto ebail;
