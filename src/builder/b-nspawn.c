@@ -232,7 +232,9 @@ static const char * const runscript =
 	"set SAI_LOGPROXY_TTY0=%s\n"
 	"set SAI_LOGPROXY_TTY1=%s\n"
 	"set HOME=%s\n"
-	"cd %s && %s"
+	"cd %s &&"
+	" rmdir /s /q build & "
+	"%s"
 ;
 
 #else
