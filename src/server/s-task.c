@@ -775,9 +775,10 @@ int
 sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		   const char *platform_name)
 {
+	const sai_task_t *task_template;
 	char esc1[96], esc2[96];
 	lws_dll2_owner_t o;
-	sai_task_t *task;
+	sai_task_t *task = NULL;
 	int n;
 
 	if (cb->ongoing >= cb->instances)
@@ -787,9 +788,16 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	 * Look for a task for this platform, on any event that needs building
 	 */
 
-	task = (sai_task_t *)sais_task_pending(vhd, pss, platform_name);
-	if (!task)
+	task_template = sais_task_pending(vhd, pss, platform_name);
+	if (!task_template)
 		return 1;
+
+	task = malloc(sizeof(sai_task_t));
+	if (!task) {
+		lwsac_free(&pss->ac_alloc_task);
+		return -1;
+	}
+	*task = *task_template;
 
 	lwsl_notice("%s: %s: task found %s\n", __func__, platform_name, cb->name);
 
@@ -841,6 +849,8 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	return 0;
 
 bail:
+	if (task)
+		free(task);
 	lwsac_free(&pss->a.ac);
 	lwsac_free(&pss->ac_alloc_task);
 

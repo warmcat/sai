@@ -1092,7 +1092,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	}
 
 
-       if (!pss->issue_task_owner.count || !pss->issue_task_owner.head)
+       if (!pss->issue_task_owner.count)
 		return 0; /* nothing to send */
 
 	/*
@@ -1110,13 +1110,17 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	js = lws_struct_json_serialize_create(lsm_schema_map_ta,
 					      LWS_ARRAY_SIZE(lsm_schema_map_ta),
 					      0, task);
-	if (!js)
+	if (!js) {
+		lwsac_free(&task->ac_task_container);
+		free(task);
 		return 1;
+	}
 
 	n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 	lws_struct_json_serialize_destroy(&js);
 	pss->one_event = NULL;
 	lwsac_free(&task->ac_task_container);
+	free(task);
 
 	first = 1;
 
