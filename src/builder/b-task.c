@@ -688,6 +688,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		ns->user_cancel = 0;
 		ns->spins = 0;
+		ns->mirror_wait_budget = 120;
 
 		if (saib_start_mirror(ns)) {
 			lwsl_err("%s: saib_start_mirror failed\n", __func__);
