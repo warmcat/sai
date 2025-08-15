@@ -113,21 +113,29 @@ sais_central_clean_abandoned(struct vhd *vhd)
 			}
 
 			/*
-			 * Check for tasks that should go into CANCELLED
+			 * Check for tasks that have been running too long
 			 */
+			sqlite3_stmt *sm;
 
 			lws_snprintf(s, sizeof(s),
-				     "update tasks set state=%d where "
-				     "(state=1 OR state=2) and started < %llu",
-				     SAIES_CANCELLED, (unsigned long long)
-					     (lws_now_secs() - (30 * 60)));
+				     "SELECT uuid FROM tasks WHERE "
+				     "(state = %d OR state = %d) AND "
+				     "started < %llu",
+				     SAIES_PASSED_TO_BUILDER,
+				     SAIES_BEING_BUILT, (unsigned long long)
+					(lws_now_secs() -
+					 (vhd->task_abandoned_timeout_mins * 60)));
 
-			if (sqlite3_exec(pdb, s, NULL, NULL, &err) !=
-					 SQLITE_OK) {
-				lwsl_err("%s: %s: %s: fail\n", __func__, s,
-					 sqlite3_errmsg(pdb));
-				if (err)
-					sqlite3_free(err);
+			if (sqlite3_prepare_v2(pdb, s, -1, &sm, NULL) == SQLITE_OK) {
+				while (sqlite3_step(sm) == SQLITE_ROW) {
+					const unsigned char *task_uuid = sqlite3_column_text(sm, 0);
+					if (task_uuid) {
+						lwsl_notice("%s: resetting abandoned task %s\n",
+								__func__, (const char *)task_uuid);
+						sais_task_reset(vhd, (const char *)task_uuid);
+					}
+				}
+				sqlite3_finalize(sm);
 			}
 
 			sais_event_db_close(vhd, &pdb);

@@ -424,6 +424,10 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 		}
 
+		if (lws_pvo_get_int(in, "task-abandoned-timeout-mins",
+				    (int *)&vhd->task_abandoned_timeout_mins))
+			vhd->task_abandoned_timeout_mins = 30;
+
 		if (lws_pvo_get_str(in, "database", &vhd->sqlite3_path_lhs)) {
 			lwsl_err("%s: database pvo required\n", __func__);
 			return -1;

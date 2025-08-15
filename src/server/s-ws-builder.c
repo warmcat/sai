@@ -329,6 +329,9 @@ void
 sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 {
 	sai_plat_t *cb;
+	struct lwsac *ac = NULL;
+	lws_dll2_owner_t o;
+	int n;
 
 	/*
 	 * A builder's websocket has closed. Find all platforms associated
@@ -344,6 +347,48 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 
 			lwsl_notice("%s: Builder '%s' disconnected\n", __func__,
 				    cb->name);
+
+			/*
+			 * Check all active events for tasks that were running
+			 * on this builder, and reset them
+			 */
+
+			n = lws_struct_sq3_deserialize(vhd->server.pdb,
+				" and (state != 3 and state != 4 and state != 5)",
+				NULL, lsm_schema_sq3_map_event, &o, &ac, 0, 100);
+			if (n >= 0 && o.head) {
+				lws_start_foreach_dll(struct lws_dll2 *, pe, o.head) {
+					sai_event_t *e = lws_container_of(pe, sai_event_t, list);
+					sqlite3 *pdb = NULL;
+
+					if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
+						sqlite3_stmt *sm;
+
+						lws_snprintf(q, sizeof(q),
+							"SELECT uuid FROM tasks WHERE "
+							"(state = %d OR state = %d) AND "
+							"builder_name = ?",
+							SAIES_PASSED_TO_BUILDER,
+							SAIES_BEING_BUILT);
+
+						if (sqlite3_prepare_v2(pdb, q, -1, &sm, NULL) == SQLITE_OK) {
+							sqlite3_bind_text(sm, 1, cb->name, -1, SQLITE_TRANSIENT);
+							while (sqlite3_step(sm) == SQLITE_ROW) {
+								const unsigned char *task_uuid = sqlite3_column_text(sm, 0);
+								if (task_uuid) {
+									lwsl_notice("%s: resetting task %s from disconnected builder %s\n",
+											__func__, (const char *)task_uuid, cb->name);
+									sais_task_reset(vhd, (const char *)task_uuid);
+								}
+							}
+							sqlite3_finalize(sm);
+						}
+						sais_event_db_close(vhd, &pdb);
+					}
+				} lws_end_foreach_dll(pe);
+
+				lwsac_free(&ac);
+			}
 
 			lws_snprintf(q, sizeof(q), "UPDATE builders SET online=0 WHERE name='%s'", cb->name);
 			sai_sqlite3_statement(vhd->server.pdb, q, "set builder offline");

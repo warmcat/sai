@@ -205,6 +205,7 @@ struct vhd {
 	lws_usec_t	last_check_abandoned_tasks;
 
 	const char *notification_key;
+	unsigned int	task_abandoned_timeout_mins;
 
 	unsigned int		browser_viewer_count; 
 	unsigned int		viewers_are_present:1;
