@@ -424,8 +424,8 @@ cleanup_on_ss_disconnect(struct lws_dll2 *d, void *user)
 
 			ns->spm = NULL;
 
-			//if (ns->lsp)
-			//	lws_spawn_piped_kill_child_process(ns->lsp);
+			if (ns->op && ns->op->lsp)
+				lws_spawn_piped_kill_child_process(ns->op->lsp);
 
 			/* clean up any capture chunks */
 

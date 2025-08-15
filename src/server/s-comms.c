@@ -401,7 +401,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		*end = &buf[sizeof(buf) - LWS_PRE - 1];
 	struct pss *pss = (struct pss *)user;
 	sai_http_murl_t mu = SHMUT_NONE;
-	const char *pvo_resources;
+	const char *pvo_resources, *num;
 	int n;
 
 	(void)end;
@@ -423,6 +423,11 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			lwsl_warn("%s: notification_key pvo required\n", __func__);
 			return -1;
 		}
+
+		if (!lws_pvo_get_str(in, "task-abandoned-timeout-mins", &num))
+			vhd->task_abandoned_timeout_mins = (unsigned int)atoi(num);
+		else
+			vhd->task_abandoned_timeout_mins = 30;
 
 		if (lws_pvo_get_str(in, "database", &vhd->sqlite3_path_lhs)) {
 			lwsl_err("%s: database pvo required\n", __func__);
