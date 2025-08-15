@@ -1594,11 +1594,12 @@ function ws_open_sai()
 		break;
 	} /* switch */
 	} /* onmessage */
-		sai.onclose = function(){
-//			document.getElementById("title").innerHTML =
-//						"Server Status (Disconnected)";
-//			lws_gray_out(true,{"zindex":"499"});
-			
+		sai.onerror = function(ev) {
+			console.log("WebSocket error:", ev);
+		};
+
+		sai.onclose = function(ev){
+			console.log("WebSocket closed. Code:", ev.code, "Reason:", ev.reason);
 			myVar = setTimeout(ws_open_sai, 4000);
 		};
 	} catch(exception) {
