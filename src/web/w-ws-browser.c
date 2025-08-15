@@ -1263,14 +1263,6 @@ send_it:
 
 		/* does he want to subscribe to logs? */
 		if (sch && sch->logsub && sch->one_task) {
-
-			/*
-			 * if he's already subscribed to something else,
-			 * drop that subscription now
-			 */
-			if (pss->subs_list.owner)
-				lws_dll2_remove(&pss->subs_list);
-
 			strcpy(pss->sub_task_uuid, sch->one_task->uuid);
 			lws_dll2_add_head(&pss->subs_list, &pss->vhd->subs_owner);
 			pss->sub_timestamp = 0; /* where we got up to */

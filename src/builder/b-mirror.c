@@ -157,6 +157,14 @@ static void sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting,
 				   siginfo_t *si, int we_killed_him);
 
 static void
+saib_start_mirror_cb(lws_sorted_usec_list_t *sul)
+{
+	struct sai_nspawn *ns = lws_container_of(sul, struct sai_nspawn, sul_mirror);
+
+	saib_start_mirror(ns);
+}
+
+static void
 sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 		int we_killed_him)
 {
@@ -186,7 +194,12 @@ sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	}
 
 	if (exit_code == 2) {
-		saib_start_mirror(ns);
+		if (ns->mirror_wait_budget-- < 0) {
+			lwsl_err("%s: mirror wait budget exhausted\n", __func__);
+			goto fail;
+		}
+		lws_sul_schedule(builder.context, 0, &ns->sul_mirror,
+				   saib_start_mirror_cb, LWS_US_PER_SEC);
 		goto onward;
 	}
 
