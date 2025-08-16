@@ -675,11 +675,6 @@ again:
 
 			sch = NULL;
 
-			lws_snprintf(esc, sizeof(esc),
-				     "and task_uuid='%s' and timestamp > %llu",
-				     pss->sub_task_uuid,
-				     (unsigned long long)pss->sub_timestamp);
-
 			/*
 			 * For efficiency, let's try to grab the next 100 at
 			 * once from sqlite and work our way through sending
@@ -687,6 +682,7 @@ again:
 			 */
 
 			if (pss->log_cache_index == pss->log_cache_size) {
+				lws_usec_t tim;
 				int sr;
 
 				sai_task_uuid_to_event_uuid(event_uuid,
@@ -694,6 +690,11 @@ again:
 
 				lws_dll2_owner_clear(&task_owner);
 				lwsac_free(&pss->logs_ac);
+
+				lws_snprintf(esc, sizeof(esc),
+				     "and task_uuid='%s' and timestamp > %llu",
+				     pss->sub_task_uuid,
+				     (unsigned long long)pss->sub_timestamp);
 
 				lwsl_info("%s: collecting logs %s\n",
 					  __func__, esc);
@@ -705,6 +706,8 @@ again:
 
 					return 0;
 				}
+
+				tim = lws_now_usecs();
 
 				sr = lws_struct_sq3_deserialize(pdb, esc,
 								"uid,timestamp ",
@@ -723,6 +726,9 @@ again:
 
 				pss->log_cache_index = 0;
 				pss->log_cache_size = (int)pss->logs_owner.count;
+
+				lwsl_wsi_notice(pss->wsi, "fetched %d logs in %dus", pss->log_cache_size, (int)(lws_now_usecs() - tim));
+
 			}
 
 			if (pss->log_cache_index < pss->log_cache_size) {
