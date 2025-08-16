@@ -221,6 +221,10 @@ sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
 		return 1;
 	}
 
+	sai_sqlite3_statement(*ppdb,
+			      "CREATE INDEX IF NOT EXISTS logs_index ON logs (task_uuid, timestamp);",
+			      "create logs index");
+
 	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_artifact)) {
 		lwsl_err("%s: unable to create artifact table for %s\n", __func__, filepath);
 
