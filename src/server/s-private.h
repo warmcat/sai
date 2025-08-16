@@ -173,6 +173,12 @@ typedef struct sais_sqlite_cache {
 	int		refcount;
 } sais_sqlite_cache_t;
 
+typedef struct sai_ongoing_task {
+	lws_dll2_t		list;
+	char			uuid[65];
+	lws_usec_t		last_log_timestamp;
+} sai_ongoing_task_t;
+
 
 typedef struct sais_plat {
 	lws_dll2_t	list;
@@ -192,6 +198,7 @@ struct vhd {
 	struct lws_dll2_owner		sai_powers;
 	struct lws_dll2_owner		pending_plats;
 	lws_dll2_owner_t		powering_up_list; /* sai_powering_up_plat_t */
+	lws_dll2_owner_t		ongoing_tasks; /* sai_ongoing_task_t */
 
 	struct lwsac			*ac_plats;
 
@@ -201,6 +208,7 @@ struct vhd {
 	lws_dll2_owner_t tasklog_cache;
 	lws_sorted_usec_list_t sul_logcache;
 	lws_sorted_usec_list_t sul_central; /* background task allocation sul */
+	lws_sorted_usec_list_t sul_activity; /* activity broadcast sul */
 
 	lws_usec_t	last_check_abandoned_tasks;
 
@@ -281,6 +289,9 @@ sais_subs_request_writeable(struct vhd *vhd, const char *task_uuid);
 
 void
 sais_central_cb(lws_sorted_usec_list_t *sul);
+
+void
+sais_activity_cb(lws_sorted_usec_list_t *sul);
 
 int
 sais_task_reset(struct vhd *vhd, const char *task_uuid);

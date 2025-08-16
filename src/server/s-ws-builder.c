@@ -192,6 +192,7 @@ static void
 sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 {
 	sais_logcache_pertask_t *lcpt = NULL;
+	sai_ongoing_task_t *ot;
 	sai_log_t *hlog;
 
 	/*
@@ -212,6 +213,8 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 		 * Create a pertask and add it to the vhd list of them
 		 */
 		lcpt = malloc(sizeof(*lcpt));
+		if (!lcpt)
+			return;
 		memset(lcpt, 0, sizeof(*lcpt));
 		lws_strncpy(lcpt->uuid, log->task_uuid, sizeof(lcpt->uuid));
 		lws_dll2_add_tail(&lcpt->list, &vhd->tasklog_cache);
@@ -237,6 +240,31 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_logcache,
 				 sais_dump_logs_to_db, 250 * LWS_US_PER_MS);
+
+	/*
+	 * Update ongoing task activity
+	 */
+
+	ot = NULL;
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->ongoing_tasks.head) {
+		sai_ongoing_task_t *fot = lws_container_of(p, sai_ongoing_task_t, list);
+
+		if (!strcmp(fot->uuid, log->task_uuid)) {
+			ot = fot;
+			break;
+		}
+	} lws_end_foreach_dll(p);
+
+	if (!ot) {
+		ot = malloc(sizeof(*ot));
+		if (!ot)
+			return;
+		memset(ot, 0, sizeof(*ot));
+		lws_strncpy(ot->uuid, log->task_uuid, sizeof(ot->uuid));
+		lws_dll2_add_tail(&ot->list, &vhd->ongoing_tasks);
+	}
+
+	ot->last_log_timestamp = lws_now_usecs();
 }
 
 sai_plat_t *

@@ -528,6 +528,9 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_central,
 				 sais_central_cb, 500 * LWS_US_PER_MS);
 
+		lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
+				 sais_activity_cb, 1 * LWS_US_PER_SEC);
+
 		break;
 
 	case LWS_CALLBACK_PROTOCOL_DESTROY:

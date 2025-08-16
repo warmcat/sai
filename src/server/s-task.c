@@ -267,6 +267,19 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 	sais_event_db_close(vhd, (sqlite3 **)&e->pdb);
 	lwsac_free(&ac);
 
+	if (state == SAIES_SUCCESS || state == SAIES_FAIL || state == SAIES_CANCELLED) {
+		sai_ongoing_task_t *ot = NULL;
+		lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1, vhd->ongoing_tasks.head) {
+			ot = lws_container_of(p, sai_ongoing_task_t, list);
+
+			if (!strcmp(ot->uuid, task_uuid)) {
+				lws_dll2_remove(&ot->list);
+				free(ot);
+				break;
+			}
+		} lws_end_foreach_dll_safe(p, p1);
+	}
+
 	return 0;
 
 bail:
@@ -857,4 +870,56 @@ bail:
 	lwsac_free(&pss->ac_alloc_task);
 
 	return -1;
+}
+
+void
+sais_activity_cb(lws_sorted_usec_list_t *sul)
+{
+	struct vhd *vhd = lws_container_of(sul, struct vhd, sul_activity);
+	char *p, *start, *end;
+	sai_ongoing_task_t *ot;
+	lws_usec_t now;
+	int cat, first = 1;
+
+	p = start = malloc(8192);
+	if (!p)
+		return;
+	end = start + 8192;
+
+	p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+			  "{\"schema\":\"com.warmcat.sai.taskactivity\","
+			  "\"activity\":[");
+
+	now = lws_now_usecs();
+
+	lws_start_foreach_dll(struct lws_dll2 *, d, vhd->ongoing_tasks.head) {
+		ot = lws_container_of(d, sai_ongoing_task_t, list);
+
+		if (now - ot->last_log_timestamp > 10 * LWS_USEC_PER_SEC)
+			cat = 1;
+		else if (now - ot->last_log_timestamp > 3 * LWS_US_PER_SEC)
+			cat = 2;
+		else
+			cat = 3;
+
+		if (!first)
+			*p++ = ',';
+
+		p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+				  "{\"uuid\":\"%s\",\"cat\":%d}",
+				  ot->uuid, cat);
+		first = 0;
+
+	} lws_end_foreach_dll(d);
+
+	*p++ = ']';
+	*p++ = '}';
+
+	if (lws_ptr_diff(p, start) > 48)
+		sais_websrv_broadcast(vhd->h_ss_websrv, start, lws_ptr_diff_size_t(p, start));
+
+	free(start);
+
+	lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
+			 sais_activity_cb, 1 * LWS_US_PER_SEC);
 }

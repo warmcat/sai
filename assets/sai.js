@@ -394,7 +394,21 @@ var lang_zhs = "{" +
 	  	"\"%{pf}前创建, 创作时间: %{ct}ms \"" +	   
 "}}";
 
-var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "";
+var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
+	ongoing_task_activities = {};
+
+function update_task_activities() {
+	for (const uuid in ongoing_task_activities) {
+		const el = document.getElementById("taskstate_" + uuid);
+		if (el) {
+			const cat = ongoing_task_activities[uuid];
+			el.classList.remove("activity-1", "activity-2", "activity-3");
+			if (cat > 0) {
+				el.classList.add("activity-" + cat);
+			}
+		}
+	}
+}
 	
 function expiry()
 {
@@ -1517,6 +1531,16 @@ function ws_open_sai()
 				
 				break;
 
+			case "com.warmcat.sai.taskactivity":
+				ongoing_task_activities = {};
+				if (jso.activity) {
+					for (var i = 0; i < jso.activity.length; i++) {
+						var act = jso.activity[i];
+						ongoing_task_activities[act.uuid] = act.cat;
+					}
+				}
+				break;
+
 			case "com-warmcat-sai-logs":
 				var s1 = atob(jso.log), s = hsanitize(s1), li,
 					en = "", yo, dh, ce, tn = "";
@@ -1681,6 +1705,7 @@ window.addEventListener("load", function() {
 	}
 	
 	setInterval(function() {
+		update_task_activities();
 
 	    var locked = document.body.scrollHeight -
 	    	document.body.clientHeight <= document.body.scrollTop + 1;
