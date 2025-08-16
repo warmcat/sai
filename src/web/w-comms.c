@@ -99,6 +99,8 @@ const lws_struct_map_t lsm_schema_json_map[] = {
 			/* shares struct */   "sai-tasklogs"),
 	LSM_SCHEMA	(sai_load_report_t, NULL, lsm_load_report_members,
 			 "com.warmcat.sai.loadreport"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
+			 "com.warmcat.sai.taskactivity"),
 };
 
 size_t lsm_schema_json_map_array_size = LWS_ARRAY_SIZE(lsm_schema_json_map);

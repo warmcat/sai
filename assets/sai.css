@@ -811,3 +811,22 @@ img.branch {
 	transition: opacity 0.3s;
 }
 
+@keyframes flash-slow {
+  50% { opacity: 0.8; }
+}
+@keyframes flash-medium {
+  50% { opacity: 0.8; }
+}
+@keyframes flash-fast {
+  50% { opacity: 0.8; }
+}
+
+.activity-1 {
+	animation: flash-slow 4s infinite;
+}
+.activity-2 {
+	animation: flash-medium 2s infinite;
+}
+.activity-3 {
+	animation: flash-fast 1s infinite;
+}
