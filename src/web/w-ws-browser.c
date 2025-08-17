@@ -626,36 +626,6 @@ again:
 	// lwsl_notice("%s: send_state %d, pss %p, wsi %p\n", __func__,
 	// pss->send_state, pss, pss->wsi);
 
-	/*
-	 * Send anything waiting on broadcast_raw buflist first
-	 */
-
-	if (pss->raw_tx) {
-		char som, eom, rb[4096];
-		int used, *pi = (int *)rb;
-
-		used = lws_buflist_fragment_use(&pss->raw_tx, (uint8_t *)rb,
-						sizeof(rb), &som, &eom);
-		if (!used)
-			return 0;
-
-		// lwsl_wsi_notice(pss->wsi, "writing %d bytes flags 0x%x: '%.*s'",
-		//		(int)(used - (int)sizeof(int)), (int)*pi,
-		//		(int)(used - (int)sizeof(int)), rb + sizeof(int));  
-
-		if (lws_write(pss->wsi, (uint8_t *)rb + sizeof(int),
-					(size_t)used - sizeof(int),
-					(enum lws_write_protocol)*pi) < 0) {
-			lwsl_wsi_err(pss->wsi, "attempt to write %d failed", (int)used - (int)sizeof(int));
-
-			return -1;
-		}
-
-		lws_callback_on_writable(pss->wsi);
-
-		return 0;
-	}
-
 	if (pss->sched.count)
 		sch = lws_container_of(pss->sched.head, saiw_scheduled_t, list);
 	else
@@ -682,7 +652,7 @@ again:
 			 */
 
 			if (pss->log_cache_index == pss->log_cache_size) {
-				lws_usec_t tim;
+				// lws_usec_t tim;
 				int sr;
 
 				sai_task_uuid_to_event_uuid(event_uuid,
@@ -707,7 +677,7 @@ again:
 					return 0;
 				}
 
-				tim = lws_now_usecs();
+				// tim = lws_now_usecs();
 
 				sr = lws_struct_sq3_deserialize(pdb, esc,
 								"uid,timestamp ",
@@ -727,7 +697,7 @@ again:
 				pss->log_cache_index = 0;
 				pss->log_cache_size = (int)pss->logs_owner.count;
 
-				lwsl_wsi_notice(pss->wsi, "fetched %d logs in %dus", pss->log_cache_size, (int)(lws_now_usecs() - tim));
+				// lwsl_wsi_notice(pss->wsi, "fetched %d logs in %dus", pss->log_cache_size, (int)(lws_now_usecs() - tim));
 
 			}
 
@@ -777,9 +747,41 @@ again:
 		 * ...then do we have anything on the scheduled ll for this pss?
 		 */
 
-		if (!sch)
+		if (!sch) {
+			/*
+			 * Send anything waiting on broadcast_raw buflist first
+			 */
+
+			if (pss->raw_tx) {
+				char som, eom, rb[4096];
+				int used, *pi = (int *)rb;
+
+				used = lws_buflist_fragment_use(&pss->raw_tx, (uint8_t *)rb,
+								sizeof(rb), &som, &eom);
+				if (!used)
+					return 0;
+
+				// lwsl_wsi_notice(pss->wsi, "writing %d bytes flags 0x%x: '%.*s'",
+				//		(int)(used - (int)sizeof(int)), (int)*pi,
+				//		(int)(used - (int)sizeof(int)), rb + sizeof(int));  
+
+				if (lws_write(pss->wsi, (uint8_t *)rb + sizeof(int),
+							(size_t)used - sizeof(int),
+							(enum lws_write_protocol)*pi) < 0) {
+					lwsl_wsi_err(pss->wsi, "attempt to write %d failed", (int)used - (int)sizeof(int));
+
+					return -1;
+				}
+
+				lws_callback_on_writable(pss->wsi);
+
+				return 0;
+			}
+
+
 			/* ... nope... */
 			return 0;
+		}
 
 		pss->toggle_favour_sch = 0;
 		pss->send_state = sch->action;

@@ -1306,7 +1306,10 @@ function ws_open_sai()
 				break;
 			
 			case "com.warmcat.sai.taskinfo":
-			
+
+				if (!jso.t)
+					break;
+
 				authd = jso.authorized;
 				if (jso.authorized === 0) {
 					if (document.getElementById("creds"))

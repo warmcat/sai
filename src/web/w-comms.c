@@ -1191,7 +1191,7 @@ clean_spa:
 			saiw_browser_state_changed(pss, 1);
 			pss->wsi = wsi;
 
-			return 0;
+			break;
 		}
 
 		lwsl_err("%s: unknown URL '%s'\n", __func__, start);
