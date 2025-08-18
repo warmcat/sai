@@ -37,6 +37,8 @@
 #include <grp.h>
 #endif
 
+#include <lejp.h>
+
 #if defined(__linux__)
 #include <unistd.h>
 #endif
@@ -743,8 +745,45 @@ int main(int argc, const char **argv)
 
 #if !defined(WIN32)
 
+struct rebuild_args {
+	char *rebuild_script;
+};
+
+static const char * const paths_rebuild[] = {
+	"rebuild_script"
+};
+
+enum enum_paths_rebuild {
+	LEJPM_REBUILD_SCRIPT_ONLY,
+};
+
+static signed char
+saib_rebuild_conf_cb(struct lejp_ctx *ctx, char reason)
+{
+	struct rebuild_args *a = (struct rebuild_args *)ctx->user;
+
+	if (!(reason & LEJP_FLAG_CB_IS_VALUE) || !ctx->path_match)
+		return 0;
+
+	if (reason != LEJPCB_VAL_STR_END)
+		return 0;
+
+	switch (ctx->path_match - 1) {
+	case LEJPM_REBUILD_SCRIPT_ONLY:
+		a->rebuild_script = malloc(ctx->npos + 1);
+		if (!a->rebuild_script)
+			return -1;
+		memcpy(a->rebuild_script, ctx->buf, ctx->npos);
+		a->rebuild_script[ctx->npos] = '\0';
+		break;
+	}
+
+	return 0;
+}
+
 	if ((p = lws_cmdline_option(argc, argv, "-s"))) {
 		ssize_t n = 0;
+		char *rebuild_script = NULL;
 
 		printf("%s: Spawn process creation entry...\n", __func__);
 
@@ -786,13 +825,38 @@ int main(int argc, const char **argv)
 					execl("/usr/bin/systemctl", "/usr/bin/systemctl", "suspend", NULL);
 					break;
 				case 3:
-					if (builder.rebuild_script) {
-						char cmd[4096];
+					{
+						struct rebuild_args a;
+						struct lejp_ctx ctx;
+						unsigned char buf[128];
+						int m, fd;
 
-						lws_snprintf(cmd, sizeof(cmd),
-							     "( %s ) 2>&1 | logger -t sai-rebuild",
-							     builder.rebuild_script);
-						execl("/bin/sh", "sh", "-c", cmd, NULL);
+						memset(&a, 0, sizeof(a));
+						lws_snprintf((char *)buf, sizeof(buf) - 1, "/etc/sai/builder/conf");
+						fd = open((char *)buf, O_RDONLY);
+						if (fd >= 0) {
+							lejp_construct(&ctx, saib_rebuild_conf_cb, &a,
+									paths_rebuild, LWS_ARRAY_SIZE(paths_rebuild));
+							do {
+								n = (int)read(fd, buf, sizeof(buf));
+								if (!n)
+									break;
+								m = lejp_parse(&ctx, buf, n);
+							} while (m == LEJP_CONTINUE);
+							close(fd);
+							lejp_destruct(&ctx);
+							rebuild_script = a.rebuild_script;
+						}
+
+						if (rebuild_script) {
+							char cmd[4096];
+
+							lws_snprintf(cmd, sizeof(cmd),
+								     "( %s ) 2>&1 | logger -t sai-rebuild",
+								     rebuild_script);
+							execl("/bin/sh", "sh", "-c", cmd, NULL);
+							free(rebuild_script);
+						}
 					}
 					break;
 				}
