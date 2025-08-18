@@ -961,23 +961,53 @@ function createBuilderDiv(plat) {
 
 	platDiv.innerHTML = innerHTML;
 
-	platDiv.addEventListener("contextmenu", function(event) {
-		const menuItems = [
-			{ label: `<b>SAI Hash:</b> ${plat.sai_hash}` },
-			{ label: `<b>LWS Hash:</b> ${plat.lws_hash}` },
-			{
-				label: "Rebuild",
-				callback: () => {
-					const rebuildMsg = {
-						schema: "com.warmcat.sai.rebuild",
-						builder_name: plat.name
-					};
-					sai.send(JSON.stringify(rebuildMsg));
-				}
+	let touchTimeout;
+
+	const menuItems = [
+		{ label: `<b>SAI Hash:</b> ${plat.sai_hash}` },
+		{ label: `<b>LWS Hash:</b> ${plat.lws_hash}` },
+		{
+			label: "Rebuild",
+			callback: () => {
+				const rebuildMsg = {
+					schema: "com.warmcat.sai.rebuild",
+					builder_name: plat.name
+				};
+				sai.send(JSON.stringify(rebuildMsg));
 			}
-		];
+		}
+	];
+
+	platDiv.addEventListener("contextmenu", function(event) {
 		createContextMenu(event, menuItems);
 	});
+
+	platDiv.addEventListener("touchstart", function(event) {
+		if (event.touches.length > 1) {
+			return;
+		}
+		touchTimeout = setTimeout(() => {
+			touchTimeout = null;
+			const touch = event.touches[0];
+			const mockEvent = {
+				preventDefault: () => event.preventDefault(),
+				pageX: touch.pageX,
+				pageY: touch.pageY
+			};
+			createContextMenu(mockEvent, menuItems);
+		}, 500);
+	});
+
+	const clearTouchTimeout = () => {
+		if (touchTimeout) {
+			clearTimeout(touchTimeout);
+			touchTimeout = null;
+		}
+	};
+
+	platDiv.addEventListener("touchend", clearTouchTimeout);
+	platDiv.addEventListener("touchcancel", clearTouchTimeout);
+	platDiv.addEventListener("touchmove", clearTouchTimeout);
 
 	return platDiv;
 }
