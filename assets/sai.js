@@ -880,6 +880,50 @@ function after_delete() {
 	location.reload();
 }
 
+function createContextMenu(event, menuItems) {
+    event.preventDefault();
+
+    // Remove any existing context menu
+    const existingMenus = document.querySelectorAll(".context-menu");
+    existingMenus.forEach(menu => {
+        document.body.removeChild(menu);
+    });
+
+    const menu = document.createElement("div");
+    menu.className = "context-menu";
+    menu.style.top = event.pageY + "px";
+    menu.style.left = event.pageX + "px";
+
+    const ul = document.createElement("ul");
+    menu.appendChild(ul);
+
+    menuItems.forEach(item => {
+        const li = document.createElement("li");
+        li.innerHTML = item.label; // Use innerHTML to allow for simple styling
+        if (item.callback) {
+            li.addEventListener("click", (e) => {
+                item.callback();
+                closeMenu();
+                e.stopPropagation();
+            });
+        }
+        ul.appendChild(li);
+    });
+
+    document.body.appendChild(menu);
+
+    const closeMenu = () => {
+        if (document.body.contains(menu)) {
+            document.body.removeChild(menu);
+        }
+        document.removeEventListener("click", closeMenu);
+    };
+    // Use a timeout to avoid the current click event from closing the menu immediately
+    setTimeout(() => {
+        document.addEventListener("click", closeMenu);
+    }, 0);
+}
+
 function createBuilderDiv(plat) {
 	const platDiv = document.createElement("div");
 	platDiv.className = "ibuil bdr";
@@ -918,31 +962,21 @@ function createBuilderDiv(plat) {
 	platDiv.innerHTML = innerHTML;
 
 	platDiv.addEventListener("contextmenu", function(event) {
-		event.preventDefault();
-		const menu = document.createElement("div");
-		menu.className = "context-menu";
-		menu.style.top = event.pageY + "px";
-		menu.style.left = event.pageX + "px";
-		menu.innerHTML = `<ul>
-			<li>SAI Hash: ${plat.sai_hash}</li>
-			<li>LWS Hash: ${plat.lws_hash}</li>
-			<li id="rebuild-${plat.name}">Rebuild</li>
-		</ul>`;
-		document.body.appendChild(menu);
-
-		document.getElementById(`rebuild-${plat.name}`).addEventListener("click", () => {
-			const rebuildMsg = {
-				schema: "com.warmcat.sai.rebuild",
-				builder_name: plat.name
-			};
-			sai.send(JSON.stringify(rebuildMsg));
-		});
-
-		const closeMenu = () => {
-			document.body.removeChild(menu);
-			document.removeEventListener("click", closeMenu);
-		};
-		document.addEventListener("click", closeMenu);
+		const menuItems = [
+			{ label: `<b>SAI Hash:</b> ${plat.sai_hash}` },
+			{ label: `<b>LWS Hash:</b> ${plat.lws_hash}` },
+			{
+				label: "Rebuild",
+				callback: () => {
+					const rebuildMsg = {
+						schema: "com.warmcat.sai.rebuild",
+						builder_name: plat.name
+					};
+					sai.send(JSON.stringify(rebuildMsg));
+				}
+			}
+		];
+		createContextMenu(event, menuItems);
 	});
 
 	return platDiv;
