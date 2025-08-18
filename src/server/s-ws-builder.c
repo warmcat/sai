@@ -637,6 +637,8 @@ handle:
 		 * callback_on_writable handler to empty it
 		 */
 
+		sais_list_builders(vhd);
+
 		break;
 
 bail:
