@@ -826,7 +826,7 @@ int main(int argc, const char **argv)
 						ret = system(cmd);
 						if (ret == 0) {
 							lws_snprintf(cmd, sizeof(cmd),
-								     "/bin/bash -l -c '%s'",
+								     "PATH=/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin %s",
 								     builder.rebuild_script_root);
 							system(cmd);
 						}
