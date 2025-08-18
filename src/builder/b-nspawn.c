@@ -253,8 +253,8 @@ sai_rebuild_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 
 static const char * const rebuild_runscript =
 	"#!/bin/bash -x\n"
-	"ls -l /tmp\n"
-	"exit $?\n"
+	"( %s ) 2>&1 | logger -t sai-rebuild\n"
+	"exit ${PIPESTATUS[0]}\n"
 ;
 
 int
@@ -262,30 +262,12 @@ saib_spawn_rebuild(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
-	char args[290], st[2048];
-	const char * cmd[] = {
-		"/bin/ps",
+	const char * const cmd[] = {
+		"/bin/ls",
+		"-l",
+		"/tmp",
 		NULL
 	};
-	int fd, n;
-
-	lws_snprintf(args, sizeof(args), "/tmp/sai-rebuild-script.sh");
-
-	fd = open(args, O_CREAT | O_TRUNC | O_WRONLY, 0755);
-	if (fd < 0) {
-		lwsl_err("%s: unable to open %s for write\n", __func__, args);
-		return 1;
-	}
-
-	n = lws_snprintf(st, sizeof(st), rebuild_runscript);
-	if (write(fd, st, (unsigned int)n) != n) {
-		close(fd);
-		lwsl_err("%s: failed to write runscript to %s\n", __func__, args);
-		return 1;
-	}
-	close(fd);
-
-	cmd[0] = args;
 
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
