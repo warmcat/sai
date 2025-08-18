@@ -485,9 +485,11 @@ extern const lws_struct_map_t
 	lsm_schema_json_map_task[1],
 	lsm_schema_json_map_event[1],
 	lsm_resource[4],
-	lsm_power_state[3]
+	lsm_power_state[3],
+	lsm_rebuild[],
+	lsm_schema_rebuild[]
 ;
-extern const lws_struct_map_t lsm_plat[6];
+extern const lws_struct_map_t lsm_plat[8];
 extern const lws_struct_map_t lsm_plat_for_json[10];
 
 extern const lws_ss_info_t ssi_said_logproxy;
