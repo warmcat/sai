@@ -268,7 +268,7 @@ saib_spawn_rebuild(struct sai_nspawn *ns)
 		NULL
 	};
 	const char *env[] = {
-		"PATH=/usr/local/bin:/usr/bin:/bin",
+		"PATH=/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin",
 		"LANG=en_US.UTF-8",
 		NULL
 	};

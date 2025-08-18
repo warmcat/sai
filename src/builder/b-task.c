@@ -864,14 +864,12 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			break;
 		memset(task, 0, sizeof(sai_task_t));
 
-		char *rebuild_script = saib_get_rebuild_script();
-		if (!rebuild_script) {
+		if (!builder.rebuild_script) {
 			lwsl_err("%s: No rebuild script configured\n", __func__);
 			free(task);
 			break;
 		}
-		lws_strncpy(task->build, rebuild_script, sizeof(task->build));
-		free(rebuild_script);
+		lws_strncpy(task->build, builder.rebuild_script, sizeof(task->build));
 
 		sai_uuid16_create(builder.context, task->uuid);
 		lws_strncpy(task->platform, sp->platform, sizeof(task->platform));
