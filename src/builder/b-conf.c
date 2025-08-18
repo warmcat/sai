@@ -41,7 +41,9 @@ static const char * const paths_global[] = {
 	"power-on.url",
 	"power-on.mac",
 	"power-off.type",
-	"power-off.url"
+	"power-off.url",
+	"rebuild_script_user",
+	"rebuild_script_root"
 };
 
 enum enum_paths_global {
@@ -56,7 +58,9 @@ enum enum_paths_global {
 	LEJPM_POWER_ON_URL,
 	LEJPM_POWER_ON_MAC,
 	LEJPM_POWER_OFF_TYPE,
-	LEJPM_POWER_OFF_URL
+	LEJPM_POWER_OFF_URL,
+	LEJPM_REBUILD_SCRIPT_USER,
+	LEJPM_REBUILD_SCRIPT_ROOT
 };
 
 /* platform-related part */
@@ -110,6 +114,11 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 				return -1;
 
 			a->sai_plat->instances = 1; /* default */
+
+			lws_strncpy(a->sai_plat->sai_hash, BUILD_INFO,
+				    sizeof(a->sai_plat->sai_hash));
+			lws_strncpy(a->sai_plat->lws_hash, LWS_BUILD_HASH,
+				    sizeof(a->sai_plat->lws_hash));
 
 			lws_dll2_add_tail(&a->sai_plat->sai_plat_list,
 					  &a->builder->sai_plat_owner);
@@ -320,6 +329,14 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		break;
 	case LEJPM_POWER_OFF_URL:
 		pp = &a->builder->power_off_url;
+		break;
+
+	case LEJPM_REBUILD_SCRIPT_USER:
+		pp = &a->builder->rebuild_script_user;
+		break;
+
+	case LEJPM_REBUILD_SCRIPT_ROOT:
+		pp = &a->builder->rebuild_script_root;
 		break;
 
 	default:

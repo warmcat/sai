@@ -221,6 +221,15 @@ typedef struct sai_cancel {
 	char		task_uuid[65];
 } sai_cancel_t;
 
+/*
+ * Browser is asking a builder to rebuild
+ */
+
+typedef struct sai_rebuild {
+	lws_dll2_t		list;
+	char			builder_name[96];
+} sai_rebuild_t;
+
 
 struct sai_event;
 
@@ -405,6 +414,8 @@ typedef struct sai_plat {
 	struct lws		*wsi; /* server side only */
 
 	lws_dll2_owner_t	env_head;
+	char			sai_hash[41];
+	char			lws_hash[41];
 	uint64_t		uid;
 	lws_dll2_owner_t	loads;
 	int			online; /* 1 = connected, 0 = offline */
@@ -474,10 +485,12 @@ extern const lws_struct_map_t
 	lsm_schema_json_map_task[1],
 	lsm_schema_json_map_event[1],
 	lsm_resource[4],
-	lsm_power_state[3]
+	lsm_power_state[3],
+	lsm_rebuild[1],
+	lsm_schema_rebuild[1]
 ;
-extern const lws_struct_map_t lsm_plat[6];
-extern const lws_struct_map_t lsm_plat_for_json[10];
+extern const lws_struct_map_t lsm_plat[8];
+extern const lws_struct_map_t lsm_plat_for_json[12];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];
@@ -496,4 +509,6 @@ saicom_lp_callback_on_drain(saicom_drain_cb cb, void *opaque);
 void
 sul_idle_cb(lws_sorted_usec_list_t *sul);
 
+int
+sai_uuid16_create(struct lws_context *context, char *dest33);
 

@@ -880,6 +880,46 @@ function after_delete() {
 	location.reload();
 }
 
+function createContextMenu(event, menuItems) {
+    event.preventDefault();
+
+    // Remove any existing context menu
+    const existingMenus = document.querySelectorAll(".context-menu");
+    existingMenus.forEach(menu => {
+        document.body.removeChild(menu);
+    });
+
+    const menu = document.createElement("div");
+    menu.className = "context-menu";
+    menu.style.top = event.pageY + "px";
+    menu.style.left = event.pageX + "px";
+
+    const ul = document.createElement("ul");
+    menu.appendChild(ul);
+
+    menuItems.forEach(item => {
+        const li = document.createElement("li");
+        li.innerHTML = item.label;
+        if (item.callback) {
+            li.addEventListener("click", item.callback);
+        }
+        ul.appendChild(li);
+    });
+
+    document.body.appendChild(menu);
+
+    const closeMenu = () => {
+        if (document.body.contains(menu)) {
+            document.body.removeChild(menu);
+        }
+        document.removeEventListener("click", closeMenu);
+    };
+
+    setTimeout(() => {
+        document.addEventListener("click", closeMenu);
+    }, 0);
+}
+
 function createBuilderDiv(plat) {
 	const platDiv = document.createElement("div");
 	platDiv.className = "ibuil bdr";
@@ -916,6 +956,61 @@ function createBuilderDiv(plat) {
 	innerHTML += `</div></td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;
+
+	const menuItems = [
+		{ label: `<b>SAI Hash:</b> ${plat.sai_hash}` },
+		{ label: `<b>LWS Hash:</b> ${plat.lws_hash}` },
+		{
+			label: "Update SAI",
+			callback: () => {
+				const rebuildMsg = {
+					schema: "com.warmcat.sai.rebuild",
+					builder_name: plat.name
+				};
+				sai.send(JSON.stringify(rebuildMsg));
+			}
+		}
+	];
+
+	platDiv.addEventListener("contextmenu", function(event) {
+		createContextMenu(event, menuItems);
+	});
+
+    let touchStartTime = 0;
+    let touchStartPos = { x: 0, y: 0 };
+
+    platDiv.addEventListener("touchstart", function(event) {
+        if (event.touches.length > 1) {
+            return;
+        }
+        touchStartTime = Date.now();
+        const touch = event.touches[0];
+        touchStartPos = { x: touch.pageX, y: touch.pageY };
+    });
+
+    platDiv.addEventListener("touchend", function(event) {
+        const touchEndTime = Date.now();
+        const touch = event.changedTouches[0];
+        const touchEndPos = { x: touch.pageX, y: touch.pageY };
+        const pressDuration = touchEndTime - touchStartTime;
+        const distance = Math.sqrt(
+            Math.pow(touchEndPos.x - touchStartPos.x, 2) +
+            Math.pow(touchEndPos.y - touchStartPos.y, 2)
+        );
+
+        if (pressDuration >= 500 && distance < 10) {
+            event.preventDefault();
+
+            const mockEvent = {
+                preventDefault: () => {},
+                pageX: touchStartPos.x,
+                pageY: touchStartPos.y
+            };
+            createContextMenu(mockEvent, menuItems);
+        }
+        touchStartTime = 0;
+    });
+
 	return platDiv;
 }
 

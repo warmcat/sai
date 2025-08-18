@@ -130,12 +130,6 @@ saiw_update_viewer_count(struct vhd *vhd)
  */
 
 int
-sai_uuid16_create(struct lws_context *context, char *dest33)
-{
-	return lws_hex_random(context, dest33, 33);
-}
-
-int
 sai_sqlite3_statement(sqlite3 *pdb, const char *cmd, const char *desc)
 {
 	sqlite3_stmt *sm;

@@ -47,6 +47,8 @@ const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/includ
 	LSM_STRING_PTR	(sai_plat_t, platform,		"platform"),
 	LSM_UNSIGNED	(sai_plat_t, last_seen,		"last_seen"),
 	LSM_CARRAY	(sai_plat_t, peer_ip,		"peer_ip"),
+	LSM_CARRAY	(sai_plat_t, sai_hash,		"sai_hash"),
+	LSM_CARRAY	(sai_plat_t, lws_hash,		"lws_hash"),
 };
 
 // This is the map for serializing to JSON
@@ -61,6 +63,8 @@ const lws_struct_map_t lsm_plat_for_json[] = {
     LSM_SIGNED(sai_plat_t, powering_up, "powering_up"),
     LSM_SIGNED(sai_plat_t, powering_down, "powering_down"),
     LSM_CARRAY(sai_plat_t, peer_ip,     "peer_ip"),
+    LSM_CARRAY(sai_plat_t, sai_hash,    "sai_hash"),
+    LSM_CARRAY(sai_plat_t, lws_hash,    "lws_hash"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {
@@ -161,6 +165,15 @@ const lws_struct_map_t lsm_schema_json_task_rej[] = {
 
 const lws_struct_map_t lsm_task_cancel[] = {
 	LSM_CARRAY	(sai_cancel_t, task_uuid,	 "task_uuid"),
+};
+
+const lws_struct_map_t lsm_rebuild[] = {
+	LSM_CARRAY	(sai_rebuild_t, builder_name,	"builder_name"),
+};
+
+const lws_struct_map_t lsm_schema_rebuild[] = {
+	LSM_SCHEMA	(sai_rebuild_t, NULL, lsm_rebuild,
+						     "com.warmcat.sai.rebuild")
 };
 
 const lws_struct_map_t lsm_schema_json_map_can[] = {

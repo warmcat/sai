@@ -12,6 +12,7 @@ set(SRCS
 	b-logproxy.c
 	b-refproxy.c
 	b-load.c
+	../common/c-utils.c
 )
 
 set(requirements 1)

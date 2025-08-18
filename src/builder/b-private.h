@@ -120,6 +120,8 @@ struct sai_builder {
 	const char		*perms;		/* user:group */
 
 	const char		*host;		/* prepended before hostname */
+	const char		*rebuild_script_user;
+	const char		*rebuild_script_root;
 
 	char			path[256];
 

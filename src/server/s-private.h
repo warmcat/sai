@@ -105,6 +105,7 @@ struct pss {
 
 	lws_dll2_owner_t	platform_owner; /* sai_platform_t builder offers */
 	lws_dll2_owner_t	task_cancel_owner; /* sai_platform_t builder offers */
+	lws_dll2_owner_t	rebuild_owner;
 	lws_dll2_owner_t	aft_owner; /* for statefully spooling artifact info */
 	lws_dll2_owner_t	res_owner; /* sai_resource_requisition_t
 					    * owner of resource objects related
@@ -238,9 +239,6 @@ sai_notification_file_upload_cb(void *data, const char *name,
 
 int
 sai_sqlite3_statement(sqlite3 *pdb, const char *cmd, const char *desc);
-
-int
-sai_uuid16_create(struct lws_context *context, char *dest33);
 
 int
 sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid, char can_create, sqlite3 **ppdb);
