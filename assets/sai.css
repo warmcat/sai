@@ -636,6 +636,9 @@ div.ibuil {
 	color:#000000;
 	padding:3px;
 	border-radius:10px;
+	user-select: none;
+	-webkit-user-select: none;
+	cursor: pointer;
 }
 
 div.ibuilctr {

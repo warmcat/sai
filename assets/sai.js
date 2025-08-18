@@ -961,8 +961,6 @@ function createBuilderDiv(plat) {
 
 	platDiv.innerHTML = innerHTML;
 
-	let touchTimeout;
-
 	const menuItems = [
 		{ label: `<b>SAI Hash:</b> ${plat.sai_hash}` },
 		{ label: `<b>LWS Hash:</b> ${plat.lws_hash}` },
@@ -982,32 +980,40 @@ function createBuilderDiv(plat) {
 		createContextMenu(event, menuItems);
 	});
 
-	platDiv.addEventListener("touchstart", function(event) {
-		if (event.touches.length > 1) {
-			return;
-		}
-		touchTimeout = setTimeout(() => {
-			touchTimeout = null;
-			const touch = event.touches[0];
-			const mockEvent = {
-				preventDefault: () => event.preventDefault(),
-				pageX: touch.pageX,
-				pageY: touch.pageY
-			};
-			createContextMenu(mockEvent, menuItems);
-		}, 500);
-	});
+    let touchStartTime = 0;
+    let touchStartPos = { x: 0, y: 0 };
 
-	const clearTouchTimeout = () => {
-		if (touchTimeout) {
-			clearTimeout(touchTimeout);
-			touchTimeout = null;
-		}
-	};
+    platDiv.addEventListener("touchstart", function(event) {
+        if (event.touches.length > 1) {
+            return;
+        }
+        touchStartTime = Date.now();
+        const touch = event.touches[0];
+        touchStartPos = { x: touch.pageX, y: touch.pageY };
+    });
 
-	platDiv.addEventListener("touchend", clearTouchTimeout);
-	platDiv.addEventListener("touchcancel", clearTouchTimeout);
-	platDiv.addEventListener("touchmove", clearTouchTimeout);
+    platDiv.addEventListener("touchend", function(event) {
+        const touchEndTime = Date.now();
+        const touch = event.changedTouches[0];
+        const touchEndPos = { x: touch.pageX, y: touch.pageY };
+        const pressDuration = touchEndTime - touchStartTime;
+        const distance = Math.sqrt(
+            Math.pow(touchEndPos.x - touchStartPos.x, 2) +
+            Math.pow(touchEndPos.y - touchStartPos.y, 2)
+        );
+
+        if (pressDuration >= 500 && distance < 10) {
+            event.preventDefault();
+
+            const mockEvent = {
+                preventDefault: () => {},
+                pageX: touchStartPos.x,
+                pageY: touchStartPos.y
+            };
+            createContextMenu(mockEvent, menuItems);
+        }
+        touchStartTime = 0;
+    });
 
 	return platDiv;
 }
