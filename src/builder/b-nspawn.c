@@ -253,8 +253,8 @@ sai_rebuild_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 
 static const char * const rebuild_runscript =
 	"#!/bin/bash -x\n"
-	"%s\n"
-	"exit $?\n"
+	"( %s ) 2>&1 | logger -t sai-rebuild\n"
+	"exit ${PIPESTATUS[0]}\n"
 ;
 
 int
