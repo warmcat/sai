@@ -253,8 +253,8 @@ sai_rebuild_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 
 static const char * const rebuild_runscript =
 	"#!/bin/bash -x\n"
-	"( %s ) 2>&1 | logger -t sai-rebuild\n"
-	"exit ${PIPESTATUS[0]}\n"
+	"ls -l /tmp\n"
+	"exit $?\n"
 ;
 
 int
@@ -277,7 +277,7 @@ saib_spawn_rebuild(struct sai_nspawn *ns)
 		return 1;
 	}
 
-	n = lws_snprintf(st, sizeof(st), rebuild_runscript, ns->task->build);
+	n = lws_snprintf(st, sizeof(st), rebuild_runscript);
 	if (write(fd, st, (unsigned int)n) != n) {
 		close(fd);
 		lwsl_err("%s: failed to write runscript to %s\n", __func__, args);
