@@ -42,7 +42,8 @@ static const char * const paths_global[] = {
 	"power-on.mac",
 	"power-off.type",
 	"power-off.url",
-	"rebuild_script"
+	"rebuild_script_user",
+	"rebuild_script_root"
 };
 
 enum enum_paths_global {
@@ -58,7 +59,8 @@ enum enum_paths_global {
 	LEJPM_POWER_ON_MAC,
 	LEJPM_POWER_OFF_TYPE,
 	LEJPM_POWER_OFF_URL,
-	LEJPM_REBUILD_SCRIPT
+	LEJPM_REBUILD_SCRIPT_USER,
+	LEJPM_REBUILD_SCRIPT_ROOT
 };
 
 /* platform-related part */
@@ -324,8 +326,12 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		pp = &a->builder->power_off_url;
 		break;
 
-	case LEJPM_REBUILD_SCRIPT:
-		pp = &a->builder->rebuild_script;
+	case LEJPM_REBUILD_SCRIPT_USER:
+		pp = &a->builder->rebuild_script_user;
+		break;
+
+	case LEJPM_REBUILD_SCRIPT_ROOT:
+		pp = &a->builder->rebuild_script_root;
 		break;
 
 	default:

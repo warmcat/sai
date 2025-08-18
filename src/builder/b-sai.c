@@ -792,12 +792,26 @@ int main(int argc, const char **argv)
 					execl("/usr/bin/systemctl", "/usr/bin/systemctl", "suspend", NULL);
 					break;
 				case 3:
-					if (builder.rebuild_script) {
-						char cmd[4096];
+					if (builder.rebuild_script_user &&
+					    builder.rebuild_script_root) {
+						char cmd[8192];
+						char user_buf[64];
+						const char *user = "sai";
+
+						if (builder.perms) {
+							lws_strncpy(user_buf, builder.perms, sizeof(user_buf));
+							if (strchr(user_buf, ':'))
+								*strchr(user_buf, ':') = '\0';
+							user = user_buf;
+						}
 
 						lws_snprintf(cmd, sizeof(cmd),
-							     "( %s ) 2>&1 | logger -t sai-rebuild",
-							     builder.rebuild_script);
+							     "su - %s -c '(%s) 2>&1 | logger -t sai-rebuild-user' && "
+							     "(%s) 2>&1 | logger -t sai-rebuild-root",
+							     user,
+							     builder.rebuild_script_user,
+							     builder.rebuild_script_root);
+
 						execl("/bin/sh", "sh", "-c", cmd, NULL);
 					}
 					break;
