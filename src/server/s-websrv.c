@@ -120,6 +120,28 @@ reject:
 	return 1;
 }
 
+static int
+sais_validate_builder_name(const char *id)
+{
+	const char *idin = id;
+
+	while (*id) {
+		if (!((*id >= '0' && *id <= '9') ||
+		      (*id >= 'a' && *id <= 'z') ||
+		      (*id >= 'A' && *id <= 'Z') ||
+		      *id == '.' || *id == '/' || *id == '-' || *id == '_'))
+			goto reject;
+		id++;
+	}
+
+	return 0;
+reject:
+
+	lwsl_notice("%s: Invalid builder name '%s'\n", __func__, idin);
+
+	return 1;
+}
+
 int
 sais_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len)
 {
@@ -575,8 +597,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			sai_rebuild_t *reb = (sai_rebuild_t *)a.dest;
 			sai_plat_t *cb;
 
-			if (sais_validate_id(reb->builder_name,
-					     strlen(reb->builder_name)))
+			if (sais_validate_builder_name(reb->builder_name))
 				goto soft_error;
 
 			cb = sais_builder_from_uuid(m->vhd, reb->builder_name,
