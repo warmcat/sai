@@ -113,6 +113,7 @@ struct pss {
 							  * resource JSON return
 							  * messages to builder */
 	lws_dll2_owner_t	viewer_state_owner;
+	lws_dll2_owner_t	rebuild_owner;
 	lws_struct_args_t	a;
 
 	union {

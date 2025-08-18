@@ -64,7 +64,7 @@ int getpid(void) { return 0; }
 static const char *config_dir = "/etc/sai/builder";
 static int interrupted;
 static lws_state_notify_link_t nl;
-static struct lws_spawn_piped *lsp_suspender;
+struct lws_spawn_piped *lsp_suspender;
 
 struct sai_builder builder;
 
@@ -428,6 +428,19 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 			return 1;
 		}
 
+		lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
+				   builder.sai_plat_owner.head) {
+			struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
+						sai_plat_list);
+
+			if (saib_get_git_version(&builder, builder.lws_dir, sp->lws_version, sizeof(sp->lws_version)))
+				lwsl_warn("unable to get lws version\n");
+
+			if (saib_get_git_version(&builder, builder.sai_dir, sp->sai_version, sizeof(sp->sai_version)))
+				lwsl_warn("unable to get sai version\n");
+
+		} lws_end_foreach_dll_safe(mp, mp1);
+
 		/*
 		 * For each platform...
 		 */
@@ -784,6 +797,10 @@ int main(int argc, const char **argv)
 					break;
 				case 1:
 					execl("/usr/bin/systemctl", "/usr/bin/systemctl", "suspend", NULL);
+					break;
+				case 3:
+					if (builder.update_script)
+						execl("/bin/sh", "/bin/sh", "-c", builder.update_script, NULL);
 					break;
 				}
 			else

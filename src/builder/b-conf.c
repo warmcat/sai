@@ -41,7 +41,10 @@ static const char * const paths_global[] = {
 	"power-on.url",
 	"power-on.mac",
 	"power-off.type",
-	"power-off.url"
+	"power-off.url",
+	"lws_dir",
+	"sai_dir",
+	"update_script"
 };
 
 enum enum_paths_global {
@@ -56,7 +59,10 @@ enum enum_paths_global {
 	LEJPM_POWER_ON_URL,
 	LEJPM_POWER_ON_MAC,
 	LEJPM_POWER_OFF_TYPE,
-	LEJPM_POWER_OFF_URL
+	LEJPM_POWER_OFF_URL,
+	LEJPM_LWS_DIR,
+	LEJPM_SAI_DIR,
+	LEJPM_UPDATE_SCRIPT
 };
 
 /* platform-related part */
@@ -315,6 +321,18 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		break;
 	case LEJPM_POWER_OFF_URL:
 		pp = &a->builder->power_off_url;
+		break;
+
+	case LEJPM_LWS_DIR:
+		pp = &a->builder->lws_dir;
+		break;
+
+	case LEJPM_SAI_DIR:
+		pp = &a->builder->sai_dir;
+		break;
+
+	case LEJPM_UPDATE_SCRIPT:
+		pp = &a->builder->update_script;
 		break;
 
 	default:

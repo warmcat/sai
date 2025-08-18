@@ -416,6 +416,9 @@ typedef struct sai_plat {
 	int			ongoing;
 
 	int			index; /* used to create unique build dir path */
+
+	char			lws_version[41];
+	char			sai_version[41];
 } sai_plat_t;
 
 typedef struct sai_plat_owner {
@@ -438,6 +441,10 @@ typedef struct sai_browse_rx_evinfo {
 	int		state;
 } sai_browse_rx_evinfo_t;
 
+typedef struct sai_browse_rx_rebuild {
+	char		builder_name[128];
+} sai_browse_rx_rebuild_t;
+
 typedef struct sai_browse_rx_taskinfo {
 	char		task_hash[65];
 	unsigned int	log_start;
@@ -452,6 +459,10 @@ typedef struct sai_power_state {
 	int		powering_up;
 	int		powering_down;
 } sai_power_state_t;
+
+typedef struct sai_rebuild {
+	lws_dll2_t		list;
+} sai_rebuild_t;
 
 extern const lws_struct_map_t
 	lsm_schema_json_map_task[],
@@ -474,7 +485,9 @@ extern const lws_struct_map_t
 	lsm_schema_json_map_task[1],
 	lsm_schema_json_map_event[1],
 	lsm_resource[4],
-	lsm_power_state[3]
+	lsm_power_state[3],
+	lsm_schema_rebuild[1],
+	lsm_browser_rebuild[1]
 ;
 extern const lws_struct_map_t lsm_plat[6];
 extern const lws_struct_map_t lsm_plat_for_json[10];

@@ -894,6 +894,43 @@ function createBuilderDiv(plat) {
 	platDiv.id = "binfo-" + plat.name;
 	platDiv.title = plat.platform + "@" + plat.name.split('.')[0] + " / " + plat.peer_ip;
 
+	platDiv.addEventListener("contextmenu", function(event) {
+		event.preventDefault();
+		const contextMenu = document.getElementById("builder-context-menu");
+		if (contextMenu) {
+			contextMenu.remove();
+		}
+
+		const menu = document.createElement("div");
+		menu.id = "builder-context-menu";
+		menu.style.top = event.pageY + "px";
+		menu.style.left = event.pageX + "px";
+
+		const hashesDiv = document.createElement("div");
+		hashesDiv.innerHTML = "LWS: " + plat.lws_version.substring(0, 12) + "<br>SAI: " + plat.sai_version.substring(0, 12);
+		menu.appendChild(hashesDiv);
+
+		const rebuildButton = document.createElement("div");
+		rebuildButton.textContent = "Rebuild";
+		rebuildButton.addEventListener("click", function() {
+			var rs= "{\"schema\":" +
+				"\"com.warmcat.sai.rebuild\"," +
+				"\"builder_name\": " +
+				JSON.stringify(san(plat.name)) + "}";
+			console.log(rs);
+			sai.send(rs);
+			document.body.removeChild(menu);
+		});
+		menu.appendChild(rebuildButton);
+
+		document.body.appendChild(menu);
+
+		document.addEventListener("click", function() {
+			if (document.getElementById("builder-context-menu"))
+				document.body.removeChild(document.getElementById("builder-context-menu"));
+		}, { once: true });
+	});
+
 	let plat_parts = plat.platform.split('/');
 	let plat_os = plat_parts[0] || 'generic';
 	let plat_arch = plat_parts[1] || 'generic';

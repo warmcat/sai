@@ -61,6 +61,8 @@ const lws_struct_map_t lsm_plat_for_json[] = {
     LSM_SIGNED(sai_plat_t, powering_up, "powering_up"),
     LSM_SIGNED(sai_plat_t, powering_down, "powering_down"),
     LSM_CARRAY(sai_plat_t, peer_ip,     "peer_ip"),
+    LSM_CARRAY(sai_plat_t, lws_version, "lws_version"),
+    LSM_CARRAY(sai_plat_t, sai_version, "sai_version"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {
@@ -248,4 +250,16 @@ const lws_struct_map_t lsm_power_state[] = {
 
 const lws_struct_map_t lsm_schema_sq3_map_artifact[] = {
 	LSM_SCHEMA_DLL2	(sai_artifact_t, list, NULL, lsm_artifact, "artifacts"),
+};
+
+const lws_struct_map_t lsm_rebuild[] = {
+	LSM_CARRAY(sai_rebuild_t, list, "list"),
+};
+
+const lws_struct_map_t lsm_schema_rebuild[] = {
+	LSM_SCHEMA(sai_rebuild_t, NULL, lsm_rebuild, "com.warmcat.sai.rebuild"),
+};
+
+const lws_struct_map_t lsm_browser_rebuild[] = {
+	LSM_CARRAY	(sai_browse_rx_rebuild_t, builder_name,	"builder_name"),
 };

@@ -71,7 +71,7 @@ static lws_struct_map_t lsm_browser_taskreset[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"uuid"),
 };
 
-static lws_struct_map_t lsm_browser_taskinfo[] = {
+static lsm_struct_map_t lsm_browser_taskinfo[] = {
 	LSM_CARRAY	(sai_browse_rx_taskinfo_t, task_hash,		"task_hash"),
 	LSM_UNSIGNED	(sai_browse_rx_taskinfo_t, logs,		"logs"),
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, js_api_version,	"js_api_version"),
@@ -97,6 +97,8 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 					      "com.warmcat.sai.taskcan"),
 	LSM_SCHEMA	(sai_load_report_t,	 NULL, lsm_load_report_members,
 					      "com.warmcat.sai.loadreport"),
+	LSM_SCHEMA	(sai_browse_rx_rebuild_t, NULL, lsm_browser_rebuild,
+					      "com.warmcat.sai.rebuild"),
 };
 
 enum {
@@ -107,6 +109,7 @@ enum {
 	SAIM_WS_BROWSER_RX_EVENTDELETE,
 	SAIM_WS_BROWSER_RX_TASKCANCEL,
 	SAIM_WS_BROWSER_RX_JS_HELLO,
+	SAIM_WS_BROWSER_RX_REBUILD,
 };
 
 
@@ -567,6 +570,20 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			    __func__, can->task_uuid);
 
 		saiw_task_cancel(vhd, can->task_uuid);
+		break;
+
+	case SAIM_WS_BROWSER_RX_REBUILD:
+		{
+			sai_browse_rx_rebuild_t *reb = (sai_browse_rx_rebuild_t *)a.dest;
+
+			if (!sais_conn_auth(pss))
+				goto soft_error;
+
+			lwsl_notice("%s: received request to rebuild builder %s\n",
+				    __func__, reb->builder_name);
+
+			saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl);
+		}
 		break;
 
 	default:

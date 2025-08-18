@@ -121,6 +121,10 @@ struct sai_builder {
 
 	const char		*host;		/* prepended before hostname */
 
+	const char		*lws_dir;
+	const char		*sai_dir;
+	const char		*update_script;
+
 	char			path[256];
 
 #if defined(__linux__) || defined(__APPLE__)
@@ -162,6 +166,7 @@ struct ws_capture_chunk {
 
 
 extern struct sai_builder builder;
+extern struct lws_spawn_piped *lsp_suspender;
 extern const lws_ss_info_t ssi_sai_builder, ssi_sai_mirror, ssi_sai_artifact;
 extern const struct lws_protocols protocol_com_warmcat_sai;
 int

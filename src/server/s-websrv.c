@@ -69,6 +69,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.taskcan"),
 	LSM_SCHEMA	(sai_viewer_state_t,	 NULL, lsm_viewercount_members,
 					      "com.warmcat.sai.viewercount"),
+	LSM_SCHEMA	(sai_browse_rx_rebuild_t, NULL, lsm_browser_rebuild,
+					      "com.warmcat.sai.rebuild"),
 };
 
 enum {
@@ -77,6 +79,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_EVENTDELETE,
 	SAIS_WS_WEBSRV_RX_TASKCANCEL,
 	SAIS_WS_WEBSRV_RX_VIEWERCOUNT,
+	SAIS_WS_WEBSRV_RX_REBUILD,
 };
 
 void
@@ -528,6 +531,32 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		sais_task_cancel(m->vhd, ei->event_hash);
 
+		break;
+
+	case SAIS_WS_WEBSRV_RX_REBUILD:
+		{
+			sai_browse_rx_rebuild_t *reb = (sai_browse_rx_rebuild_t *)a.dest;
+			sai_plat_t *builder = sais_builder_from_uuid(m->vhd, reb->builder_name, __FILE__, __LINE__);
+
+			if (builder) {
+				struct pss *pss_builder = NULL;
+
+				lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
+					pss_builder = lws_container_of(p, struct pss, same);
+					if (pss_builder->wsi == builder->wsi)
+						break;
+					pss_builder = NULL;
+				} lws_end_foreach_dll(p);
+
+				if (pss_builder) {
+					sai_rebuild_t *r = calloc(1, sizeof(*r));
+					if (r) {
+						lws_dll2_add_tail(&r->list, &pss_builder->rebuild_owner);
+						lws_callback_on_writable(pss_builder->wsi);
+					}
+				}
+			}
+		}
 		break;
 
 	case SAIS_WS_WEBSRV_RX_VIEWERCOUNT:

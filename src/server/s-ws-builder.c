@@ -1077,6 +1077,25 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		goto send_json;
 	}
 
+	if (pss->rebuild_owner.head) {
+		sai_rebuild_t *r = lws_container_of(
+				pss->rebuild_owner.head,
+				sai_rebuild_t, list);
+
+		js = lws_struct_json_serialize_create(lsm_schema_rebuild,
+				LWS_ARRAY_SIZE(lsm_schema_rebuild), 0, r);
+		if (!js)
+			return 1;
+
+		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+		lws_struct_json_serialize_destroy(&js);
+
+		lws_dll2_remove(&r->list);
+		free(r);
+
+		goto send_json;
+	}
+
 	if (pss->task_cancel_owner.head) {
 		/*
 		 * Pending cancel message to send
