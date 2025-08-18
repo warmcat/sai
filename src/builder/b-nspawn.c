@@ -269,7 +269,7 @@ saib_spawn_rebuild(struct sai_nspawn *ns)
 	};
 	int fd, n;
 
-	lws_snprintf(args, sizeof(args), "%s/sai-rebuild-script.sh", builder.home);
+	lws_snprintf(args, sizeof(args), "/tmp/sai-rebuild-script.sh");
 
 	fd = open(args, O_CREAT | O_TRUNC | O_WRONLY, 0755);
 	if (fd < 0) {
