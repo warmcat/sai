@@ -81,8 +81,6 @@ enum enum_paths {
 	LEJPM_PLATFORMS,
 };
 
-
-
 static signed char
 saib_conf_cb(struct lejp_ctx *ctx, char reason)
 {
@@ -121,6 +119,9 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 			return 0;
 		}
 	}
+
+	if (lejp_string_unify_part(ctx, &a->builder->conf_head, reason))
+		return 1;
 
 	/* we only match on the prepared path strings */
 	if (!(reason & LEJP_FLAG_CB_IS_VALUE) || !ctx->path_match)
@@ -161,6 +162,9 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 
 	if (reason != LEJPCB_VAL_STR_END)
 		return 0;
+
+	if (lejp_string_unify(ctx, &a->builder->conf_head))
+		return 1;
 
 	/* only the end part of the string, where we know the length */
 
@@ -239,11 +243,7 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 		return 0;
 	}
 
-	*pp = lwsac_use(&a->builder->conf_head, ctx->npos + 1u, 512);
-	if (!*pp)
-		return 1;
-	memcpy((char *)(*pp), ctx->buf, ctx->npos);
-	((char *)(*pp))[ctx->npos] = '\0';
+	*pp = ctx->su.fp;
 
 	return 0;
 }
@@ -262,6 +262,8 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		lwsl_notice("    %d\n", ctx->wild[n]);
 #endif
 
+	if (lejp_string_unify_part(ctx, &a->builder->conf_head, reason))
+		return 1;
 
 	/* we only match on the prepared path strings */
 	if (!(reason & LEJP_FLAG_CB_IS_VALUE) || !ctx->path_match)
@@ -269,6 +271,9 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 
 	if (reason != LEJPCB_VAL_STR_END)
 		return 0;
+
+	if (lejp_string_unify(ctx, &a->builder->conf_head))
+		return 1;
 
 	/* only the end part of the string, where we know the length */
 
@@ -321,11 +326,7 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		return 0;
 	}
 
-	*pp = lwsac_use(&a->builder->conf_head, ctx->npos + 1u, 512);
-	if (!*pp)
-		return 1;
-	memcpy((char *)(*pp), ctx->buf, ctx->npos);
-	((char *)(*pp))[ctx->npos] = '\0';
+	*pp = ctx->su.fp;
 
 	return 0;
 }
