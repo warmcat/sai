@@ -844,9 +844,9 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		n = 0;
 		ns = NULL;
-		lws_start_foreach_dll_safe(struct lws_dll2 *, d1,
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
 					   sp->nspawn_owner.head) {
-		       struct sai_nspawn *xns = lws_container_of(d1,
+		       struct sai_nspawn *xns = lws_container_of(d,
 						 struct sai_nspawn, list);
 		       if (!xns->task) {
 			       ns = xns;
@@ -864,11 +864,13 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			break;
 		memset(task, 0, sizeof(sai_task_t));
 
-		task->build = saib_get_rebuild_script();
-		if (!task->build) {
+		char *rebuild_script = saib_get_rebuild_script();
+		if (!rebuild_script) {
 			free(task);
 			break;
 		}
+		lws_strncpy(task->build, rebuild_script, sizeof(task->build));
+		free(rebuild_script);
 
 		sai_uuid16_create(builder.context, task->uuid);
 		lws_strncpy(task->platform, sp->platform, sizeof(task->platform));

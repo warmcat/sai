@@ -245,7 +245,6 @@ sai_rebuild_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 
 	if (ns) {
 		ns->op = NULL;
-		free((void *)ns->task->build);
 		free(ns->task);
 		ns->task = NULL;
 	}
