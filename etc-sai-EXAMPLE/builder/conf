@@ -2,6 +2,7 @@
         "perms":        "sai:nobody",
         "home":         "/home/sai",
         "host":         "bionic-noi",
+	"rebuild_script": "su - agreen && cd ~/libwebsockets/build && git fetch origin +main:m && git reset --hard m && make -j12 && sudo make -j12 install && cd ../../sai/build && git fetch origin +main:m && git reset --hard m && make -j12 && sudo make -j12 install && sudo systemctl restart sai-builder",
 
 	# if you are using auto-power-on and off, the builder needs
 	# to point to a sai-power instance that can coordinate power-off

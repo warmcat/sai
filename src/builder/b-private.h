@@ -120,6 +120,7 @@ struct sai_builder {
 	const char		*perms;		/* user:group */
 
 	const char		*host;		/* prepended before hostname */
+	const char		*rebuild_script;
 
 	char			path[256];
 
@@ -235,3 +236,5 @@ int saib_get_cpu_count(void);
 
 int saib_start_mirror(struct sai_nspawn *ns);
 int saib_start_checkout(struct sai_nspawn *ns);
+
+char *saib_get_rebuild_script(void);

@@ -42,14 +42,16 @@ const lws_struct_map_t lsm_schema_map_m_to_b[] = {
 	LSM_SCHEMA	(sai_cancel_t, NULL, lsm_task_cancel, "com.warmcat.sai.taskcan"),
 	LSM_SCHEMA	(sai_viewer_state_t, NULL, lsm_viewerstate_members,
 						 "com.warmcat.sai.viewerstate"),
-	LSM_SCHEMA	(sai_resource_t, NULL, lsm_resource, "com-warmcat-sai-resource")
+	LSM_SCHEMA	(sai_resource_t, NULL, lsm_resource, "com-warmcat-sai-resource"),
+	LSM_SCHEMA	(sai_rebuild_t, NULL, lsm_rebuild, "com.warmcat.sai.rebuild")
 };
 
 enum {
 	SAIB_RX_TASK_ALLOCATION,
 	SAIB_RX_TASK_CANCEL,
 	SAIB_RX_VIEWERSTATE,
-	SAIB_RX_RESOURCE_REPLY
+	SAIB_RX_RESOURCE_REPLY,
+	SAIB_RX_REBUILD
 };
 
 static const char * const nsstates[] = {
@@ -428,6 +430,8 @@ saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 			 saib_sul_task_cancel, 500 * LWS_US_PER_MS);
 }
 
+extern struct lws_spawn_piped *lsp_suspender;
+
 int
 saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 {
@@ -437,6 +441,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 	struct lejp_ctx ctx;
 	lws_struct_args_t a;
 	sai_cancel_t *can;
+	sai_rebuild_t *reb;
 	char url[128], *p;
 	sai_task_t *task;
 	int n, m;
@@ -817,6 +822,19 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 				__func__, reso->cookie);
 
 		saib_handle_resource_result(spm, in, len);
+		break;
+
+	case SAIB_RX_REBUILD:
+		reb = (sai_rebuild_t *)a.dest;
+
+		lwsl_notice("%s: REBUILD: %s\n", __func__, reb->builder_name);
+
+		if (lsp_suspender) {
+			uint8_t b = 3;
+			if (write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &b, 1) != 1)
+				lwsl_err("%s: Failed to write to suspender\n",
+					 __func__);
+		}
 		break;
 
 	default:

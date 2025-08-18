@@ -830,3 +830,26 @@ img.branch {
 .activity-3 {
 	animation: flash-fast 1s infinite;
 }
+
+.context-menu {
+	position: absolute;
+	background-color: #f9f9f9;
+	border: 1px solid #ccc;
+	padding: 5px;
+	z-index: 1000;
+}
+
+.context-menu ul {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.context-menu li {
+	padding: 8px 12px;
+	cursor: pointer;
+}
+
+.context-menu li:hover {
+	background-color: #f2f2f2;
+}

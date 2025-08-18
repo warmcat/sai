@@ -69,6 +69,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.taskcan"),
 	LSM_SCHEMA	(sai_viewer_state_t,	 NULL, lsm_viewercount_members,
 					      "com.warmcat.sai.viewercount"),
+	LSM_SCHEMA	(sai_rebuild_t,		 NULL, lsm_rebuild,
+					      "com.warmcat.sai.rebuild"),
 };
 
 enum {
@@ -77,6 +79,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_EVENTDELETE,
 	SAIS_WS_WEBSRV_RX_TASKCANCEL,
 	SAIS_WS_WEBSRV_RX_VIEWERCOUNT,
+	SAIS_WS_WEBSRV_RX_REBUILD,
 };
 
 void
@@ -639,6 +642,43 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 					vsend->viewers = (unsigned int)new_viewers_present;
 					lws_dll2_add_tail(&vsend->list, &pss_builder->viewer_state_owner);
 					lws_callback_on_writable(pss_builder->wsi);
+				}
+			} lws_end_foreach_dll(p);
+		}
+		break;
+	}
+	case SAIS_WS_WEBSRV_RX_REBUILD:
+		{
+			sai_rebuild_t *reb = (sai_rebuild_t *)a.dest;
+			sai_plat_t *cb;
+
+			if (sais_validate_id(reb->builder_name,
+					     strlen(reb->builder_name)))
+				goto soft_error;
+
+			cb = sais_builder_from_uuid(m->vhd, reb->builder_name,
+						    __FILE__, __LINE__);
+			if (!cb) {
+				lwsl_info("%s: unknown builder %s for rebuild\n",
+					    __func__, reb->builder_name);
+				lwsac_free(&a.ac);
+				break;
+			}
+
+			/* cb->wsi is the builder connection */
+			lws_start_foreach_dll(struct lws_dll2 *, p,
+					      m->vhd->builders.head) {
+				struct pss *pss = lws_container_of(p, struct pss, same);
+
+				if (pss->wsi == cb->wsi) {
+					sai_rebuild_t *r = malloc(sizeof(*r));
+					if (!r)
+						break;
+					*r = *reb;
+					lws_dll2_add_tail(&r->list,
+							  &pss->rebuild_owner);
+					lws_callback_on_writable(pss->wsi);
+					break;
 				}
 			} lws_end_foreach_dll(p);
 		}

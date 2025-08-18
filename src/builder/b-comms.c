@@ -72,6 +72,37 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	int n = 0;
 
 	/*
+	 * Any version info to process?
+	 */
+
+	if (spm->version_info_owner.count) {
+		struct lws_dll2 *d = lws_dll2_get_head(&spm->version_info_owner);
+		struct sai_version_info *v =
+				lws_container_of(d, struct sai_version_info, list);
+
+		js = lws_struct_json_serialize_create(lsm_schema_version_info,
+			      LWS_ARRAY_SIZE(lsm_schema_version_info), 0, v);
+		if (!js)
+			return -1;
+
+		n = (int)lws_struct_json_serialize(js, start,
+					      lws_ptr_diff_size_t(end, start), &w);
+		lws_struct_json_serialize_destroy(&js);
+
+		lwsl_hexdump_notice(start, w);
+
+		n = (int)w;
+
+		lws_dll2_remove(&v->list);
+		free(v);
+
+		r = lws_ss_request_tx(spm->ss);
+		if (r)
+			return r;
+		goto sendify;
+	}
+
+	/*
 	 * Any builder state updates / rejections to process?
 	 */
 
@@ -604,13 +635,25 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 		break;
 
-	case LWSSSCS_CONNECTED:
+	case LWSSSCS_CONNECTED: {
+		sai_version_info_t *v = malloc(sizeof(*v));
+
+		if (!v)
+			return LWSSSSRET_DESTROY_ME;
+
+		memset(v, 0, sizeof(*v));
+		lws_strncpy(v->sai_hash, BUILD_INFO, sizeof(v->sai_hash));
+		lws_strncpy(v->lws_hash, LWS_BUILD_HASH, sizeof(v->lws_hash));
+
+		lws_dll2_add_tail(&v->list, &spm->version_info_owner);
+
 		lwsl_user("%s: CONNECTED: %p\n", __func__, spm->ss);
 		spm->phase = PHASE_START_ATTACH;
 		/* Initialize the load report SUL timer for this server connection */
 		lws_sul_cancel(&spm->sul_load_report);
 
 		return lws_ss_request_tx(spm->ss);
+	}
 
 	case LWSSSCS_DISCONNECTED:
 		/*

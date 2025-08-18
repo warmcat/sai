@@ -916,6 +916,35 @@ function createBuilderDiv(plat) {
 	innerHTML += `</div></td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;
+
+	platDiv.addEventListener("contextmenu", function(event) {
+		event.preventDefault();
+		const menu = document.createElement("div");
+		menu.className = "context-menu";
+		menu.style.top = event.pageY + "px";
+		menu.style.left = event.pageX + "px";
+		menu.innerHTML = `<ul>
+			<li>SAI Hash: ${plat.sai_hash}</li>
+			<li>LWS Hash: ${plat.lws_hash}</li>
+			<li id="rebuild-${plat.name}">Rebuild</li>
+		</ul>`;
+		document.body.appendChild(menu);
+
+		document.getElementById(`rebuild-${plat.name}`).addEventListener("click", () => {
+			const rebuildMsg = {
+				schema: "com.warmcat.sai.rebuild",
+				builder_name: plat.name
+			};
+			sai.send(JSON.stringify(rebuildMsg));
+		});
+
+		const closeMenu = () => {
+			document.body.removeChild(menu);
+			document.removeEventListener("click", closeMenu);
+		};
+		document.addEventListener("click", closeMenu);
+	});
+
 	return platDiv;
 }
 

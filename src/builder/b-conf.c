@@ -41,7 +41,8 @@ static const char * const paths_global[] = {
 	"power-on.url",
 	"power-on.mac",
 	"power-off.type",
-	"power-off.url"
+	"power-off.url",
+	"rebuild_script"
 };
 
 enum enum_paths_global {
@@ -56,7 +57,8 @@ enum enum_paths_global {
 	LEJPM_POWER_ON_URL,
 	LEJPM_POWER_ON_MAC,
 	LEJPM_POWER_OFF_TYPE,
-	LEJPM_POWER_OFF_URL
+	LEJPM_POWER_OFF_URL,
+	LEJPM_REBUILD_SCRIPT
 };
 
 /* platform-related part */
@@ -112,6 +114,11 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 				return -1;
 
 			a->sai_plat->instances = 1; /* default */
+
+			lws_strncpy(a->sai_plat->sai_hash, BUILD_INFO,
+				    sizeof(a->sai_plat->sai_hash));
+			lws_strncpy(a->sai_plat->lws_hash, LWS_BUILD_HASH,
+				    sizeof(a->sai_plat->lws_hash));
 
 			lws_dll2_add_tail(&a->sai_plat->sai_plat_list,
 					  &a->builder->sai_plat_owner);
@@ -317,6 +324,10 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		pp = &a->builder->power_off_url;
 		break;
 
+	case LEJPM_REBUILD_SCRIPT:
+		pp = &a->builder->rebuild_script;
+		break;
+
 	default:
 		return 0;
 	}
@@ -423,4 +434,74 @@ void
 saib_config_destroy(struct sai_builder *builder)
 {
 	lwsac_free(&builder->conf_head);
+}
+
+struct rebuild_args {
+	char *rebuild_script;
+};
+
+static const char * const paths_rebuild[] = {
+	"rebuild_script"
+};
+
+enum enum_paths_rebuild {
+	LEJPM_REBUILD_SCRIPT_ONLY,
+};
+
+static signed char
+saib_rebuild_conf_cb(struct lejp_ctx *ctx, char reason)
+{
+	struct rebuild_args *a = (struct rebuild_args *)ctx->user;
+
+	if (!(reason & LEJP_FLAG_CB_IS_VALUE) || !ctx->path_match)
+		return 0;
+
+	if (reason != LEJPCB_VAL_STR_END)
+		return 0;
+
+	switch (ctx->path_match - 1) {
+	case LEJPM_REBUILD_SCRIPT_ONLY:
+		a->rebuild_script = malloc(ctx->npos + 1);
+		if (!a->rebuild_script)
+			return -1;
+		memcpy(a->rebuild_script, ctx->buf, ctx->npos);
+		a->rebuild_script[ctx->npos] = '\0';
+		break;
+	}
+
+	return 0;
+}
+
+char *
+saib_get_rebuild_script(void)
+{
+	unsigned char buf[128];
+	struct lejp_ctx ctx;
+	int n, m, fd;
+	struct rebuild_args a;
+
+	memset(&a, 0, sizeof(a));
+
+	lws_snprintf((char *)buf, sizeof(buf) - 1, "/etc/sai/builder/conf");
+
+	fd = lws_open((char *)buf, O_RDONLY);
+	if (fd < 0) {
+		lwsl_err("Cannot open %s\n", (char *)buf);
+		return NULL;
+	}
+	lejp_construct(&ctx, saib_rebuild_conf_cb, &a,
+			paths_rebuild, LWS_ARRAY_SIZE(paths_rebuild));
+
+	do {
+		n = (int)read(fd, buf, sizeof(buf));
+		if (!n)
+			break;
+
+		m = lejp_parse(&ctx, buf, n);
+	} while (m == LEJP_CONTINUE);
+
+	close(fd);
+	lejp_destruct(&ctx);
+
+	return a.rebuild_script;
 }

@@ -566,6 +566,10 @@ handle:
 				live_cb->wsi = pss->wsi;
 				live_cb->ongoing = 0; /* Reset ongoing task count on connect */
 				lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
+				lws_strncpy(live_cb->sai_hash, build->sai_hash,
+					    sizeof(live_cb->sai_hash));
+				lws_strncpy(live_cb->lws_hash, build->lws_hash,
+					    sizeof(live_cb->lws_hash));
 				live_cb->online = 1;
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
@@ -583,6 +587,10 @@ handle:
 					live_cb->platform = p_str + nlen;
 					memcpy(p_str + nlen, build->platform, plen);
 					live_cb->instances = build->instances;
+					lws_strncpy(live_cb->sai_hash, build->sai_hash,
+						    sizeof(live_cb->sai_hash));
+					lws_strncpy(live_cb->lws_hash, build->lws_hash,
+						    sizeof(live_cb->lws_hash));
 					live_cb->wsi = pss->wsi;
 					live_cb->online = 1;
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
@@ -1073,6 +1081,27 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		 */
 		if (pss->viewer_state_owner.head)
 			lws_callback_on_writable(pss->wsi);
+
+		goto send_json;
+	}
+
+	if (pss->rebuild_owner.head) {
+		/*
+		 * Pending rebuild message to send
+		 */
+		sai_rebuild_t *r = lws_container_of(pss->rebuild_owner.head,
+						   sai_rebuild_t, list);
+
+		js = lws_struct_json_serialize_create(lsm_schema_rebuild,
+				LWS_ARRAY_SIZE(lsm_schema_rebuild), 0, r);
+		if (!js)
+			return 1;
+
+		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+		lws_struct_json_serialize_destroy(&js);
+
+		lws_dll2_remove(&r->list);
+		free(r);
 
 		goto send_json;
 	}
