@@ -430,8 +430,6 @@ saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 			 saib_sul_task_cancel, 500 * LWS_US_PER_MS);
 }
 
-extern struct lws_spawn_piped *lsp_suspender;
-
 int
 saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 {
@@ -829,7 +827,60 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		lwsl_notice("%s: REBUILD: %s\n", __func__, reb->builder_name);
 
-		saib_execute_rebuild_script(reb->builder_name);
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+				builder.sai_plat_owner.head) {
+		       sp = lws_container_of(d, sai_plat_t, sai_plat_list);
+
+		       if (!strcmp(sp->name, reb->builder_name))
+			       break;
+		       sp = NULL;
+		} lws_end_foreach_dll_safe(d, d1);
+
+		if (!sp) {
+			lwsl_err("%s: can't identify platform for rebuild '%s'\n",
+					__func__, reb->builder_name);
+			break;
+		}
+
+		n = 0;
+		ns = NULL;
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d1,
+					   sp->nspawn_owner.head) {
+		       struct sai_nspawn *xns = lws_container_of(d1,
+						 struct sai_nspawn, list);
+		       if (!xns->task) {
+			       ns = xns;
+			       break;
+		       }
+		} lws_end_foreach_dll_safe(d, d1);
+
+		if (!ns) {
+			lwsl_warn("%s: No idle nspawn for rebuild\n", __func__);
+			break;
+		}
+
+		task = malloc(sizeof(sai_task_t));
+		if (!task)
+			break;
+		memset(task, 0, sizeof(sai_task_t));
+
+		task->build = saib_get_rebuild_script();
+		if (!task->build) {
+			free(task);
+			break;
+		}
+
+		sai_uuid16_create(builder.context, task->uuid);
+		lws_strncpy(task->platform, sp->platform, sizeof(task->platform));
+		lws_strncpy(task->taskname, "Remote Rebuild", sizeof(task->taskname));
+		ns->task = task;
+		ns->spm = spm;
+
+		saib_set_ns_state(ns, NSSTATE_BUILD);
+		if (saib_spawn(ns)) {
+			lwsl_err("%s: saib_spawn failed for rebuild\n", __func__);
+			saib_set_ns_state(ns, NSSTATE_FAILED);
+		}
 		break;
 
 	default:

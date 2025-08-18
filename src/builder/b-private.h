@@ -238,4 +238,3 @@ int saib_start_mirror(struct sai_nspawn *ns);
 int saib_start_checkout(struct sai_nspawn *ns);
 
 char *saib_get_rebuild_script(void);
-void saib_execute_rebuild_script(const char *builder_name);

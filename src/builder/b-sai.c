@@ -785,15 +785,6 @@ int main(int argc, const char **argv)
 				case 1:
 					execl("/usr/bin/systemctl", "/usr/bin/systemctl", "suspend", NULL);
 					break;
-				case 3:
-					{
-						char *script = saib_get_rebuild_script();
-						if (script) {
-							system(script);
-							free(script);
-						}
-					}
-					break;
 				}
 			else
 				waitpid(p, &status, 0);
