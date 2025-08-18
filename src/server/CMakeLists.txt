@@ -12,6 +12,7 @@ set(SRCS
 	s-central.c
 	s-websrv.c
 	s-resource.c
+	../common/c-utils.c
 )
 
 set(requirements 1)

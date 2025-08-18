@@ -829,12 +829,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		lwsl_notice("%s: REBUILD: %s\n", __func__, reb->builder_name);
 
-		if (lsp_suspender) {
-			uint8_t b = 3;
-			if (write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &b, 1) != 1)
-				lwsl_err("%s: Failed to write to suspender\n",
-					 __func__);
-		}
+		saib_execute_rebuild_script(reb->builder_name);
 		break;
 
 	default:

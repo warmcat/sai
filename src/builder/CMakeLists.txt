@@ -12,6 +12,8 @@ set(SRCS
 	b-logproxy.c
 	b-refproxy.c
 	b-load.c
+	b-rebuild.c
+	../common/c-utils.c
 )
 
 set(requirements 1)

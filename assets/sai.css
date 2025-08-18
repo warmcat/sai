@@ -839,7 +839,7 @@ img.branch {
 	background-color: #f9f9f9;
 	border: 1px solid #ccc;
 	padding: 5px;
-	z-index: 1000;
+	z-index: 2000;
 }
 
 .context-menu ul {
