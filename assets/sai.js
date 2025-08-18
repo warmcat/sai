@@ -899,13 +899,9 @@ function createContextMenu(event, menuItems) {
 
     menuItems.forEach(item => {
         const li = document.createElement("li");
-        li.innerHTML = item.label; // Use innerHTML to allow for simple styling
+        li.innerHTML = item.label;
         if (item.callback) {
-            li.addEventListener("click", (e) => {
-                item.callback();
-                closeMenu();
-                e.stopPropagation();
-            });
+            li.addEventListener("click", item.callback);
         }
         ul.appendChild(li);
     });
@@ -918,7 +914,7 @@ function createContextMenu(event, menuItems) {
         }
         document.removeEventListener("click", closeMenu);
     };
-    // Use a timeout to avoid the current click event from closing the menu immediately
+
     setTimeout(() => {
         document.addEventListener("click", closeMenu);
     }, 0);
