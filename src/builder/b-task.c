@@ -877,8 +877,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		ns->spm = spm;
 
 		saib_set_ns_state(ns, NSSTATE_BUILD);
-		if (saib_spawn(ns)) {
-			lwsl_err("%s: saib_spawn failed for rebuild\n", __func__);
+		if (saib_spawn_rebuild(ns)) {
+			lwsl_err("%s: saib_spawn_rebuild failed\n", __func__);
 			saib_set_ns_state(ns, NSSTATE_FAILED);
 		}
 		break;

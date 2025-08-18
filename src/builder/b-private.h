@@ -180,6 +180,9 @@ int
 saib_spawn(struct sai_nspawn *ns);
 
 int
+saib_spawn_rebuild(struct sai_nspawn *ns);
+
+int
 saib_prepare_mount(struct sai_builder *b, struct sai_nspawn *ns);
 
 int
