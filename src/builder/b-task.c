@@ -866,6 +866,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		char *rebuild_script = saib_get_rebuild_script();
 		if (!rebuild_script) {
+			lwsl_err("%s: No rebuild script configured\n", __func__);
 			free(task);
 			break;
 		}

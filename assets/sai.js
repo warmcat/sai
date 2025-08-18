@@ -965,7 +965,7 @@ function createBuilderDiv(plat) {
 		{ label: `<b>SAI Hash:</b> ${plat.sai_hash}` },
 		{ label: `<b>LWS Hash:</b> ${plat.lws_hash}` },
 		{
-			label: "Rebuild",
+			label: "Update SAI",
 			callback: () => {
 				const rebuildMsg = {
 					schema: "com.warmcat.sai.rebuild",
