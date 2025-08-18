@@ -743,6 +743,12 @@ int main(int argc, const char **argv)
 
 	if ((p = lws_cmdline_option(argc, argv, "-s"))) {
 		ssize_t n = 0;
+		const char *c_dir = "/etc/sai/builder";
+
+		if ((p = lws_cmdline_option(argc, argv, "-c")))
+			c_dir = p;
+
+		saib_config_global(&builder, c_dir);
 
 		printf("%s: Spawn process creation entry...\n", __func__);
 
