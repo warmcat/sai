@@ -64,7 +64,7 @@ int getpid(void) { return 0; }
 static const char *config_dir = "/etc/sai/builder";
 static int interrupted;
 static lws_state_notify_link_t nl;
-struct lws_spawn_piped *lsp_suspender;
+static struct lws_spawn_piped *lsp_suspender;
 
 struct sai_builder builder;
 
@@ -741,16 +741,8 @@ int main(int argc, const char **argv)
 	struct stat sb;
 	const char *p;
 
-#if !defined(WIN32)
-
 	if ((p = lws_cmdline_option(argc, argv, "-s"))) {
 		ssize_t n = 0;
-		const char *c_dir = "/etc/sai/builder";
-
-		if ((p = lws_cmdline_option(argc, argv, "-c")))
-			c_dir = p;
-
-		saib_config_global(&builder, c_dir);
 
 		printf("%s: Spawn process creation entry...\n", __func__);
 
@@ -778,6 +770,27 @@ int main(int argc, const char **argv)
 				break;
 			}
 
+#if defined(WIN32)
+			/*
+			 * On Windows, we can use the shutdown command.
+			 * For suspend, we can use rundll32.
+			 */
+			switch(d) {
+			case 0:
+				system("shutdown /s /t 0");
+				break;
+			case 1:
+				system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0");
+				break;
+			case 3:
+				if (builder.rebuild_script_user &&
+				    builder.rebuild_script_root) {
+					if (system(builder.rebuild_script_user) == 0)
+						system(builder.rebuild_script_root);
+				}
+				break;
+			}
+#else
 			p = fork();
 			if (!p)
 				switch(d) {
@@ -797,6 +810,7 @@ int main(int argc, const char **argv)
 						char cmd[8192];
 						char user_buf[64];
 						const char *user = "sai";
+						int ret;
 
 						if (builder.perms) {
 							lws_strncpy(user_buf, builder.perms, sizeof(user_buf));
@@ -806,25 +820,28 @@ int main(int argc, const char **argv)
 						}
 
 						lws_snprintf(cmd, sizeof(cmd),
-							     "su - %s -c '(%s) 2>&1 | logger -t sai-rebuild-user' && "
-							     "(%s) 2>&1 | logger -t sai-rebuild-root",
+							     "su - %s -c '%s'",
 							     user,
-							     builder.rebuild_script_user,
-							     builder.rebuild_script_root);
-
-						execl("/bin/sh", "sh", "-c", cmd, NULL);
+							     builder.rebuild_script_user);
+						ret = system(cmd);
+						if (ret == 0) {
+							lws_snprintf(cmd, sizeof(cmd),
+								     "/bin/bash -l -c '%s'",
+								     builder.rebuild_script_root);
+							system(cmd);
+						}
 					}
 					break;
 				}
 			else
 				waitpid(p, &status, 0);
+#endif
 		}
 
 		lwsl_notice("%s: exiting suspend process\n", __func__);
 
 		return 0;
 	}
-#endif
 
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
