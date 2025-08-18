@@ -64,7 +64,7 @@ int getpid(void) { return 0; }
 static const char *config_dir = "/etc/sai/builder";
 static int interrupted;
 static lws_state_notify_link_t nl;
-static struct lws_spawn_piped *lsp_suspender;
+struct lws_spawn_piped *lsp_suspender;
 
 struct sai_builder builder;
 
@@ -784,6 +784,16 @@ int main(int argc, const char **argv)
 					break;
 				case 1:
 					execl("/usr/bin/systemctl", "/usr/bin/systemctl", "suspend", NULL);
+					break;
+				case 3:
+					if (builder.rebuild_script) {
+						char cmd[4096];
+
+						lws_snprintf(cmd, sizeof(cmd),
+							     "( %s ) 2>&1 | logger -t sai-rebuild",
+							     builder.rebuild_script);
+						execl("/bin/sh", "sh", "-c", cmd, NULL);
+					}
 					break;
 				}
 			else
