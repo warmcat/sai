@@ -167,6 +167,15 @@ const lws_struct_map_t lsm_task_cancel[] = {
 	LSM_CARRAY	(sai_cancel_t, task_uuid,	 "task_uuid"),
 };
 
+const lws_struct_map_t lsm_rebuild[] = {
+	LSM_CARRAY	(sai_rebuild_t, builder_name,	"builder_name"),
+};
+
+const lws_struct_map_t lsm_schema_rebuild[] = {
+	LSM_SCHEMA	(sai_rebuild_t, NULL, lsm_rebuild,
+						     "com.warmcat.sai.rebuild")
+};
+
 const lws_struct_map_t lsm_schema_json_map_can[] = {
 	LSM_SCHEMA	(sai_cancel_t, NULL, lsm_task_cancel,
 						     "com.warmcat.sai.taskcan")

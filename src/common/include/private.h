@@ -221,6 +221,15 @@ typedef struct sai_cancel {
 	char		task_uuid[65];
 } sai_cancel_t;
 
+/*
+ * Browser is asking a builder to rebuild
+ */
+
+typedef struct sai_rebuild {
+	lws_dll2_t		list;
+	char			builder_name[96];
+} sai_rebuild_t;
+
 
 struct sai_event;
 
