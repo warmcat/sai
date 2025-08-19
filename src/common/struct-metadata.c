@@ -176,6 +176,24 @@ const lws_struct_map_t lsm_schema_rebuild[] = {
 						     "com.warmcat.sai.rebuild")
 };
 
+const lws_struct_map_t lsm_rebuild_request[] = {
+	LSM_CARRAY	(sai_rebuild_request_t, builder_name,	"builder_name"),
+};
+
+const lws_struct_map_t lsm_schema_rebuild_request[] = {
+	LSM_SCHEMA	(sai_rebuild_request_t, NULL, lsm_rebuild_request,
+						     "com.warmcat.sai.rebuild.request")
+};
+
+const lws_struct_map_t lsm_rebuild_trigger[] = {
+	LSM_CARRAY	(sai_rebuild_trigger_t, task_uuid,	"task_uuid"),
+};
+
+const lws_struct_map_t lsm_schema_rebuild_trigger[] = {
+	LSM_SCHEMA	(sai_rebuild_trigger_t, NULL, lsm_rebuild_trigger,
+						     "com.warmcat.sai.rebuild.trigger")
+};
+
 const lws_struct_map_t lsm_schema_json_map_can[] = {
 	LSM_SCHEMA	(sai_cancel_t, NULL, lsm_task_cancel,
 						     "com.warmcat.sai.taskcan")

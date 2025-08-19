@@ -230,6 +230,16 @@ typedef struct sai_rebuild {
 	char			builder_name[96];
 } sai_rebuild_t;
 
+typedef struct sai_rebuild_request {
+	lws_dll2_t		list;
+	char			builder_name[96];
+} sai_rebuild_request_t;
+
+typedef struct sai_rebuild_trigger {
+	lws_dll2_t		list;
+	char			task_uuid[65];
+} sai_rebuild_trigger_t;
+
 
 struct sai_event;
 
@@ -345,6 +355,7 @@ typedef struct sai_plat_server {
 	lws_dll2_t		list;
 
 	lws_dll2_owner_t	rejection_list;
+	lws_dll2_owner_t	rebuild_request_owner;
 	lws_dll2_owner_t	resource_req_list; /* sai_resource_msg_t */
 	lws_dll2_owner_t	resource_pss_list; /* so we can find the cookie */
 
@@ -487,7 +498,11 @@ extern const lws_struct_map_t
 	lsm_resource[4],
 	lsm_power_state[3],
 	lsm_rebuild[],
-	lsm_schema_rebuild[]
+	lsm_schema_rebuild[],
+	lsm_rebuild_request[],
+	lsm_schema_rebuild_request[],
+	lsm_rebuild_trigger[],
+	lsm_schema_rebuild_trigger[]
 ;
 extern const lws_struct_map_t lsm_plat[8];
 extern const lws_struct_map_t lsm_plat_for_json[10];

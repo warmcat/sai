@@ -72,6 +72,37 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	int n = 0;
 
 	/*
+	 * Any rebuild requests to process?
+	 */
+
+	if (spm->rebuild_request_owner.count) {
+		struct lws_dll2 *d = lws_dll2_get_head(&spm->rebuild_request_owner);
+		struct sai_rebuild_request *req =
+				lws_container_of(d, struct sai_rebuild_request, list);
+
+		js = lws_struct_json_serialize_create(lsm_schema_rebuild_request,
+			      LWS_ARRAY_SIZE(lsm_schema_rebuild_request), 0, req);
+		if (!js)
+			return -1;
+
+		n = (int)lws_struct_json_serialize(js, start,
+					      lws_ptr_diff_size_t(end, start), &w);
+		lws_struct_json_serialize_destroy(&js);
+
+		lwsl_hexdump_notice(start, w);
+
+		n = (int)w;
+
+		lws_dll2_remove(&req->list);
+		free(req);
+
+		r = lws_ss_request_tx(spm->ss);
+		if (r)
+			return r;
+		goto sendify;
+	}
+
+	/*
 	 * Any builder state updates / rejections to process?
 	 */
 
