@@ -131,6 +131,7 @@ typedef struct {
 	int			uid;
 
 	char			told_ongoing;
+	char			self_update;
 } sai_task_t;
 
 typedef struct sai_plat sai_plat_t;

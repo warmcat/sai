@@ -1,0 +1,14 @@
+{
+    "schema": "com.warmcat.sai.saifile",
+    "platforms": {
+        "linux/x86_64/gcc": {
+            "build": "echo 'self-updating...'; sleep 5; echo 'self-update complete.'"
+        }
+    },
+    "configurations": {
+        "self-update-test": {
+            "self-update": "true",
+            "platforms": "linux/x86_64/gcc"
+        }
+    }
+}
