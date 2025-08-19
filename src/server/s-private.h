@@ -297,6 +297,9 @@ int
 sais_task_reset(struct vhd *vhd, const char *task_uuid);
 
 int
+sais_handle_self_update(struct vhd *vhd, sai_task_t *task);
+
+int
 sais_task_cancel(struct vhd *vhd, const char *task_uuid);
 
 int

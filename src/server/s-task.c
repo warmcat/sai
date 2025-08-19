@@ -41,6 +41,81 @@ sql3_get_integer_cb(void *user, int cols, char **values, char **name)
 }
 
 int
+sais_handle_self_update(struct vhd *vhd, sai_task_t *task)
+{
+	char builder_name[96];
+	char event_name[128];
+	char *p;
+
+	lwsl_notice("%s: handling self-update for %s\n", __func__, task->taskname);
+
+	/* 1. Extract builder name */
+	p = strchr(task->taskname, '(');
+	if (!p)
+		return 1;
+	sscanf(p, "(%[^)])", builder_name);
+
+	/* 2. Create new event */
+	sai_event_t new_event;
+	lws_dll2_owner_t o;
+
+	memset(&new_event, 0, sizeof(new_event));
+	lws_snprintf(event_name, sizeof(event_name), "Self-update for %s", builder_name);
+	lws_strncpy(new_event.repo_name, event_name, sizeof(new_event.repo_name));
+	lws_strncpy(new_event.ref, "v1.0", sizeof(new_event.ref));
+	lws_strncpy(new_event.hash, "0000000000000000000000000000000000000000", sizeof(new_event.hash));
+	sai_uuid16_create(vhd->context, new_event.uuid);
+	new_event.created = (unsigned long long)lws_now_secs();
+	new_event.state = SAIES_WAITING;
+
+	lws_dll2_owner_clear(&o);
+	lws_dll2_add_head(&new_event.list, &o);
+	if (lws_struct_sq3_serialize(vhd->server.pdb,
+				lsm_schema_sq3_map_event, &o, 0)) {
+		lwsl_err("%s: failed to create self-update event\n", __func__);
+		return 1;
+	}
+
+	/* 3. Create new task */
+	sqlite3 *pdb = NULL;
+
+	if (sais_event_db_ensure_open(vhd, new_event.uuid, 1, &pdb)) {
+		lwsl_err("%s: unable to open event-specific db for self-update\n", __func__);
+		return 1;
+	}
+
+	sai_task_t new_task;
+
+	memset(&new_task, 0, sizeof(new_task));
+	memcpy(new_task.uuid, new_event.uuid, 32);
+	sai_uuid16_create(vhd->context, new_task.uuid + 32);
+	lws_strncpy(new_task.event_uuid, new_event.uuid, sizeof(new_task.event_uuid));
+	lws_strncpy(new_task.taskname, "self-update", sizeof(new_task.taskname));
+	lws_strncpy(new_task.platform, task->platform, sizeof(new_task.platform));
+	lws_strncpy(new_task.build, "sai-self-update", sizeof(new_task.build));
+	new_task.state = SAIES_WAITING;
+
+	lws_dll2_owner_clear(&o);
+	lws_dll2_add_head(&new_task.list, &o);
+	if (lws_struct_sq3_serialize(pdb,
+				lsm_schema_sq3_map_task, &o, 0)) {
+		lwsl_err("%s: failed to create self-update task for %s\n", __func__, builder_name);
+		sais_event_db_close(vhd, &pdb);
+		return 1;
+	}
+
+	sais_event_db_close(vhd, &pdb);
+
+	lwsl_notice("%s: created self-update event %s and task %s\n", __func__,
+		    new_event.uuid, new_task.uuid);
+
+	sais_eventchange(vhd->h_ss_websrv, new_event.uuid, new_event.state);
+	sais_taskchange(vhd->h_ss_websrv, new_task.uuid, new_task.state);
+
+	return 0;
+}
+
+int
 sql3_get_string_cb(void *user, int cols, char **values, char **name)
 {
 	char *p = (char *)user;
@@ -729,6 +804,9 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 {
 	char esc[96], cmd[256], event_uuid[33];
 	sqlite3 *pdb = NULL;
+	sai_task_t task;
+	lws_dll2_owner_t o;
+	struct lwsac *ac = NULL;
 
 	if (!task_uuid[0])
 		return 0;
@@ -742,6 +820,25 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 				__func__);
 
 		return -1;
+	}
+
+	lws_sql_purify(esc, task_uuid, sizeof(esc));
+	lws_snprintf(cmd, sizeof(cmd), " and uuid='%s'", esc);
+	if (lws_struct_sq3_deserialize(pdb, cmd, NULL,
+				lsm_schema_sq3_map_task, &o, &ac, 0, 1) < 0 || !o.head) {
+		lwsl_err("%s: failed to get task\n", __func__);
+		sais_event_db_close(vhd, &pdb);
+		lwsac_free(&ac);
+		return 1;
+	}
+
+	memcpy(&task, (sai_task_t *)o.head, sizeof(task));
+	lwsac_free(&ac);
+
+	if (strncmp(task.taskname, "self-update", 11) == 0) {
+		// It's a self-update task
+		sais_event_db_close(vhd, &pdb);
+		return sais_handle_self_update(vhd, &task);
 	}
 
 	lws_sql_purify(esc, task_uuid, sizeof(esc));

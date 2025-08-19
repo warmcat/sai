@@ -39,6 +39,9 @@
 
 #include "../common/struct-metadata.c"
 
+static void
+sais_create_initial_tasks(struct vhd *vhd);
+
 typedef enum {
 	SJS_CLONING,
 	SJS_ASSIGNING,
@@ -531,6 +534,8 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
 				 sais_activity_cb, 1 * LWS_US_PER_SEC);
 
+		sais_create_initial_tasks(vhd);
+
 		break;
 
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
@@ -874,3 +879,118 @@ passthru:
 
 const struct lws_protocols protocol_ws =
 	{ "com-warmcat-sai", callback_ws, sizeof(struct pss), 0 };
+
+static void
+sais_create_initial_tasks(struct vhd *vhd)
+{
+	char su_event_uuid[SAI_EVENTID_LEN + 1];
+	lws_dll2_owner_t o;
+	struct lwsac *ac = NULL;
+	sai_event_t *su_event;
+	int n;
+
+	lwsl_notice("%s: creating initial tasks\n", __func__);
+
+	/* 1. Check for the "sai-self-update" event */
+	n = lws_struct_sq3_deserialize(vhd->server.pdb,
+				" and repo_name='sai-self-update'", NULL,
+				lsm_schema_sq3_map_event, &o, &ac, 0, 1);
+	if (n < 0) {
+		lwsl_err("%s: failed to query for self-update event\n", __func__);
+		return;
+	}
+
+	if (o.head) {
+		/* event exists, get its uuid */
+		su_event = lws_container_of(o.head, sai_event_t, list);
+		lws_strncpy(su_event_uuid, su_event->uuid, sizeof(su_event_uuid));
+		lwsac_free(&ac);
+	} else {
+		/* event doesn't exist, create it */
+		sai_event_t new_event;
+
+		memset(&new_event, 0, sizeof(new_event));
+		lws_strncpy(new_event.repo_name, "sai-self-update", sizeof(new_event.repo_name));
+		lws_strncpy(new_event.ref, "v1.0", sizeof(new_event.ref));
+		lws_strncpy(new_event.hash, "0000000000000000000000000000000000000000", sizeof(new_event.hash));
+		sai_uuid16_create(vhd->context, new_event.uuid);
+		new_event.created = (unsigned long long)lws_now_secs();
+		new_event.state = SAIES_WAITING;
+		lws_strncpy(su_event_uuid, new_event.uuid, sizeof(su_event_uuid));
+
+		lws_dll2_owner_clear(&o);
+		lws_dll2_add_head(&new_event.list, &o);
+		if (lws_struct_sq3_serialize(vhd->server.pdb,
+					lsm_schema_sq3_map_event, &o, 0)) {
+			lwsl_err("%s: failed to create self-update event\n", __func__);
+			return;
+		}
+	}
+
+	/* 2. Get all builders */
+	lws_dll2_owner_clear(&o);
+	lwsac_free(&ac);
+	n = lws_struct_sq3_deserialize(vhd->server.pdb, NULL, NULL,
+				lsm_schema_sq3_map_plat, &o, &ac, 0, 100);
+	if (n < 0) {
+		lwsl_err("%s: failed to query for builders\n", __func__);
+		return;
+	}
+
+	if (o.head) {
+		sqlite3 *pdb = NULL;
+
+		if (sais_event_db_ensure_open(vhd, su_event_uuid, 1, &pdb)) {
+			lwsl_err("%s: unable to open event-specific db for self-update\n", __func__);
+			lwsac_free(&ac);
+			return;
+		}
+
+		lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
+			sai_plat_t *builder = lws_container_of(p, sai_plat_t, sai_plat_list);
+			char task_name[128];
+			char query[256];
+			lws_dll2_owner_t to;
+			struct lwsac *tac = NULL;
+
+			lws_snprintf(task_name, sizeof(task_name), "self-update (%s)", builder->name);
+
+			/* 3. For each builder, check if a "self-update" task exists */
+			lws_snprintf(query, sizeof(query), " and taskname='%s'", task_name);
+			n = lws_struct_sq3_deserialize(pdb, query, NULL,
+						lsm_schema_sq3_map_task, &to, &tac, 0, 1);
+			if (n < 0) {
+				lwsl_err("%s: failed to query for self-update task\n", __func__);
+				lwsac_free(&tac);
+				continue;
+			}
+
+			if (!to.head) {
+				/* 4. If not, create it */
+				sai_task_t new_task;
+
+				memset(&new_task, 0, sizeof(new_task));
+				memcpy(new_task.uuid, su_event_uuid, 32);
+				sai_uuid16_create(vhd->context, new_task.uuid + 32);
+				lws_strncpy(new_task.event_uuid, su_event_uuid, sizeof(new_task.event_uuid));
+				lws_strncpy(new_task.taskname, task_name, sizeof(new_task.taskname));
+				lws_strncpy(new_task.platform, builder->platform, sizeof(new_task.platform));
+				lws_strncpy(new_task.build, "sai-self-update", sizeof(new_task.build));
+				new_task.state = SAIES_WAITING;
+
+				lws_dll2_owner_clear(&to);
+				lws_dll2_add_head(&new_task.list, &to);
+				if (lws_struct_sq3_serialize(pdb,
+							lsm_schema_sq3_map_task, &to, 0)) {
+					lwsl_err("%s: failed to create self-update task for %s\n", __func__, builder->name);
+				}
+			}
+			lwsac_free(&tac);
+
+		} lws_end_foreach_dll(p);
+
+		sais_event_db_close(vhd, &pdb);
+	}
+
+	lwsac_free(&ac);
+}

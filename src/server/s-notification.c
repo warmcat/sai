@@ -70,7 +70,6 @@ static const char * const saifile_paths[] = {
 	"configurations.*.platforms",
 	"configurations.*.artifacts",
 	"configurations.*.cpack",
-	"configurations.*.self-update",
 	"configurations.*",
 };
 
@@ -85,7 +84,6 @@ enum enum_saifile_paths {
 	LEJPNSAIF_CONFIGURATIONS_PLATFORMS,
 	LEJPNSAIF_CONFIGURATIONS_ARTIFACTS,
 	LEJPNSAIF_CONFIGURATIONS_CPACK,
-	LEJPNSAIF_CONFIGURATIONS_SELF_UPDATE,
 	LEJPNSAIF_CONFIGURATIONS_NAME,
 };
 
@@ -267,7 +265,6 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 		sn->t.cmake[0] = '\0';
 		sn->t.artifacts[0] = '\0';
 		sn->explicit_platforms[0] = '\0';
-		sn->t.self_update = 0;
 		return 0;
 	}
 
@@ -378,10 +375,6 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 				 * sn->t.build becomes the string-substituted
 				 * copy that is serialized
 				 */
-
-				if (sn->t.self_update)
-					lws_strncpy(sn->t.taskname, "self-update",
-						    sizeof(sn->t.taskname));
 
 				lws_strexp_init(&sx, sn, exp_cmake, sn->t.build,
 						sizeof(sn->t.build));
@@ -694,10 +687,6 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 	case LEJPNSAIF_CONFIGURATIONS_CPACK:
 		lws_strncpy(sn->t.cpack, ctx->buf, sizeof(sn->t.cpack));
-		break;
-
-	case LEJPNSAIF_CONFIGURATIONS_SELF_UPDATE:
-		sn->t.self_update = arg_to_bool(ctx->buf);
 		break;
 
 	case LEJPNSAIF_PLAT_BUILD:
