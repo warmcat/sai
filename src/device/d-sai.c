@@ -155,7 +155,7 @@ said_check_device(lws_sorted_usec_list_t *sul)
 				sai_tty_t *t  = lws_container_of(q,
 						    sai_tty_t, list);
 
-				if (try >= (int)LWS_ARRAY_SIZE(locked))
+				if (try >= (int)LWS_ARRAY_SIZE(locked) || !t->lock)
 					break;
 				try++;
 
@@ -208,6 +208,8 @@ said_check_device(lws_sorted_usec_list_t *sul)
 						  "SAI_DEVICE_TTY%d",
 						  try);
 				setenv(p1, t->tty_path, 1);
+
+				lwsl_warn("%s: exporting %s = %s\n", __func__, p1, t->tty_path);
 
 				if (alias) {
 					p1 = strchr(alias, '=');

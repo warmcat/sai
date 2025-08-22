@@ -46,6 +46,7 @@ static const char * const paths_global[] = {
 	"devices[].ttys[].tty",
 	"devices[].ttys[].rate",
 	"devices[].ttys[].initial_monitor",
+	"devices[].ttys[].lock",
 	"devices[].ttys[]",
 	"devices[]",
 };
@@ -61,6 +62,7 @@ enum enum_paths_global {
 	LEJPM_DEVICES__TTYS__TTY,
 	LEJPM_DEVICES__TTYS__RATE,
 	LEJPM_DEVICES__TTYS__INITIAL_MONITOR,
+	LEJPM_DEVICES__TTYS__LOCK,
 	LEJPM_DEVICES__TTYS,
 	LEJPM_DEVICES,
 
@@ -115,7 +117,10 @@ said_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		if (!a->tty)
 			return -1;
 
+		lwsl_notice("%s: adding tty\n", __func__);
+
 		a->tty->initial_monitor = 1;
+		a->tty->lock = 1;
 		a->tty->index = (int)a->dev->ttys_owner.count;
 		lws_dll2_add_tail(&a->tty->list, &a->dev->ttys_owner);
 		return 0;
@@ -134,6 +139,11 @@ said_conf_global_cb(struct lejp_ctx *ctx, char reason)
 	if (reason == LEJPCB_VAL_FALSE &&
 	    ctx->path_match - 1 == LEJPM_DEVICES__TTYS__INITIAL_MONITOR) {
 		a->tty->initial_monitor = 0;
+		return 0;
+	}
+	if (reason == LEJPCB_VAL_FALSE &&
+	    ctx->path_match - 1 == LEJPM_DEVICES__TTYS__LOCK) {
+		a->tty->lock = 0;
 		return 0;
 	}
 
@@ -164,6 +174,7 @@ said_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		break;
 	case LEJPM_DEVICES__TTYS__TTY:
 		pp = &a->tty->tty_path;
+		lwsl_notice("%s: tty path %.*s\n", __func__, (int)ctx->npos, ctx->buf);
 		break;
 
 	default:

@@ -31,6 +31,7 @@ typedef struct sai_tty {
 	int				rate;
 	int				initial_monitor;
 	int				index;
+	int				lock;
 
 } sai_tty_t; /* owned by sai_device_t's ttys_owner */
 
