@@ -180,6 +180,7 @@ struct pss {
 	char			login_form;
 
 	uint64_t		first_log_timestamp;
+	uint64_t		initial_log_timestamp;
 	uint64_t		artifact_offset;
 	uint64_t		artifact_length;
 

@@ -71,10 +71,16 @@ static lws_struct_map_t lsm_browser_taskreset[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"uuid"),
 };
 
+static lws_struct_map_t lsm_browser_platreset[] = {
+	LSM_CARRAY	(sai_browse_rx_platreset_t, event_uuid, "event_uuid"),
+	LSM_CARRAY	(sai_browse_rx_platreset_t, platform,   "platform"),
+};
+
 static lws_struct_map_t lsm_browser_taskinfo[] = {
 	LSM_CARRAY	(sai_browse_rx_taskinfo_t, task_hash,		"task_hash"),
 	LSM_UNSIGNED	(sai_browse_rx_taskinfo_t, logs,		"logs"),
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, js_api_version,	"js_api_version"),
+	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, last_log_ts,		"last_log_ts"),
 };
 
 /*
@@ -99,6 +105,8 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 					      "com.warmcat.sai.loadreport"),
 	LSM_SCHEMA	(sai_rebuild_t,		 NULL, lsm_rebuild,
 					      "com.warmcat.sai.rebuild"),
+	LSM_SCHEMA	(sai_browse_rx_platreset_t, NULL, lsm_browser_platreset,
+					      "com.warmcat.sai.platreset"),
 };
 
 enum {
@@ -110,6 +118,7 @@ enum {
 	SAIM_WS_BROWSER_RX_TASKCANCEL,
 	SAIM_WS_BROWSER_RX_JS_HELLO,
 	SAIM_WS_BROWSER_RX_REBUILD,
+	SAIM_WS_BROWSER_RX_PLATRESET,
 };
 
 
@@ -492,6 +501,11 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		 * as long as needed to send it out
 		 */
 
+		if (ti->logs)
+			pss->initial_log_timestamp = ti->last_log_ts;
+		else
+			pss->initial_log_timestamp = 0;
+
 		if (saiw_pss_schedule_taskinfo(pss, ti->task_hash, !!ti->logs))
 			goto soft_error;
 
@@ -509,7 +523,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	case SAIM_WS_BROWSER_RX_TASKRESET:
 
 		if (!sais_conn_auth(pss))
-			goto soft_error;
+			goto auth_error;
 
 		/*
 		 * User is asking us to reset / rebuild this task
@@ -523,7 +537,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	case SAIM_WS_BROWSER_RX_EVENTRESET:
 
 		if (!sais_conn_auth(pss))
-			goto soft_error;
+			goto auth_error;
 
 		/*
 		 * User is asking us to reset / rebuild every task in the event
@@ -543,7 +557,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		 */
 
 		if (!sais_conn_auth(pss))
-			goto soft_error;
+			goto auth_error;
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 
@@ -558,7 +572,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	case SAIM_WS_BROWSER_RX_TASKCANCEL:
 
 		if (!sais_conn_auth(pss))
-			goto soft_error;
+			goto auth_error;
 
 		/*
 		 * Browser is informing us of task's STOP button clicked, we
@@ -574,10 +588,21 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 	case SAIM_WS_BROWSER_RX_REBUILD:
 		if (!sais_conn_auth(pss))
-			goto soft_error;
+			goto auth_error;
 
 		/*
 		 * User is asking us to rebuild a builder
+		 */
+
+		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl);
+		break;
+
+	case SAIM_WS_BROWSER_RX_PLATRESET:
+		if (!sais_conn_auth(pss))
+			goto auth_error;
+
+		/*
+		 * User is asking us to reset / rebuild a whole platform
 		 */
 
 		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl);
@@ -594,6 +619,16 @@ bail:
 	lwsac_free(&a.ac);
 
 	return ret;
+
+auth_error:
+	{
+		uint8_t buf[LWS_PRE + 128];
+		int n;
+
+		n = lws_snprintf((char *)buf + LWS_PRE, sizeof(buf) - LWS_PRE,
+			"{\"schema\":\"com.warmcat.sai.unauthorized\"}");
+		lws_write(pss->wsi, buf + LWS_PRE, (size_t)n, LWS_WRITE_TEXT);
+	}
 
 soft_error:
 	lwsac_free(&a.ac);
@@ -1287,7 +1322,7 @@ send_it:
 		if (sch && sch->logsub && sch->one_task) {
 			strcpy(pss->sub_task_uuid, sch->one_task->uuid);
 			lws_dll2_add_head(&pss->subs_list, &pss->vhd->subs_owner);
-			pss->sub_timestamp = 0; /* where we got up to */
+			pss->sub_timestamp = pss->initial_log_timestamp; /* where we got up to */
 			lws_callback_on_writable(pss->wsi);
 
 			lwsl_info("%s: subscribed to logs for %s\n", __func__,

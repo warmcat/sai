@@ -230,6 +230,11 @@ typedef struct sai_rebuild {
 	char			builder_name[96];
 } sai_rebuild_t;
 
+typedef struct sai_platreset {
+	lws_dll2_t		list;
+	char			event_uuid[65];
+	char			platform[65];
+} sai_browse_rx_platreset_t;
 
 struct sai_event;
 
@@ -451,6 +456,7 @@ typedef struct sai_browse_rx_evinfo {
 
 typedef struct sai_browse_rx_taskinfo {
 	char		task_hash[65];
+	uint64_t	last_log_ts;
 	unsigned int	log_start;
 	unsigned int	js_api_version;
 	uint8_t		logs;

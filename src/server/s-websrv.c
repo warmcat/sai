@@ -54,6 +54,11 @@ static lws_struct_map_t lsm_browser_taskreset[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"uuid"),
 };
 
+static lws_struct_map_t lsm_browser_platreset[] = {
+	LSM_CARRAY	(sai_browse_rx_platreset_t, event_uuid, "event_uuid"),
+	LSM_CARRAY	(sai_browse_rx_platreset_t, platform,   "platform"),
+};
+
 static const lws_struct_map_t lsm_viewercount_members[] = {
 	LSM_UNSIGNED(sai_viewer_state_t, viewers,	"count"),
 };
@@ -71,6 +76,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.viewercount"),
 	LSM_SCHEMA	(sai_rebuild_t,		 NULL, lsm_rebuild,
 					      "com.warmcat.sai.rebuild"),
+	LSM_SCHEMA	(sai_browse_rx_platreset_t, NULL, lsm_browser_platreset,
+					      "com.warmcat.sai.platreset"),
 };
 
 enum {
@@ -80,6 +87,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_TASKCANCEL,
 	SAIS_WS_WEBSRV_RX_VIEWERCOUNT,
 	SAIS_WS_WEBSRV_RX_REBUILD,
+	SAIS_WS_WEBSRV_RX_PLATRESET,
 };
 
 void
@@ -458,6 +466,56 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lwsac_free(&a.ac);
 
 		return 0;
+
+	case SAIS_WS_WEBSRV_RX_PLATRESET: {
+		sai_browse_rx_platreset_t *pr = (sai_browse_rx_platreset_t *)a.dest;
+		char filt[256];
+
+		if (sais_validate_id(pr->event_uuid, SAI_EVENTID_LEN))
+			goto soft_error;
+
+		/* open the event-specific database object */
+
+		if (sais_event_db_ensure_open(m->vhd, pr->event_uuid, 0, &pdb)) {
+			lwsl_err("%s: unable to open event-specific database\n",
+					__func__);
+			goto soft_error;
+		}
+
+		/*
+		 * Retreive all the related structs into a dll2 list
+		 */
+		lws_sql_purify(esc, pr->platform, sizeof(esc));
+		lws_snprintf(filt, sizeof(filt), " and platform='%s'", esc);
+
+		if (lws_struct_sq3_deserialize(pdb, filt, NULL,
+					       lsm_schema_sq3_map_task,
+					       &o, &a.ac, 0, 999) >= 0) {
+
+			sqlite3_exec(pdb, "BEGIN TRANSACTION",
+				     NULL, NULL, &err);
+			sqlite3_free(err);
+
+			/*
+			 * Walk the results list resetting all the tasks
+			 */
+
+			lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
+				sai_task_t *t = lws_container_of(p, sai_task_t,
+								 list);
+				sais_task_reset(m->vhd, t->uuid);
+			} lws_end_foreach_dll(p);
+
+			sqlite3_exec(pdb, "END TRANSACTION",
+				     NULL, NULL, &err);
+			sqlite3_free(err);
+		}
+
+		sais_event_db_close(m->vhd, &pdb);
+		lwsac_free(&a.ac);
+
+		return 0;
+	}
 
 	case SAIS_WS_WEBSRV_RX_EVENTDELETE:
 

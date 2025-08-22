@@ -395,7 +395,7 @@ var lang_zhs = "{" +
 "}}";
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
-	ongoing_task_activities = {};
+	ongoing_task_activities = {}, last_log_timestamp = 0;
 
 function update_task_activities() {
 	for (const uuid in ongoing_task_activities) {
@@ -799,7 +799,8 @@ function sai_event_render(o, now_ut, reset_all_icon)
 			if (t.state === 4 || t.state == 6)
 				has_bad = 1;
 
-			s1 += "<div id=\"taskstate_" + t.uuid + "\" class=\"taskstate taskstate" + t.state + "\">";
+			s1 += "<div id=\"taskstate_" + t.uuid + "\" class=\"taskstate taskstate" + t.state +
+				"\" data-event-uuid=\"" + san(e.uuid) + "\" data-platform=\"" + san(t.platform) + "\">";
 			if (t.state === 0)
 				wai = 1;
 
@@ -1080,6 +1081,7 @@ function ws_open_sai()
 				 	  "\"com.warmcat.sai.taskinfo\"," +
 					  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
 				 	  "\"logs\": 1," +
+					  "\"last_log_ts\":" + last_log_timestamp + "," +
 				 	  "\"task_hash\":" +
 				 	  JSON.stringify(tid) + "}");
 				 	  
@@ -1523,6 +1525,7 @@ function ws_open_sai()
 						 	  	lines = times = logs = "";
 						 	  	tfirst = 0;
 						 	  	lli = 1;
+								last_log_timestamp = 0;
 							}); 
 					}
 					
@@ -1639,12 +1642,18 @@ function ws_open_sai()
 				}
 				break;
 
+			case "com.warmcat.sai.unauthorized":
+				location.reload();
+				break;
+
 			case "com-warmcat-sai-logs":
 				var s1 = atob(jso.log), s = hsanitize(s1), li,
 					en = "", yo, dh, ce, tn = "";
 					
 				if (!tfirst)
-					tfirst = jso.timestamp; 
+					tfirst = jso.timestamp;
+
+				last_log_timestamp = jso.timestamp;
 				
 				li = (s1.match(/\n/g)||[]).length;
 				
@@ -1813,6 +1822,55 @@ window.addEventListener("load", function() {
 	     	document.body.clientHeight;
 
 	}, 500)
+
+	const stickyEl = document.getElementById("sai_sticky");
+	if (stickyEl) {
+		stickyEl.addEventListener("contextmenu", function(event) {
+			let target = event.target;
+			let taskDiv = null;
+
+			// find the taskstate div parent
+			while (target && target.id !== "sai_sticky") {
+				if (target.classList && target.classList.contains("taskstate")) {
+					taskDiv = target;
+					break;
+				}
+				target = target.parentElement;
+			}
+
+			if (taskDiv && authd) {
+				event.preventDefault();
+
+				const taskUuid = taskDiv.id.substring(10);
+				const eventUuid = taskDiv.dataset.eventUuid;
+				const platform = taskDiv.dataset.platform;
+
+				const menuItems = [
+					{
+						label: "Rebuild this task",
+						callback: () => {
+							sai.send(JSON.stringify({
+								schema: "com.warmcat.sai.taskreset",
+								uuid: taskUuid
+							}));
+						}
+					},
+					{
+						label: `Rebuild all <b>${hsanitize(platform)}</b>`,
+						callback: () => {
+							sai.send(JSON.stringify({
+								schema: "com.warmcat.sai.platreset",
+								event_uuid: eventUuid,
+								platform: platform
+							}));
+						}
+					}
+				];
+
+				createContextMenu(event, menuItems);
+			}
+		});
+	}
 	
 }, false);
 
