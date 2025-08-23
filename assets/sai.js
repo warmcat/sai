@@ -395,6 +395,7 @@ var lang_zhs = "{" +
 "}}";
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
+	logAnsiState = {},
 	ongoing_task_activities = {}, last_log_timestamp = 0;
 
 function update_task_activities() {
@@ -439,53 +440,57 @@ function humanize(s)
 	return s;
 }
 
-function ansiToHtml(text) {
+function ansiToHtml(text, state) {
     const classMap = {
         '1': 'ansi-bold', '4': 'ansi-underline',
         '30': 'ansi-fg-black', '31': 'ansi-fg-red', '32': 'ansi-fg-green', '33': 'ansi-fg-yellow', '34': 'ansi-fg-blue', '35': 'ansi-fg-magenta', '36': 'ansi-fg-cyan', '37': 'ansi-fg-white',
         '40': 'ansi-bg-black', '41': 'ansi-bg-red', '42': 'ansi-bg-green', '43': 'ansi-bg-yellow', '44': 'ansi-bg-blue', '45': 'ansi-bg-magenta', '46': 'ansi-bg-cyan', '47': 'ansi-bg-white',
     };
 
-    let openSpan = false;
-    // Using a regex to split the string by ANSI codes, keeping the codes as delimiters
-    const parts = text.split(/(\u001b\[[\d;]*m)/);
+    // Ensure state is a valid object
+    state = state || {};
+    let currentClasses = new Set(state.classes || []);
 
+    const parts = text.split(/(\u001b\[[\d;]*m)/);
     let html = '';
-    for (let i = 0; i < parts.length; i++) {
-        const part = parts[i];
-        if (!part) {
-            continue;
-        }
+
+    for (const part of parts) {
+        if (!part) continue;
 
         if (part.startsWith('\u001b[')) { // It's an ANSI code
             const codes = part.substring(2, part.length - 1).split(';');
 
-            // Close any existing span before starting a new one or resetting
-            if (openSpan) {
-                html += '</span>';
-                openSpan = false;
-            }
-
-            // A reset code ('0' or empty) just closes the span
             if (codes.length === 1 && (codes[0] === '0' || codes[0] === '')) {
-                continue;
-            }
-
-            const classes = codes.map(code => classMap[code]).filter(Boolean).join(' ');
-            if (classes) {
-                html += `<span class="${classes}">`;
-                openSpan = true;
+                // Reset
+                currentClasses.clear();
+            } else {
+                for (const code of codes) {
+                    if (classMap[code]) {
+                        // Handle foreground/background colors: remove old before adding new
+                        if (code >= 30 && code <= 37) {
+                            currentClasses.forEach(c => { if (c.startsWith('ansi-fg-')) currentClasses.delete(c); });
+                        }
+                        if (code >= 40 && code <= 47) {
+                            currentClasses.forEach(c => { if (c.startsWith('ansi-bg-')) currentClasses.delete(c); });
+                        }
+                        currentClasses.add(classMap[code]);
+                    }
+                }
             }
         } else { // It's plain text
-            html += hsanitize(part);
+            const sanitizedPart = hsanitize(part);
+            if (currentClasses.size > 0) {
+                html += `<span class="${Array.from(currentClasses).join(' ')}">${sanitizedPart}</span>`;
+            } else {
+                html += sanitizedPart;
+            }
         }
     }
 
-    if (openSpan) {
-        html += '</span>';
-    }
-
-    return html;
+    return {
+        html: html,
+        newState: { classes: Array.from(currentClasses) }
+    };
 }
 
 function hsanitize(s)
@@ -1572,6 +1577,7 @@ function ws_open_sai()
 						 	  	document.getElementById("dlogst").innerHTML = "";
 						 	  	document.getElementById("logs").innerHTML = "";
 						 	  	lines = times = logs = "";
+								logAnsiState = {};
 						 	  	tfirst = 0;
 						 	  	lli = 1;
 								last_log_timestamp = 0;
@@ -1697,8 +1703,12 @@ function ws_open_sai()
 
 			case "com-warmcat-sai-logs":
 				try {
-				var s1 = decodeURIComponent(escape(atob(jso.log))), s = ansiToHtml(s1), li,
-					en = "", yo, dh, ce, tn = "";
+				try {
+					var s1 = decodeURIComponent(escape(atob(jso.log))),
+					    ansiResult = ansiToHtml(s1, logAnsiState),
+					    s = ansiResult.html, li,
+					    en = "", yo, dh, ce, tn = "";
+					logAnsiState = ansiResult.newState;
 				} catch (e) {
 					break;
 				}
