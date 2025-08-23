@@ -1647,8 +1647,12 @@ function ws_open_sai()
 				break;
 
 			case "com-warmcat-sai-logs":
-				var s1 = atob(jso.log), s = hsanitize(s1), li,
+				try {
+				var s1 = decodeURIComponent(escape(atob(jso.log))), s = hsanitize(s1), li,
 					en = "", yo, dh, ce, tn = "";
+				} catch (e) {
+					break;
+				}
 					
 				if (!tfirst)
 					tfirst = jso.timestamp;
