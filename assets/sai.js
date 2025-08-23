@@ -1703,7 +1703,6 @@ function ws_open_sai()
 
 			case "com-warmcat-sai-logs":
 				try {
-				try {
 					var s1 = decodeURIComponent(escape(atob(jso.log))),
 					    ansiResult = ansiToHtml(s1, logAnsiState),
 					    s = ansiResult.html, li,
