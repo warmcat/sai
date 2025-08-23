@@ -631,10 +631,31 @@ function update_summary_and_progress(event_uuid) {
             return Math.ceil(n / 5) * 5;
         };
 
-        var good_cls = "w-" + roundUpTo5(good_pct);
-        var pending_cls = "w-" + roundUpTo5(pending_pct);
-        var ongoing_cls = "w-" + roundUpTo5(ongoing_pct);
-        var bad_cls = "w-" + roundUpTo5(bad_pct);
+        var good_w = roundUpTo5(good_pct);
+        var pending_w = roundUpTo5(pending_pct);
+        var ongoing_w = roundUpTo5(ongoing_pct);
+        var bad_w = roundUpTo5(bad_pct);
+
+        var total_w = good_w + pending_w + ongoing_w + bad_w;
+
+        if (total_w > 100) {
+            var surplus = total_w - 100;
+            var widths = {good: good_w, pending: pending_w, ongoing: ongoing_w, bad: bad_w};
+
+            var largest_key = Object.keys(widths).reduce(function(a, b){ return widths[a] > widths[b] ? a : b });
+
+            widths[largest_key] -= surplus;
+
+            good_w = widths.good;
+            pending_w = widths.pending;
+            ongoing_w = widths.ongoing;
+            bad_w = widths.bad;
+        }
+
+        var good_cls = "w-" + good_w;
+        var pending_cls = "w-" + pending_w;
+        var ongoing_cls = "w-" + ongoing_w;
+        var bad_cls = "w-" + bad_w;
 
         summary_html += "<div class=\"progress-bar\">" +
             "<div class=\"progress-bar-success " + good_cls + "\"></div>" +
