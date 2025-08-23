@@ -44,6 +44,7 @@ typedef struct sai_sul_retry_ctx {
 	lws_sorted_usec_list_t	sul;
 	struct vhd		*vhd;
 	char			uuid[SAI_TASKID_LEN + 1];
+	char			platform[96];
 	int			retries;
 	uint8_t			op; /* SAIS_WS_WEBSRV_RX_... */
 } sai_sul_retry_ctx_t;
@@ -65,6 +66,11 @@ static lws_struct_map_t lsm_browser_taskreset[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"uuid"),
 };
 
+static lws_struct_map_t lsm_browser_platreset[] = {
+	LSM_CARRAY	(sai_browse_rx_platreset_t, event_uuid, "event_uuid"),
+	LSM_CARRAY	(sai_browse_rx_platreset_t, platform,   "platform"),
+};
+
 static const lws_struct_map_t lsm_viewercount_members[] = {
 	LSM_UNSIGNED(sai_viewer_state_t, viewers,	"count"),
 };
@@ -82,6 +88,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.viewercount"),
 	LSM_SCHEMA	(sai_rebuild_t,		 NULL, lsm_rebuild,
 					      "com.warmcat.sai.rebuild"),
+	LSM_SCHEMA	(sai_browse_rx_platreset_t, NULL, lsm_browser_platreset,
+					      "com.warmcat.sai.platreset"),
 };
 
 enum {
@@ -91,6 +99,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_TASKCANCEL,
 	SAIS_WS_WEBSRV_RX_VIEWERCOUNT,
 	SAIS_WS_WEBSRV_RX_REBUILD,
+	SAIS_WS_WEBSRV_RX_PLATRESET,
 };
 
 void
@@ -494,6 +503,62 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid)
 	return SAI_DB_RESULT_OK;
 }
 
+static sai_db_result_t
+sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
+{
+	sqlite3 *pdb = NULL;
+	lws_dll2_owner_t o;
+	struct lwsac *ac = NULL;
+	char *err = NULL;
+	int ret;
+	char filt[256], esc[96];
+
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb))
+		return SAI_DB_RESULT_ERROR;
+
+	lws_sql_purify(esc, platform, sizeof(esc));
+	lws_snprintf(filt, sizeof(filt), " and platform='%s' and state=4", esc);
+
+	if (lws_struct_sq3_deserialize(pdb, filt, NULL,
+				       lsm_schema_sq3_map_task,
+				       &o, &ac, 0, 999) >= 0) {
+		ret = sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
+		if (ret != SQLITE_OK) {
+			sais_event_db_close(vhd, &pdb);
+			lwsac_free(&ac);
+			if (ret == SQLITE_BUSY)
+				return SAI_DB_RESULT_BUSY;
+			return SAI_DB_RESULT_ERROR;
+		}
+		sqlite3_free(err);
+
+		lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
+			sai_task_t *t = lws_container_of(p, sai_task_t, list);
+			if (sais_task_reset(vhd, t->uuid) == SAI_DB_RESULT_BUSY) {
+				sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
+				sais_event_db_close(vhd, &pdb);
+				lwsac_free(&ac);
+				return SAI_DB_RESULT_BUSY;
+			}
+		} lws_end_foreach_dll(p);
+
+		ret = sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
+		if (ret != SQLITE_OK) {
+			sais_event_db_close(vhd, &pdb);
+			lwsac_free(&ac);
+			if (ret == SQLITE_BUSY)
+				return SAI_DB_RESULT_BUSY;
+			return SAI_DB_RESULT_ERROR;
+		}
+		sqlite3_free(err);
+	}
+
+	sais_event_db_close(vhd, &pdb);
+	lwsac_free(&ac);
+
+	return SAI_DB_RESULT_OK;
+}
+
 static void
 sais_websrv_retry_cb(lws_sorted_usec_list_t *sul)
 {
@@ -509,6 +574,9 @@ sais_websrv_retry_cb(lws_sorted_usec_list_t *sul)
 		break;
 	case SAIS_WS_WEBSRV_RX_EVENTDELETE:
 		r = sais_event_delete(ctx->vhd, ctx->uuid);
+		break;
+	case SAIS_WS_WEBSRV_RX_PLATRESET:
+		r = sais_plat_reset(ctx->vhd, ctx->uuid, ctx->platform);
 		break;
 	}
 
@@ -529,7 +597,7 @@ static lws_ss_state_return_t
 websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
-	char qu[128], esc[96], *err = NULL;
+	char esc[96], *err = NULL;
 	sai_browse_rx_evinfo_t *ei;
 	sqlite3 *pdb = NULL;
 	lws_struct_args_t a;
@@ -601,6 +669,31 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			lws_strncpy(ctx->uuid, ei->event_hash, sizeof(ctx->uuid));
 			ctx->retries = 10;
 			ctx->op = SAIS_WS_WEBSRV_RX_EVENTRESET;
+			lws_sul_schedule(m->vhd->context, 0, &ctx->sul,
+					   sais_websrv_retry_cb, 250 * LWS_US_PER_MS);
+		}
+		lwsac_free(&a.ac);
+		break;
+	}
+
+	case SAIS_WS_WEBSRV_RX_PLATRESET: {
+		sai_browse_rx_platreset_t *pr = (sai_browse_rx_platreset_t *)a.dest;
+		sai_db_result_t r;
+
+		if (sais_validate_id(pr->event_uuid, SAI_EVENTID_LEN))
+			goto soft_error;
+
+		r = sais_plat_reset(m->vhd, pr->event_uuid, pr->platform);
+		if (r == SAI_DB_RESULT_BUSY) {
+			sai_sul_retry_ctx_t *ctx = malloc(sizeof(*ctx));
+			if (!ctx)
+				break;
+
+			ctx->vhd = m->vhd;
+			lws_strncpy(ctx->uuid, pr->event_uuid, sizeof(ctx->uuid));
+			lws_strncpy(ctx->platform, pr->platform, sizeof(ctx->platform));
+			ctx->retries = 10;
+			ctx->op = SAIS_WS_WEBSRV_RX_PLATRESET;
 			lws_sul_schedule(m->vhd->context, 0, &ctx->sul,
 					   sais_websrv_retry_cb, 250 * LWS_US_PER_MS);
 		}
