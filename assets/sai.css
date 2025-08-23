@@ -155,7 +155,10 @@ td.jumble {
 	position: relative;
 	vertical-align: top;
 	white-space: nowrap;
-	min-width: 180px;
+}
+
+td.nomar-container {
+	width: 100%;
 }
 
 img.saicon {
