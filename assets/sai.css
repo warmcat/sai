@@ -194,7 +194,7 @@ span.noscript {
 }
 
 span.nowrap {
-	white-space: nowrap;
+	white-space: pre;
 }
 
 div.taskinfo {

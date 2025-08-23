@@ -451,7 +451,7 @@ function hsanitize(s)
 	
 	return s.toString().replace(/[<>"'&]/g, function(chr) {
 		return '&' + table[chr] + ';';
-	}).replace(/\n/g, '<br>');
+	}).replace(/\n/g, '\n');
 }
 
 var pos = 0, lli = 1, lines = "", times = "", locked = 1, tfirst = 0,
