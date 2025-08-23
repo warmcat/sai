@@ -642,7 +642,7 @@ function summarize_build_situation(event_uuid)
 		bad += same.length;
 	same = roo.querySelectorAll(".taskstate5");
 	if (same)
-		bad += same.length;
+		bad += same.length; // treat cancelled as bad
 	same = roo.querySelectorAll(".taskstate6");
 	if (same)
 		ongoing += same.length;
@@ -747,13 +747,13 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		        san(e.hash.substr(0, 8)) +
 		     "</td><td class=\"e6 nomar\">" +
 		     agify(now_ut, e.created) + "</td></tr>";
-			s += "<tr><td class=\"nomar e6\" colspan=\"2\" id=\"sumbs-" + e.uuid +"\">" + summary_html + "</td><tr>";
+			s += "<tr><td class=\"nomar e6\" colspan=\"2\" id=\"sumbs-" + e.uuid +"\">" + summary_html + "</td></tr>";
 		 s += "</table>" +
 		     "</td>";
 	} else {
 		s +="<td><table><tr><td class=\"e6 nomar\">" + san(e.hash.substr(0, 8)) + " " + agify(now_ut, e.created);
-			s += "</td></tr><tr><td class=\"e6 nomar\" id=\"sumbs-" + e.uuid +"\">" + summary_html;
-		s += "</tr></table></td>"; 
+			s += "</td></tr><tr><td class=\"e6 nomar\" id=\"sumbs-" + e.uuid +"\">" + summary_html + "</td></tr>";
+		s += "</table></td>";
 	}
 	s += "</tr></table>";
 	     
