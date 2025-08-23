@@ -1,4 +1,3 @@
-
 @font-face {
   font-family: 'OpenSans';
   src: url('OpenSans-Light.ttf') format('truetype');
@@ -156,6 +155,7 @@ td.jumble {
 	position: relative;
 	vertical-align: top;
 	white-space: nowrap;
+	min-width: 180px;
 }
 
 img.saicon {
@@ -861,29 +861,6 @@ img.branch {
 	float: right;
 }
 
-.float-right { float: right; }
-.w-0 { width: 0%; }
-.w-5 { width: 5%; }
-.w-10 { width: 10%; }
-.w-15 { width: 15%; }
-.w-20 { width: 20%; }
-.w-25 { width: 25%; }
-.w-30 { width: 30%; }
-.w-35 { width: 35%; }
-.w-40 { width: 40%; }
-.w-45 { width: 45%; }
-.w-50 { width: 50%; }
-.w-55 { width: 55%; }
-.w-60 { width: 60%; }
-.w-65 { width: 65%; }
-.w-70 { width: 70%; }
-.w-75 { width: 75%; }
-.w-80 { width: 80%; }
-.w-85 { width: 85%; }
-.w-90 { width: 90%; }
-.w-95 { width: 95%; }
-.w-100 { width: 100%; }
-
 .progress-bar {
     width: 100%;
     background-color: #f1f1f1;
@@ -891,6 +868,7 @@ img.branch {
     border-radius: 5px;
     margin-top: 5px;
     overflow: hidden;
+    border: 1px solid black;
 }
 
 .progress-bar-success {
