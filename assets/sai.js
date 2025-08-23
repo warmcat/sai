@@ -1275,10 +1275,10 @@ function ws_open_sai()
 							var ongoing_pct = (summary.ongoing / summary.total) * 100;
 							var bad_pct = (summary.bad / summary.total) * 100;
 							summary_html += "<div class=\"progress-bar\">" +
-								"<div class=\"progress-bar-success\" style=\"width: " + good_pct + "%\"></div>" +
-								"<div class=\"progress-bar-pending\" style=\"width: " + pending_pct + "%\"></div>" +
-								"<div class=\"progress-bar-ongoing\" style=\"width: " + ongoing_pct + "%\"></div>" +
-								"<div class=\"progress-bar-failed\" style=\"width: " + bad_pct + "%; float: right;\"></div>" +
+								"<div class=\"progress-bar-success w-" + Math.round(good_pct / 5) * 5 + "\"></div>" +
+								"<div class=\"progress-bar-pending w-" + Math.round(pending_pct / 5) * 5 + "\"></div>" +
+								"<div class=\"progress-bar-ongoing w-" + Math.round(ongoing_pct / 5) * 5 + "\"></div>" +
+								"<div class=\"progress-bar-failed float-right w-" + Math.round(bad_pct / 5) * 5 + "\"></div>" +
 								"</div>";
 						}
 						sumbs.innerHTML = summary_html;
@@ -1313,10 +1313,10 @@ function ws_open_sai()
 									var ongoing_pct = (summary.ongoing / summary.total) * 100;
 									var bad_pct = (summary.bad / summary.total) * 100;
 									summary_html += "<div class=\"progress-bar\">" +
-										"<div class=\"progress-bar-success\" style=\"width: " + good_pct + "%\"></div>" +
-										"<div class=\"progress-bar-pending\" style=\"width: " + pending_pct + "%\"></div>" +
-										"<div class=\"progress-bar-ongoing\" style=\"width: " + ongoing_pct + "%\"></div>" +
-										"<div class=\"progress-bar-failed\" style=\"width: " + bad_pct + "%; float: right;\"></div>" +
+								"<div class=\"progress-bar-success w-" + Math.round(good_pct / 5) * 5 + "\"></div>" +
+								"<div class=\"progress-bar-pending w-" + Math.round(pending_pct / 5) * 5 + "\"></div>" +
+								"<div class=\"progress-bar-ongoing w-" + Math.round(ongoing_pct / 5) * 5 + "\"></div>" +
+								"<div class=\"progress-bar-failed float-right w-" + Math.round(bad_pct / 5) * 5 + "\"></div>" +
 										"</div>";
 								}
 								sumbs.innerHTML = summary_html;
@@ -1440,10 +1440,10 @@ function ws_open_sai()
 							var ongoing_pct = (summary.ongoing / summary.total) * 100;
 							var bad_pct = (summary.bad / summary.total) * 100;
 							summary_html += "<div class=\"progress-bar\">" +
-								"<div class=\"progress-bar-success\" style=\"width: " + good_pct + "%\"></div>" +
-								"<div class=\"progress-bar-pending\" style=\"width: " + pending_pct + "%\"></div>" +
-								"<div class=\"progress-bar-ongoing\" style=\"width: " + ongoing_pct + "%\"></div>" +
-								"<div class=\"progress-bar-failed\" style=\"width: " + bad_pct + "%; float: right;\"></div>" +
+								"<div class=\"progress-bar-success w-" + Math.round(good_pct / 5) * 5 + "\"></div>" +
+								"<div class=\"progress-bar-pending w-" + Math.round(pending_pct / 5) * 5 + "\"></div>" +
+								"<div class=\"progress-bar-ongoing w-" + Math.round(ongoing_pct / 5) * 5 + "\"></div>" +
+								"<div class=\"progress-bar-failed float-right w-" + Math.round(bad_pct / 5) * 5 + "\"></div>" +
 								"</div>";
 						}
 						sumbs.innerHTML = summary_html;
@@ -1501,8 +1501,23 @@ function ws_open_sai()
 								sai_event_summary_render(jso, now_ut, 1);
 								
 						var sumbs = document.getElementById("sumbs-" + jso.e.uuid);
-						if (sumbs)
-							sumbs.innerHTML = summarize_build_situation(jso.e.uuid);
+						if (sumbs) {
+							var summary = summarize_build_situation(jso.e.uuid);
+							var summary_html = summary.text;
+							if (summary.total) {
+								var good_pct = (summary.good / summary.total) * 100;
+								var pending_pct = (summary.pending / summary.total) * 100;
+								var ongoing_pct = (summary.ongoing / summary.total) * 100;
+								var bad_pct = (summary.bad / summary.total) * 100;
+								summary_html += "<div class=\"progress-bar\">" +
+									"<div class=\"progress-bar-success w-" + Math.round(good_pct / 5) * 5 + "\"></div>" +
+									"<div class=\"progress-bar-pending w-" + Math.round(pending_pct / 5) * 5 + "\"></div>" +
+									"<div class=\"progress-bar-ongoing w-" + Math.round(ongoing_pct / 5) * 5 + "\"></div>" +
+									"<div class=\"progress-bar-failed float-right w-" + Math.round(bad_pct / 5) * 5 + "\"></div>" +
+									"</div>";
+							}
+							sumbs.innerHTML = summary_html;
+						}
 					}
 	
 					if (document.getElementById("rebuild-" + san(jso.t.uuid))) {
@@ -1815,4 +1830,3 @@ window.addEventListener("load", function() {
 }, false);
 
 }());
-
