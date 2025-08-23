@@ -615,39 +615,62 @@ function sai_taskinfo_render(t, now_ut)
 
 function summarize_build_situation(event_uuid)
 {
-	var good = 0, bad = 0, total = 0,
+	var good = 0, bad = 0, total = 0, ongoing = 0, pending = 0,
 		roo = document.getElementById("taskcont-" + event_uuid),
 		same;
 		
 	if (!roo) 
-		return "";
+		return { text: "" };
 	
 	same = roo.querySelectorAll(".taskstate");
 	if (same)
 		total = same.length;
+	same = roo.querySelectorAll(".taskstate0");
+	if (same)
+		pending = same.length;
+	same = roo.querySelectorAll(".taskstate1");
+	if (same)
+		ongoing += same.length;
+	same = roo.querySelectorAll(".taskstate2");
+	if (same)
+		ongoing += same.length;
 	same = roo.querySelectorAll(".taskstate3");
 	if (same)
 		good = same.length;
 	same = roo.querySelectorAll(".taskstate4");
 	if (same)
-		bad = same.length;
-				
+		bad += same.length;
+	same = roo.querySelectorAll(".taskstate5");
+	if (same)
+		bad += same.length;
+	same = roo.querySelectorAll(".taskstate6");
+	if (same)
+		ongoing += same.length;
+
+	var text;
 	if (good == total)
-		return "All " + good + " passed";
+		text = "All " + good + " passed";
+	else if (bad == total)
+		text = "All " + bad + " failed";
+	else if (!good && !bad && !ongoing)
+		text = total + " pending";
+	else {
+		var parts = [];
+		if (good) parts.push(good + " passed");
+		if (bad) parts.push(bad + " failed");
+		if (ongoing) parts.push(ongoing + " ongoing");
+		if (pending) parts.push(pending + " pending");
+		text = parts.join(", ");
+	}
 
-	if (bad == total)
-		return "All " + bad + " failed";
-		
-	if (!good && !bad)
-		return total + " pending";
-
-	if (!bad)
-		return good + " passed, " + (total - good) + " pending";
-
-	if (!good)
-		return bad + " failed, " + (total - bad) + " pending";
-
-	return good + " passed, " + bad + " failed, " + (total - good - bad) + " pending";
+	return {
+		text: text,
+		good: good,
+		bad: bad,
+		ongoing: ongoing,
+		pending: pending,
+		total: total
+	};
 }
 
 function sai_event_summary_render(o, now_ut, reset_all_icon)
@@ -688,6 +711,21 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 	}
 	s += "</td>";
 	
+	var summary = summarize_build_situation(e.uuid);
+	var summary_html = summary.text;
+	if (summary.total) {
+		var good_pct = (summary.good / summary.total) * 100;
+		var pending_pct = (summary.pending / summary.total) * 100;
+		var ongoing_pct = (summary.ongoing / summary.total) * 100;
+		var bad_pct = (summary.bad / summary.total) * 100;
+		summary_html += "<div class=\"progress-bar\">" +
+			"<div class=\"progress-bar-success\" style=\"width: " + good_pct + "%\"></div>" +
+			"<div class=\"progress-bar-pending\" style=\"width: " + pending_pct + "%\"></div>" +
+			"<div class=\"progress-bar-ongoing\" style=\"width: " + ongoing_pct + "%\"></div>" +
+			"<div class=\"progress-bar-failed\" style=\"width: " + bad_pct + "%; float: right;\"></div>" +
+			"</div>";
+	}
+
 	if (!gitohashi_integ) {
 		s +=
 		"<td><table class=\"nomar\">" +
@@ -709,12 +747,12 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		        san(e.hash.substr(0, 8)) +
 		     "</td><td class=\"e6 nomar\">" +
 		     agify(now_ut, e.created) + "</td></tr>";
-		     	s += "<tr><td class=\"nomar e6\" colspan=\"2\" id=\"sumbs-" + e.uuid +"\">" + summarize_build_situation(e.uuid) + "</td><tr>";
+			s += "<tr><td class=\"nomar e6\" colspan=\"2\" id=\"sumbs-" + e.uuid +"\">" + summary_html + "</td><tr>";
 		 s += "</table>" +
 		     "</td>";
 	} else {
 		s +="<td><table><tr><td class=\"e6 nomar\">" + san(e.hash.substr(0, 8)) + " " + agify(now_ut, e.created);
-		     	s += "</td></tr><tr><td class=\"e6 nomar\" id=\"sumbs-" + e.uuid +"\">" + summarize_build_situation(e.uuid);
+			s += "</td></tr><tr><td class=\"e6 nomar\" id=\"sumbs-" + e.uuid +"\">" + summary_html;
 		s += "</tr></table></td>"; 
 	}
 	s += "</tr></table>";
@@ -1451,8 +1489,23 @@ function ws_open_sai()
 					refresh_state(jso.t.uuid, jso.t.state);
 					
 					var sumbs = document.getElementById("sumbs-" + jso.t.uuid.substring(0, 32));
-					if (sumbs)
-						sumbs.innerHTML = summarize_build_situation(jso.t.uuid.substring(0, 32));
+					if (sumbs) {
+						var summary = summarize_build_situation(jso.t.uuid.substring(0, 32));
+						var summary_html = summary.text;
+						if (summary.total > 0) {
+							var good_pct = (summary.good / summary.total) * 100;
+							var pending_pct = (summary.pending / summary.total) * 100;
+							var ongoing_pct = (summary.ongoing / summary.total) * 100;
+							var bad_pct = (summary.bad / summary.total) * 100;
+							summary_html += "<div class=\"progress-bar\">" +
+								"<div class=\"progress-bar-success\" style=\"width: " + good_pct + "%\"></div>" +
+								"<div class=\"progress-bar-pending\" style=\"width: " + pending_pct + "%\"></div>" +
+								"<div class=\"progress-bar-ongoing\" style=\"width: " + ongoing_pct + "%\"></div>" +
+								"<div class=\"progress-bar-failed\" style=\"width: " + bad_pct + "%; float: right;\"></div>" +
+								"</div>";
+						}
+						sumbs.innerHTML = summary_html;
+					}
 
 				} else
 				

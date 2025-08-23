@@ -856,3 +856,35 @@ img.branch {
 .context-menu li:hover {
 	background-color: #f2f2f2;
 }
+
+.progress-bar {
+    width: 100%;
+    background-color: #f1f1f1;
+    height: 10px;
+    border-radius: 5px;
+    margin-top: 5px;
+    overflow: hidden;
+}
+
+.progress-bar-success {
+    background-color: #4CAF50; /* green */
+    height: 10px;
+    float: left;
+}
+
+.progress-bar-pending {
+    background-color: #ffffff; /* white */
+    height: 10px;
+    float: left;
+}
+
+.progress-bar-ongoing {
+    background-color: #000000; /* black */
+    height: 10px;
+    float: left;
+}
+
+.progress-bar-failed {
+    background-color: #f44336; /* red */
+    height: 10px;
+}
