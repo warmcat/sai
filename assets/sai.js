@@ -974,6 +974,8 @@ function createBuilderDiv(plat) {
 	];
 
 	platDiv.addEventListener("contextmenu", function(event) {
+		if (!authd)
+			return;
 		createContextMenu(event, menuItems);
 	});
 
@@ -1007,7 +1009,8 @@ function createBuilderDiv(plat) {
                 pageX: touchStartPos.x,
                 pageY: touchStartPos.y
             };
-            createContextMenu(mockEvent, menuItems);
+            if (authd)
+		createContextMenu(mockEvent, menuItems);
         }
         touchStartTime = 0;
     });
@@ -1462,7 +1465,7 @@ function ws_open_sai()
 						document.getElementById("taskinfo-" + jso.t.uuid).innerHTML = sai_taskinfo_render(jso);
 						if (document.getElementById("esr-" + jso.e.uuid))
 							document.getElementById("esr-" + jso.e.uuid).innerHTML =
-								sai_event_summary_render(jso.e, now_ut, 1);
+								sai_event_summary_render(jso, now_ut, 1);
 					} else {
 						
 						console.log("NO taskinfo- or taskstate_" + jso.t.uuid);

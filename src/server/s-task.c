@@ -724,14 +724,15 @@ sais_task_cancel(struct vhd *vhd, const char *task_uuid)
  * it and reset the task state back to WAITING.
  */
 
-int
+sai_db_result_t
 sais_task_reset(struct vhd *vhd, const char *task_uuid)
 {
 	char esc[96], cmd[256], event_uuid[33];
 	sqlite3 *pdb = NULL;
+	int ret;
 
 	if (!task_uuid[0])
-		return 0;
+		return SAI_DB_RESULT_OK;
 
 	lwsl_notice("%s: received request to reset task %s\n", __func__, task_uuid);
 
@@ -741,23 +742,35 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 		lwsl_err("%s: unable to open event-specific database\n",
 				__func__);
 
-		return -1;
+		return SAI_DB_RESULT_ERROR;
 	}
 
 	lws_sql_purify(esc, task_uuid, sizeof(esc));
 	lws_snprintf(cmd, sizeof(cmd), "delete from logs where task_uuid='%s'",
 		     esc);
 
-	if (sqlite3_exec(pdb, cmd, NULL, NULL, NULL) != SQLITE_OK) {
+	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+	if (ret != SQLITE_OK) {
 		sais_event_db_close(vhd, &pdb);
+		if (ret == SQLITE_BUSY)
+			return SAI_DB_RESULT_BUSY;
 		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
-			 sqlite3_errmsg(vhd->server.pdb));
-		return 1;
+			 sqlite3_errmsg(pdb));
+		return SAI_DB_RESULT_ERROR;
 	}
 	lws_snprintf(cmd, sizeof(cmd), "delete from artifacts where task_uuid='%s'",
 		     esc);
 
-	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+	if (ret != SQLITE_OK) {
+		sais_event_db_close(vhd, &pdb);
+		if (ret == SQLITE_BUSY)
+			return SAI_DB_RESULT_BUSY;
+		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
+			 sqlite3_errmsg(pdb));
+		return SAI_DB_RESULT_ERROR;
+	}
+
 	sais_event_db_close(vhd, &pdb);
 
 	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
@@ -776,7 +789,7 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 	 */
 	sais_platforms_with_tasks_pending(vhd);
 
-	return 0;
+	return SAI_DB_RESULT_OK;
 }
 
 /*
