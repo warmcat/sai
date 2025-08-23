@@ -857,6 +857,10 @@ img.branch {
 	background-color: #f2f2f2;
 }
 
+.float-right {
+	float: right;
+}
+
 .float-right { float: right; }
 .w-0 { width: 0%; }
 .w-5 { width: 5%; }

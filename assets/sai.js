@@ -648,11 +648,11 @@ function summarize_build_situation(event_uuid)
 		ongoing += same.length;
 
 	var text;
-	if (good == total)
+	if (good == total && total > 0)
 		text = "All " + good + " passed";
-	else if (bad == total)
+	else if (bad == total && total > 0)
 		text = "All " + bad + " failed";
-	else if (!good && !bad && !ongoing)
+	else if (pending == total && total > 0)
 		text = total + " pending";
 	else {
 		var parts = [];
@@ -732,10 +732,12 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		        san(e.hash.substr(0, 8)) +
 		     "</td><td class=\"e6 nomar\">" +
 		     agify(now_ut, e.created) + "</td></tr>";
+		s += "<tr><td class=\"nomar e6\" colspan=\"2\" id=\"sumbs-" + e.uuid +"\"></td></tr>";
 		 s += "</table>" +
 		     "</td>";
 	} else {
 		s +="<td><table><tr><td class=\"e6 nomar\">" + san(e.hash.substr(0, 8)) + " " + agify(now_ut, e.created) + "</td></tr>";
+		s += "<tr><td class=\"nomar e6\" id=\"sumbs-" + e.uuid +"\"></td></tr>";
 		s += "</table></td>";
 	}
 	s += "</tr></table>";
@@ -753,7 +755,6 @@ function sai_event_render(o, now_ut, reset_all_icon)
 	s += "><div id=\"esr-" + san(e.uuid) + "\"></div></td>";
 
 	if (o.t.length) {
-		
 		s += "<td class=\"tasks\" id=\"taskcont-" + san(e.uuid) + "\">";
 		if (gitohashi_integ)
 			s += "<div class=\"gi_popup\" id=\"gitohashi_sai_details\">";
@@ -793,7 +794,7 @@ function sai_event_render(o, now_ut, reset_all_icon)
 		s += "</td>";
 	}
 
-	s += "</tr><tr><td colspan=2 class=\"nomar e6\" id=\"sumbs-" + e.uuid + "\"></td></tr>";
+	s += "</tr>";
 	
 	return s;
 }
@@ -1313,10 +1314,10 @@ function ws_open_sai()
 									var ongoing_pct = (summary.ongoing / summary.total) * 100;
 									var bad_pct = (summary.bad / summary.total) * 100;
 									summary_html += "<div class=\"progress-bar\">" +
-								"<div class=\"progress-bar-success w-" + Math.round(good_pct / 5) * 5 + "\"></div>" +
-								"<div class=\"progress-bar-pending w-" + Math.round(pending_pct / 5) * 5 + "\"></div>" +
-								"<div class=\"progress-bar-ongoing w-" + Math.round(ongoing_pct / 5) * 5 + "\"></div>" +
-								"<div class=\"progress-bar-failed float-right w-" + Math.round(bad_pct / 5) * 5 + "\"></div>" +
+										"<div class=\"progress-bar-success w-" + Math.round(good_pct / 5) * 5 + "\"></div>" +
+										"<div class=\"progress-bar-pending w-" + Math.round(pending_pct / 5) * 5 + "\"></div>" +
+										"<div class=\"progress-bar-ongoing w-" + Math.round(ongoing_pct / 5) * 5 + "\"></div>" +
+										"<div class=\"progress-bar-failed float-right w-" + Math.round(bad_pct / 5) * 5 + "\"></div>" +
 										"</div>";
 								}
 								sumbs.innerHTML = summary_html;
