@@ -27,6 +27,25 @@
 
 #include "s-private.h"
 
+static int
+sqlite3_exec_busy_retry(sqlite3 *db, const char *sql,
+			int (*callback)(void*,int,char**,char**),
+			void *arg, char **errmsg)
+{
+	int ret;
+	int retries = 10;
+
+	do {
+		ret = sqlite3_exec(db, sql, callback, arg, errmsg);
+		if (ret == SQLITE_BUSY) {
+			lwsl_warn("SQLITE_BUSY, retrying...\n");
+			lws_msleep(100);
+		}
+	} while (ret == SQLITE_BUSY && --retries > 0);
+
+	return ret;
+}
+
 int
 sql3_get_integer_cb(void *user, int cols, char **values, char **name)
 {
@@ -135,7 +154,7 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 	 */
 	lws_snprintf(update, sizeof(update),
 		     "select state from tasks where uuid='%s'", esc2);
-	if (sqlite3_exec((sqlite3 *)e->pdb, update,
+	if (sqlite3_exec_busy_retry((sqlite3 *)e->pdb, update,
 			 sql3_get_integer_cb, &task_ostate, NULL) != SQLITE_OK) {
 		lwsl_err("%s: %s: %s: fail\n", __func__, update,
 			 sqlite3_errmsg(vhd->server.pdb));
@@ -169,7 +188,7 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 			builder_name ? "'" : "",
 			esc3, esc4, esc2);
 
-	if (sqlite3_exec((sqlite3 *)e->pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
+	if (sqlite3_exec_busy_retry((sqlite3 *)e->pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
 		lwsl_err("%s: %s: %s: fail\n", __func__, update,
 			 sqlite3_errmsg(vhd->server.pdb));
 		goto bail;
@@ -194,7 +213,7 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 		 * So, how many tasks for this event?
 		 */
 
-		if (sqlite3_exec((sqlite3 *)e->pdb, "select count(state) from tasks",
+		if (sqlite3_exec_busy_retry((sqlite3 *)e->pdb, "select count(state) from tasks",
 				 sql3_get_integer_cb, &count, NULL) != SQLITE_OK) {
 			lwsl_err("%s: %s: %s: fail\n", __func__, update,
 				 sqlite3_errmsg(vhd->server.pdb));
@@ -205,7 +224,7 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 		 * ... how many completed well?
 		 */
 
-		if (sqlite3_exec((sqlite3 *)e->pdb, "select count(state) from tasks where state == 3",
+		if (sqlite3_exec_busy_retry((sqlite3 *)e->pdb, "select count(state) from tasks where state == 3",
 				 sql3_get_integer_cb, &count_good, NULL) != SQLITE_OK) {
 			lwsl_err("%s: %s: %s: fail\n", __func__, update,
 				 sqlite3_errmsg(vhd->server.pdb));
@@ -216,7 +235,7 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 		 * ... how many failed?
 		 */
 
-		if (sqlite3_exec((sqlite3 *)e->pdb, "select count(state) from tasks where state == 4",
+		if (sqlite3_exec_busy_retry((sqlite3 *)e->pdb, "select count(state) from tasks where state == 4",
 				 sql3_get_integer_cb, &count_bad, NULL) != SQLITE_OK) {
 			lwsl_err("%s: %s: %s: fail\n", __func__, update,
 				 sqlite3_errmsg(vhd->server.pdb));
@@ -254,7 +273,7 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 			lws_snprintf(update, sizeof(update),
 				"update events set state=%d where uuid='%s'", sta, esc1);
 
-			if (sqlite3_exec(vhd->server.pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
+			if (sqlite3_exec_busy_retry(vhd->server.pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
 				lwsl_err("%s: %s: %s: fail\n", __func__, update,
 					 sqlite3_errmsg(vhd->server.pdb));
 				goto bail;
@@ -308,7 +327,7 @@ sais_event_ran_platform(struct vhd *vhd, const char *event_uuid,
 		     "select count(state) from tasks where platform = '%s'",
 		     platform);
 
-	if (sqlite3_exec(check_pdb, query, sql3_get_integer_cb, &count,
+	if (sqlite3_exec_busy_retry(check_pdb, query, sql3_get_integer_cb, &count,
 			 NULL) != SQLITE_OK)
 		count = 0;
 
@@ -376,7 +395,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 
 			lws_snprintf(query, sizeof(query), "select count(state) from tasks where "
 							   "state = 0 and platform = '%s'", esc_plat);
-			m = sqlite3_exec(pdb, query, sql3_get_integer_cb, &pending_count, NULL);
+			m = sqlite3_exec_busy_retry(pdb, query, sql3_get_integer_cb, &pending_count, NULL);
 		       
 			if (m != SQLITE_OK) {
 				pending_count = 0;
@@ -748,16 +767,16 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 	lws_snprintf(cmd, sizeof(cmd), "delete from logs where task_uuid='%s'",
 		     esc);
 
-	if (sqlite3_exec(pdb, cmd, NULL, NULL, NULL) != SQLITE_OK) {
+	if (sqlite3_exec_busy_retry(pdb, cmd, NULL, NULL, NULL) != SQLITE_OK) {
 		sais_event_db_close(vhd, &pdb);
 		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
-			 sqlite3_errmsg(vhd->server.pdb));
+			 sqlite3_errmsg(pdb));
 		return 1;
 	}
 	lws_snprintf(cmd, sizeof(cmd), "delete from artifacts where task_uuid='%s'",
 		     esc);
 
-	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+	sqlite3_exec_busy_retry(pdb, cmd, NULL, NULL, NULL);
 	sais_event_db_close(vhd, &pdb);
 
 	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);

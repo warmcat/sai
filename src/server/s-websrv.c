@@ -40,6 +40,25 @@
 
 #include "s-private.h"
 
+static int
+sqlite3_exec_busy_retry(sqlite3 *db, const char *sql,
+			int (*callback)(void*,int,char**,char**),
+			void *arg, char **errmsg)
+{
+	int ret;
+	int retries = 10;
+
+	do {
+		ret = sqlite3_exec(db, sql, callback, arg, errmsg);
+		if (ret == SQLITE_BUSY) {
+			lwsl_warn("SQLITE_BUSY, retrying...\n");
+			lws_msleep(100);
+		}
+	} while (ret == SQLITE_BUSY && --retries > 0);
+
+	return ret;
+}
+
 typedef struct websrvss_srv {
 	struct lws_ss_handle 		*ss;
 	struct vhd			*vhd;
@@ -433,7 +452,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 					       lsm_schema_sq3_map_task,
 					       &o, &a.ac, 0, 999) >= 0) {
 
-			sqlite3_exec(pdb, "BEGIN TRANSACTION",
+			sqlite3_exec_busy_retry(pdb, "BEGIN TRANSACTION",
 				     NULL, NULL, &err);
 			sqlite3_free(err);
 
@@ -449,7 +468,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 			} lws_end_foreach_dll(p);
 
-			sqlite3_exec(pdb, "END TRANSACTION",
+			sqlite3_exec_busy_retry(pdb, "END TRANSACTION",
 				     NULL, NULL, &err);
 			sqlite3_free(err);
 		}
@@ -493,7 +512,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 						       lsm_schema_sq3_map_task,
 						       &o, &a.ac, 0, 999) >= 0) {
 
-				sqlite3_exec(pdb, "BEGIN TRANSACTION",
+				sqlite3_exec_busy_retry(pdb, "BEGIN TRANSACTION",
 					     NULL, NULL, &err);
 
 				/*
@@ -513,7 +532,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 				} lws_end_foreach_dll(p);
 
-				sqlite3_exec(pdb, "END TRANSACTION",
+				sqlite3_exec_busy_retry(pdb, "END TRANSACTION",
 					     NULL, NULL, &err);
 			}
 
@@ -525,7 +544,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lws_sql_purify(esc, ei->event_hash, sizeof(esc));
 		lws_snprintf(qu, sizeof(qu), "delete from events where uuid='%s'",
 				esc);
-		sqlite3_exec(m->vhd->server.pdb, qu, NULL, NULL, &err);
+		sqlite3_exec_busy_retry(m->vhd->server.pdb, qu, NULL, NULL, &err);
 		if (err) {
 			lwsl_err("%s: evdel uuid %s, sq3 err %s\n", __func__,
 					esc, err);
