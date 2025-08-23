@@ -614,41 +614,36 @@ function sai_taskinfo_render(t, now_ut)
 }
 
 function update_summary_and_progress(event_uuid) {
-	var sumbs = document.getElementById("sumbs-" + event_uuid);
-	if (!sumbs)
-		return;
+    var sumbs = document.getElementById("sumbs-" + event_uuid);
+    if (!sumbs)
+        return;
 
-	var summary = summarize_build_situation(event_uuid);
-	var summary_html = summary.text;
+    var summary = summarize_build_situation(event_uuid);
+    var summary_html = summary.text;
 
-	if (summary.total > 0) {
-		var good_pct = (summary.good / summary.total) * 100;
-		var pending_pct = (summary.pending / summary.total) * 100;
-		var ongoing_pct = (summary.ongoing / summary.total) * 100;
-		var bad_pct = (summary.bad / summary.total) * 100;
+    if (summary.total > 0) {
+        var good_pct = (summary.good / summary.total) * 100;
+        var pending_pct = (summary.pending / summary.total) * 100;
+        var ongoing_pct = (summary.ongoing / summary.total) * 100;
+        var bad_pct = (summary.bad / summary.total) * 100;
 
-		var style_id = "progress-style-" + event_uuid;
-		var style_el = document.getElementById(style_id);
-		if (!style_el) {
-			style_el = document.createElement("style");
-			style_el.id = style_id;
-			document.head.appendChild(style_el);
-		}
+        var roundUpTo5 = function(n) {
+            return Math.ceil(n / 5) * 5;
+        };
 
-		style_el.innerHTML =
-			".progress-good-" + event_uuid + " { width: " + good_pct + "%; }" +
-			".progress-pending-" + event_uuid + " { width: " + pending_pct + "%; }" +
-			".progress-ongoing-" + event_uuid + " { width: " + ongoing_pct + "%; }" +
-			".progress-failed-" + event_uuid + " { width: " + bad_pct + "%; }";
+        var good_cls = "w-" + roundUpTo5(good_pct);
+        var pending_cls = "w-" + roundUpTo5(pending_pct);
+        var ongoing_cls = "w-" + roundUpTo5(ongoing_pct);
+        var bad_cls = "w-" + roundUpTo5(bad_pct);
 
-		summary_html += "<div class=\"progress-bar\">" +
-			"<div class=\"progress-bar-success progress-good-" + event_uuid + "\"></div>" +
-			"<div class=\"progress-bar-pending progress-pending-" + event_uuid + "\"></div>" +
-			"<div class=\"progress-bar-ongoing progress-ongoing-" + event_uuid + "\"></div>" +
-			"<div class=\"progress-bar-failed float-right progress-failed-" + event_uuid + "\"></div>" +
-			"</div>";
-	}
-	sumbs.innerHTML = summary_html;
+        summary_html += "<div class=\"progress-bar\">" +
+            "<div class=\"progress-bar-success " + good_cls + "\"></div>" +
+            "<div class=\"progress-bar-pending " + pending_cls + "\"></div>" +
+            "<div class=\"progress-bar-ongoing " + ongoing_cls + "\"></div>" +
+            "<div class=\"progress-bar-failed float-right " + bad_cls + "\"></div>" +
+            "</div>";
+    }
+    sumbs.innerHTML = summary_html;
 }
 
 function summarize_build_situation(event_uuid)
@@ -812,7 +807,8 @@ function sai_event_render(o, now_ut, reset_all_icon)
 				ctn = t.taskname;
 			}
 			
-			s1 += "<div id=\"taskstate_" + t.uuid + "\" class=\"taskstate taskstate" + t.state + "\">";
+			s1 += "<div id=\"taskstate_" + t.uuid + "\" class=\"taskstate taskstate" + t.state +
+				"\" data-event-uuid=\"" + san(e.uuid) + "\" data-platform=\"" + san(t.platform) + "\">";
 			s1 += "<a href=\"/sai/index.html?task=" + t.uuid + "\">" +
 				sai_plat_icon(t.platform, 0) + "</a>";
 			s1 += "</div>";
