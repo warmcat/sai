@@ -439,6 +439,55 @@ function humanize(s)
 	return s;
 }
 
+function ansiToHtml(text) {
+    const classMap = {
+        '1': 'ansi-bold', '4': 'ansi-underline',
+        '30': 'ansi-fg-black', '31': 'ansi-fg-red', '32': 'ansi-fg-green', '33': 'ansi-fg-yellow', '34': 'ansi-fg-blue', '35': 'ansi-fg-magenta', '36': 'ansi-fg-cyan', '37': 'ansi-fg-white',
+        '40': 'ansi-bg-black', '41': 'ansi-bg-red', '42': 'ansi-bg-green', '43': 'ansi-bg-yellow', '44': 'ansi-bg-blue', '45': 'ansi-bg-magenta', '46': 'ansi-bg-cyan', '47': 'ansi-bg-white',
+    };
+
+    let openSpan = false;
+    // Using a regex to split the string by ANSI codes, keeping the codes as delimiters
+    const parts = text.split(/(\u001b\[[\d;]*m)/);
+
+    let html = '';
+    for (let i = 0; i < parts.length; i++) {
+        const part = parts[i];
+        if (!part) {
+            continue;
+        }
+
+        if (part.startsWith('\u001b[')) { // It's an ANSI code
+            const codes = part.substring(2, part.length - 1).split(';');
+
+            // Close any existing span before starting a new one or resetting
+            if (openSpan) {
+                html += '</span>';
+                openSpan = false;
+            }
+
+            // A reset code ('0' or empty) just closes the span
+            if (codes.length === 1 && (codes[0] === '0' || codes[0] === '')) {
+                continue;
+            }
+
+            const classes = codes.map(code => classMap[code]).filter(Boolean).join(' ');
+            if (classes) {
+                html += `<span class="${classes}">`;
+                openSpan = true;
+            }
+        } else { // It's plain text
+            html += hsanitize(part);
+        }
+    }
+
+    if (openSpan) {
+        html += '</span>';
+    }
+
+    return html;
+}
+
 function hsanitize(s)
 {
 	var table = {
@@ -1648,7 +1697,7 @@ function ws_open_sai()
 
 			case "com-warmcat-sai-logs":
 				try {
-				var s1 = decodeURIComponent(escape(atob(jso.log))), s = hsanitize(s1), li,
+				var s1 = decodeURIComponent(escape(atob(jso.log))), s = ansiToHtml(s1), li,
 					en = "", yo, dh, ce, tn = "";
 				} catch (e) {
 					break;
