@@ -1495,7 +1495,7 @@ function ws_open_sai()
 						"<td class=\"atop\">" +
 						"<div id=\"dlogst\" class=\"dlogst\">" + times + "</div></td>" +
 					     "<td class=\"atop\"><div id=\"dlogs\" class=\"dlogs\">" +
-					     "<span id=\"logs\" class=\"nowrap\">" + logs +
+					     "<span id=\"logs\">" + logs +
 					     	"</span>"+
 						"</div></td></tr></table></pre>";
 					
