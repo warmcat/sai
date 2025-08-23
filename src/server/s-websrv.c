@@ -40,24 +40,16 @@
 
 #include "s-private.h"
 
-static int
-sqlite3_exec_busy_retry(sqlite3 *db, const char *sql,
-			int (*callback)(void*,int,char**,char**),
-			void *arg, char **errmsg)
-{
-	int ret;
-	int retries = 10;
+typedef struct sai_sul_retry_ctx {
+	lws_sorted_usec_list_t	sul;
+	struct vhd		*vhd;
+	char			uuid[SAI_TASKID_LEN + 1];
+	int			retries;
+	uint8_t			op; /* SAIS_WS_WEBSRV_RX_... */
+} sai_sul_retry_ctx_t;
 
-	do {
-		ret = sqlite3_exec(db, sql, callback, arg, errmsg);
-		if (ret == SQLITE_BUSY) {
-			lwsl_warn("SQLITE_BUSY, retrying...\n");
-			lws_msleep(100);
-		}
-	} while (ret == SQLITE_BUSY && --retries > 0);
-
-	return ret;
-}
+static void
+sais_websrv_retry_cb(lws_sorted_usec_list_t *sul);
 
 typedef struct websrvss_srv {
 	struct lws_ss_handle 		*ss;
@@ -382,6 +374,157 @@ sum_viewers_cb(struct lws_ss_handle *h, void *arg)
 	*(unsigned int *)arg += m_client->viewers;
 }
 
+static sai_db_result_t
+sais_event_reset(struct vhd *vhd, const char *event_uuid)
+{
+	sqlite3 *pdb = NULL;
+	lws_dll2_owner_t o;
+	struct lwsac *ac = NULL;
+	char *err = NULL;
+	int ret;
+
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb))
+		return SAI_DB_RESULT_ERROR;
+
+	if (lws_struct_sq3_deserialize(pdb, NULL, NULL,
+				       lsm_schema_sq3_map_task,
+				       &o, &ac, 0, 999) >= 0) {
+
+		ret = sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
+		if (ret != SQLITE_OK) {
+			sais_event_db_close(vhd, &pdb);
+			lwsac_free(&ac);
+			if (ret == SQLITE_BUSY)
+				return SAI_DB_RESULT_BUSY;
+			return SAI_DB_RESULT_ERROR;
+		}
+		sqlite3_free(err);
+
+		lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
+			sai_task_t *t = lws_container_of(p, sai_task_t, list);
+			if (sais_task_reset(vhd, t->uuid) == SAI_DB_RESULT_BUSY) {
+				sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
+				sais_event_db_close(vhd, &pdb);
+				lwsac_free(&ac);
+				return SAI_DB_RESULT_BUSY;
+			}
+		} lws_end_foreach_dll(p);
+
+		ret = sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
+		if (ret != SQLITE_OK) {
+			sais_event_db_close(vhd, &pdb);
+			lwsac_free(&ac);
+			if (ret == SQLITE_BUSY)
+				return SAI_DB_RESULT_BUSY;
+			return SAI_DB_RESULT_ERROR;
+		}
+		sqlite3_free(err);
+	}
+
+	sais_event_db_close(vhd, &pdb);
+	lwsac_free(&ac);
+
+	return SAI_DB_RESULT_OK;
+}
+
+sai_db_result_t
+sais_event_delete(struct vhd *vhd, const char *event_uuid)
+{
+	sqlite3 *pdb = NULL;
+	lws_dll2_owner_t o;
+	struct lwsac *ac = NULL;
+	char *err = NULL;
+	int ret;
+	char qu[128], esc[96];
+
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) == 0) {
+		if (lws_struct_sq3_deserialize(pdb, NULL, NULL,
+					       lsm_schema_sq3_map_task,
+					       &o, &ac, 0, 999) >= 0) {
+
+			ret = sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
+			if (ret != SQLITE_OK) {
+				sais_event_db_close(vhd, &pdb);
+				lwsac_free(&ac);
+				if (ret == SQLITE_BUSY)
+					return SAI_DB_RESULT_BUSY;
+				return SAI_DB_RESULT_ERROR;
+			}
+
+			lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
+				sai_task_t *t = lws_container_of(p, sai_task_t, list);
+
+				if (t->state != SAIES_WAITING &&
+				    t->state != SAIES_SUCCESS &&
+				    t->state != SAIES_FAIL &&
+				    t->state != SAIES_CANCELLED)
+					sais_task_cancel(vhd, t->uuid);
+
+			} lws_end_foreach_dll(p);
+
+			ret = sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
+			if (ret != SQLITE_OK) {
+				sais_event_db_close(vhd, &pdb);
+				lwsac_free(&ac);
+				if (ret == SQLITE_BUSY)
+					return SAI_DB_RESULT_BUSY;
+				return SAI_DB_RESULT_ERROR;
+			}
+		}
+		sais_event_db_close(vhd, &pdb);
+		lwsac_free(&ac);
+	}
+
+	lws_sql_purify(esc, event_uuid, sizeof(esc));
+	lws_snprintf(qu, sizeof(qu), "delete from events where uuid='%s'", esc);
+	ret = sqlite3_exec(vhd->server.pdb, qu, NULL, NULL, &err);
+	if (ret != SQLITE_OK) {
+		if (ret == SQLITE_BUSY)
+			return SAI_DB_RESULT_BUSY;
+		lwsl_err("%s: evdel uuid %s, sq3 err %s\n", __func__, esc, err);
+		sqlite3_free(err);
+		return SAI_DB_RESULT_ERROR;
+	}
+
+	sais_event_db_delete_database(vhd, event_uuid);
+	sais_eventchange(vhd->h_ss_websrv, event_uuid, SAIES_DELETED);
+	sais_websrv_broadcast(vhd->h_ss_websrv,
+			      "{\"schema\":\"sai-overview\"}", 25);
+
+	return SAI_DB_RESULT_OK;
+}
+
+static void
+sais_websrv_retry_cb(lws_sorted_usec_list_t *sul)
+{
+	sai_sul_retry_ctx_t *ctx = lws_container_of(sul, sai_sul_retry_ctx_t, sul);
+	sai_db_result_t r = SAI_DB_RESULT_ERROR;
+
+	switch(ctx->op) {
+	case SAIS_WS_WEBSRV_RX_TASKRESET:
+		r = sais_task_reset(ctx->vhd, ctx->uuid);
+		break;
+	case SAIS_WS_WEBSRV_RX_EVENTRESET:
+		r = sais_event_reset(ctx->vhd, ctx->uuid);
+		break;
+	case SAIS_WS_WEBSRV_RX_EVENTDELETE:
+		r = sais_event_delete(ctx->vhd, ctx->uuid);
+		break;
+	}
+
+	if (r == SAI_DB_RESULT_BUSY && ctx->retries-- > 0) {
+		lwsl_notice("Retrying op %d for %s\n", ctx->op, ctx->uuid);
+		lws_sul_schedule(ctx->vhd->context, 0, &ctx->sul,
+				   sais_websrv_retry_cb, 250 * LWS_US_PER_MS);
+		return;
+	}
+
+	if (r != SAI_DB_RESULT_OK)
+		lwsl_err("Failed op %d for %s after retries\n", ctx->op, ctx->uuid);
+
+	free(ctx);
+}
+
 static lws_ss_state_return_t
 websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
@@ -415,70 +558,59 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 	switch (a.top_schema_index) {
 	case SAIS_WS_WEBSRV_RX_TASKRESET:
+	{
+		sai_db_result_t r;
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 		if (sais_validate_id(ei->event_hash, SAI_TASKID_LEN))
 			goto soft_error;
 
-		sais_task_reset(m->vhd, ei->event_hash);
+		r = sais_task_reset(m->vhd, ei->event_hash);
+		if (r == SAI_DB_RESULT_BUSY) {
+			sai_sul_retry_ctx_t *ctx = malloc(sizeof(*ctx));
+
+			if (!ctx)
+				break;
+
+			ctx->vhd = m->vhd;
+			lws_strncpy(ctx->uuid, ei->event_hash, sizeof(ctx->uuid));
+			ctx->retries = 10;
+			ctx->op = SAIS_WS_WEBSRV_RX_TASKRESET;
+			lws_sul_schedule(m->vhd->context, 0, &ctx->sul,
+					   sais_websrv_retry_cb, 250 * LWS_US_PER_MS);
+		}
 		break;
+	}
 
 	case SAIS_WS_WEBSRV_RX_EVENTRESET:
+	{
+		sai_db_result_t r;
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 		if (sais_validate_id(ei->event_hash, SAI_EVENTID_LEN))
 			goto soft_error;
 
-		/* open the event-specific database object */
+		r = sais_event_reset(m->vhd, ei->event_hash);
+		if (r == SAI_DB_RESULT_BUSY) {
+			sai_sul_retry_ctx_t *ctx = malloc(sizeof(*ctx));
 
-		if (sais_event_db_ensure_open(m->vhd, ei->event_hash, 0, &pdb)) {
-			lwsl_err("%s: unable to open event-specific database\n",
-					__func__);
-			/*
-			 * hanging up isn't a good way to deal with browser
-			 * tabs left open with a live connection to a
-			 * now-deleted task... the page will reconnect endlessly
-			 */
-			goto soft_error;
+			if (!ctx)
+				break;
+
+			ctx->vhd = m->vhd;
+			lws_strncpy(ctx->uuid, ei->event_hash, sizeof(ctx->uuid));
+			ctx->retries = 10;
+			ctx->op = SAIS_WS_WEBSRV_RX_EVENTRESET;
+			lws_sul_schedule(m->vhd->context, 0, &ctx->sul,
+					   sais_websrv_retry_cb, 250 * LWS_US_PER_MS);
 		}
-
-		/*
-		 * Retreive all the related structs into a dll2 list
-		 */
-
-		lws_sql_purify(esc, ei->event_hash, sizeof(esc));
-
-		if (lws_struct_sq3_deserialize(pdb, NULL, NULL,
-					       lsm_schema_sq3_map_task,
-					       &o, &a.ac, 0, 999) >= 0) {
-
-			sqlite3_exec_busy_retry(pdb, "BEGIN TRANSACTION",
-				     NULL, NULL, &err);
-			sqlite3_free(err);
-
-			/*
-			 * Walk the results list resetting all the tasks
-			 */
-
-			lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
-				sai_task_t *t = lws_container_of(p, sai_task_t,
-								 list);
-
-				sais_task_reset(m->vhd, t->uuid);
-
-			} lws_end_foreach_dll(p);
-
-			sqlite3_exec_busy_retry(pdb, "END TRANSACTION",
-				     NULL, NULL, &err);
-			sqlite3_free(err);
-		}
-
-		sais_event_db_close(m->vhd, &pdb);
 		lwsac_free(&a.ac);
-
-		return 0;
+		break;
+	}
 
 	case SAIS_WS_WEBSRV_RX_EVENTDELETE:
+	{
+		sai_db_result_t r;
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 		if (sais_validate_id(ei->event_hash, SAI_EVENTID_LEN)) {
@@ -488,80 +620,22 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		lwsl_notice("%s: eventdelete %s\n", __func__, ei->event_hash);
 
-		/* open the event-specific database object */
+		r = sais_event_delete(m->vhd, ei->event_hash);
+		if (r == SAI_DB_RESULT_BUSY) {
+			sai_sul_retry_ctx_t *ctx = malloc(sizeof(*ctx));
+			if (!ctx)
+				break;
 
-		if (sais_event_db_ensure_open(m->vhd, ei->event_hash, 0, &pdb)) {
-			lwsl_notice("%s: unable to open event-specific database\n",
-					__func__);
-			/*
-			 * hanging up isn't a good way to deal with browser
-			 * tabs left open with a live connection to a
-			 * now-deleted task... the page will reconnect endlessly
-			 */
-
-			// goto soft_error;
-		} else {
-
-			/*
-			 * Retreive all the related structs into a dll2 list
-			 */
-
-			lws_sql_purify(esc, ei->event_hash, sizeof(esc));
-
-			if (lws_struct_sq3_deserialize(pdb, NULL, NULL,
-						       lsm_schema_sq3_map_task,
-						       &o, &a.ac, 0, 999) >= 0) {
-
-				sqlite3_exec_busy_retry(pdb, "BEGIN TRANSACTION",
-					     NULL, NULL, &err);
-
-				/*
-				 * Walk the results list cancelling all the tasks
-				 * that look like they might be ongoing
-				 */
-
-				lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
-					sai_task_t *t = lws_container_of(p, sai_task_t,
-									 list);
-
-					if (t->state != SAIES_WAITING &&
-					    t->state != SAIES_SUCCESS &&
-					    t->state != SAIES_FAIL &&
-					    t->state != SAIES_CANCELLED)
-						sais_task_cancel(m->vhd, t->uuid);
-
-				} lws_end_foreach_dll(p);
-
-				sqlite3_exec_busy_retry(pdb, "END TRANSACTION",
-					     NULL, NULL, &err);
-			}
-
-			sais_event_db_close(m->vhd, &pdb);
+			ctx->vhd = m->vhd;
+			lws_strncpy(ctx->uuid, ei->event_hash, sizeof(ctx->uuid));
+			ctx->retries = 10;
+			ctx->op = SAIS_WS_WEBSRV_RX_EVENTDELETE;
+			lws_sul_schedule(m->vhd->context, 0, &ctx->sul,
+					   sais_websrv_retry_cb, 250 * LWS_US_PER_MS);
 		}
-
-		/* delete the event iself */
-
-		lws_sql_purify(esc, ei->event_hash, sizeof(esc));
-		lws_snprintf(qu, sizeof(qu), "delete from events where uuid='%s'",
-				esc);
-		sqlite3_exec_busy_retry(m->vhd->server.pdb, qu, NULL, NULL, &err);
-		if (err) {
-			lwsl_err("%s: evdel uuid %s, sq3 err %s\n", __func__,
-					esc, err);
-			sqlite3_free(err);
-		}
-
-		/* remove the event-specific database */
-
-		sais_event_db_delete_database(m->vhd, ei->event_hash);
-
 		lwsac_free(&a.ac);
-		sais_eventchange(m->vhd->h_ss_websrv, ei->event_hash,
-				 SAIES_DELETED);
-		sais_websrv_broadcast(m->vhd->h_ss_websrv,
-				      "{\"schema\":\"sai-overview\"}", 25);
-
-		return 0;
+		break;
+	}
 
 	case SAIS_WS_WEBSRV_RX_TASKCANCEL:
 

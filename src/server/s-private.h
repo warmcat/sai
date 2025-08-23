@@ -28,6 +28,12 @@
 
 struct sai_plat;
 
+typedef enum {
+	SAI_DB_RESULT_OK,
+	SAI_DB_RESULT_BUSY,
+	SAI_DB_RESULT_ERROR,
+} sai_db_result_t;
+
 typedef struct sai_platm {
 	lws_dll2_owner_t builder_owner;
 	lws_dll2_owner_t subs_owner;
@@ -291,7 +297,7 @@ sais_central_cb(lws_sorted_usec_list_t *sul);
 void
 sais_activity_cb(lws_sorted_usec_list_t *sul);
 
-int
+sai_db_result_t
 sais_task_reset(struct vhd *vhd, const char *task_uuid);
 
 int
