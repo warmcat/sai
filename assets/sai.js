@@ -871,6 +871,7 @@ function refresh_state(task_uuid, task_state)
 	var tsi = document.getElementById("taskstate_" + task_uuid);
 	
 	if (tsi) {
+		tsi.classList.remove("taskstate0");
 		tsi.classList.remove("taskstate1");
 		tsi.classList.remove("taskstate2");
 		tsi.classList.remove("taskstate3");
