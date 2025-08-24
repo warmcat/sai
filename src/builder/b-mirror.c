@@ -198,11 +198,7 @@ sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 #endif
 
 	if (exit_code == 0) {
-		saib_set_ns_state(ns, NSSTATE_BUILD);
-		if (saib_spawn_build(ns)) {
-			lwsl_err("%s: saib_spawn_build failed\n", __func__);
-			saib_set_ns_state(ns, NSSTATE_FAILED);
-		}
+		saib_set_ns_state(ns, NSSTATE_CHECKEDOUT);
 		goto onward;
 	}
 
