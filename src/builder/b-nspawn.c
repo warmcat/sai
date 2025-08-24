@@ -318,8 +318,6 @@ saib_spawn_build(struct sai_nspawn *ns)
 	ns->build_step = 0;
 	ns->build_step_count = 0;
 
-	lwsl_hexdump_err(ns->task->build, strlen(ns->task->build));
-
 	while ((p = strchr(p, '\n'))) {
 		ns->build_step_count++;
 		p++;

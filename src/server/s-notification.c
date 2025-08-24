@@ -248,6 +248,7 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 	if (ctx->path_match - 1 == LEJPNSAIF_PLAT_BUILD) {
 		if (reason == LEJPCB_ARRAY_START) {
 			sn->in_build_array = 1;
+			sn->build_array_need_newline = 0;
 			/* we are going to build a newline separated list */
 			sn->platbuild[0] = '\0';
 			return 0;
@@ -256,6 +257,22 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 			sn->in_build_array = 0;
 			return 0;
 		}
+	}
+
+	if (sn->in_build_array &&
+	    (reason == LEJPCB_VAL_STR_CHUNK || reason == LEJPCB_VAL_STR_END)) {
+		n = strlen(sn->platbuild);
+		if (n < sizeof(sn->platbuild) - 2) {
+			if (sn->build_array_need_newline) {
+				sn->platbuild[n++] = '\n';
+				sn->platbuild[n] = '\0';
+			}
+			lws_strnncpy(sn->platbuild + n, ctx->buf, ctx->npos,
+				     sizeof(sn->platbuild) - n);
+		}
+		sn->build_array_need_newline = reason == LEJPCB_VAL_STR_END;
+
+		return 0;
 	}
 
 	if (reason == LEJPCB_COMPLETE) {
@@ -595,6 +612,7 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 		sn->platbuild[0] = '\0';
 		sn->nondefault = 0;
 		sn->in_build_array = 0;
+		sn->build_array_need_newline = 0;
 		return 0;
 	}
 
@@ -709,14 +727,9 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 		 * is appended into the temp sn.platbuild
 		 */
 		n = strlen(sn->platbuild);
-		if (n < sizeof(sn->platbuild) - 2) {
-			if (sn->in_build_array && n) {
-				sn->platbuild[n++] = '\n';
-				sn->platbuild[n] = '\0';
-			}
+		if (n < sizeof(sn->platbuild) - 2)
 			lws_strnncpy(sn->platbuild + n, ctx->buf, ctx->npos,
 				     sizeof(sn->platbuild) - n);
-		}
 		break;
 
 	case LEJPNSAIF_PLAT_DEFAULT:
