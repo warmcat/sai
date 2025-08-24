@@ -192,6 +192,9 @@ struct sai_nspawn {
 	uint8_t				stdcount;
 	uint8_t				term_budget;
 
+	int				build_step;
+	int				build_step_count;
+
 	uint8_t				finished_when_logs_drained:1;
 	uint8_t				state_changed:1;
 	uint8_t				user_cancel:1;

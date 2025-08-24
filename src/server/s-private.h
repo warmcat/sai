@@ -88,6 +88,7 @@ typedef struct {
 	sai_notification_action_t	action;
 
 	uint8_t				nondefault;
+	uint8_t				in_build_array;
 } sai_notification_t;
 
 
