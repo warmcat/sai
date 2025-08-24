@@ -61,6 +61,7 @@ enum enum_paths {
 
 static const char * const saifile_paths[] = {
 	"schema",
+	"platforms.*.build[]",
 	"platforms.*.build",
 	"platforms.*.default",
 	"platforms.*",
@@ -75,6 +76,7 @@ static const char * const saifile_paths[] = {
 
 enum enum_saifile_paths {
 	LEJPNSAIF_SCHEMA,
+	LEJPNSAIF_PLAT_BUILD_STAGE,
 	LEJPNSAIF_PLAT_BUILD,
 	LEJPNSAIF_PLAT_DEFAULT,
 	LEJPNSAIF_PLAT_NAME,
@@ -690,14 +692,25 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 		break;
 
 	case LEJPNSAIF_PLAT_BUILD:
+	case LEJPNSAIF_PLAT_BUILD_STAGE:
 		/*
 		 * The overall build script for this platform
 		 * is appended into the temp sn.platbuild
 		 */
+		if (reason != LEJPCB_VAL_STR_END)
+			break;
+
+		lwsl_err("%s: LEJPNSAIF_PLAT_BUILD_STAGE: %.*s\n", __func__, (int)ctx->npos, (const char *)ctx->buf);
+
 		n = strlen(sn->platbuild);
-		if (n < sizeof(sn->platbuild) - 2)
+		if (n < sizeof(sn->platbuild) - 2) {
+			if (n) {
+				sn->platbuild[n++] = '\n';
+				sn->platbuild[n] = '\0';
+			}
 			lws_strnncpy(sn->platbuild + n, ctx->buf, ctx->npos,
 				     sizeof(sn->platbuild) - n);
+		}
 		break;
 
 	case LEJPNSAIF_PLAT_DEFAULT:

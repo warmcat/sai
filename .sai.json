@@ -3,10 +3,19 @@
 
 	"platforms": {
                 "rocky9/aarch64-a72a55-rk3588/gcc": {
-                        "build": "mkdir build destdir;cd build;export CCACHE_DISABLE=1;cmake .. ${cmake};make -j;cpack -G RPM"
+                        "build": [
+				"mkdir build destdir;cd build; CCACHE_DISABLE=1 cmake .. ${cmake}",
+				"make -j",
+				"SAI_CPACK=\"-G RPM\" ${cpack}"
+			]
 		},
 		"netbsd-OSX-bigsur/x86_64-intel-i3/llvm": {
-                        "build": "mkdir build destdir; cd build; export SAI_CPACK=\"-G ZIP\";export MACOSX_DEPLOYMENT_TARGET=10.14 ; cmake .. -DCMAKE_MAKE_PROGRAM=/usr/bin/make -DLWS_OPENSSL_INCLUDE_DIRS=/usr/local/opt/openssl@1.1/include -DLWS_OPENSSL_LIBRARIES=\"/usr/local/opt/openssl/lib/libssl.dylib;/usr/local/opt/openssl/lib/libcrypto.dylib\" ${cmake} && make -j && make -j DESTDIR=../destdir install && ctest -j4 --output-on-failure ${cpack}",
+                        "build": [
+				"mkdir build destdir; cd build; MACOSX_DEPLOYMENT_TARGET=10.14 ; cmake .. -DCMAKE_MAKE_PROGRAM=/usr/bin/make -DLWS_OPENSSL_INCLUDE_DIRS=/usr/local/opt/openssl@1.1/include -DLWS_OPENSSL_LIBRARIES=\"/usr/local/opt/openssl/lib/libssl.dylib;/usr/local/opt/openssl/lib/libcrypto.dylib\" ${cmake} ",
+				"make -j && make -j DESTDIR=../destdir install",
+				"ctest -j4 --output-on-failure",
+				"SAI_CPACK=\"-G ZIP\" ${cpack}"
+			],
 			"default": false
                 }
 	},
@@ -14,12 +23,12 @@
 	"configurations": {
 		"server+builder": {
 			"cmake":	"",
-			"cpack":        "&& cpack -C DEBUG $SAI_CPACK",
+			"cpack":        "cpack -C DEBUG $SAI_CPACK",
 			"artifacts":	"build/sai-*.rpm"
 		},
 		"builder-only": {
 			"cmake":	"-DSAI_SERVER=0 ",
-			"cpack":        "&& cpack -C DEBUG $SAI_CPACK",
+			"cpack":        "cpack -C DEBUG $SAI_CPACK",
 			"artifacts":	"build/sai-*.rpm"
 		}
 	}
