@@ -216,7 +216,7 @@ sai_lsp_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	/* step succeeded */
 
 	n = lws_snprintf(s, sizeof(s), "Build step %d OK", ns->build_step + 1);
-	saib_log_chunk_create(ns, s, n, 3);
+	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	ns->build_step++;
 	if (ns->build_step < ns->build_step_count) {
@@ -253,7 +253,7 @@ sai_lsp_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 
 fail:
 	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED", ns->build_step + 1);
-	saib_log_chunk_create(ns, s, n, 3);
+	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	saib_task_grace(ns);
 	saib_set_ns_state(ns, NSSTATE_FAILED);
@@ -326,7 +326,7 @@ saib_spawn_build(struct sai_nspawn *ns)
 
 	n = lws_snprintf(ns->pending_mirror_log, sizeof(ns->pending_mirror_log),
 			"Starting build: %d steps", ns->build_step_count);
-	saib_log_chunk_create(ns, ns->pending_mirror_log, n, 3);
+	saib_log_chunk_create(ns, ns->pending_mirror_log, (size_t)n, 3);
 
 	return saib_spawn_step(ns);
 }
@@ -368,22 +368,22 @@ saib_spawn_step(struct sai_nspawn *ns)
 #endif
 
 	char one_step[4096];
-	const char *p = ns->task->build, *q;
+	const char *p_build = ns->task->build, *q;
 	int step = 0;
 
 	// lwsl_hexdump_notice(ns->task->build, strlen(ns->task->build));
 
-	while (step < ns->build_step && (p = strchr(p, '\n'))) {
-		p++;
+	while (step < ns->build_step && (p_build = strchr(p_build, '\n'))) {
+		p_build++;
 		step++;
 	}
 
-	if (p) {
-		q = strchr(p, '\n');
+	if (p_build) {
+		q = strchr(p_build, '\n');
 		if (q)
-			lws_strnncpy(one_step, p, q - p, sizeof(one_step));
+			lws_strnncpy(one_step, p_build, q - p_build, sizeof(one_step));
 		else
-			lws_strncpy(one_step, p, sizeof(one_step));
+			lws_strncpy(one_step, p_build, sizeof(one_step));
 	} else
 		one_step[0] = '\0';
 
