@@ -269,6 +269,7 @@ fail:
 
 static const char * const runscript =
 	"set SAI_INSTANCE_IDX=%d\n"
+	"set SAI_PARALLEL=%d\n"
 	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"set SAI_LOGPROXY=%s\n"
 	"set SAI_LOGPROXY_TTY0=%s\n"
@@ -293,6 +294,7 @@ static const char * const runscript =
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
 	"export SAI_INSTANCE_IDX=%d\n"
+	"export SAI_PARALLEL=%d\n"
 	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"export SAI_LOGPROXY=%s\n"
 	"export SAI_LOGPROXY_TTY0=%s\n"
@@ -409,12 +411,14 @@ saib_spawn_step(struct sai_nspawn *ns)
 
 #if defined(WIN32)
 	n = lws_snprintf(st, sizeof(st), runscript, ns->instance_idx,
+			 ns->parallel ? ns->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
 			 ns->inp, one_step);
 #else
 	n = lws_snprintf(st, sizeof(st), runscript, builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_idx,
+			 ns->parallel ? ns->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,
 			 builder.home, one_step);
