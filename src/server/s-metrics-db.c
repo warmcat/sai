@@ -85,6 +85,8 @@ int
 sais_metrics_db_init(struct vhd *vhd)
 {
 	char db_path[PATH_MAX];
+	char *err_msg = 0;
+	int rc;
 
 	if (vhd->pdb_metrics)
 		return 0;
@@ -95,12 +97,35 @@ sais_metrics_db_init(struct vhd *vhd)
 	lws_snprintf(db_path, sizeof(db_path), "%s-build-metrics.sqlite3",
 		     vhd->sqlite3_path_lhs);
 
-	if (lws_struct_sq3_open(vhd->context, db_path,
-				lsm_schema_sq3_map_build_metric,
-				LWS_ARRAY_SIZE(lsm_schema_sq3_map_build_metric),
-				&vhd->pdb_metrics)) {
-		lwsl_err("%s: failed to open or create metrics db\n",
-			 __func__);
+	rc = sqlite3_open(db_path, &vhd->pdb_metrics);
+	if (rc != SQLITE_OK) {
+		lwsl_err("%s: cannot open database %s: %s\n", __func__,
+			 db_path, sqlite3_errmsg(vhd->pdb_metrics));
+		sqlite3_close(vhd->pdb_metrics);
+		vhd->pdb_metrics = NULL;
+		return 1;
+	}
+
+	const char *sql = "CREATE TABLE IF NOT EXISTS build_metrics ("
+			  "key TEXT, "
+			  "unixtime INTEGER, "
+			  "builder_name TEXT, "
+			  "spawn TEXT, "
+			  "project_name TEXT, "
+			  "ref TEXT, "
+			  "parallel INTEGER, "
+			  "us_cpu_user INTEGER, "
+			  "us_cpu_sys INTEGER, "
+			  "peak_mem_rss INTEGER, "
+			  "stg_bytes INTEGER, "
+			  "PRIMARY KEY(key, unixtime));";
+
+	rc = sqlite3_exec(vhd->pdb_metrics, sql, 0, 0, &err_msg);
+	if (rc != SQLITE_OK) {
+		lwsl_err("%s: failed to create table: %s\n", __func__, err_msg);
+		sqlite3_free(err_msg);
+		sqlite3_close(vhd->pdb_metrics);
+		vhd->pdb_metrics = NULL;
 		return 1;
 	}
 
