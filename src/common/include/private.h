@@ -177,6 +177,11 @@ struct sai_nspawn {
 	uint64_t			last_cpu_usec;
 	lws_usec_t			last_cpu_usec_time;
 
+	uint64_t			us_cpu_user;	
+	uint64_t			us_cpu_sys;	
+	uint64_t			worst_mem;
+	uint64_t			worst_stg;
+
 	size_t				chunk_cache_size;
 
 	const char			*server_name;	/* sai-server name who triggered this, eg, 'warmcat' */

@@ -162,7 +162,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	//	  (unsigned long long)lws_now_usecs(), we_killed_him);
 
 	int exit_code = -1;
-	char s[128];
+	char s[256];
 	int n;
 
 	saib_log_chunk_create(ns, ">saib> Reaping build process\n", 29, 3);
@@ -217,13 +217,32 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	memset(&du, 0, sizeof(du));
 	lws_dir(ns->inp, &du, lws_dir_du_cb);
 
-	n = lws_snprintf(s, sizeof(s),
-			 ">saib> Step %d OK: cpu %llums + %llums, %llu bytes\n",
-			 ns->build_step + 1,
-			 (unsigned long long)res->us_cpu_user / 1000,
-			 (unsigned long long)res->us_cpu_sys / 1000,
-			 (unsigned long long)du.size_in_bytes);
-	saib_log_chunk_create(ns, s, (size_t)n, 3);
+	{
+		char h1[40], h2[40], h3[40], h4[40], h5[40], h6[40], h7[40], h8[40];
+
+		ns->us_cpu_user += res->us_cpu_user;
+		ns->us_cpu_sys += res->us_cpu_sys;
+
+		if (du.size_in_bytes > ns->worst_stg)
+			ns->worst_stg = du.size_in_bytes;
+		if (res->peak_mem_rss > ns->worst_mem)
+			ns->worst_mem = res->peak_mem_rss;
+
+		lws_humanize(h1, sizeof(h1), ns->us_cpu_user,   humanize_schema_us);
+		lws_humanize(h2, sizeof(h2), ns->us_cpu_sys,    humanize_schema_us);
+		lws_humanize(h3, sizeof(h3), ns->worst_mem,     humanize_schema_si);
+		lws_humanize(h4, sizeof(h4), ns->worst_stg,     humanize_schema_si);
+		lws_humanize(h5, sizeof(h5), res->us_cpu_user,  humanize_schema_us);
+		lws_humanize(h6, sizeof(h6), res->us_cpu_sys,   humanize_schema_us);
+		lws_humanize(h7, sizeof(h7), res->peak_mem_rss, humanize_schema_si);
+		lws_humanize(h8, sizeof(h8), du.size_in_bytes,  humanize_schema_si);
+
+		n = lws_snprintf(s, sizeof(s),
+			 ">saib> Step %d: Total [ %s u / %s s, Mem: %sB, Stg: %sB ], Step [ %s u / %s s, Mem: %sB, Stg: %sB ]\n",
+			 ns->build_step + 1, h1, h2, h3, h4, h5, h6, h7, h8);
+	
+		saib_log_chunk_create(ns, s, (size_t)n, 3);
+	}
 
 	ns->build_step++;
 	if (ns->build_step < ns->build_step_count) {
@@ -274,7 +293,7 @@ fail:
 
 #if defined(WIN32)
 
-static const char * const runscript =
+static const char * const runscript_win_first =
 	"set SAI_INSTANCE_IDX=%d\n"
 	"set SAI_PARALLEL=%d\n"
 	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
@@ -287,9 +306,21 @@ static const char * const runscript =
 	"%s"
 ;
 
+static const char * const runscript_win_next =
+	"set SAI_INSTANCE_IDX=%d\n"
+	"set SAI_PARALLEL=%d\n"
+	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
+	"set SAI_LOGPROXY=%s\n"
+	"set SAI_LOGPROXY_TTY0=%s\n"
+	"set SAI_LOGPROXY_TTY1=%s\n"
+	"set HOME=%s\n"
+	"cd %s &&"
+	"%s"
+;
+
 #else
 
-static const char * const runscript =
+static const char * const runscript_first =
 	"#!/bin/bash -x\n"
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
@@ -309,6 +340,29 @@ static const char * const runscript =
 	"set -e\n"
 	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
 	"rm -rf build\n"
+	"%s\n"
+	"exit $?\n"
+;
+
+static const char * const runscript_next =
+	"#!/bin/bash -x\n"
+#if defined(__APPLE__)
+	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
+#else
+	"export PATH=/usr/local/bin:$PATH\n"
+#endif
+	"export HOME=%s\n"
+	"export SAI_OVN=%s\n"
+	"export SAI_PROJECT=%s\n"
+	"export SAI_REMOTE_REF=%s\n"
+	"export SAI_INSTANCE_IDX=%d\n"
+	"export SAI_PARALLEL=%d\n"
+	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
+	"export SAI_LOGPROXY=%s\n"
+	"export SAI_LOGPROXY_TTY0=%s\n"
+	"export SAI_LOGPROXY_TTY1=%s\n"
+	"set -e\n"
+	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
 	"%s\n"
 	"exit $?\n"
 ;
@@ -336,7 +390,7 @@ saib_spawn_build(struct sai_nspawn *ns)
 	ns->build_step_count++;
 
 	n = lws_snprintf(ns->pending_mirror_log, sizeof(ns->pending_mirror_log),
-			"Starting build: %d steps", ns->build_step_count);
+			"Starting build: %d steps\n", ns->build_step_count);
 	saib_log_chunk_create(ns, ns->pending_mirror_log, (size_t)n, 3);
 
 	return saib_spawn_step(ns);
@@ -419,13 +473,17 @@ saib_spawn_step(struct sai_nspawn *ns)
 	}
 
 #if defined(WIN32)
-	n = lws_snprintf(st, sizeof(st), runscript, ns->instance_idx,
+	n = lws_snprintf(st, sizeof(st),
+			 ns->build_step ? runscript_win_next : runscript_win_first,
+			 ns->instance_idx,
 			 ns->parallel ? ns->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
 			 ns->inp, one_step);
 #else
-	n = lws_snprintf(st, sizeof(st), runscript, builder.home, ns->fsm.ovname,
+	n = lws_snprintf(st, sizeof(st),
+			 ns->build_step ? runscript_next : runscript_first,
+			 builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_idx,
 			 ns->parallel ? ns->parallel : 1,
 			 respath, ns->slp_control.sockpath,
