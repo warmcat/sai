@@ -129,6 +129,8 @@ typedef struct {
 	uint64_t		duration;
 	int			state;
 	int			uid;
+	int			build_step;
+	int			build_step_count;
 
 	char			told_ongoing;
 } sai_task_t;
