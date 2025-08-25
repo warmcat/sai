@@ -244,11 +244,54 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		saib_log_chunk_create(ns, s, (size_t)n, 3);
 	}
 
+	if (op->spawn) {
+		sai_build_metric_t *m = malloc(sizeof(*m));
+
+		if (m) {
+			char hash_input[8192];
+			unsigned char hash[32];
+			struct lws_genhash_ctx ctx;
+			int n;
+
+			memset(m, 0, sizeof(*m));
+
+			lws_snprintf(hash_input, sizeof(hash_input), "%s%s%s%s",
+				     ns->sp->name, op->spawn,
+				     ns->project_name, ns->ref);
+
+			if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256) ||
+			    lws_genhash_update(&ctx, hash_input,
+					       strlen(hash_input)) ||
+			    lws_genhash_destroy(&ctx, hash))
+				lwsl_warn("%s: sha256 failed\n", __func__);
+			else
+				for (n = 0; n < 32; n++)
+					lws_snprintf(m->key + (n * 2), 3,
+						     "%02x", hash[n]);
+
+			lws_strncpy(m->builder_name, ns->sp->name, sizeof(m->builder_name));
+			lws_strncpy(m->project_name, ns->project_name, sizeof(m->project_name));
+			lws_strncpy(m->ref, ns->ref, sizeof(m->ref));
+			m->parallel = ns->parallel;
+			m->us_cpu_user = res->us_cpu_user;
+			m->us_cpu_sys = res->us_cpu_sys;
+			m->wallclock_us = (uint64_t)(lws_now_usecs() - op->start_time);
+			m->peak_mem_rss = res->peak_mem_rss;
+			m->stg_bytes = du.size_in_bytes;
+
+			lws_dll2_add_tail(&m->list, &ns->spm->build_metric_list);
+			if (lws_ss_request_tx(ns->spm->ss))
+				lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
+		}
+	}
+
 	ns->build_step++;
 	if (ns->build_step < ns->build_step_count) {
 		/* there are more steps, spawn the next one */
 		if (ns)
 			ns->op = NULL;
+		if (op->spawn)
+			free(op->spawn);
 		free(op);
 		saib_spawn_step(ns);
 		return;
@@ -256,6 +299,9 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 
 	/* all steps succeeded */
 	lwsl_notice("%s: all build steps succeeded\n", __func__);
+
+	if (op->spawn)
+		free(op->spawn);
 
 	saib_task_grace(ns);
 	saib_set_ns_state(ns, NSSTATE_DONE);
@@ -285,6 +331,9 @@ fail:
 	saib_set_ns_state(ns, NSSTATE_FAILED);
 
 	saib_log_chunk_create(ns, NULL, 0, 2);
+
+	if (op->spawn)
+		free(op->spawn);
 
 	if (ns)
 		ns->op = NULL;
@@ -515,6 +564,7 @@ saib_spawn_step(struct sai_nspawn *ns)
 	info.max_log_lines	= 10000;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.reap_cb		= sai_lsp_reap_cb;
+	memset(&ns->res, 0, sizeof(ns->res));
 	info.res		= &ns->res;
 #if defined(__linux__)
 	info.cgroup_name_suffix = cgroup;
@@ -528,6 +578,8 @@ saib_spawn_step(struct sai_nspawn *ns)
 
 	op->ns = ns;
 	ns->op = op;
+	op->spawn = strdup(one_step);
+	op->start_time = lws_now_usecs();
 
 	info.opaque = op;
 	info.owner = &builder.lsp_owner;

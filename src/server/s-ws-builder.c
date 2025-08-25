@@ -28,6 +28,7 @@
 #include <time.h>
 
 #include "s-private.h"
+#include "s-metrics-db.h"
 
 typedef struct {
 	int count;
@@ -95,6 +96,8 @@ static const lws_struct_map_t lsm_schema_map_ba[] = {
 						"com.warmcat.sai.loadreport"),
 	LSM_SCHEMA      (sai_resource_t,  NULL, lsm_resource,
 						"com-warmcat-sai-resource"),
+	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric,
+						"com.warmcat.sai.build-metric"),
 };
 
 enum {
@@ -104,6 +107,7 @@ enum {
 	SAIM_WSSCH_BUILDER_ARTIFACT,
 	SAIM_WSSCH_BUILDER_LOADREPORT,
 	SAIM_WSSCH_BUILDER_RESOURCE_REQ,
+	SAIM_WSSCH_BUILDER_METRIC,
 };
 
 static void
@@ -484,6 +488,7 @@ int
 sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 {
 	char event_uuid[33], s[128], esc[96];
+	const sai_build_metric_t *metric;
 	sai_resource_requisition_t *rr;
 	sai_resource_wellknown_t *wk;
 	struct lwsac *ac = NULL;
@@ -496,6 +501,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 	sai_log_t *log;
 	uint64_t rid;
 	int n, m;
+
+	sais_metrics_db_init(vhd);
 
 	if (pss->bulk_binary_data) {
 		lwsl_info("%s: bulk %d\n", __func__, (int)bl);
@@ -1044,6 +1051,11 @@ bail:
 		sais_resource_check_if_can_accept_queued(wk);
 		break;
 
+	case SAIM_WSSCH_BUILDER_METRIC:
+		metric = (const sai_build_metric_t *)pss->a.dest;
+		sais_metrics_db_add(vhd, metric);
+		lwsac_free(&pss->a.ac);
+		break;
 	}
 
 	return 0;
