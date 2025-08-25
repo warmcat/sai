@@ -124,8 +124,6 @@ struct sai_builder {
 	const char		*rebuild_script_user;
 	const char		*rebuild_script_root;
 
-	const char		*build_metrics_db_path;
-
 	char			path[256];
 
 #if defined(__linux__) || defined(__APPLE__)

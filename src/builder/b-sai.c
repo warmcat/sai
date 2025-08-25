@@ -896,7 +896,7 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
-	if (saib_metrics_init(&builder)) {
+	if (saib_metrics_init(config_dir)) {
 		lwsl_err("%s: saib_metrics_init failed\n", __func__);
 
 		return 1;

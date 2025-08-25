@@ -22,10 +22,8 @@
 #if !defined(__SAI_BUILDER_METRICS_H__)
 #define __SAI_BUILDER_METRICS_H__
 
-struct sai_builder;
-
 int
-saib_metrics_init(struct sai_builder *builder);
+saib_metrics_init(const char *config_dir);
 
 void
 saib_metrics_close(void);

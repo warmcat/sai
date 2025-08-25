@@ -29,15 +29,18 @@
 static sqlite3 *db;
 
 int
-saib_metrics_init(struct sai_builder *b)
+saib_metrics_init(const char *config_dir)
 {
+	char db_path[PATH_MAX];
 	char *err_msg = 0;
 	int rc;
 
-	if (!b->build_metrics_db_path)
+	if (!config_dir)
 		return 0;
 
-	rc = sqlite3_open(b->build_metrics_db_path, &db);
+	lws_snprintf(db_path, sizeof(db_path), "%s/build-metrics.db", config_dir);
+
+	rc = sqlite3_open(db_path, &db);
 	if (rc != SQLITE_OK) {
 		lwsl_err("%s: cannot open database: %s\n", __func__,
 			 sqlite3_errmsg(db));
