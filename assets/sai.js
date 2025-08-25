@@ -852,26 +852,6 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 	return s;
 }
 
-function sai_render_build_steps(t) {
-    if (t.state == 3 || t.state == 4 || t.state == 5 || t.state == 7) { // success, fail, cancelled, deleted
-        return "";
-    }
-    if (!t.build_step_count || t.build_step_count < 2) {
-        return "";
-    }
-
-    var s = "<div class=\"step-progress\">";
-    for (var i = 0; i < t.build_step_count; i++) {
-        var step_class = "step-bar";
-        if (i < t.build_step) {
-            step_class += " step-bar-completed";
-        }
-        s += "<div class=\"" + step_class + "\"></div>";
-    }
-    s += "</div>";
-    return s;
-}
-
 function sai_event_render(o, now_ut, reset_all_icon)
 {
 	var s, q, ctn = "", wai, s1 = "", n, e = o.e;
@@ -906,7 +886,6 @@ function sai_event_render(o, now_ut, reset_all_icon)
 				"\" data-event-uuid=\"" + san(e.uuid) + "\" data-platform=\"" + san(t.platform) + "\">";
 			s1 += "<a href=\"/sai/index.html?task=" + t.uuid + "\">" +
 				sai_plat_icon(t.platform, 0) + "</a>";
-			s1 += sai_render_build_steps(t);
 			s1 += "</div>";
 		}
 

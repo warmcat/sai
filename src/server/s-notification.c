@@ -63,6 +63,7 @@ static const char * const saifile_paths[] = {
 	"schema",
 	"platforms.*.build[]",
 	"platforms.*.build",
+	"platforms.*.build.*",
 	"platforms.*.default",
 	"platforms.*",
 	"configurations.*.prep",
@@ -78,6 +79,7 @@ enum enum_saifile_paths {
 	LEJPNSAIF_SCHEMA,
 	LEJPNSAIF_PLAT_BUILD_STAGE,
 	LEJPNSAIF_PLAT_BUILD,
+	LEJPNSAIF_PLAT_BUILD_ELEMENT,
 	LEJPNSAIF_PLAT_DEFAULT,
 	LEJPNSAIF_PLAT_NAME,
 	LEJPNSAIF_CONFIGURATIONS_PREP,
@@ -513,6 +515,10 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 					}
 				}
 
+				lwsl_notice("Task %s: step_count %d\n",
+					    pss->sn.t.taskname,
+					    pss->sn.t.build_step_count);
+
 				/*
 				 * Prepare a struct of the task object...
 				 * task uuid is the event uuid and another
@@ -722,6 +728,18 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 			lws_strnncpy(sn->platbuild + n, ctx->buf, ctx->npos,
 				     sizeof(sn->platbuild) - n);
 		}
+		break;
+
+	case LEJPNSAIF_PLAT_BUILD_ELEMENT:
+		n = strlen(sn->platbuild);
+		if (n) {
+			if (n > sizeof(sn->platbuild) - 2)
+				break;
+			sn->platbuild[n++] = '\n';
+		}
+		if (n < sizeof(sn->platbuild) - 2)
+			lws_strnncpy(sn->platbuild + n, ctx->buf, ctx->npos,
+				     sizeof(sn->platbuild) - n);
 		break;
 
 	case LEJPNSAIF_PLAT_DEFAULT:
