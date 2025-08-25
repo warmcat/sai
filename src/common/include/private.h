@@ -363,6 +363,7 @@ typedef struct sai_plat_server {
 	lws_dll2_t		list;
 
 	lws_dll2_owner_t	rejection_list;
+	lws_dll2_owner_t	build_metric_list;
 	lws_dll2_owner_t	resource_req_list; /* sai_resource_msg_t */
 	lws_dll2_owner_t	resource_pss_list; /* so we can find the cookie */
 
@@ -483,6 +484,35 @@ typedef struct sai_power_state {
 	int		powering_down;
 } sai_power_state_t;
 
+typedef struct sai_build_metric {
+	lws_dll2_t	list;
+	char		key[65];
+	char		builder_name[96];
+	char		project_name[96];
+	char		ref[96];
+	int		parallel;
+	uint64_t	us_cpu_user;
+	uint64_t	us_cpu_sys;
+	uint64_t	wallclock_us;
+	uint64_t	peak_mem_rss;
+	uint64_t	stg_bytes;
+} sai_build_metric_t;
+
+typedef struct sai_build_metric_db {
+	lws_dll2_t	list; /* for lws_struct */
+	char		key[65];
+	uint64_t	unixtime;
+	char		builder_name[96];
+	char		project_name[96];
+	char		ref[96];
+	int		parallel;
+	uint64_t	us_cpu_user;
+	uint64_t	us_cpu_sys;
+	uint64_t	wallclock_us;
+	uint64_t	peak_mem_rss;
+	uint64_t	stg_bytes;
+} sai_build_metric_db_t;
+
 extern const lws_struct_map_t
 	lsm_schema_json_map_task[],
 	lsm_schema_sq3_map_task[],
@@ -506,8 +536,11 @@ extern const lws_struct_map_t
 	lsm_resource[4],
 	lsm_power_state[3],
 	lsm_rebuild[1],
-	lsm_schema_rebuild[1]
+	lsm_schema_rebuild[1],
+	lsm_schema_build_metric[1],
+	lsm_schema_sq3_map_build_metric[1]
 ;
+extern const lws_struct_map_t lsm_build_metric[10];
 extern const lws_struct_map_t lsm_plat[8];
 extern const lws_struct_map_t lsm_plat_for_json[12];
 

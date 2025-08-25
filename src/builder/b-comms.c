@@ -72,6 +72,39 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	int n = 0;
 
 	/*
+	 * Any build metrics to process?
+	 */
+
+	if (spm->build_metric_list.count) {
+		struct lws_dll2 *d = lws_dll2_get_head(&spm->build_metric_list);
+		sai_build_metric_t *m =
+				lws_container_of(d, sai_build_metric_t, list);
+
+		lwsl_notice("%s: issuing build metric\n", __func__);
+
+		js = lws_struct_json_serialize_create(lsm_schema_build_metric,
+			      LWS_ARRAY_SIZE(lsm_schema_build_metric), 0, m);
+		if (!js)
+			return -1;
+
+		n = (int)lws_struct_json_serialize(js, start,
+					      lws_ptr_diff_size_t(end, start), &w);
+		lws_struct_json_serialize_destroy(&js);
+
+		lwsl_hexdump_notice(start, w);
+
+		n = (int)w;
+
+		lws_dll2_remove(&m->list);
+		free(m);
+
+		r = lws_ss_request_tx(spm->ss);
+		if (r)
+			return r;
+		goto sendify;
+	}
+
+	/*
 	 * Any builder state updates / rejections to process?
 	 */
 

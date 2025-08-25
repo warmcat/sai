@@ -42,6 +42,8 @@ struct lws_spawn_piped;
 struct saib_opaque_spawn {
 	struct sai_nspawn	*ns;
 	struct lws_spawn_piped	*lsp;
+	char			*spawn;
+	lws_usec_t		start_time;
 };
 
 #define SAI_LOAD_REPORT_US	(1 * LWS_US_PER_SEC)

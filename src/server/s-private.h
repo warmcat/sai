@@ -210,6 +210,7 @@ struct vhd {
 	struct lwsac			*ac_plats;
 
 	const char *sqlite3_path_lhs;
+	sqlite3 *pdb_metrics;
 
 	lws_dll2_owner_t sqlite3_cache; /* sais_sqlite_cache_t */
 	lws_dll2_owner_t tasklog_cache;
