@@ -76,7 +76,7 @@ if (requirements)
 
 	find_package(SQLite3)
 	if (SQLITE3_FOUND)
-		target_link_libraries(${SUB} PRIVATE SQLite::SQLite3)
+		target_link_libraries(${SUB} ${SQLITE3_LIBRARIES})
 	else()
 		target_link_libraries(${SUB} sqlite3)
 	endif()
