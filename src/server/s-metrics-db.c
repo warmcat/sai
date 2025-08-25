@@ -55,8 +55,8 @@ sais_metrics_db_prune(struct vhd *vhd, const char *key)
 		return 0;
 
 	lws_snprintf(sql, sizeof(sql),
-		     "DELETE FROM build_metrics WHERE key = ? AND unixtime IN "
-		     "(SELECT unixtime FROM build_metrics WHERE key = ? "
+		     "DELETE FROM build_metrics WHERE key = ? AND rowid IN "
+		     "(SELECT rowid FROM build_metrics WHERE key = ? "
 		     "ORDER BY unixtime ASC LIMIT %d);", count - 10);
 
 	rc = sqlite3_prepare_v2(vhd->pdb_metrics, sql, -1, &stmt, 0);
@@ -86,8 +86,9 @@ int
 sais_metrics_db_init(struct vhd *vhd)
 {
 	char db_path[PATH_MAX];
-	char *err_msg = 0;
-	int rc;
+
+	if (vhd->pdb_metrics)
+		return 0;
 
 	if (!vhd->sqlite3_path_lhs)
 		return 0;
@@ -95,35 +96,12 @@ sais_metrics_db_init(struct vhd *vhd)
 	lws_snprintf(db_path, sizeof(db_path), "%s-build-metrics.sqlite3",
 		     vhd->sqlite3_path_lhs);
 
-	rc = sqlite3_open(db_path, &vhd->pdb_metrics);
-	if (rc != SQLITE_OK) {
-		lwsl_err("%s: cannot open database %s: %s\n", __func__,
-			 db_path, sqlite3_errmsg(vhd->pdb_metrics));
-		sqlite3_close(vhd->pdb_metrics);
-		vhd->pdb_metrics = NULL;
-		return 1;
-	}
-
-	const char *sql = "CREATE TABLE IF NOT EXISTS build_metrics ("
-			  "key TEXT, "
-			  "unixtime INTEGER, "
-			  "builder_name TEXT, "
-			  "spawn TEXT, "
-			  "project_name TEXT, "
-			  "ref TEXT, "
-			  "parallel INTEGER, "
-			  "us_cpu_user INTEGER, "
-			  "us_cpu_sys INTEGER, "
-			  "peak_mem_rss INTEGER, "
-			  "stg_bytes INTEGER, "
-			  "PRIMARY KEY(key, unixtime));";
-
-	rc = sqlite3_exec(vhd->pdb_metrics, sql, 0, 0, &err_msg);
-	if (rc != SQLITE_OK) {
-		lwsl_err("%s: failed to create table: %s\n", __func__, err_msg);
-		sqlite3_free(err_msg);
-		sqlite3_close(vhd->pdb_metrics);
-		vhd->pdb_metrics = NULL;
+	if (lws_struct_sq3_open(vhd->context, db_path,
+				lsm_schema_sq3_map_build_metric,
+				LWS_ARRAY_SIZE(lsm_schema_sq3_map_build_metric),
+				&vhd->pdb_metrics)) {
+		lwsl_err("%s: failed to open or create metrics db\n",
+			 __func__);
 		return 1;
 	}
 
@@ -139,13 +117,16 @@ sais_metrics_db_close(void)
 int
 sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 {
-	char hash_input[8192], key[65];
+	char hash_input[8192];
+	sai_build_metric_db_t dbm;
+	lws_dll2_owner_t owner;
 	unsigned char hash[32];
-	sqlite3_stmt *stmt;
 	int n;
 
 	if (!vhd->pdb_metrics)
 		return 0;
+
+	memset(&dbm, 0, sizeof(dbm));
 
 	lws_snprintf(hash_input, sizeof(hash_input), "%s%s%s%s",
 		     m->builder_name, m->spawn, m->project_name, m->ref);
@@ -164,41 +145,28 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 		return 1;
 
 	for (n = 0; n < 32; n++)
-		lws_snprintf(key + (n * 2), 3, "%02x", hash[n]);
+		lws_snprintf(dbm.key + (n * 2), 3, "%02x", hash[n]);
 
-	const char *sql = "INSERT INTO build_metrics (key, unixtime, builder_name, spawn, "
-			  "project_name, ref, parallel, us_cpu_user, "
-			  "us_cpu_sys, peak_mem_rss, stg_bytes) "
-			  "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);";
+	dbm.unixtime = (uint64_t)time(NULL);
+	lws_strncpy(dbm.builder_name, m->builder_name, sizeof(dbm.builder_name));
+	lws_strncpy(dbm.spawn, m->spawn, sizeof(dbm.spawn));
+	lws_strncpy(dbm.project_name, m->project_name, sizeof(dbm.project_name));
+	lws_strncpy(dbm.ref, m->ref, sizeof(dbm.ref));
+	dbm.parallel = m->parallel;
+	dbm.us_cpu_user = m->us_cpu_user;
+	dbm.us_cpu_sys = m->us_cpu_sys;
+	dbm.peak_mem_rss = m->peak_mem_rss;
+	dbm.stg_bytes = m->stg_bytes;
 
-	int rc = sqlite3_prepare_v2(vhd->pdb_metrics, sql, -1, &stmt, 0);
-	if (rc != SQLITE_OK) {
-		lwsl_err("%s: Failed to prepare statement: %s\n", __func__,
-			 sqlite3_errmsg(vhd->pdb_metrics));
+	lws_dll2_owner_clear(&owner);
+	lws_dll2_add_tail(&dbm.list, &owner);
+
+	if (lws_struct_sq3_serialize(vhd->pdb_metrics,
+				     lsm_schema_sq3_map_build_metric,
+				     &owner, 0)) {
+		lwsl_err("%s: failed to serialize build metric\n", __func__);
 		return 1;
 	}
 
-	sqlite3_bind_text(stmt, 1, key, -1, SQLITE_STATIC);
-	sqlite3_bind_int64(stmt, 2, (sqlite3_int64)time(NULL));
-	sqlite3_bind_text(stmt, 3, m->builder_name, -1, SQLITE_STATIC);
-	sqlite3_bind_text(stmt, 4, m->spawn, -1, SQLITE_STATIC);
-	sqlite3_bind_text(stmt, 5, m->project_name, -1, SQLITE_STATIC);
-	sqlite3_bind_text(stmt, 6, m->ref, -1, SQLITE_STATIC);
-	sqlite3_bind_int(stmt, 7, m->parallel);
-	sqlite3_bind_int64(stmt, 8, (sqlite3_int64)m->us_cpu_user);
-	sqlite3_bind_int64(stmt, 9, (sqlite3_int64)m->us_cpu_sys);
-	sqlite3_bind_int64(stmt, 10, (sqlite3_int64)m->peak_mem_rss);
-	sqlite3_bind_int64(stmt, 11, (sqlite3_int64)m->stg_bytes);
-
-	rc = sqlite3_step(stmt);
-	if (rc != SQLITE_DONE) {
-		lwsl_err("%s: Failed to step statement: %s\n", __func__,
-			 sqlite3_errmsg(vhd->pdb_metrics));
-		sqlite3_finalize(stmt);
-		return 1;
-	}
-
-	sqlite3_finalize(stmt);
-
-	return sais_metrics_db_prune(vhd, key);
+	return sais_metrics_db_prune(vhd, dbm.key);
 }

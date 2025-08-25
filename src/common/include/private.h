@@ -363,6 +363,21 @@ typedef struct sai_build_metric {
 	uint64_t	stg_bytes;
 } sai_build_metric_t;
 
+typedef struct sai_build_metric_db {
+	lws_dll2_t	list; /* for lws_struct */
+	char		key[65];
+	uint64_t	unixtime;
+	char		builder_name[96];
+	char		spawn[4096];
+	char		project_name[96];
+	char		ref[96];
+	int		parallel;
+	uint64_t	us_cpu_user;
+	uint64_t	us_cpu_sys;
+	uint64_t	peak_mem_rss;
+	uint64_t	stg_bytes;
+} sai_build_metric_db_t;
+
 /*
  * One SS per unique server the builder connects to; one of these as the SS
  * userdata object
@@ -519,7 +534,8 @@ extern const lws_struct_map_t
 	lsm_power_state[3],
 	lsm_rebuild[1],
 	lsm_schema_rebuild[1],
-	lsm_schema_build_metric[1]
+	lsm_schema_build_metric[1],
+	lsm_schema_sq3_map_build_metric[1]
 ;
 extern const lws_struct_map_t lsm_plat[8];
 extern const lws_struct_map_t lsm_plat_for_json[12];
