@@ -12,6 +12,7 @@ set(SRCS
 	b-logproxy.c
 	b-refproxy.c
 	b-load.c
+	b-metrics.c
 	../common/c-utils.c
 )
 
@@ -71,6 +72,13 @@ if (requirements)
 	endif()
 	if (HAS_LIBCAP)
 		target_link_libraries(${SUB} ${CAP_LIB_PATH})
+	endif()
+
+	find_package(SQLite3)
+	if (SQLITE3_FOUND)
+		target_link_libraries(${SUB} PRIVATE SQLite::SQLite3)
+	else()
+		target_link_libraries(${SUB} sqlite3)
 	endif()
 
 	if (MSVC OR WIN32)

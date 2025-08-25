@@ -37,6 +37,7 @@
 #include <assert.h>
 
 #include "b-private.h"
+#include "b-metrics.h"
 
 #if !defined(WIN32)
 static char csep = '/';
@@ -271,6 +272,14 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 			__func__, ns->chunk_cache.count,
 			ns->spm ? ns->spm->logs_in_flight : -99);
 
+	if (op->spawn) {
+		saib_metrics_add(ns->sp->name, op->spawn, ns->project_name,
+				 ns->ref, ns->parallel, res->us_cpu_user,
+				 res->us_cpu_sys, res->peak_mem_rss,
+				 du.size_in_bytes);
+		free(op->spawn);
+	}
+
 	if (ns)
 		ns->op = NULL;
 	free(op);
@@ -285,6 +294,9 @@ fail:
 	saib_set_ns_state(ns, NSSTATE_FAILED);
 
 	saib_log_chunk_create(ns, NULL, 0, 2);
+
+	if (op->spawn)
+		free(op->spawn);
 
 	if (ns)
 		ns->op = NULL;
@@ -528,6 +540,7 @@ saib_spawn_step(struct sai_nspawn *ns)
 
 	op->ns = ns;
 	ns->op = op;
+	op->spawn = lws_strdup(one_step);
 
 	info.opaque = op;
 	info.owner = &builder.lsp_owner;

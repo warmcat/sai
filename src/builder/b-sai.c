@@ -46,6 +46,8 @@
 #include <unistd.h>	/* for chown() */
 #endif
 
+#include "b-metrics.h"
+
 #if defined(WIN32)
 #include <initguid.h>
 #include <KnownFolders.h>
@@ -894,6 +896,12 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
+	if (saib_metrics_init(&builder)) {
+		lwsl_err("%s: saib_metrics_init failed\n", __func__);
+
+		return 1;
+	}
+
 //	lwsl_notice("%s: parsed %s %s %s\n", __func__, builder.metrics_path,
 //			builder.metrics_uri, builder.metrics_secret);
 
@@ -1079,6 +1087,8 @@ bail:
 	saib_config_destroy(&builder);
 
 	lws_sul_cancel(&builder.sul_idle);
+
+	saib_metrics_close();
 
 	lws_context_destroy(builder.context);
 

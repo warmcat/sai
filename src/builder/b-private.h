@@ -42,6 +42,7 @@ struct lws_spawn_piped;
 struct saib_opaque_spawn {
 	struct sai_nspawn	*ns;
 	struct lws_spawn_piped	*lsp;
+	char			*spawn;
 };
 
 #define SAI_LOAD_REPORT_US	(1 * LWS_US_PER_SEC)
@@ -122,6 +123,8 @@ struct sai_builder {
 	const char		*host;		/* prepended before hostname */
 	const char		*rebuild_script_user;
 	const char		*rebuild_script_root;
+
+	const char		*build_metrics_db_path;
 
 	char			path[256];
 
