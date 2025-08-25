@@ -537,7 +537,7 @@ extern const lws_struct_map_t
 	lsm_schema_build_metric[1],
 	lsm_schema_sq3_map_build_metric[1]
 ;
-extern const lws_struct_map_t lsm_build_metric[];
+extern const lws_struct_map_t lsm_build_metric[9];
 extern const lws_struct_map_t lsm_plat[8];
 extern const lws_struct_map_t lsm_plat_for_json[12];
 
