@@ -152,7 +152,7 @@ struct lws_protocols protocol_stdxxx =
 
 
 static void
-sai_lsp_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
+sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		int we_killed_him)
 {
 	struct saib_opaque_spawn *op = (struct saib_opaque_spawn *)opaque;
@@ -168,9 +168,6 @@ sai_lsp_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 	saib_log_chunk_create(ns, ">saib> Reaping build process\n", 29, 3);
 
 #if !defined(WIN32)
-	lwsl_notice("%s: reaped: timing %dms %dms %dms %dms\n", __func__,
-		    (int)(accounting[0] / 1000), (int)(accounting[1] / 1000),
-		    (int)(accounting[2] / 1000), (int)(accounting[3] / 1000));
 
 	if (we_killed_him & 1) {
 		lwsl_notice("%s: Process TIMED OUT by Sai\n", __func__);
@@ -215,7 +212,17 @@ sai_lsp_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 
 	/* step succeeded */
 
-	n = lws_snprintf(s, sizeof(s), "Build step %d OK", ns->build_step + 1);
+	lws_dir_du_t du;
+
+	memset(&du, 0, sizeof(du));
+	lws_dir(ns->inp, &du, lws_dir_du_cb);
+
+	n = lws_snprintf(s, sizeof(s),
+			 ">saib> Step %d OK: cpu %llums + %llums, %llu bytes\n",
+			 ns->build_step + 1,
+			 (unsigned long long)res->us_cpu_user / 1000,
+			 (unsigned long long)res->us_cpu_sys / 1000,
+			 (unsigned long long)du.size_in_bytes);
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	ns->build_step++;
@@ -450,6 +457,7 @@ saib_spawn_step(struct sai_nspawn *ns)
 	info.max_log_lines	= 10000;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.reap_cb		= sai_lsp_reap_cb;
+	info.res		= &ns->res;
 #if defined(__linux__)
 	info.cgroup_name_suffix = cgroup;
 	info.p_cgroup_ret	= &in_cgroup;

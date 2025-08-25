@@ -162,7 +162,7 @@ static const char * const git_helper_bat =
 	"exit /b 1\n";
 #endif
 
-static void sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting,
+static void sai_git_mirror_reap_cb(void *opaque, const struct lws_spawn_resource_us *res,
 				   siginfo_t *si, int we_killed_him);
 
 static void
@@ -174,7 +174,7 @@ saib_start_mirror_cb(lws_sorted_usec_list_t *sul)
 }
 
 static void
-sai_git_checkout_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
+sai_git_checkout_reap_cb(void *opaque, const struct lws_spawn_resource_us *res, siginfo_t *si,
 		int we_killed_him)
 {
 	struct saib_opaque_spawn *op = (struct saib_opaque_spawn *)opaque;
@@ -220,7 +220,7 @@ onward:
 }
 
 static void
-sai_git_mirror_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
+sai_git_mirror_reap_cb(void *opaque, const struct lws_spawn_resource_us *res, siginfo_t *si,
 		int we_killed_him)
 {
 	struct saib_opaque_spawn *op = (struct saib_opaque_spawn *)opaque;
