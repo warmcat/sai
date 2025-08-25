@@ -951,3 +951,26 @@ img.branch {
 .ansi-bg-magenta { background-color: #A0A; }
 .ansi-bg-cyan    { background-color: #0AA; }
 .ansi-bg-white   { background-color: #AAA; }
+
+.step-progress {
+    display: flex;
+    width: 16px; /* Match the icon width */
+    height: 2px;
+    margin-top: 1px;
+}
+
+.step-bar {
+    flex-grow: 1;
+    height: 100%;
+    background-color: white;
+    margin-right: 1px;
+    border: solid 1px #a0a0a0;
+}
+
+.step-bar:last-child {
+    margin-right: 0;
+}
+
+.step-bar-completed {
+    background-color: black;
+}
