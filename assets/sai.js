@@ -806,13 +806,13 @@ function sai_render_build_steps(t) {
         return "";
     }
 
-    var s = "<div class=\\"step-progress\\">";
+    var s = "<div class=\"step-progress\">";
     for (var i = 0; i < t.build_step_count; i++) {
         var step_class = "step-bar";
         if (i < t.build_step) {
             step_class += " step-bar-completed";
         }
-        s += "<div class=\\"" + step_class + "\\"></div>";
+        s += "<div class=\"" + step_class + "\"></div>";
     }
     s += "</div>";
     return s;
