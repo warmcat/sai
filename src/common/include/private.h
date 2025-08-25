@@ -186,6 +186,7 @@ struct sai_nspawn {
 	int				retcode;
 	int				instance_idx;
 	int				mirror_wait_budget;
+	int				parallel;
 
 	uint8_t				spins;
 	uint8_t				state;		/* NSSTATE_ */
