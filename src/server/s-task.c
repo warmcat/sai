@@ -773,6 +773,24 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 
 	sais_event_db_close(vhd, &pdb);
 
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+		lwsl_err("%s: unable to open event-specific database for reset\n",
+				__func__);
+		return SAI_DB_RESULT_ERROR;
+	}
+	lws_snprintf(cmd, sizeof(cmd), "update tasks set build_step=0 where uuid='%s'",
+		     esc);
+	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+	if (ret != SQLITE_OK) {
+		sais_event_db_close(vhd, &pdb);
+		if (ret == SQLITE_BUSY)
+			return SAI_DB_RESULT_BUSY;
+		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
+			 sqlite3_errmsg(pdb));
+		return SAI_DB_RESULT_ERROR;
+	}
+	sais_event_db_close(vhd, &pdb);
+
 	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
 
 	sais_task_cancel(vhd, task_uuid);
