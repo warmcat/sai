@@ -21,6 +21,7 @@
 
 #include <libwebsockets.h>
 #include <sqlite3.h>
+#include <lws-genhash.h>
 
 #include "b-private.h"
 #include "b-metrics.h"
@@ -152,7 +153,17 @@ saib_metrics_add(const char *builder_name, const char *spawn,
 	lws_snprintf(hash_input, sizeof(hash_input), "%s%s%s%s",
 		     builder_name, spawn, project_name, ref);
 
-	if (lws_sha256((unsigned char *)hash_input, strlen(hash_input), hash))
+	struct lws_genhash_ctx ctx;
+
+	if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256))
+		return 1;
+
+	if (lws_genhash_update(&ctx, hash_input, strlen(hash_input))) {
+		lws_genhash_destroy(&ctx, NULL);
+		return 1;
+	}
+
+	if (lws_genhash_destroy(&ctx, hash))
 		return 1;
 
 	for (n = 0; n < 32; n++)
