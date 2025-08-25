@@ -22,6 +22,8 @@
 #if !defined(__SAI_BUILDER_METRICS_H__)
 #define __SAI_BUILDER_METRICS_H__
 
+struct sai_builder;
+
 int
 saib_metrics_init(struct sai_builder *builder);
 
