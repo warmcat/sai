@@ -273,7 +273,8 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 			m->stg_bytes = du.size_in_bytes;
 
 			lws_dll2_add_tail(&m->list, &ns->spm->build_metric_list);
-			lws_ss_request_tx(ns->spm->ss);
+			if (lws_ss_request_tx(ns->spm->ss))
+				lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
 		}
 		free(op->spawn);
 	}

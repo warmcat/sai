@@ -20,7 +20,6 @@
  */
 
 #include <libwebsockets.h>
-#include <lws-genhash.h>
 #include "s-private.h"
 #include "s-metrics-db.h"
 

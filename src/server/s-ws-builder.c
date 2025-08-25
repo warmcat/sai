@@ -463,7 +463,7 @@ int
 sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 {
 	char event_uuid[33], s[128], esc[96];
-	const sai_build_metric_t *m;
+	const sai_build_metric_t *metric;
 	sai_resource_requisition_t *rr;
 	sai_resource_wellknown_t *wk;
 	struct lwsac *ac = NULL;
@@ -1027,8 +1027,8 @@ bail:
 		break;
 
 	case SAIM_WSSCH_BUILDER_METRIC:
-		m = (const sai_build_metric_t *)pss->a.dest;
-		sais_metrics_db_add(vhd, m);
+		metric = (const sai_build_metric_t *)pss->a.dest;
+		sais_metrics_db_add(vhd, metric);
 		lwsac_free(&pss->a.ac);
 		break;
 	}
