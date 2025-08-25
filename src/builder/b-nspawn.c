@@ -37,7 +37,6 @@
 #include <assert.h>
 
 #include "b-private.h"
-#include "b-metrics.h"
 
 #if !defined(WIN32)
 static char csep = '/';
@@ -258,6 +257,27 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	/* all steps succeeded */
 	lwsl_notice("%s: all build steps succeeded\n", __func__);
 
+	if (op->spawn) {
+		sai_build_metric_t *m = malloc(sizeof(*m));
+
+		if (m) {
+			memset(m, 0, sizeof(*m));
+			lws_strncpy(m->builder_name, ns->sp->name, sizeof(m->builder_name));
+			lws_strncpy(m->spawn, op->spawn, sizeof(m->spawn));
+			lws_strncpy(m->project_name, ns->project_name, sizeof(m->project_name));
+			lws_strncpy(m->ref, ns->ref, sizeof(m->ref));
+			m->parallel = ns->parallel;
+			m->us_cpu_user = res->us_cpu_user;
+			m->us_cpu_sys = res->us_cpu_sys;
+			m->peak_mem_rss = res->peak_mem_rss;
+			m->stg_bytes = du.size_in_bytes;
+
+			lws_dll2_add_tail(&m->list, &ns->spm->build_metric_list);
+			lws_ss_request_tx(ns->spm->ss);
+		}
+		free(op->spawn);
+	}
+
 	saib_task_grace(ns);
 	saib_set_ns_state(ns, NSSTATE_DONE);
 
@@ -271,14 +291,6 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	lwsl_notice("%s: finished, waiting to drain logs (this ns %d, spm in flight %d)\n",
 			__func__, ns->chunk_cache.count,
 			ns->spm ? ns->spm->logs_in_flight : -99);
-
-	if (op->spawn) {
-		saib_metrics_add(ns->sp->name, op->spawn, ns->project_name,
-				 ns->ref, ns->parallel, res->us_cpu_user,
-				 res->us_cpu_sys, res->peak_mem_rss,
-				 du.size_in_bytes);
-		free(op->spawn);
-	}
 
 	if (ns)
 		ns->op = NULL;

@@ -40,6 +40,22 @@ const lws_struct_map_t lsm_load_report_members[] = {
 			 NULL, lsm_platform_load, "platforms"),
 };
 
+const lws_struct_map_t lsm_build_metric[] = {
+	LSM_CARRAY	(sai_build_metric_t, builder_name,	"builder_name"),
+	LSM_CARRAY	(sai_build_metric_t, spawn,		"spawn"),
+	LSM_CARRAY	(sai_build_metric_t, project_name,	"project_name"),
+	LSM_CARRAY	(sai_build_metric_t, ref,		"ref"),
+	LSM_SIGNED	(sai_build_metric_t, parallel,		"parallel"),
+	LSM_UNSIGNED	(sai_build_metric_t, us_cpu_user,	"us_cpu_user"),
+	LSM_UNSIGNED	(sai_build_metric_t, us_cpu_sys,	"us_cpu_sys"),
+	LSM_UNSIGNED	(sai_build_metric_t, peak_mem_rss,	"peak_mem_rss"),
+	LSM_UNSIGNED	(sai_build_metric_t, stg_bytes,		"stg_bytes"),
+};
+
+const lws_struct_map_t lsm_schema_build_metric[] = {
+	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric, "com.warmcat.sai.build-metric")
+};
+
 const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/include/private.h in sync */
 	LSM_UNSIGNED	(sai_plat_t, uid,		"uid"),
 	LSM_STRING_PTR	(sai_plat_t, name,		"name"),

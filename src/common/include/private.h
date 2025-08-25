@@ -350,6 +350,19 @@ typedef struct {
 
 struct sai_plat;
 
+typedef struct sai_build_metric {
+	lws_dll2_t	list;
+	char		builder_name[96];
+	char		spawn[4096];
+	char		project_name[96];
+	char		ref[96];
+	int		parallel;
+	uint64_t	us_cpu_user;
+	uint64_t	us_cpu_sys;
+	uint64_t	peak_mem_rss;
+	uint64_t	stg_bytes;
+} sai_build_metric_t;
+
 /*
  * One SS per unique server the builder connects to; one of these as the SS
  * userdata object
@@ -361,6 +374,7 @@ typedef struct sai_plat_server {
 	lws_dll2_t		list;
 
 	lws_dll2_owner_t	rejection_list;
+	lws_dll2_owner_t	build_metric_list;
 	lws_dll2_owner_t	resource_req_list; /* sai_resource_msg_t */
 	lws_dll2_owner_t	resource_pss_list; /* so we can find the cookie */
 
@@ -504,7 +518,8 @@ extern const lws_struct_map_t
 	lsm_resource[4],
 	lsm_power_state[3],
 	lsm_rebuild[1],
-	lsm_schema_rebuild[1]
+	lsm_schema_rebuild[1],
+	lsm_schema_build_metric[1]
 ;
 extern const lws_struct_map_t lsm_plat[8];
 extern const lws_struct_map_t lsm_plat_for_json[12];

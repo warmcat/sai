@@ -1,5 +1,5 @@
 /*
- * Sai builder metrics
+ * Sai server metrics db
  *
  * Copyright (C) 2024 Andy Green <andy@warmcat.com>
  *
@@ -19,19 +19,19 @@
  *  MA  02110-1301  USA
  */
 
-#if !defined(__SAI_BUILDER_METRICS_H__)
-#define __SAI_BUILDER_METRICS_H__
+#if !defined(__SAI_SERVER_METRICS_DB_H__)
+#define __SAI_SERVER_METRICS_DB_H__
+
+struct vhd;
+struct sai_build_metric;
 
 int
-saib_metrics_init(const char *config_dir);
+sais_metrics_db_init(struct vhd *vhd);
 
 void
-saib_metrics_close(void);
+sais_metrics_db_close(void);
 
 int
-saib_metrics_add(const char *builder_name, const char *spawn,
-		 const char *project_name, const char *ref, int parallel,
-		 uint64_t us_cpu_user, uint64_t us_cpu_sys,
-		 uint64_t peak_mem_rss, uint64_t stg_bytes);
+sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m);
 
 #endif
