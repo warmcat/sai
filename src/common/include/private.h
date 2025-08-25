@@ -129,6 +129,8 @@ typedef struct {
 	uint64_t		duration;
 	int			state;
 	int			uid;
+	int			build_step;
+	int			build_step_count;
 
 	char			told_ongoing;
 } sai_task_t;
@@ -492,7 +494,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[9],
-	lsm_task[21],
+	lsm_task[23],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],

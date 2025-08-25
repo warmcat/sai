@@ -265,6 +265,31 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 	}
 
 	ot->last_log_timestamp = lws_now_usecs();
+
+	if (log->channel == 3 && log->log) { /* control channel */
+		int step;
+		if (sscanf(log->log, " Step %d OK:", &step) == 1) {
+			char event_uuid[33];
+			sqlite3 *pdb = NULL;
+			char q[256], esc_uuid[129];
+
+			sai_task_uuid_to_event_uuid(event_uuid, log->task_uuid);
+			if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+
+				lws_sql_purify(esc_uuid, log->task_uuid, sizeof(esc_uuid));
+
+				lws_snprintf(q, sizeof(q),
+					"UPDATE tasks SET build_step=%d WHERE uuid='%s'",
+					step, esc_uuid);
+				if (sai_sqlite3_statement(pdb, q, "update build_step"))
+					lwsl_err("%s: failed to update build_step\n", __func__);
+
+				sais_event_db_close(vhd, &pdb);
+
+				sais_taskchange(vhd->h_ss_websrv, log->task_uuid, SAIES_BEING_BUILT);
+			}
+		}
+	}
 }
 
 sai_plat_t *
