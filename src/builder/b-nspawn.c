@@ -274,7 +274,7 @@ fail:
 
 #if defined(WIN32)
 
-static const char * const runscript =
+static const char * const runscript_win_first =
 	"set SAI_INSTANCE_IDX=%d\n"
 	"set SAI_PARALLEL=%d\n"
 	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
@@ -287,9 +287,21 @@ static const char * const runscript =
 	"%s"
 ;
 
+static const char * const runscript_win_next =
+	"set SAI_INSTANCE_IDX=%d\n"
+	"set SAI_PARALLEL=%d\n"
+	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
+	"set SAI_LOGPROXY=%s\n"
+	"set SAI_LOGPROXY_TTY0=%s\n"
+	"set SAI_LOGPROXY_TTY1=%s\n"
+	"set HOME=%s\n"
+	"cd %s &&"
+	"%s"
+;
+
 #else
 
-static const char * const runscript =
+static const char * const runscript_first =
 	"#!/bin/bash -x\n"
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
@@ -309,6 +321,29 @@ static const char * const runscript =
 	"set -e\n"
 	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
 	"rm -rf build\n"
+	"%s\n"
+	"exit $?\n"
+;
+
+static const char * const runscript_next =
+	"#!/bin/bash -x\n"
+#if defined(__APPLE__)
+	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
+#else
+	"export PATH=/usr/local/bin:$PATH\n"
+#endif
+	"export HOME=%s\n"
+	"export SAI_OVN=%s\n"
+	"export SAI_PROJECT=%s\n"
+	"export SAI_REMOTE_REF=%s\n"
+	"export SAI_INSTANCE_IDX=%d\n"
+	"export SAI_PARALLEL=%d\n"
+	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
+	"export SAI_LOGPROXY=%s\n"
+	"export SAI_LOGPROXY_TTY0=%s\n"
+	"export SAI_LOGPROXY_TTY1=%s\n"
+	"set -e\n"
+	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
 	"%s\n"
 	"exit $?\n"
 ;
@@ -417,13 +452,17 @@ saib_spawn_step(struct sai_nspawn *ns)
 	}
 
 #if defined(WIN32)
-	n = lws_snprintf(st, sizeof(st), runscript, ns->instance_idx,
+	n = lws_snprintf(st, sizeof(st),
+			 ns->build_step ? runscript_win_next : runscript_win_first,
+			 ns->instance_idx,
 			 ns->parallel ? ns->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
 			 ns->inp, one_step);
 #else
-	n = lws_snprintf(st, sizeof(st), runscript, builder.home, ns->fsm.ovname,
+	n = lws_snprintf(st, sizeof(st),
+			 ns->build_step ? runscript_next : runscript_first,
+			 builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_idx,
 			 ns->parallel ? ns->parallel : 1,
 			 respath, ns->slp_control.sockpath,
