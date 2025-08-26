@@ -59,8 +59,11 @@ static const char * const nsstates[] = {
 	"NSSTATE_MOUNTING",
 	"NSSTATE_EXECUTING_STEPS",
 	"NSSTATE_DONE",
+	"NSSTATE_UPLOADING_ARTIFACTS",
 	"NSSTATE_FAILED",
 };
+
+static void saib_start_artifact_upload(struct sai_nspawn *ns);
 
 int
 saib_set_ns_state(struct sai_nspawn *ns, int state)
@@ -74,6 +77,9 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 	n = lws_snprintf(log, sizeof(log), ">saib> %s\n", nsstates[state]);
 
 	saib_log_chunk_create(ns, log, (unsigned int)n, 3);
+
+	if (state == NSSTATE_UPLOADING_ARTIFACTS)
+		saib_start_artifact_upload(ns);
 
 	if (state == NSSTATE_FAILED) {
 		ns->retcode = SAISPRF_EXIT | 254;
@@ -297,18 +303,14 @@ artifact_glob_cb(void *data, const char *path)
  * of the task and reset the nspawn.
  */
 
-void
-saib_task_grace(struct sai_nspawn *ns)
+static void
+saib_start_artifact_upload(struct sai_nspawn *ns)
 {
 	char filt[32], scandir[256];
 	struct lws_tokenize ts;
 	uint8_t *p, *p1, *ps;
 	lws_dir_glob_t g;
 	int m;
-
-	ns->finished_when_logs_drained = 1;
-	lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
-			 saib_sub_cleaner_cb, 20 * LWS_USEC_PER_SEC);
 
 	if (!ns->spm)
 		return;
@@ -401,6 +403,14 @@ scan:
 		if (ts.e == LWS_TOKZE_ENDED)
 			break;
 	}
+}
+
+void
+saib_task_grace(struct sai_nspawn *ns)
+{
+	ns->finished_when_logs_drained = 1;
+	lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
+			 saib_sub_cleaner_cb, 20 * LWS_USEC_PER_SEC);
 }
 
 static void

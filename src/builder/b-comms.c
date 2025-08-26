@@ -364,12 +364,14 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		lwsl_debug("%s: spm logs_in_flight %d\n", __func__,
 			   spm->logs_in_flight);
 
-		if (ns->finished_when_logs_drained && !ns->chunk_cache.count)
+		if (ns->finished_when_logs_drained && !ns->chunk_cache.count) {
 			/*
 			 * He's in DONE state, and the draining he was waiting
-			 * for has now happened.  The sul_cleaner will get him.
+			 * for has now happened.
 			 */
 			lwsl_notice("%s: drained and empty\n", __func__);
+			saib_set_ns_state(ns, NSSTATE_UPLOADING_ARTIFACTS);
+		}
 
 		break;
 
