@@ -595,7 +595,6 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 
 	lws_snprintf(cmd, sizeof(cmd), "update build_steps set state=0 where task_uuid='%s'",
 		     esc);
-	lwsl_notice("%s: resetting steps with: %s\n", __func__, cmd);
 	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 	if (ret != SQLITE_OK) {
 		sais_event_db_close(vhd, &pdb);

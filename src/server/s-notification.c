@@ -245,7 +245,7 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 	sqlite3 *pdb = NULL;
 	size_t n;
 
-	// lwsl_notice("%s: reason %d, %s\n", __func__, reason, ctx->path);
+	lwsl_notice("%s: reason %d, path %s\n", __func__, reason, ctx->path);
 
 	if (reason == LEJPCB_COMPLETE) {
 
@@ -553,6 +553,7 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 				/*
 				 * Create the build steps for the task
 				 */
+				lwsl_notice("platbuild: %s\n", sn->platbuild);
 				const char *p_build = sn->platbuild;
 				int step_idx = 0;
 				while (*p_build) {
@@ -571,6 +572,7 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 					if (!one_step[0])
 						continue;
 
+					lwsl_notice("  step %d: %s\n", step_idx, one_step);
 					memset(&step, 0, sizeof(step));
 					step.command = one_step;
 					lws_strncpy(step.task_uuid, pss->sn.t.uuid, sizeof(step.task_uuid));
@@ -580,9 +582,10 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 					lws_dll2_owner_clear(&owner);
 					lws_dll2_add_head(&step.list, &owner);
-					lws_struct_sq3_serialize(pdb,
+					n = lws_struct_sq3_serialize(pdb,
 								 lsm_schema_sq3_map_build_step,
 								 &owner, 0);
+					lwsl_notice("lws_struct_sq3_serialize for build_step returned %d\n", n);
 				}
 			}
 
