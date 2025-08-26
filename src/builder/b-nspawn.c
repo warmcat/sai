@@ -157,36 +157,32 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 {
 	struct saib_opaque_spawn *op = (struct saib_opaque_spawn *)opaque;
 	struct sai_nspawn *ns = op ? op->ns : NULL;
-
-	// lwsl_warn("%s: reap at %llu: we_killed_him: %d\n", __func__,
-	//	  (unsigned long long)lws_now_usecs(), we_killed_him);
-
+	sai_step_completion_t *sc;
 	int exit_code = -1;
+	lws_dir_du_t du;
 	char s[256];
 	int n;
 
-	saib_log_chunk_create(ns, ">saib> Reaping build process\n", 29, 3);
+	if (!ns) {
+		free(op);
+		return;
+	}
+
+	sc = malloc(sizeof(*sc));
+	if (!sc) {
+		free(op);
+		return;
+	}
+	memset(sc, 0, sizeof(*sc));
 
 #if !defined(WIN32)
-
-	if (we_killed_him & 1) {
-		lwsl_notice("%s: Process TIMED OUT by Sai\n", __func__);
-		exit_code = -1;
+	if (we_killed_him & 1)
 		ns->retcode = SAISPRF_TIMEDOUT;
-		goto fail;
-	}
-
-	if (we_killed_him & 2) {
-		lwsl_notice("%s: Process killed by Sai due to spew\n", __func__);
-		exit_code = -1;
+	if (we_killed_him & 2)
 		ns->retcode = SAISPRF_TERMINATED;
-		goto fail;
-	}
 
 	switch (si->si_code) {
 	case CLD_EXITED:
-		lwsl_notice("%s: Process Exited with exit code %d\n",
-			    __func__, si->si_status);
 		exit_code = si->si_status;
 		ns->retcode = SAISPRF_EXIT | si->si_status;
 		if (ns->user_cancel)
@@ -194,12 +190,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		break;
 	case CLD_KILLED:
 	case CLD_DUMPED:
-		lwsl_notice("%s: Process Terminated by signal %d / %d\n",
-			    __func__, si->si_status, si->si_signo);
 		ns->retcode = SAISPRF_SIGNALLED | si->si_signo;
-		break;
-	default:
-		lwsl_notice("%s: SI code %d\n", __func__, si->si_code);
 		break;
 	}
 #else
@@ -207,12 +198,11 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	ns->retcode = SAISPRF_EXIT | exit_code;
 #endif
 
-	if (exit_code)
-		goto fail;
-
-	/* step succeeded */
-
-	lws_dir_du_t du;
+	lws_strncpy(sc->task_uuid, ns->task->uuid, sizeof(sc->task_uuid));
+	sc->step_idx = ns->step->step_idx;
+	sc->status = exit_code ? 3 /* FAILED */ : 2 /* SUCCESS */;
+	if (res)
+		sc->res = *res;
 
 	memset(&du, 0, sizeof(du));
 	lws_dir(ns->inp, &du, lws_dir_du_cb);
@@ -285,6 +275,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		}
 	}
 
+#if 0
 	ns->build_step++;
 	if (ns->build_step < ns->build_step_count) {
 		/* there are more steps, spawn the next one */
@@ -296,6 +287,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		saib_spawn_step(ns);
 		return;
 	}
+#endif
 
 	/* all steps succeeded */
 	lwsl_notice("%s: all build steps succeeded\n", __func__);
@@ -320,7 +312,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	if (ns)
 		ns->op = NULL;
 	free(op);
-
+#if 0
 	return;
 
 fail:
@@ -335,9 +327,24 @@ fail:
 	if (op->spawn)
 		free(op->spawn);
 
+	if (ns->spm) {
+		lws_dll2_add_tail(&sc->list, &ns->spm->step_completion_list);
+		if (lws_ss_request_tx(ns->spm->ss))
+			lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
+	} else
+		free(sc);
+
+	if (exit_code == 0) {
+		/* The step succeeded. The nspawn is now idle. */
+		saib_set_ns_state(ns, NSSTATE_DONE);
+	} else {
+		saib_set_ns_state(ns, NSSTATE_FAILED);
+	}
+
 	if (ns)
 		ns->op = NULL;
 	free(op);
+#endif
 }
 
 #if defined(WIN32)
@@ -419,34 +426,7 @@ static const char * const runscript_next =
 #endif
 
 int
-saib_spawn_step(struct sai_nspawn *ns);
-
-int
-saib_spawn_build(struct sai_nspawn *ns)
-{
-	const char *p = ns->task->build;
-	int n;
-
-	ns->build_step = 0;
-	ns->build_step_count = 0;
-
-	lwsl_hexdump_err(ns->task->build, strlen(ns->task->build));
-
-	while ((p = strchr(p, '\n'))) {
-		ns->build_step_count++;
-		p++;
-	}
-	ns->build_step_count++;
-
-	n = lws_snprintf(ns->pending_mirror_log, sizeof(ns->pending_mirror_log),
-			"Starting build: %d steps\n", ns->build_step_count);
-	saib_log_chunk_create(ns, ns->pending_mirror_log, (size_t)n, 3);
-
-	return saib_spawn_step(ns);
-}
-
-int
-saib_spawn_step(struct sai_nspawn *ns)
+saib_spawn_command(struct sai_nspawn *ns, const char *command, int parallel)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
@@ -481,26 +461,6 @@ saib_spawn_step(struct sai_nspawn *ns)
 			builder.home, st, ns->instance_idx);
 #endif
 
-	char one_step[4096];
-	const char *p_build = ns->task->build, *q;
-	int step = 0;
-
-	// lwsl_hexdump_notice(ns->task->build, strlen(ns->task->build));
-
-	while (step < ns->build_step && (p_build = strchr(p_build, '\n'))) {
-		p_build++;
-		step++;
-	}
-
-	if (p_build) {
-		q = strchr(p_build, '\n');
-		if (q)
-			lws_strnncpy(one_step, p_build, q - p_build, sizeof(one_step));
-		else
-			lws_strncpy(one_step, p_build, sizeof(one_step));
-	} else
-		one_step[0] = '\0';
-
 #if defined(WIN32)
 	if (_sopen_s(&fd, args, _O_CREAT | _O_TRUNC | _O_WRONLY,
 		     _SH_DENYNO, _S_IWRITE))
@@ -523,24 +483,22 @@ saib_spawn_step(struct sai_nspawn *ns)
 
 #if defined(WIN32)
 	n = lws_snprintf(st, sizeof(st),
-			 ns->build_step ? runscript_win_next : runscript_win_first,
+			 ns->step->step_idx ? runscript_win_next : runscript_win_first,
 			 ns->instance_idx,
-			 ns->parallel ? ns->parallel : 1,
+			 parallel,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
-			 ns->inp, one_step);
+			 ns->inp, command);
 #else
 	n = lws_snprintf(st, sizeof(st),
-			 ns->build_step ? runscript_next : runscript_first,
+			 ns->step->step_idx ? runscript_next : runscript_first,
 			 builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_idx,
-			 ns->parallel ? ns->parallel : 1,
+			 parallel,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,
-			 builder.home, one_step);
+			 builder.home, command);
 #endif
-
-	/* but from the script's pov, it's chrooted at /home/sai */
 
 	if (write(fd, st, (unsigned int)n) != n) {
 		close(fd);
@@ -578,30 +536,18 @@ saib_spawn_step(struct sai_nspawn *ns)
 
 	op->ns = ns;
 	ns->op = op;
-	op->spawn = strdup(one_step);
 	op->start_time = lws_now_usecs();
 
 	info.opaque = op;
 	info.owner = &builder.lsp_owner;
 	info.plsp = &op->lsp;
 
-	// lwsl_warn("%s: spawning build script at %llu\n", __func__,
-	//	  (unsigned long long)lws_now_usecs());
-
 	lws_spawn_piped(&info);
 	if (!op->lsp) {
-		/*
-		 * op is attached to wsi and will be freed in reap cb,
-		 * we can't free it here
-		 */
 		ns->op = NULL;
 		lwsl_err("%s: failed\n", __func__);
-
 		return 1;
 	}
-
-	// lwsl_warn("%s: build script spawn returned at %llu\n", __func__,
-	//	  (unsigned long long)lws_now_usecs());
 
 #if defined(__linux__)
 	lwsl_notice("%s: lws_spawn_piped started (cgroup: %d)\n", __func__, in_cgroup);

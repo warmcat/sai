@@ -63,7 +63,6 @@ static const char * const saifile_paths[] = {
 	"schema",
 	"platforms.*.build[]",
 	"platforms.*.build",
-	"platforms.*.build.*",
 	"platforms.*.default",
 	"platforms.*",
 	"configurations.*.prep",
@@ -79,7 +78,6 @@ enum enum_saifile_paths {
 	LEJPNSAIF_SCHEMA,
 	LEJPNSAIF_PLAT_BUILD_STAGE,
 	LEJPNSAIF_PLAT_BUILD,
-	LEJPNSAIF_PLAT_BUILD_ELEMENT,
 	LEJPNSAIF_PLAT_DEFAULT,
 	LEJPNSAIF_PLAT_NAME,
 	LEJPNSAIF_CONFIGURATIONS_PREP,
@@ -380,8 +378,8 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 				 * copy that is serialized
 				 */
 
-				lws_strexp_init(&sx, sn, exp_cmake, sn->t.build,
-						sizeof(sn->t.build));
+				lws_strexp_init(&sx, sn, exp_cmake, sn->platbuild,
+						sizeof(sn->platbuild));
 
 				n = lws_strexp_expand(&sx, pl->build,
 						      strlen(pl->build),
@@ -487,8 +485,8 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 				 * specific database file for scalability.
 				 */
 
-				lws_strexp_init(&sx, sn, exp_cmake, sn->t.build,
-						sizeof(sn->t.build));
+				lws_strexp_init(&sx, sn, exp_cmake, sn->platbuild,
+						sizeof(sn->platbuild));
 
 				n = lws_strexp_expand(&sx, pl->build,
 						      strlen(pl->build),
@@ -503,21 +501,6 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 					sais_event_db_close(pss->vhd, &pdb);
 					return -1;
 				}
-
-				pss->sn.t.build_step = 0;
-				pss->sn.t.build_step_count = 0;
-				if (pss->sn.t.build[0]) {
-					const char *p = pss->sn.t.build;
-					pss->sn.t.build_step_count = 1;
-					while ((p = strchr(p, '\n'))) {
-						pss->sn.t.build_step_count++;
-						p++;
-					}
-				}
-
-				lwsl_notice("Task %s: step_count %d\n",
-					    pss->sn.t.taskname,
-					    pss->sn.t.build_step_count);
 
 				/*
 				 * Prepare a struct of the task object...
@@ -728,18 +711,6 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 			lws_strnncpy(sn->platbuild + n, ctx->buf, ctx->npos,
 				     sizeof(sn->platbuild) - n);
 		}
-		break;
-
-	case LEJPNSAIF_PLAT_BUILD_ELEMENT:
-		n = strlen(sn->platbuild);
-		if (n) {
-			if (n > sizeof(sn->platbuild) - 2)
-				break;
-			sn->platbuild[n++] = '\n';
-		}
-		if (n < sizeof(sn->platbuild) - 2)
-			lws_strnncpy(sn->platbuild + n, ctx->buf, ctx->npos,
-				     sizeof(sn->platbuild) - n);
 		break;
 
 	case LEJPNSAIF_PLAT_DEFAULT:

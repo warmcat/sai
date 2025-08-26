@@ -177,6 +177,35 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	}
 
 	/*
+	 * Any step completions to process?
+	 */
+
+	if (spm->step_completion_list.count) {
+		struct lws_dll2 *d = lws_dll2_get_head(&spm->step_completion_list);
+		sai_step_completion_t *sc =
+				lws_container_of(d, sai_step_completion_t, list);
+
+		js = lws_struct_json_serialize_create(lsm_schema_json_map_step_completion,
+			      LWS_ARRAY_SIZE(lsm_schema_json_map_step_completion), 0, sc);
+		if (!js)
+			return -1;
+
+		n = (int)lws_struct_json_serialize(js, start,
+					      lws_ptr_diff_size_t(end, start), &w);
+		lws_struct_json_serialize_destroy(&js);
+
+		n = (int)w;
+
+		lws_dll2_remove(&sc->list);
+		free(sc);
+
+		r = lws_ss_request_tx(spm->ss);
+		if (r)
+			return r;
+		goto sendify;
+	}
+
+	/*
 	 * Any resource requests / relinquishments to process?
 	 */
 
@@ -313,22 +342,8 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		if (spm != ns->spm)
 			continue;
 
-		if (ns->state_changed) {
+		if (ns->state_changed)
 			ns->state_changed = 0;
-
-			switch (ns->state) {
-			case NSSTATE_CHECKEDOUT:
-				saib_set_ns_state(ns, NSSTATE_BUILD);
-				if (saib_spawn_build(ns)) {
-					lwsl_err("%s: saib_spawn failed\n",
-						 __func__);
-					saib_set_ns_state(ns, NSSTATE_FAILED);
-				}
-				break;
-			default:
-				break;
-			}
-		}
 
 		if (!ns->chunk_cache.count || !ns->chunk_cache.tail)
 			continue;
