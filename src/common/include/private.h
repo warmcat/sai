@@ -484,13 +484,14 @@ typedef struct sai_power_state {
 
 typedef struct sai_build_metric {
 	lws_dll2_t	list;
+	char		key[65];
 	char		builder_name[96];
-	char		spawn[4096];
 	char		project_name[96];
 	char		ref[96];
 	int		parallel;
 	uint64_t	us_cpu_user;
 	uint64_t	us_cpu_sys;
+	uint64_t	wallclock_us;
 	uint64_t	peak_mem_rss;
 	uint64_t	stg_bytes;
 } sai_build_metric_t;
@@ -505,6 +506,7 @@ typedef struct sai_build_metric_db {
 	int		parallel;
 	uint64_t	us_cpu_user;
 	uint64_t	us_cpu_sys;
+	uint64_t	wallclock_us;
 	uint64_t	peak_mem_rss;
 	uint64_t	stg_bytes;
 } sai_build_metric_db_t;
@@ -536,7 +538,7 @@ extern const lws_struct_map_t
 	lsm_schema_build_metric[1],
 	lsm_schema_sq3_map_build_metric[1]
 ;
-extern const lws_struct_map_t lsm_build_metric[9];
+extern const lws_struct_map_t lsm_build_metric[10];
 extern const lws_struct_map_t lsm_plat[8];
 extern const lws_struct_map_t lsm_plat_for_json[12];
 

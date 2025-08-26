@@ -125,36 +125,15 @@ sais_metrics_db_close(void)
 int
 sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 {
-	char hash_input[8192];
 	sai_build_metric_db_t dbm;
 	lws_dll2_owner_t owner;
-	unsigned char hash[32];
-	int n;
 
 	if (!vhd->pdb_metrics)
 		return 0;
 
 	memset(&dbm, 0, sizeof(dbm));
 
-	lws_snprintf(hash_input, sizeof(hash_input), "%s%s%s%s",
-		     m->builder_name, m->spawn, m->project_name, m->ref);
-
-	struct lws_genhash_ctx ctx;
-
-	if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256))
-		return 1;
-
-	if (lws_genhash_update(&ctx, hash_input, strlen(hash_input))) {
-		lws_genhash_destroy(&ctx, NULL);
-		return 1;
-	}
-
-	if (lws_genhash_destroy(&ctx, hash))
-		return 1;
-
-	for (n = 0; n < 32; n++)
-		lws_snprintf(dbm.key + (n * 2), 3, "%02x", hash[n]);
-
+	lws_strncpy(dbm.key, m->key, sizeof(dbm.key));
 	dbm.unixtime = (uint64_t)time(NULL);
 	lws_strncpy(dbm.builder_name, m->builder_name, sizeof(dbm.builder_name));
 	lws_strncpy(dbm.project_name, m->project_name, sizeof(dbm.project_name));
@@ -162,6 +141,7 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 	dbm.parallel = m->parallel;
 	dbm.us_cpu_user = m->us_cpu_user;
 	dbm.us_cpu_sys = m->us_cpu_sys;
+	dbm.wallclock_us = m->wallclock_us;
 	dbm.peak_mem_rss = m->peak_mem_rss;
 	dbm.stg_bytes = m->stg_bytes;
 

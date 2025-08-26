@@ -248,14 +248,34 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		sai_build_metric_t *m = malloc(sizeof(*m));
 
 		if (m) {
+			char hash_input[8192];
+			unsigned char hash[32];
+			struct lws_genhash_ctx ctx;
+			int n;
+
 			memset(m, 0, sizeof(*m));
+
+			lws_snprintf(hash_input, sizeof(hash_input), "%s%s%s%s",
+				     ns->sp->name, op->spawn,
+				     ns->project_name, ns->ref);
+
+			if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256) ||
+			    lws_genhash_update(&ctx, hash_input,
+					       strlen(hash_input)) ||
+			    lws_genhash_destroy(&ctx, hash))
+				lwsl_warn("%s: sha256 failed\n", __func__);
+			else
+				for (n = 0; n < 32; n++)
+					lws_snprintf(m->key + (n * 2), 3,
+						     "%02x", hash[n]);
+
 			lws_strncpy(m->builder_name, ns->sp->name, sizeof(m->builder_name));
-			lws_strncpy(m->spawn, op->spawn, sizeof(m->spawn));
 			lws_strncpy(m->project_name, ns->project_name, sizeof(m->project_name));
 			lws_strncpy(m->ref, ns->ref, sizeof(m->ref));
 			m->parallel = ns->parallel;
 			m->us_cpu_user = res->us_cpu_user;
 			m->us_cpu_sys = res->us_cpu_sys;
+			m->wallclock_us = lws_now_usecs() - op->start_time;
 			m->peak_mem_rss = res->peak_mem_rss;
 			m->stg_bytes = du.size_in_bytes;
 
@@ -557,6 +577,8 @@ saib_spawn_step(struct sai_nspawn *ns)
 
 	op->ns = ns;
 	ns->op = op;
+	op->spawn = lws_strdup(one_step);
+	op->start_time = lws_now_usecs();
 
 	info.opaque = op;
 	info.owner = &builder.lsp_owner;
