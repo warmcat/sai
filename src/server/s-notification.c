@@ -504,20 +504,6 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 					return -1;
 				}
 
-				pss->sn.t.build_step = 0;
-				pss->sn.t.build_step_count = 0;
-				if (pss->sn.t.build[0]) {
-					const char *p = pss->sn.t.build;
-					pss->sn.t.build_step_count = 1;
-					while ((p = strchr(p, '\n'))) {
-						pss->sn.t.build_step_count++;
-						p++;
-					}
-				}
-
-				lwsl_notice("Task %s: step_count %d\n",
-					    pss->sn.t.taskname,
-					    pss->sn.t.build_step_count);
 
 				/*
 				 * Prepare a struct of the task object...

@@ -272,7 +272,6 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 			lws_strncpy(m->builder_name, ns->sp->name, sizeof(m->builder_name));
 			lws_strncpy(m->project_name, ns->project_name, sizeof(m->project_name));
 			lws_strncpy(m->ref, ns->ref, sizeof(m->ref));
-			m->parallel = ns->parallel;
 			m->us_cpu_user = res->us_cpu_user;
 			m->us_cpu_sys = res->us_cpu_sys;
 			m->wallclock_us = (uint64_t)(lws_now_usecs() - op->start_time);
@@ -523,18 +522,18 @@ saib_spawn_step(struct sai_nspawn *ns)
 
 #if defined(WIN32)
 	n = lws_snprintf(st, sizeof(st),
-			 ns->build_step ? runscript_win_next : runscript_win_first,
+			 ns->current_step ? runscript_win_next : runscript_win_first,
 			 ns->instance_idx,
-			 ns->parallel ? ns->parallel : 1,
+			 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
 			 ns->inp, one_step);
 #else
 	n = lws_snprintf(st, sizeof(st),
-			 ns->build_step ? runscript_next : runscript_first,
+			 ns->current_step ? runscript_next : runscript_first,
 			 builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_idx,
-			 ns->parallel ? ns->parallel : 1,
+			 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,
 			 builder.home, one_step);
