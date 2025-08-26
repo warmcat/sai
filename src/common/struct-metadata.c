@@ -124,6 +124,7 @@ const lws_struct_map_t lsm_schema_sq3_map_plat[] = {
 const lws_struct_map_t lsm_event[] = {
 	LSM_UNSIGNED	(sai_event_t, uid,		"uid"),
 	LSM_CARRAY	(sai_event_t, repo_name,	"repo_name"),
+	LSM_CARRAY	(sai_event_t, repo_fetchurl,	"repo_fetchurl"),
 	LSM_CARRAY	(sai_event_t, ref,		"ref"),
 	LSM_CARRAY	(sai_event_t, hash,		"hash"),
 	LSM_CARRAY	(sai_event_t, uuid,		"uuid"),
