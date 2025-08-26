@@ -313,23 +313,6 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		if (spm != ns->spm)
 			continue;
 
-		if (ns->state_changed) {
-			ns->state_changed = 0;
-
-			switch (ns->state) {
-			case NSSTATE_CHECKEDOUT:
-				saib_set_ns_state(ns, NSSTATE_BUILD);
-				if (saib_spawn_build(ns)) {
-					lwsl_err("%s: saib_spawn failed\n",
-						 __func__);
-					saib_set_ns_state(ns, NSSTATE_FAILED);
-				}
-				break;
-			default:
-				break;
-			}
-		}
-
 		if (!ns->chunk_cache.count || !ns->chunk_cache.tail)
 			continue;
 
