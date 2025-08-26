@@ -244,19 +244,6 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		saib_log_chunk_create(ns, s, (size_t)n, 3);
 	}
 
-	ns->build_step++;
-	if (ns->build_step < ns->build_step_count) {
-		/* there are more steps, spawn the next one */
-		if (ns)
-			ns->op = NULL;
-		free(op);
-		saib_spawn_step(ns);
-		return;
-	}
-
-	/* all steps succeeded */
-	lwsl_notice("%s: all build steps succeeded\n", __func__);
-
 	if (op->spawn) {
 		sai_build_metric_t *m = malloc(sizeof(*m));
 
@@ -276,8 +263,25 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 			if (lws_ss_request_tx(ns->spm->ss))
 				lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
 		}
-		free(op->spawn);
 	}
+
+	ns->build_step++;
+	if (ns->build_step < ns->build_step_count) {
+		/* there are more steps, spawn the next one */
+		if (ns)
+			ns->op = NULL;
+		if (op->spawn)
+			free(op->spawn);
+		free(op);
+		saib_spawn_step(ns);
+		return;
+	}
+
+	/* all steps succeeded */
+	lwsl_notice("%s: all build steps succeeded\n", __func__);
+
+	if (op->spawn)
+		free(op->spawn);
 
 	saib_task_grace(ns);
 	saib_set_ns_state(ns, NSSTATE_DONE);

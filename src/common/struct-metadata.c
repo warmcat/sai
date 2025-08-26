@@ -60,7 +60,6 @@ const lws_struct_map_t lsm_sq3_build_metric[] = {
 	LSM_CARRAY	(sai_build_metric_db_t, key,		"key"),
 	LSM_UNSIGNED	(sai_build_metric_db_t, unixtime,	"unixtime"),
 	LSM_CARRAY	(sai_build_metric_db_t, builder_name,	"builder_name"),
-	LSM_CARRAY	(sai_build_metric_db_t, spawn,		"spawn"),
 	LSM_CARRAY	(sai_build_metric_db_t, project_name,	"project_name"),
 	LSM_CARRAY	(sai_build_metric_db_t, ref,		"ref"),
 	LSM_SIGNED	(sai_build_metric_db_t, parallel,	"parallel"),

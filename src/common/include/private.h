@@ -350,34 +350,6 @@ typedef struct {
 
 struct sai_plat;
 
-typedef struct sai_build_metric {
-	lws_dll2_t	list;
-	char		builder_name[96];
-	char		spawn[4096];
-	char		project_name[96];
-	char		ref[96];
-	int		parallel;
-	uint64_t	us_cpu_user;
-	uint64_t	us_cpu_sys;
-	uint64_t	peak_mem_rss;
-	uint64_t	stg_bytes;
-} sai_build_metric_t;
-
-typedef struct sai_build_metric_db {
-	lws_dll2_t	list; /* for lws_struct */
-	char		key[65];
-	uint64_t	unixtime;
-	char		builder_name[96];
-	char		spawn[4096];
-	char		project_name[96];
-	char		ref[96];
-	int		parallel;
-	uint64_t	us_cpu_user;
-	uint64_t	us_cpu_sys;
-	uint64_t	peak_mem_rss;
-	uint64_t	stg_bytes;
-} sai_build_metric_db_t;
-
 /*
  * One SS per unique server the builder connects to; one of these as the SS
  * userdata object
@@ -509,6 +481,33 @@ typedef struct sai_power_state {
 	int		powering_up;
 	int		powering_down;
 } sai_power_state_t;
+
+typedef struct sai_build_metric {
+	lws_dll2_t	list;
+	char		builder_name[96];
+	char		spawn[4096];
+	char		project_name[96];
+	char		ref[96];
+	int		parallel;
+	uint64_t	us_cpu_user;
+	uint64_t	us_cpu_sys;
+	uint64_t	peak_mem_rss;
+	uint64_t	stg_bytes;
+} sai_build_metric_t;
+
+typedef struct sai_build_metric_db {
+	lws_dll2_t	list; /* for lws_struct */
+	char		key[65];
+	uint64_t	unixtime;
+	char		builder_name[96];
+	char		project_name[96];
+	char		ref[96];
+	int		parallel;
+	uint64_t	us_cpu_user;
+	uint64_t	us_cpu_sys;
+	uint64_t	peak_mem_rss;
+	uint64_t	stg_bytes;
+} sai_build_metric_db_t;
 
 extern const lws_struct_map_t
 	lsm_schema_json_map_task[],
