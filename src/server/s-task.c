@@ -328,7 +328,7 @@ sais_step_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 {
 	static sai_pending_step_t ps;
 	struct lwsac *ac_events = NULL, *ac_tasks = NULL, *ac_steps = NULL;
-	char esc_plat[96], pf[2048], query[384];
+	char esc_plat[96], pf[2048];
 	lws_dll2_owner_t o_events, o_tasks, o_steps;
 	int n;
 
@@ -625,24 +625,6 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 
 	sais_event_db_close(vhd, &pdb);
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
-		lwsl_err("%s: unable to open event-specific database for reset\n",
-				__func__);
-		return SAI_DB_RESULT_ERROR;
-	}
-	lws_snprintf(cmd, sizeof(cmd), "update tasks set build_step=0 where uuid='%s'",
-		     esc);
-	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
-	if (ret != SQLITE_OK) {
-		sais_event_db_close(vhd, &pdb);
-		if (ret == SQLITE_BUSY)
-			return SAI_DB_RESULT_BUSY;
-		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
-			 sqlite3_errmsg(pdb));
-		return SAI_DB_RESULT_ERROR;
-	}
-	sais_event_db_close(vhd, &pdb);
-
 	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
 
 	sais_task_cancel(vhd, task_uuid);
@@ -671,74 +653,88 @@ int
 sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		   const char *platform_name)
 {
-	const sai_pending_step_t *ps;
-	sai_step_assignment_t *sa;
+	const sai_task_t *task_template;
+	char esc1[96], esc2[96];
+	lws_dll2_owner_t o;
+	sai_task_t *task = NULL;
+	int n;
 
 	if (cb->ongoing >= cb->instances)
 		return 1;
 
-	ps = sais_step_pending(vhd, pss, platform_name);
-	if (!ps)
+	/*
+	 * Look for a task for this platform, on any event that needs building
+	 */
+
+	task_template = sais_task_pending(vhd, pss, platform_name);
+	if (!task_template)
 		return 1;
 
-	sa = malloc(sizeof(*sa));
-	if (!sa)
-		return -1;
-
-	sa->task = ps->task;
-	sa->step = ps->step;
-
-	char event_uuid[33];
-	sqlite3 *pdb = NULL;
-	char q[256];
-
-	/* update step state in DB to "assigned" */
-	sai_task_uuid_to_event_uuid(event_uuid, ps->task.uuid);
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
-		free(sa);
+	task = malloc(sizeof(sai_task_t));
+	if (!task) {
+		lwsac_free(&pss->ac_alloc_task);
 		return -1;
 	}
-	lws_snprintf(q, sizeof(q), "UPDATE build_steps SET state=1, builder_name='%s' WHERE task_uuid='%s' AND step_idx=%d",
-		     cb->name, ps->step.task_uuid, ps->step.step_idx);
-	sai_sqlite3_statement(pdb, q, "update build_step state");
-	sais_event_db_close(vhd, &pdb);
+	*task = *task_template;
 
-	/* if it's the first step, update the parent task state too */
-	if (ps->step.step_idx == 0)
-		sais_set_task_state(vhd, cb->name, cb->name, ps->task.uuid,
-				    SAIES_PASSED_TO_BUILDER, lws_now_secs(), 0);
+	lwsl_notice("%s: %s: task found %s\n", __func__, platform_name, cb->name);
 
-	char esc1[96], esc2[96];
-	lws_dll2_owner_t o;
-	int n;
+	/* yes, we will offer it to him */
 
-	/* get event context */
-	lws_sql_purify(esc1, sa->task.event_uuid, sizeof(esc1));
+	if (sais_set_task_state(vhd, cb->name, cb->name, task->uuid,
+				SAIES_PASSED_TO_BUILDER, lws_now_secs(), 0))
+		goto bail;
+
+	/* advance the task state first time we get logs */
+	pss->mark_started = 1;
+
+	/* let's get ahold of his event as well */
+
+	lws_sql_purify(esc1, task->event_uuid, sizeof(esc1));
 	lws_snprintf(esc2, sizeof(esc2), " and uuid='%s'", esc1);
 	n = lws_struct_sq3_deserialize(vhd->server.pdb, esc2, NULL,
 				       lsm_schema_sq3_map_event, &o,
 				       &pss->a.ac, 0, 1);
-	if (n < 0 || !o.head) {
-		free(sa);
-		return -1;
-	}
+	if (n < 0 || !o.head)
+		goto bail;
 
-	sa->task.one_event = lws_container_of(o.head, sai_event_t, list);
-	sa->task.server_name	= pss->server_name;
-	sa->task.repo_name		= sa->task.one_event->repo_name;
-	sa->task.git_ref		= sa->task.one_event->ref;
-	sa->task.git_hash		= sa->task.one_event->hash;
-	sa->task.ac_task_container = pss->a.ac;
+	task->one_event = lws_container_of(o.head, sai_event_t, list);
 
+	task->server_name	= pss->server_name;
+	task->repo_name		= task->one_event->repo_name;
+	task->git_ref		= task->one_event->ref;
+	task->git_hash		= task->one_event->hash;
+	task->ac_task_container = pss->a.ac;
+
+	/*
+	 * add to server's estimate of builder's ongoing tasks...
+	 */
 	cb->ongoing++;
-	lws_dll2_add_tail(&sa->list, &pss->issue_step_owner);
+
+	lwsl_notice("%s: pre pss->issue_task_owner count %d\n", __func__, pss->issue_task_owner.count);
+
+	lws_dll2_add_tail(&task->pending_assign_list, &pss->issue_task_owner);
 	lws_callback_on_writable(pss->wsi);
 
 	pss->a.ac = NULL;
 
 	sais_platforms_with_tasks_pending(vhd);
 
+	/*
+	 * We are going to leave here with a live pss->a.ac (pointed into by
+	 * task->one_event) that the caller has to take responsibility to
+	 * clean up pss->a.ac
+	 */
+
 	return 0;
+
+bail:
+	if (task)
+		free(task);
+	lwsac_free(&pss->a.ac);
+	lwsac_free(&pss->ac_alloc_task);
+
+	return -1;
 }
 
 void
