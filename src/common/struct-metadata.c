@@ -100,6 +100,7 @@ const lws_struct_map_t lsm_plat_for_json[] = {
     LSM_CARRAY(sai_plat_t, peer_ip,     "peer_ip"),
     LSM_CARRAY(sai_plat_t, sai_hash,    "sai_hash"),
     LSM_CARRAY(sai_plat_t, lws_hash,    "lws_hash"),
+    LSM_SIGNED(sai_plat_t, is_windows, "is_windows"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {

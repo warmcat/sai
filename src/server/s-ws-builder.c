@@ -606,6 +606,7 @@ handle:
 				lws_strncpy(live_cb->lws_hash, build->lws_hash,
 					    sizeof(live_cb->lws_hash));
 				live_cb->online = 1;
+				live_cb->is_windows = build->is_windows;
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
 				size_t nlen = strlen(build->name) + 1;
@@ -628,6 +629,7 @@ handle:
 						    sizeof(live_cb->lws_hash));
 					live_cb->wsi = pss->wsi;
 					live_cb->online = 1;
+					live_cb->is_windows = build->is_windows;
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 					lws_dll2_add_tail(&live_cb->sai_plat_list, &vhd->server.builder_owner);
 				}

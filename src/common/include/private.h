@@ -470,6 +470,7 @@ typedef struct sai_plat {
 
 	int			instances;
 	int			ongoing;
+	int			is_windows;
 
 	int			index; /* used to create unique build dir path */
 } sai_plat_t;

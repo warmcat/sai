@@ -25,6 +25,128 @@
 #include <libwebsockets.h>
 #include "s-private.h"
 
+static const char * const git_helper_sh_mirror =
+	"#!/bin/bash\n"
+	"set -e\n"
+	"echo \"git_helper_sh: starting mirror\"\n"
+	"REMOTE_URL=\"$1\"\n"
+	"REF=\"$2\"\n"
+	"HASH=\"$3\"\n"
+	"MIRROR_PATH=\"$4\"\n"
+	"for i in $(seq 1 60); do\n"
+	"    if [ -d \"$MIRROR_PATH/.git\" ]; then\n"
+	"        if git -C \"$MIRROR_PATH\" rev-parse -q --verify \"ref-$HASH\" > /dev/null; then\n"
+	"            exit 0\n"
+	"        fi\n"
+	"    fi\n"
+	"    if mkdir \"$MIRROR_PATH.lock\" 2>/dev/null; then\n"
+	"        trap 'rm -rf \"$MIRROR_PATH.lock\"' EXIT\n"
+	"        if [ -d \"$MIRROR_PATH/.git\" ]; then\n"
+	"            if git -C \"$MIRROR_PATH\" rev-parse -q --verify \"ref-$HASH\" > /dev/null; then\n"
+	"                exit 0\n"
+	"            fi\n"
+	"        fi\n"
+	"        mkdir -p \"$MIRROR_PATH\"\n"
+	"        if [ ! -d \"$MIRROR_PATH/.git\" ]; then\n"
+	"            git init --bare \"$MIRROR_PATH\"\n"
+	"        fi\n"
+	"        REFSPEC=\"$REF:ref-$HASH\"\n"
+	"        git -C \"$MIRROR_PATH\" fetch \"$REMOTE_URL\" \"+$REFSPEC\"\n"
+	"        exit 0\n"
+	"    fi\n"
+	"    echo \"git mirror locked, waiting...\"\n"
+	"    sleep 1\n"
+	"done\n"
+	"exit 1\n";
+
+static const char * const git_helper_sh_checkout =
+	"#!/bin/bash\n"
+	"set -e\n"
+	"echo \"git_helper_sh: starting checkout\"\n"
+	"MIRROR_PATH=\"$1\"\n"
+	"BUILD_DIR=\"$2\"\n"
+	"HASH=\"$3\"\n"
+	"if [ ! -d \"$BUILD_DIR/.git\" ]; then\n"
+	"    rm -rf \"$BUILD_DIR\"\n"
+	"    mkdir -p \"$BUILD_DIR\"\n"
+	"    git -C \"$BUILD_DIR\" init\n"
+	"fi\n"
+	"if ! git -C \"$BUILD_DIR\" fetch \"$MIRROR_PATH\" \"ref-$HASH\"; then\n"
+	"    exit 2\n"
+	"fi\n"
+	"git -C \"$BUILD_DIR\" checkout -f \"$HASH\"\n"
+	"git -C \"$BUILD_DIR\" clean -fdx\n"
+	"exit 0\n";
+
+static const char * const git_helper_bat_mirror =
+	"@echo on\n"
+	"setlocal EnableDelayedExpansion\n"
+	"echo \"git_helper_bat: starting mirror\"\n"
+	"set \"REMOTE_URL=%~2\"\n"
+	"set \"REF=%~3\"\n"
+	"set \"HASH=%~4\"\n"
+	"set \"MIRROR_PATH=%~5\"\n"
+	"echo \"REMOTE_URL: !REMOTE_URL!\"\n"
+	"echo \"REF: !REF!\"\n"
+	"echo \"HASH: !HASH!\"\n"
+	"echo \"MIRROR_PATH: !MIRROR_PATH!\"\n"
+	":lock_wait\n"
+	"mkdir \"!MIRROR_PATH!.lock\" 2>nul\n"
+	"if errorlevel 1 (\n"
+	"    echo \"git mirror locked, waiting...\"\n"
+	"    timeout /t 1 /nobreak > nul\n"
+	"    goto :lock_wait\n"
+	")\n"
+	"if exist \"!MIRROR_PATH!\\.git\" (\n"
+	"    git -C \"!MIRROR_PATH!\" rev-parse -q --verify \"ref-!HASH!\" > nul 2> nul\n"
+	"    if exist !MIRROR_PATH!\\.git if not errorlevel 1 (\n"
+	"        rmdir \"!MIRROR_PATH!.lock\"\n"
+	"        exit /b 0\n"
+	"    )\n"
+	")\n"
+	"if not exist \"!MIRROR_PATH!\\.\" (\n"
+	"mkdir \"!MIRROR_PATH!\"\n"
+	")\n"
+	"if not exist \"!MIRROR_PATH!\\.git\" (\n"
+	"    git init --bare \"!MIRROR_PATH!\"\n"
+	"    if errorlevel 1 (\n"
+	"        rmdir \"!MIRROR_PATH!.lock\"\n"
+	"        exit /b 1\n"
+	"    )\n"
+	")\n"
+	"set \"REFSPEC=!REF!:ref-!HASH!\"\n"
+	"echo \"REFSPEC: !REFSPEC!\"\n"
+	"git -C \"!MIRROR_PATH!\" fetch \"!REMOTE_URL!\" \"!REFSPEC!\" 2>&1\n"
+	"if !ERRORLEVEL! neq 0 (\n"
+	"    echo \"git fetch failed with errorlevel !ERRORLEVEL!\"\n"
+	"    rmdir \"!MIRROR_PATH!.lock\"\n"
+	"    exit /b 1\n"
+	")\n"
+	"rmdir \"!MIRROR_PATH!.lock\"\n"
+	"exit /b 0\n";
+
+static const char * const git_helper_bat_checkout =
+	"@echo on\n"
+	"setlocal EnableDelayedExpansion\n"
+	"echo \"git_helper_bat: starting checkout\"\n"
+	"set \"MIRROR_PATH=%~2\"\n"
+	"set \"BUILD_DIR=%~3\"\n"
+	"set \"HASH=%~4\"\n"
+	"echo \"MIRROR_PATH: !MIRROR_PATH!\"\n"
+	"echo \"BUILD_DIR: !BUILD_DIR!\"\n"
+	"echo \"HASH: !HASH!\"\n"
+	"if not exist \"!BUILD_DIR!\\.git\" (\n"
+	"    if exist \"!BUILD_DIR!\\\" rmdir /s /q \"!BUILD_DIR!\"\n"
+	"    mkdir \"!BUILD_DIR!\"\n"
+	"    git -C \"!BUILD_DIR!\" init\n"
+	"    if errorlevel 1 exit /b 1\n"
+	")\n"
+	"git -C \"!BUILD_DIR!\" fetch \"!MIRROR_PATH!\" \"ref-!HASH!\"\n"
+	"if errorlevel 1 exit /b 2\n"
+	"git -C \"!BUILD_DIR!\" checkout -f \"!HASH!\"\n"
+	"if errorlevel 1 exit /b 1\n"
+	"exit /b 0\n";
+
 /* starts from +1 of sai_notification_action_t */
 
 static const char *notifaction_action_names[] = {
@@ -378,8 +500,11 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 				 * copy that is serialized
 				 */
 
-				lws_strexp_init(&sx, sn, exp_cmake, sn->platbuild,
-						sizeof(sn->platbuild));
+				sai_plat_t *live_plat = sais_builder_from_host(pss->vhd, pl->name);
+				char temp_build[4096];
+
+				lws_strexp_init(&sx, sn, exp_cmake, temp_build,
+						sizeof(temp_build));
 
 				n = lws_strexp_expand(&sx, pl->build,
 						      strlen(pl->build),
@@ -389,6 +514,20 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 						    __func__, n, pl->build,
 						    sn->t.cmake);
 					return -1;
+				}
+
+				if (live_plat && live_plat->is_windows) {
+					lws_snprintf(sn->platbuild, sizeof(sn->platbuild),
+						     "%s\n%s\n%s",
+						     git_helper_bat_mirror,
+						     git_helper_bat_checkout,
+						     temp_build);
+				} else {
+					lws_snprintf(sn->platbuild, sizeof(sn->platbuild),
+						     "%s\n%s\n%s",
+						     git_helper_sh_mirror,
+						     git_helper_sh_checkout,
+						     temp_build);
 				}
 			}
 		} lws_end_foreach_dll(p);
@@ -485,8 +624,11 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 				 * specific database file for scalability.
 				 */
 
-				lws_strexp_init(&sx, sn, exp_cmake, sn->platbuild,
-						sizeof(sn->platbuild));
+				sai_plat_t *live_plat = sais_builder_from_host(pss->vhd, pl->name);
+				char temp_build[4096];
+
+				lws_strexp_init(&sx, sn, exp_cmake, temp_build,
+						sizeof(temp_build));
 
 				n = lws_strexp_expand(&sx, pl->build,
 						      strlen(pl->build),
@@ -500,6 +642,20 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 						sqlite3_free(err);
 					sais_event_db_close(pss->vhd, &pdb);
 					return -1;
+				}
+
+				if (live_plat && live_plat->is_windows) {
+					lws_snprintf(sn->platbuild, sizeof(sn->platbuild),
+						     "%s\n%s\n%s",
+						     git_helper_bat_mirror,
+						     git_helper_bat_checkout,
+						     temp_build);
+				} else {
+					lws_snprintf(sn->platbuild, sizeof(sn->platbuild),
+						     "%s\n%s\n%s",
+						     git_helper_sh_mirror,
+						     git_helper_sh_checkout,
+						     temp_build);
 				}
 
 				/*
@@ -537,6 +693,8 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 				pss->sn.e.state = SAIES_WAITING;
 				lws_strncpy(pss->sn.t.platform, pl->name,
 					    sizeof(pss->sn.t.platform));
+
+				pss->sn.t.build = sn->platbuild;
 
 				memset(&pss->sn.t.list, 0, sizeof(pss->sn.t.list));
 				lws_dll2_owner_clear(&owner);

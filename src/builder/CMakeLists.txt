@@ -5,7 +5,6 @@ set(SRCS
 	b-sai.c
 	b-conf.c
 	b-comms.c
-	b-mirror.c
 	b-nspawn.c
 	b-task.c
 	b-artifacts.c

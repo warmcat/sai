@@ -115,6 +115,10 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 
 			a->sai_plat->instances = 1; /* default */
 
+#if defined(WIN32)
+			a->sai_plat->is_windows = 1;
+#endif
+
 			lws_strncpy(a->sai_plat->sai_hash, BUILD_INFO,
 				    sizeof(a->sai_plat->sai_hash));
 			lws_strncpy(a->sai_plat->lws_hash, LWS_BUILD_HASH,
