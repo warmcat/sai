@@ -873,6 +873,12 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	task->git_repo_url      = task->one_event->repo_fetchurl;
 	task->ac_task_container = pss->a.ac;
 
+	if (!task->git_repo_url || !task->git_repo_url[0]) {
+		lwsl_err("%s: task %s has no repo_fetchurl\n", __func__,
+			 task->uuid);
+		goto bail;
+	}
+
 	lwsl_notice("%s: windows: %d\n", __func__, cb->windows);
 
 	char url[128], mirror_path[256];
