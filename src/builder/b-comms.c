@@ -370,6 +370,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 			 * for has now happened.
 			 */
 			lwsl_notice("%s: drained and empty\n", __func__);
+			ns->finished_when_logs_drained = 0;
 			saib_set_ns_state(ns, NSSTATE_UPLOADING_ARTIFACTS);
 		}
 
