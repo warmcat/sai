@@ -351,7 +351,7 @@ static const char * const runscript_win_first =
 	"set HOME=%s\n"
 	"cd %s &&"
 	" rmdir /s /q build & "
-	"%s"
+	"%s < NUL"
 ;
 
 static const char * const runscript_win_next =
@@ -363,7 +363,7 @@ static const char * const runscript_win_next =
 	"set SAI_LOGPROXY_TTY1=%s\n"
 	"set HOME=%s\n"
 	"cd %s &&"
-	"%s"
+	"%s < NUL"
 ;
 
 #else
@@ -388,7 +388,7 @@ static const char * const runscript_first =
 	"set -e\n"
 	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
 	"rm -rf build\n"
-	"%s\n"
+	"%s < /dev/null\n"
 	"exit $?\n"
 ;
 
@@ -411,7 +411,7 @@ static const char * const runscript_next =
 	"export SAI_LOGPROXY_TTY1=%s\n"
 	"set -e\n"
 	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
-	"%s\n"
+	"%s < /dev/null\n"
 	"exit $?\n"
 ;
 
