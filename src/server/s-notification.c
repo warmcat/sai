@@ -553,7 +553,6 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 				/*
 				 * Create the build steps for the task
 				 */
-				lwsl_notice("platbuild: %s\n", sn->platbuild);
 				const char *p_build = sn->platbuild;
 				int step_idx = 0;
 				while (*p_build) {
@@ -572,7 +571,6 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 					if (!one_step[0])
 						continue;
 
-					lwsl_notice("  step %d: %s\n", step_idx, one_step);
 					memset(&step, 0, sizeof(step));
 					step.command = one_step;
 					lws_strncpy(step.task_uuid, pss->sn.t.uuid, sizeof(step.task_uuid));
