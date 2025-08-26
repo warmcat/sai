@@ -564,6 +564,7 @@ saib_spawn_step(struct sai_nspawn *ns)
 	info.max_log_lines	= 10000;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.reap_cb		= sai_lsp_reap_cb;
+	memset(&ns->res, 0, sizeof(ns->res));
 	info.res		= &ns->res;
 #if defined(__linux__)
 	info.cgroup_name_suffix = cgroup;
