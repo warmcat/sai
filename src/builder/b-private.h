@@ -178,7 +178,7 @@ int
 saib_overlay_unmount(struct sai_nspawn *ns);
 
 int
-saib_spawn_command(struct sai_nspawn *ns, const char *command, int parallel);
+saib_spawn(struct sai_nspawn *ns);
 
 int
 saib_prepare_mount(struct sai_builder *b, struct sai_nspawn *ns);

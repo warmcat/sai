@@ -152,68 +152,71 @@ struct lws_protocols protocol_stdxxx =
 
 
 static void
-sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
+sai_lsp_reap_cb(void *opaque, lws_usec_t *accounting, siginfo_t *si,
 		int we_killed_him)
 {
 	struct saib_opaque_spawn *op = (struct saib_opaque_spawn *)opaque;
 	struct sai_nspawn *ns = op ? op->ns : NULL;
-	int exit_code = -1;
-	sai_step_completion_t *sc;
 
-	if (!ns) {
-		free(op);
-		return;
-	}
+	// lwsl_warn("%s: reap at %llu: we_killed_him: %d\n", __func__,
+	//	  (unsigned long long)lws_now_usecs(), we_killed_him);
 
-	sc = malloc(sizeof(*sc));
-	if (!sc) {
-		free(op);
-		return;
-	}
-	memset(sc, 0, sizeof(*sc));
+	saib_log_chunk_create(ns, ">saib> Reaping build process\n", 29, 3);
 
 #if !defined(WIN32)
-	if (we_killed_him & 1)
+	lwsl_notice("%s: reaped: timing %dms %dms %dms %dms\n", __func__,
+		    (int)(accounting[0] / 1000), (int)(accounting[1] / 1000),
+		    (int)(accounting[2] / 1000), (int)(accounting[3] / 1000));
+
+	if (we_killed_him & 1) {
+		lwsl_notice("%s: Process TIMED OUT by Sai\n", __func__);
 		ns->retcode = SAISPRF_TIMEDOUT;
-	if (we_killed_him & 2)
+		goto ok;
+	}
+
+	if (we_killed_him & 2) {
+		lwsl_notice("%s: Process killed by Sai due to spew\n", __func__);
 		ns->retcode = SAISPRF_TERMINATED;
+		goto ok;
+	}
 
 	switch (si->si_code) {
 	case CLD_EXITED:
-		exit_code = si->si_status;
+		lwsl_notice("%s: Process Exited with exit code %d\n",
+			    __func__, si->si_status);
 		ns->retcode = SAISPRF_EXIT | si->si_status;
 		if (ns->user_cancel)
 			ns->retcode = SAISPRF_TERMINATED;
 		break;
 	case CLD_KILLED:
 	case CLD_DUMPED:
+		lwsl_notice("%s: Process Terminated by signal %d / %d\n",
+			    __func__, si->si_status, si->si_signo);
 		ns->retcode = SAISPRF_SIGNALLED | si->si_signo;
 		break;
+	default:
+		lwsl_notice("%s: SI code %d\n", __func__, si->si_code);
+		break;
 	}
+
+ok:
 #else
-	exit_code = si->retcode & 0xff;
-	ns->retcode = SAISPRF_EXIT | exit_code;
+	ns->retcode = SAISPRF_EXIT | (si->retcode & 0xff);
 #endif
 
-	lws_strncpy(sc->task_uuid, ns->task->uuid, sizeof(sc->task_uuid));
-	sc->step_idx = ns->step->step_idx;
-	sc->status = exit_code ? 3 /* FAILED */ : 2 /* SUCCESS */;
-	if (res)
-		sc->res = *res;
+	saib_task_grace(ns);
+	saib_set_ns_state(ns, NSSTATE_DONE);
 
-	if (ns->spm) {
-		lws_dll2_add_tail(&sc->list, &ns->spm->step_completion_list);
-		if (lws_ss_request_tx(ns->spm->ss))
-			lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
-	} else
-		free(sc);
+	/*
+	 * add a final zero-length log with the retcode to the list of pending
+	 * logs
+	 */
 
-	if (exit_code == 0) {
-		/* The step succeeded. The nspawn is now idle. */
-		saib_set_ns_state(ns, NSSTATE_DONE);
-	} else {
-		saib_set_ns_state(ns, NSSTATE_FAILED);
-	}
+	saib_log_chunk_create(ns, NULL, 0, 2);
+
+	lwsl_notice("%s: finished, waiting to drain logs (this ns %d, spm in flight %d)\n",
+			__func__, ns->chunk_cache.count,
+			ns->spm ? ns->spm->logs_in_flight : -99);
 
 	if (ns)
 		ns->op = NULL;
@@ -222,9 +225,8 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 
 #if defined(WIN32)
 
-static const char * const runscript_win_first =
+static const char * const runscript =
 	"set SAI_INSTANCE_IDX=%d\n"
-	"set SAI_PARALLEL=%d\n"
 	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"set SAI_LOGPROXY=%s\n"
 	"set SAI_LOGPROXY_TTY0=%s\n"
@@ -235,21 +237,9 @@ static const char * const runscript_win_first =
 	"%s"
 ;
 
-static const char * const runscript_win_next =
-	"set SAI_INSTANCE_IDX=%d\n"
-	"set SAI_PARALLEL=%d\n"
-	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
-	"set SAI_LOGPROXY=%s\n"
-	"set SAI_LOGPROXY_TTY0=%s\n"
-	"set SAI_LOGPROXY_TTY1=%s\n"
-	"set HOME=%s\n"
-	"cd %s &&"
-	"%s"
-;
-
 #else
 
-static const char * const runscript_first =
+static const char * const runscript =
 	"#!/bin/bash -x\n"
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
@@ -261,7 +251,6 @@ static const char * const runscript_first =
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
 	"export SAI_INSTANCE_IDX=%d\n"
-	"export SAI_PARALLEL=%d\n"
 	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"export SAI_LOGPROXY=%s\n"
 	"export SAI_LOGPROXY_TTY0=%s\n"
@@ -273,33 +262,10 @@ static const char * const runscript_first =
 	"exit $?\n"
 ;
 
-static const char * const runscript_next =
-	"#!/bin/bash -x\n"
-#if defined(__APPLE__)
-	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
-#else
-	"export PATH=/usr/local/bin:$PATH\n"
-#endif
-	"export HOME=%s\n"
-	"export SAI_OVN=%s\n"
-	"export SAI_PROJECT=%s\n"
-	"export SAI_REMOTE_REF=%s\n"
-	"export SAI_INSTANCE_IDX=%d\n"
-	"export SAI_PARALLEL=%d\n"
-	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
-	"export SAI_LOGPROXY=%s\n"
-	"export SAI_LOGPROXY_TTY0=%s\n"
-	"export SAI_LOGPROXY_TTY1=%s\n"
-	"set -e\n"
-	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
-	"%s\n"
-	"exit $?\n"
-;
-
 #endif
 
 int
-saib_spawn_command(struct sai_nspawn *ns, const char *command, int parallel)
+saib_spawn(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
@@ -334,6 +300,8 @@ saib_spawn_command(struct sai_nspawn *ns, const char *command, int parallel)
 			builder.home, st, ns->instance_idx);
 #endif
 
+	lwsl_hexdump_notice(ns->task->build, strlen(ns->task->build));
+
 #if defined(WIN32)
 	if (_sopen_s(&fd, args, _O_CREAT | _O_TRUNC | _O_WRONLY,
 		     _SH_DENYNO, _S_IWRITE))
@@ -355,23 +323,19 @@ saib_spawn_command(struct sai_nspawn *ns, const char *command, int parallel)
 	}
 
 #if defined(WIN32)
-	n = lws_snprintf(st, sizeof(st),
-			 ns->step->step_idx ? runscript_win_next : runscript_win_first,
-			 ns->instance_idx,
-			 parallel,
+	n = lws_snprintf(st, sizeof(st), runscript, ns->instance_idx,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
-			 ns->inp, command);
+			 ns->inp, ns->task->build);
 #else
-	n = lws_snprintf(st, sizeof(st),
-			 ns->step->step_idx ? runscript_next : runscript_first,
-			 builder.home, ns->fsm.ovname,
+	n = lws_snprintf(st, sizeof(st), runscript, builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_idx,
-			 parallel,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,
-			 builder.home, command);
+			 builder.home, ns->task->build);
 #endif
+
+	/* but from the script's pov, it's chrooted at /home/sai */
 
 	if (write(fd, st, (unsigned int)n) != n) {
 		close(fd);
@@ -395,7 +359,6 @@ saib_spawn_command(struct sai_nspawn *ns, const char *command, int parallel)
 	info.max_log_lines	= 10000;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.reap_cb		= sai_lsp_reap_cb;
-	info.res		= &ns->res;
 #if defined(__linux__)
 	info.cgroup_name_suffix = cgroup;
 	info.p_cgroup_ret	= &in_cgroup;
@@ -413,12 +376,23 @@ saib_spawn_command(struct sai_nspawn *ns, const char *command, int parallel)
 	info.owner = &builder.lsp_owner;
 	info.plsp = &op->lsp;
 
+	// lwsl_warn("%s: spawning build script at %llu\n", __func__,
+	//	  (unsigned long long)lws_now_usecs());
+
 	lws_spawn_piped(&info);
 	if (!op->lsp) {
+		/*
+		 * op is attached to wsi and will be freed in reap cb,
+		 * we can't free it here
+		 */
 		ns->op = NULL;
 		lwsl_err("%s: failed\n", __func__);
+
 		return 1;
 	}
+
+	// lwsl_warn("%s: build script spawn returned at %llu\n", __func__,
+	//	  (unsigned long long)lws_now_usecs());
 
 #if defined(__linux__)
 	lwsl_notice("%s: lws_spawn_piped started (cgroup: %d)\n", __func__, in_cgroup);

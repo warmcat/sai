@@ -100,31 +100,10 @@ struct sai_nspawn;
 
 typedef struct {
 	lws_dll2_t		list;
-	const char		*command;
-	char			task_uuid[65];
-	int			step_idx;
-	int			state;
-	int			parallel;
-} sai_build_step_t;
-
-typedef struct {
-	lws_dll2_t		list;
-	sai_task_t		task;
-	sai_build_step_t	step;
-} sai_step_assignment_t;
-
-typedef struct {
-	char			task_uuid[65];
-	int			step_idx;
-	int			status;
-	lws_spawn_resource_us_t	res;
-} sai_step_completion_t;
-
-typedef struct {
-	lws_dll2_t		list;
 	lws_dll2_t		pending_assign_list;
 	const struct sai_event	*one_event; /* event we are associated with */
 	char			platform[96];
+	char			build[4096]; /* strsubst and serialized */
 	char			taskname[96];
 	char			packages[2048];
 	char			artifacts[256];
@@ -183,12 +162,8 @@ struct sai_nspawn {
 	struct lws_fsmount		fsm;
 	struct saib_opaque_spawn	*op;
 	sai_task_t			*task;
-	sai_build_step_t		*step;
-	struct lwsac			*ac_step_container;
 
 	lws_dll2_owner_t		artifact_owner; /* struct artifact_path */
-
-	lws_spawn_resource_us_t		res;
 
 	lws_sorted_usec_list_t		sul_cleaner;
 	lws_sorted_usec_list_t		sul_mirror;
@@ -211,15 +186,11 @@ struct sai_nspawn {
 	int				retcode;
 	int				instance_idx;
 	int				mirror_wait_budget;
-	int				parallel;
 
 	uint8_t				spins;
 	uint8_t				state;		/* NSSTATE_ */
 	uint8_t				stdcount;
 	uint8_t				term_budget;
-
-	int				build_step;
-	int				build_step_count;
 
 	uint8_t				finished_when_logs_drained:1;
 	uint8_t				state_changed:1;
@@ -379,7 +350,6 @@ typedef struct sai_plat_server {
 	lws_dll2_t		list;
 
 	lws_dll2_owner_t	rejection_list;
-	lws_dll2_owner_t	step_completion_list;
 	lws_dll2_owner_t	resource_req_list; /* sai_resource_msg_t */
 	lws_dll2_owner_t	resource_pss_list; /* so we can find the cookie */
 
@@ -501,11 +471,8 @@ typedef struct sai_power_state {
 } sai_power_state_t;
 
 extern const lws_struct_map_t
-	lsm_schema_json_map_step_completion[],
-	lsm_schema_json_map_step_assignment[],
 	lsm_schema_json_map_task[],
 	lsm_schema_sq3_map_task[],
-	lsm_schema_sq3_map_build_step[],
 	lsm_schema_sq3_map_event[],
 	lsm_schema_json_map_log[],
 	lsm_schema_sq3_map_log[],

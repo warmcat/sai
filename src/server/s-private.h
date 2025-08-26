@@ -68,11 +68,6 @@ typedef enum {
 } sai_notification_action_t;
 
 typedef struct {
-	sai_task_t		task;
-	sai_build_step_t	step;
-} sai_pending_step_t;
-
-typedef struct {
 
 	sai_event_t			e;
 	sai_task_t			t;
@@ -135,7 +130,7 @@ struct pss {
 
 	struct lwsac		*query_ac;
 	struct lwsac		*logs_ac;
-	lws_dll2_owner_t	issue_step_owner; /* list of sai_step_assignment_t */
+	lws_dll2_owner_t	issue_task_owner; /* list of sai_task_t */
 	const sai_task_t	*one_task; /* only for browser */
 	const sai_event_t	*one_event;
 	lws_dll2_owner_t	query_owner;

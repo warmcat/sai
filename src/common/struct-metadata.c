@@ -121,6 +121,7 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_UNSIGNED	(sai_task_t, started,		"started"),
 	LSM_UNSIGNED	(sai_task_t, duration,		"duration"),
 	LSM_CARRAY	(sai_task_t, platform,		"platform"),
+	LSM_CARRAY	(sai_task_t, build,		"build"),
 	LSM_CARRAY	(sai_task_t, taskname,		"taskname"),
 	LSM_CARRAY	(sai_task_t, packages,		"packages"),
 	LSM_CARRAY	(sai_task_t, builder,		"builder"),
@@ -145,46 +146,6 @@ const lws_struct_map_t lsm_schema_json_map_task[] = {
 const lws_struct_map_t lsm_schema_sq3_map_task[] = {
 	LSM_SCHEMA_DLL2	(sai_task_t, list, NULL, lsm_task,	"tasks"),
 };
-
-const lws_struct_map_t lsm_build_step[] = {
-	LSM_STRING_PTR	(sai_build_step_t, command,		"command"),
-	LSM_CARRAY	(sai_build_step_t, task_uuid,		"task_uuid"),
-	LSM_SIGNED	(sai_build_step_t, step_idx,		"step_idx"),
-	LSM_SIGNED	(sai_build_step_t, state,		"state"),
-	LSM_SIGNED	(sai_build_step_t, parallel,		"parallel"),
-};
-
-const lws_struct_map_t lsm_schema_sq3_map_build_step[] = {
-	LSM_SCHEMA_DLL2	(sai_build_step_t, list, NULL, lsm_build_step,	"build_steps"),
-};
-
-const lws_struct_map_t lsm_step_assignment[] = {
-	LSM_CHILD_PTR	(sai_step_assignment_t, task, sai_task_t, NULL, lsm_task, "task"),
-	LSM_CHILD_PTR	(sai_step_assignment_t, step, sai_build_step_t, NULL, lsm_build_step, "step"),
-};
-
-const lsm_schema_json_map_step_assignment[] = {
-	LSM_SCHEMA	(sai_step_assignment_t, NULL, lsm_step_assignment, "com.warmcat.sai.step-assignment"),
-};
-
-const lws_struct_map_t lsm_lws_spawn_resource_us[] = {
-	LSM_UNSIGNED	(lws_spawn_resource_us_t, us_cpu_user, "us_cpu_user"),
-	LSM_UNSIGNED	(lws_spawn_resource_us_t, us_cpu_sys, "us_cpu_sys"),
-	LSM_UNSIGNED	(lws_spawn_resource_us_t, peak_mem_rss, "peak_mem_rss"),
-	LSM_UNSIGNED	(lws_spawn_resource_us_t, peak_mem_virt, "peak_mem_virt"),
-};
-
-const lws_struct_map_t lsm_step_completion[] = {
-	LSM_CARRAY	(sai_step_completion_t, task_uuid, "task_uuid"),
-	LSM_SIGNED	(sai_step_completion_t, step_idx, "step_idx"),
-	LSM_SIGNED	(sai_step_completion_t, status, "status"),
-	LSM_CHILD_PTR	(sai_step_completion_t, res, lws_spawn_resource_us_t, NULL, lsm_lws_spawn_resource_us, "res"),
-};
-
-const lsm_schema_json_map_step_completion[] = {
-	LSM_SCHEMA	(sai_step_completion_t, NULL, lsm_step_completion, "com.warmcat.sai.step-completion"),
-};
-
 
 /* builder -> server */
 

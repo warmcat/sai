@@ -95,8 +95,6 @@ static const lws_struct_map_t lsm_schema_map_ba[] = {
 						"com.warmcat.sai.loadreport"),
 	LSM_SCHEMA      (sai_resource_t,  NULL, lsm_resource,
 						"com-warmcat-sai-resource"),
-	LSM_SCHEMA	(sai_step_completion_t, NULL, lsm_schema_json_map_step_completion,
-						"com.warmcat.sai.step-completion"),
 };
 
 enum {
@@ -106,7 +104,6 @@ enum {
 	SAIM_WSSCH_BUILDER_ARTIFACT,
 	SAIM_WSSCH_BUILDER_LOADREPORT,
 	SAIM_WSSCH_BUILDER_RESOURCE_REQ,
-	SAIM_WSSCH_BUILDER_STEP_COMPLETION,
 };
 
 static void
@@ -268,31 +265,6 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 	}
 
 	ot->last_log_timestamp = lws_now_usecs();
-
-	if (log->channel == 3 && log->log) { /* control channel */
-		int step;
-		if (sscanf(log->log, " Step %d OK:", &step) == 1) {
-			char event_uuid[33];
-			sqlite3 *pdb = NULL;
-			char q[256], esc_uuid[129];
-
-			sai_task_uuid_to_event_uuid(event_uuid, log->task_uuid);
-			if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
-
-				lws_sql_purify(esc_uuid, log->task_uuid, sizeof(esc_uuid));
-
-				lws_snprintf(q, sizeof(q),
-					"UPDATE tasks SET build_step=%d WHERE uuid='%s'",
-					step, esc_uuid);
-				if (sai_sqlite3_statement(pdb, q, "update build_step"))
-					lwsl_err("%s: failed to update build_step\n", __func__);
-
-				sais_event_db_close(vhd, &pdb);
-
-				sais_taskchange(vhd->h_ss_websrv, log->task_uuid, SAIES_BEING_BUILT);
-			}
-		}
-	}
 }
 
 sai_plat_t *
@@ -1047,50 +1019,6 @@ bail:
 		sais_resource_check_if_can_accept_queued(wk);
 		break;
 
-	case SAIM_WSSCH_BUILDER_STEP_COMPLETION:
-		{
-			sai_step_completion_t *sc = (sai_step_completion_t *)pss->a.dest;
-			char event_uuid[33];
-			sqlite3 *pdb = NULL;
-			char q[256];
-
-			/* Update the step status in the database */
-			sai_task_uuid_to_event_uuid(event_uuid, sc->task_uuid);
-			if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
-				lwsac_free(&pss->a.ac);
-				return -1;
-			}
-			lws_snprintf(q, sizeof(q), "UPDATE build_steps SET state=%d WHERE task_uuid='%s' AND step_idx=%d",
-				     sc->status, sc->task_uuid, sc->step_idx);
-			sai_sqlite3_statement(pdb, q, "update build_step state");
-			sais_event_db_close(vhd, &pdb);
-
-			/* If the step failed, fail the whole task */
-			if (sc->status != 2) { /* 2 == SUCCESS */
-				sais_set_task_state(vhd, NULL, NULL, sc->task_uuid, SAIES_FAIL, 0, 0);
-			} else {
-				/* The step succeeded. Check if the whole task is complete. */
-				int step_count = 0, completed_count = 0;
-				if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
-					lws_snprintf(q, sizeof(q), "SELECT count(*) FROM build_steps WHERE task_uuid='%s'", sc->task_uuid);
-					sqlite3_exec(pdb, q, sql3_get_integer_cb, &step_count, NULL);
-
-					lws_snprintf(q, sizeof(q), "SELECT count(*) FROM build_steps WHERE task_uuid='%s' AND state=2", sc->task_uuid);
-					sqlite3_exec(pdb, q, sql3_get_integer_cb, &completed_count, NULL);
-
-					sais_event_db_close(vhd, &pdb);
-
-					if (step_count > 0 && step_count == completed_count) {
-						sais_set_task_state(vhd, NULL, NULL, sc->task_uuid, SAIES_SUCCESS, 0, 0);
-					} else {
-						lws_sul_schedule(vhd->context, 0, &vhd->sul_central, sais_central_cb, 1);
-					}
-				}
-			}
-
-			lwsac_free(&pss->a.ac);
-		}
-		break;
 	}
 
 	return 0;
@@ -1268,31 +1196,35 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	}
 
 
-       if (!pss->issue_step_owner.count || !pss->issue_step_owner.head)
+       if (!pss->issue_task_owner.count || !pss->issue_task_owner.head)
 		return 0; /* nothing to send */
 
 	/*
-	 * We're sending a builder a specific step on a task
+	 * We're sending a builder specific task info that has been bound to the
+	 * builder.
+	 *
+	 * We already got the task struct out of the db in .one_event
+	 * (all in .ac)
 	 */
 
-	sai_step_assignment_t *sa = lws_container_of(pss->issue_step_owner.head,
-						   sai_step_assignment_t, list);
-	lws_dll2_remove(&sa->list);
+	task = lws_container_of(pss->issue_task_owner.head, sai_task_t,
+				pending_assign_list);
+	lws_dll2_remove(&task->pending_assign_list);
 
-	js = lws_struct_json_serialize_create(lsm_schema_json_map_step_assignment,
-					      LWS_ARRAY_SIZE(lsm_schema_json_map_step_assignment),
-					      0, sa);
+	js = lws_struct_json_serialize_create(lsm_schema_map_ta,
+					      LWS_ARRAY_SIZE(lsm_schema_map_ta),
+					      0, task);
 	if (!js) {
-		lwsac_free(&sa->task.ac_task_container);
-		free(sa);
+		lwsac_free(&task->ac_task_container);
+		free(task);
 		return 1;
 	}
 
 	n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 	lws_struct_json_serialize_destroy(&js);
 	pss->one_event = NULL;
-	lwsac_free(&sa->task.ac_task_container);
-	free(sa);
+	lwsac_free(&task->ac_task_container);
+	free(task);
 
 	first = 1;
 
@@ -1318,7 +1250,7 @@ send_json:
 
 	if (pss->viewer_state_owner.head || pss->task_cancel_owner.head ||
 	    pss->res_pending_reply_owner.count ||
-	    pss->issue_step_owner.count)
+	    pss->issue_task_owner.count)
 		lws_callback_on_writable(pss->wsi);
 
 	return 0;

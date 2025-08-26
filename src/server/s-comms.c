@@ -149,11 +149,6 @@ sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
 		return 3;
 	}
 
-	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_build_step)) {
-		lwsl_err("%s: unable to create build_steps table in %s\n", __func__, filepath);
-		return 6;
-	}
-
 	sai_sqlite3_statement(*ppdb, "PRAGMA journal_mode=WAL;", "set WAL");
 
 	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_log)) {

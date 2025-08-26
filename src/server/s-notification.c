@@ -376,8 +376,8 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 				 * copy that is serialized
 				 */
 
-				lws_strexp_init(&sx, sn, exp_cmake, sn->platbuild,
-						sizeof(sn->platbuild));
+				lws_strexp_init(&sx, sn, exp_cmake, sn->t.build,
+						sizeof(sn->t.build));
 
 				n = lws_strexp_expand(&sx, pl->build,
 						      strlen(pl->build),
@@ -483,8 +483,8 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 				 * specific database file for scalability.
 				 */
 
-				lws_strexp_init(&sx, sn, exp_cmake, sn->platbuild,
-						sizeof(sn->platbuild));
+				lws_strexp_init(&sx, sn, exp_cmake, sn->t.build,
+						sizeof(sn->t.build));
 
 				n = lws_strexp_expand(&sx, pl->build,
 						      strlen(pl->build),
