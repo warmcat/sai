@@ -72,6 +72,13 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	int n = 0;
 
 	/*
+	 * Are there some logs to dump?
+	 */
+
+	if (spm->logs_in_flight)
+		goto send_logs; /* nothing to send */
+
+	/*
 	 * Any build metrics to process?
 	 */
 
@@ -237,12 +244,9 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		return LWSSSSRET_OK;
 	}
 
-	/*
-	 * Are there some logs to dump?
-	 */
+	return 1;
 
-	if (!spm->logs_in_flight)
-		return 1; /* nothing to send */
+send_logs:
 
 	/*
 	 * Yes somebody has some logs... since we handle all logs on any
