@@ -549,6 +549,41 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 				lws_struct_sq3_serialize(pdb,
 							 lsm_schema_sq3_map_task,
 							 &owner, (uint32_t)pss->sn.t.uid);
+
+				/*
+				 * Create the build steps for the task
+				 */
+				const char *p_build = sn->platbuild;
+				int step_idx = 0;
+				while (*p_build) {
+					sai_build_step_t step;
+					const char *q = strchr(p_build, '\n');
+					char one_step[4096];
+
+					if (q) {
+						lws_strnncpy(one_step, p_build, q - p_build, sizeof(one_step));
+						p_build = q + 1;
+					} else {
+						lws_strncpy(one_step, p_build, sizeof(one_step));
+						p_build += strlen(p_build);
+					}
+
+					if (!one_step[0])
+						continue;
+
+					memset(&step, 0, sizeof(step));
+					step.command = one_step;
+					lws_strncpy(step.task_uuid, pss->sn.t.uuid, sizeof(step.task_uuid));
+					step.step_idx = step_idx++;
+					step.state = 0; /* PENDING */
+					step.parallel = 1; /* Default for now */
+
+					lws_dll2_owner_clear(&owner);
+					lws_dll2_add_head(&step.list, &owner);
+					lws_struct_sq3_serialize(pdb,
+								 lsm_schema_sq3_map_build_step,
+								 &owner, 0);
+				}
 			}
 
 		} lws_end_foreach_dll(p);
