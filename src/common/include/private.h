@@ -521,7 +521,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[9],
-	lsm_task[24],
+	lsm_task[22],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],
@@ -537,7 +537,7 @@ extern const lws_struct_map_t
 	lsm_schema_build_metric[1],
 	lsm_schema_sq3_map_build_metric[1]
 ;
-extern const lws_struct_map_t lsm_build_metric[10];
+extern const lws_struct_map_t lsm_build_metric[9];
 extern const lsm_struct_map_t lsm_plat[9];
 extern const lws_struct_map_t lsm_plat_for_json[13];
 
