@@ -182,8 +182,34 @@ const lws_struct_map_t lsm_schema_json_map_task[] = {
 						      "com.warmcat.sai.tasks"),
 };
 
+const lws_struct_map_t lsm_task_db[] = {
+	LSM_UNSIGNED	(sai_task_t, uid,		"uid"),
+	LSM_UNSIGNED	(sai_task_t, state,		"state"),
+	LSM_UNSIGNED	(sai_task_t, last_updated,	"last_updated"),
+	LSM_UNSIGNED	(sai_task_t, started,		"started"),
+	LSM_UNSIGNED	(sai_task_t, duration,		"duration"),
+	LSM_CARRAY	(sai_task_t, platform,		"platform"),
+	LSM_CARRAY	(sai_task_t, build,		"build"),
+	LSM_CARRAY	(sai_task_t, taskname,		"taskname"),
+	LSM_CARRAY	(sai_task_t, packages,		"packages"),
+	LSM_CARRAY	(sai_task_t, builder,		"builder"),
+	LSM_CARRAY	(sai_task_t, artifacts,		"artifacts"),
+	LSM_CARRAY	(sai_task_t, art_up_nonce,	"art_up_nonce"),
+	LSM_CARRAY	(sai_task_t, art_down_nonce,	"art_down_nonce"),
+	LSM_CARRAY	(sai_task_t, event_uuid,	"event_uuid"),
+	LSM_CARRAY	(sai_task_t, uuid,		"uuid"),
+	LSM_CARRAY	(sai_task_t, builder_name,	"builder_name"),
+	LSM_STRING_PTR	(sai_task_t, server_name,	"server_name"),
+	LSM_STRING_PTR	(sai_task_t, repo_name,		"repo_name"),
+	LSM_STRING_PTR	(sai_task_t, git_ref,		"git_ref"),
+	LSM_STRING_PTR	(sai_task_t, git_hash,		"git_hash"),
+	LSM_STRING_PTR	(sai_task_t, git_repo_url,	"git_repo_url"),
+	LSM_CARRAY	(sai_task_t, steps,		"steps"),
+	LSM_SIGNED	(sai_task_t, build_step,	"build_step"),
+};
+
 const lws_struct_map_t lsm_schema_sq3_map_task[] = {
-	LSM_SCHEMA_DLL2	(sai_task_t, list, NULL, lsm_task,	"tasks"),
+	LSM_SCHEMA_DLL2	(sai_task_t, list, NULL, lsm_task_db,	"tasks"),
 };
 
 /* builder -> server */

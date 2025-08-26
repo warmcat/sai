@@ -1041,6 +1041,8 @@ enum_tasks:
 			/* only one in it at a time */
 			t = lws_container_of(task_owner.head, sai_task_t, list);
 
+			t->build_step_count = 5;
+
 			js = lws_struct_json_serialize_create(
 				lsm_schema_json_map_task,
 				LWS_ARRAY_SIZE(lsm_schema_json_map_task), 0, t);
