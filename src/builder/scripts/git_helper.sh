@@ -8,7 +8,7 @@ if [ "$OPERATION" == "mirror" ]; then
     REMOTE_URL=$1
     REF=$2
     HASH=$3
-    MIRROR_PATH=$4
+    MIRROR_PATH="$HOME/git-mirror/$4"
     for i in $(seq 1 60); do
         if [ -d "$MIRROR_PATH/.git" ]; then
             if git -C "$MIRROR_PATH" rev-parse -q --verify "ref-$HASH" > /dev/null; then
@@ -35,7 +35,7 @@ if [ "$OPERATION" == "mirror" ]; then
     done
     exit 1
 elif [ "$OPERATION" == "checkout" ]; then
-    MIRROR_PATH=$1
+    MIRROR_PATH="$HOME/git-mirror/$1"
     BUILD_DIR=$2
     HASH=$3
     if [ ! -d "$BUILD_DIR/.git" ]; then

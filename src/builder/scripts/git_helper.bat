@@ -7,7 +7,7 @@ if /i "!OPERATION!"=="mirror" (
     set "REMOTE_URL=%~2"
     set "REF=%~3"
     set "HASH=%~4"
-    set "MIRROR_PATH=%~5"
+    set "MIRROR_PATH=%HOME%\\git-mirror\\%~5"
     echo "REMOTE_URL: !REMOTE_URL!"
     echo "REF: !REF!"
     echo "HASH: !HASH!"
@@ -48,7 +48,7 @@ if /i "!OPERATION!"=="mirror" (
     exit /b 0
 )
 if /i "!OPERATION!"=="checkout" (
-    set "MIRROR_PATH=%~2"
+    set "MIRROR_PATH=%HOME%\\git-mirror\\%~2"
     set "BUILD_DIR=%~3"
     set "HASH=%~4"
     echo "MIRROR_PATH: !MIRROR_PATH!"
