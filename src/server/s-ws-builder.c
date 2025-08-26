@@ -1301,6 +1301,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	}
 
 	n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+	lwsl_notice("%s: sending step assignment: %s\n", __func__, p);
 	lws_struct_json_serialize_destroy(&js);
 	pss->one_event = NULL;
 	lwsac_free(&sa->task.ac_task_container);

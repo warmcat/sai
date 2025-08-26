@@ -302,6 +302,7 @@ sais_step_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 	char esc_plat[96], pf[2048];
 	int n;
 
+	lwsl_notice("%s: checking for pending steps on platform %s\n", __func__, platform);
 	lws_sql_purify(esc_plat, platform, sizeof(esc_plat));
 	assert(platform);
 
@@ -310,9 +311,12 @@ sais_step_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 	n = lws_struct_sq3_deserialize(vhd->server.pdb, pf, "created desc",
 				       lsm_schema_sq3_map_event, &o_events, &ac_events, 0, 10);
 	if (n < 0 || !o_events.count) {
+		lwsl_notice("%s: no active events found\n", __func__);
 		lwsac_free(&ac_events);
 		return NULL;
 	}
+
+	lwsl_notice("%s: found %d active events\n", __func__, o_events.count);
 
 	/* Iterate through events */
 	lws_start_foreach_dll(struct lws_dll2 *, p_event, o_events.head) {
@@ -327,11 +331,14 @@ sais_step_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 		n = lws_struct_sq3_deserialize(pdb, pf, "uid asc",
 					       lsm_schema_sq3_map_task, &o_tasks, &ac_tasks, 0, 100);
 
+		lwsl_notice("%s: event %s: found %d tasks for platform %s\n", __func__, e->uuid, o_tasks.count, platform);
+
 		if (n >= 0 && o_tasks.count) {
 			/* Iterate through tasks */
 			lws_start_foreach_dll(struct lws_dll2 *, p_task, o_tasks.head) {
 				sai_task_t *t = lws_container_of(p_task, sai_task_t, list);
 
+				lwsl_notice("%s: checking task %s\n", __func__, t->uuid);
 				/* Find the first pending step for this task */
 				lws_snprintf(pf, sizeof(pf), " and task_uuid = '%s' and state = 0", t->uuid);
 				n = lws_struct_sq3_deserialize(pdb, pf, "step_idx asc",
@@ -340,6 +347,7 @@ sais_step_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 
 				if (n >= 0 && o_steps.count) {
 					/* Found a pending step! */
+					lwsl_notice("%s: Found pending step for task %s\n", __func__, t->uuid);
 					ps.task = *t;
 					ps.step = *(sai_build_step_t *)o_steps.head;
 
@@ -648,6 +656,9 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	ps = sais_step_pending(vhd, pss, platform_name);
 	if (!ps)
 		return 1;
+
+	lwsl_notice("%s: allocating step '%s' for task %s to builder %s\n",
+			__func__, ps->step.command, ps->task.uuid, cb->name);
 
 	sa = malloc(sizeof(*sa));
 	if (!sa)
