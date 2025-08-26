@@ -329,8 +329,7 @@ sais_step_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 	static sai_pending_step_t ps;
 	struct lwsac *ac_events = NULL, *ac_tasks = NULL, *ac_steps = NULL;
 	char esc_plat[96], pf[2048], query[384];
-	lws_dll2_owner_t o, failed_tasks_owner;
-	unsigned int pending_count;
+	lws_dll2_owner_t o_events, o_tasks, o_steps;
 	int n;
 
 	lws_sql_purify(esc_plat, platform, sizeof(esc_plat));
@@ -686,7 +685,8 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	if (!sa)
 		return -1;
 
-	*sa = *ps;
+	sa->task = ps->task;
+	sa->step = ps->step;
 
 	char event_uuid[33];
 	sqlite3 *pdb = NULL;

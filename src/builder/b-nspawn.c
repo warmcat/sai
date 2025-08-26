@@ -203,12 +203,13 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 
 	if (ns->spm) {
 		lws_dll2_add_tail(&sc->list, &ns->spm->step_completion_list);
-		lws_ss_request_tx(ns->spm->ss);
+		if (lws_ss_request_tx(ns->spm->ss))
+			lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
 	} else
 		free(sc);
 
 	if (exit_code == 0) {
-		saib_task_grace(ns);
+		/* The step succeeded. The nspawn is now idle. */
 		saib_set_ns_state(ns, NSSTATE_DONE);
 	} else {
 		saib_set_ns_state(ns, NSSTATE_FAILED);
@@ -221,9 +222,8 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 
 #if defined(WIN32)
 
-static const char * const runscript_win_first =
+static const char * const runscript =
 	"set SAI_INSTANCE_IDX=%d\n"
-	"set SAI_PARALLEL=%d\n"
 	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"set SAI_LOGPROXY=%s\n"
 	"set SAI_LOGPROXY_TTY0=%s\n"
@@ -234,21 +234,9 @@ static const char * const runscript_win_first =
 	"%s"
 ;
 
-static const char * const runscript_win_next =
-	"set SAI_INSTANCE_IDX=%d\n"
-	"set SAI_PARALLEL=%d\n"
-	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
-	"set SAI_LOGPROXY=%s\n"
-	"set SAI_LOGPROXY_TTY0=%s\n"
-	"set SAI_LOGPROXY_TTY1=%s\n"
-	"set HOME=%s\n"
-	"cd %s &&"
-	"%s"
-;
-
 #else
 
-static const char * const runscript_first =
+static const char * const runscript =
 	"#!/bin/bash -x\n"
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
@@ -260,7 +248,6 @@ static const char * const runscript_first =
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
 	"export SAI_INSTANCE_IDX=%d\n"
-	"export SAI_PARALLEL=%d\n"
 	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"export SAI_LOGPROXY=%s\n"
 	"export SAI_LOGPROXY_TTY0=%s\n"
@@ -268,29 +255,6 @@ static const char * const runscript_first =
 	"set -e\n"
 	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
 	"rm -rf build\n"
-	"%s\n"
-	"exit $?\n"
-;
-
-static const char * const runscript_next =
-	"#!/bin/bash -x\n"
-#if defined(__APPLE__)
-	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
-#else
-	"export PATH=/usr/local/bin:$PATH\n"
-#endif
-	"export HOME=%s\n"
-	"export SAI_OVN=%s\n"
-	"export SAI_PROJECT=%s\n"
-	"export SAI_REMOTE_REF=%s\n"
-	"export SAI_INSTANCE_IDX=%d\n"
-	"export SAI_PARALLEL=%d\n"
-	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
-	"export SAI_LOGPROXY=%s\n"
-	"export SAI_LOGPROXY_TTY0=%s\n"
-	"export SAI_LOGPROXY_TTY1=%s\n"
-	"set -e\n"
-	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
 	"%s\n"
 	"exit $?\n"
 ;
@@ -412,23 +376,12 @@ saib_spawn_command(struct sai_nspawn *ns, const char *command, int parallel)
 	info.owner = &builder.lsp_owner;
 	info.plsp = &op->lsp;
 
-	// lwsl_warn("%s: spawning build script at %llu\n", __func__,
-	//	  (unsigned long long)lws_now_usecs());
-
 	lws_spawn_piped(&info);
 	if (!op->lsp) {
-		/*
-		 * op is attached to wsi and will be freed in reap cb,
-		 * we can't free it here
-		 */
 		ns->op = NULL;
 		lwsl_err("%s: failed\n", __func__);
-
 		return 1;
 	}
-
-	// lwsl_warn("%s: build script spawn returned at %llu\n", __func__,
-	//	  (unsigned long long)lws_now_usecs());
 
 #if defined(__linux__)
 	lwsl_notice("%s: lws_spawn_piped started (cgroup: %d)\n", __func__, in_cgroup);
