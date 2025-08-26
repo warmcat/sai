@@ -239,7 +239,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 
 		n = lws_snprintf(s, sizeof(s),
 			 ">saib> Step %d: Total [ %s u / %s s, Mem: %sB, Stg: %sB ], Step [ %s u / %s s, Mem: %sB, Stg: %sB ]\n",
-			 ns->build_step + 1, h1, h2, h3, h4, h5, h6, h7, h8);
+			 ns->current_step + 1, h1, h2, h3, h4, h5, h6, h7, h8);
 	
 		saib_log_chunk_create(ns, s, (size_t)n, 3);
 	}
@@ -285,8 +285,8 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		}
 	}
 
-	ns->build_step++;
-	if (ns->build_step < ns->build_step_count) {
+	ns->current_step++;
+	if (ns->current_step < ns->build_step_count) {
 		/* there are more steps, spawn the next one */
 		if (ns)
 			ns->op = NULL;
@@ -324,7 +324,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	return;
 
 fail:
-	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED", ns->build_step + 1);
+	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED", ns->current_step + 1);
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	saib_task_grace(ns);
@@ -424,13 +424,13 @@ saib_spawn_step(struct sai_nspawn *ns);
 int
 saib_spawn_build(struct sai_nspawn *ns)
 {
-	const char *p = ns->task->build;
+	const char *p = ns->task->steps;
 	int n;
 
-	ns->build_step = 0;
+	ns->current_step = 0;
 	ns->build_step_count = 0;
 
-	lwsl_hexdump_err(ns->task->build, strlen(ns->task->build));
+	lwsl_hexdump_err(ns->task->steps, strlen(ns->task->steps));
 
 	while ((p = strchr(p, '\n'))) {
 		ns->build_step_count++;
@@ -482,12 +482,12 @@ saib_spawn_step(struct sai_nspawn *ns)
 #endif
 
 	char one_step[4096];
-	const char *p_build = ns->task->build, *q;
+	const char *p_build = ns->task->steps, *q;
 	int step = 0;
 
-	// lwsl_hexdump_notice(ns->task->build, strlen(ns->task->build));
+	// lwsl_hexdump_notice(ns->task->steps, strlen(ns->task->steps));
 
-	while (step < ns->build_step && (p_build = strchr(p_build, '\n'))) {
+	while (step < ns->current_step && (p_build = strchr(p_build, '\n'))) {
 		p_build++;
 		step++;
 	}

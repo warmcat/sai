@@ -45,7 +45,6 @@ const lws_struct_map_t lsm_build_metric[] = {
 	LSM_CARRAY	(sai_build_metric_t, builder_name,	"builder_name"),
 	LSM_CARRAY	(sai_build_metric_t, project_name,	"project_name"),
 	LSM_CARRAY	(sai_build_metric_t, ref,		"ref"),
-	LSM_SIGNED	(sai_build_metric_t, parallel,		"parallel"),
 	LSM_UNSIGNED	(sai_build_metric_t, us_cpu_user,	"us_cpu_user"),
 	LSM_UNSIGNED	(sai_build_metric_t, us_cpu_sys,	"us_cpu_sys"),
 	LSM_UNSIGNED	(sai_build_metric_t, wallclock_us,	"wallclock_us"),
@@ -63,7 +62,6 @@ const lws_struct_map_t lsm_sq3_build_metric[] = {
 	LSM_CARRAY	(sai_build_metric_db_t, builder_name,	"builder_name"),
 	LSM_CARRAY	(sai_build_metric_db_t, project_name,	"project_name"),
 	LSM_CARRAY	(sai_build_metric_db_t, ref,		"ref"),
-	LSM_SIGNED	(sai_build_metric_db_t, parallel,	"parallel"),
 	LSM_UNSIGNED	(sai_build_metric_db_t, us_cpu_user,	"us_cpu_user"),
 	LSM_UNSIGNED	(sai_build_metric_db_t, us_cpu_sys,	"us_cpu_sys"),
 	LSM_UNSIGNED	(sai_build_metric_db_t, wallclock_us,	"wallclock_us"),
@@ -173,8 +171,6 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_STRING_PTR	(sai_task_t, git_ref,		"git_ref"),
 	LSM_STRING_PTR	(sai_task_t, git_hash,		"git_hash"),
 	LSM_STRING_PTR	(sai_task_t, git_repo_url,	"git_repo_url"),
-	LSM_SIGNED	(sai_task_t, build_step,	"build_step"),
-	LSM_SIGNED	(sai_task_t, build_step_count,	"build_step_count"),
 	LSM_CARRAY	(sai_task_t, steps,		"steps"),
 };
 

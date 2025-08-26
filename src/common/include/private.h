@@ -130,8 +130,6 @@ typedef struct {
 	uint64_t		duration;
 	int			state;
 	int			uid;
-	int			build_step;
-	int			build_step_count;
 
 	char			told_ongoing;
 } sai_task_t;
@@ -195,17 +193,14 @@ struct sai_nspawn {
 
 	int				retcode;
 	int				instance_idx;
-	int				mirror_wait_budget;
-	int				parallel;
 
 	uint8_t				spins;
 	uint8_t				state;		/* NSSTATE_ */
 	uint8_t				stdcount;
 	uint8_t				term_budget;
 
-	int				build_step;
-	int				build_step_count;
 	int				current_step;
+	int				build_step_count;
 
 	uint8_t				finished_when_logs_drained:1;
 	uint8_t				state_changed:1;
@@ -494,7 +489,6 @@ typedef struct sai_build_metric {
 	char		builder_name[96];
 	char		project_name[96];
 	char		ref[96];
-	int		parallel;
 	uint64_t	us_cpu_user;
 	uint64_t	us_cpu_sys;
 	uint64_t	wallclock_us;
@@ -509,7 +503,6 @@ typedef struct sai_build_metric_db {
 	char		builder_name[96];
 	char		project_name[96];
 	char		ref[96];
-	int		parallel;
 	uint64_t	us_cpu_user;
 	uint64_t	us_cpu_sys;
 	uint64_t	wallclock_us;
