@@ -314,12 +314,10 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 
 			switch (ns->state) {
 			case NSSTATE_CHECKEDOUT:
-				saib_set_ns_state(ns, NSSTATE_BUILD);
-				if (saib_spawn_build(ns)) {
-					lwsl_err("%s: saib_spawn failed\n",
-						 __func__);
-					saib_set_ns_state(ns, NSSTATE_FAILED);
-				}
+				/*
+				 * This is now handled by the server sending a
+				 * step assignment.
+				 */
 				break;
 			default:
 				break;
