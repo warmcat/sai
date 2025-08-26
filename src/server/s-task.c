@@ -778,7 +778,7 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 				__func__);
 		return SAI_DB_RESULT_ERROR;
 	}
-	lws_snprintf(cmd, sizeof(cmd), "update tasks set build_step=0 where uuid='%s'",
+	lws_snprintf(cmd, sizeof(cmd), "update tasks set state=0, started=0, duration=0 where uuid='%s'",
 		     esc);
 	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 	if (ret != SQLITE_OK) {
