@@ -870,7 +870,43 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	task->repo_name		= task->one_event->repo_name;
 	task->git_ref		= task->one_event->ref;
 	task->git_hash		= task->one_event->hash;
+	task->git_repo_url      = task->one_event->repo_fetchurl;
 	task->ac_task_container = pss->a.ac;
+
+	lwsl_notice("%s: windows: %d\n", __func__, cb->windows);
+
+	char url[128], mirror_path[256];
+	int m;
+
+	lws_strncpy(url, task->one_event->repo_fetchurl, sizeof(url));
+	lws_filename_purify_inplace(url);
+	char *q = url;
+	while (*q) {
+		if (*q == '/')
+			*q = '_';
+		if (*q == '.')
+			*q = '_';
+		q++;
+	}
+
+	m = lws_snprintf(mirror_path, sizeof(mirror_path), "%s", url);
+
+	if (cb->windows)
+		lws_snprintf(task->steps, sizeof(task->steps),
+			"git_helper.bat mirror \"%s\" %s %s %s\n"
+			"git_helper.bat checkout \"%s\" \"build/%s\" %s\n"
+			"%s",
+			task->git_repo_url, task->git_ref, task->git_hash, mirror_path,
+			mirror_path, task->repo_name, task->git_hash,
+			task->build);
+	else
+		lws_snprintf(task->steps, sizeof(task->steps),
+			"git_helper.sh mirror \"%s\" %s %s %s\n"
+			"git_helper.sh checkout \"%s\" \"build/%s\" %s\n"
+			"%s",
+			task->git_repo_url, task->git_ref, task->git_hash, mirror_path,
+			mirror_path, task->repo_name, task->git_hash,
+			task->build);
 
 	/*
 	 * add to server's estimate of builder's ongoing tasks...

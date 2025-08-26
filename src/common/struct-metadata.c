@@ -84,6 +84,7 @@ const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/includ
 	LSM_CARRAY	(sai_plat_t, peer_ip,		"peer_ip"),
 	LSM_CARRAY	(sai_plat_t, sai_hash,		"sai_hash"),
 	LSM_CARRAY	(sai_plat_t, lws_hash,		"lws_hash"),
+	LSM_CHAR	(sai_plat_t, windows,		"windows"),
 };
 
 // This is the map for serializing to JSON
@@ -100,6 +101,7 @@ const lws_struct_map_t lsm_plat_for_json[] = {
     LSM_CARRAY(sai_plat_t, peer_ip,     "peer_ip"),
     LSM_CARRAY(sai_plat_t, sai_hash,    "sai_hash"),
     LSM_CARRAY(sai_plat_t, lws_hash,    "lws_hash"),
+    LSM_CHAR(sai_plat_t, windows,    "windows"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {
@@ -173,6 +175,7 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_STRING_PTR	(sai_task_t, git_repo_url,	"git_repo_url"),
 	LSM_SIGNED	(sai_task_t, build_step,	"build_step"),
 	LSM_SIGNED	(sai_task_t, build_step_count,	"build_step_count"),
+	LSM_CARRAY	(sai_task_t, steps,		"steps"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {

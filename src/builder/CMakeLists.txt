@@ -5,7 +5,6 @@ set(SRCS
 	b-sai.c
 	b-conf.c
 	b-comms.c
-	b-mirror.c
 	b-nspawn.c
 	b-task.c
 	b-artifacts.c
@@ -79,6 +78,10 @@ if (requirements)
 
 	install(TARGETS "sai-builder"
 		RUNTIME DESTINATION "${BIN_DIR}" COMPONENT builder)
+
+	install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/scripts/"
+		DESTINATION "${BIN_DIR}"
+		COMPONENT builder)
 
 endif(requirements)
 include(CPack)

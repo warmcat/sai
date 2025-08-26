@@ -116,6 +116,7 @@ typedef struct {
 	char			uuid[65];
 	char			builder_name[96];
 	char			cpack[128];
+	char			steps[4096];
 
 	struct lwsac		*ac_task_container;
 
@@ -204,6 +205,7 @@ struct sai_nspawn {
 
 	int				build_step;
 	int				build_step_count;
+	int				current_step;
 
 	uint8_t				finished_when_logs_drained:1;
 	uint8_t				state_changed:1;
@@ -445,6 +447,8 @@ typedef struct sai_plat {
 	int			instances;
 	int			ongoing;
 
+	char			windows;
+
 	int			index; /* used to create unique build dir path */
 } sai_plat_t;
 
@@ -524,7 +528,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[9],
-	lsm_task[23],
+	lsm_task[24],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],
@@ -541,8 +545,8 @@ extern const lws_struct_map_t
 	lsm_schema_sq3_map_build_metric[1]
 ;
 extern const lws_struct_map_t lsm_build_metric[10];
-extern const lws_struct_map_t lsm_plat[8];
-extern const lws_struct_map_t lsm_plat_for_json[12];
+extern const lsm_struct_map_t lsm_plat[9];
+extern const lws_struct_map_t lsm_plat_for_json[13];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];

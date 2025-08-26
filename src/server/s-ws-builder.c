@@ -602,6 +602,7 @@ handle:
 					    sizeof(live_cb->sai_hash));
 				lws_strncpy(live_cb->lws_hash, build->lws_hash,
 					    sizeof(live_cb->lws_hash));
+				live_cb->windows = build->windows;
 				live_cb->online = 1;
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
@@ -623,6 +624,7 @@ handle:
 						    sizeof(live_cb->sai_hash));
 					lws_strncpy(live_cb->lws_hash, build->lws_hash,
 						    sizeof(live_cb->lws_hash));
+					live_cb->windows = build->windows;
 					live_cb->wsi = pss->wsi;
 					live_cb->online = 1;
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));

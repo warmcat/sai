@@ -57,12 +57,7 @@ enum {
 static const char * const nsstates[] = {
 	"NSSTATE_INIT",
 	"NSSTATE_MOUNTING",
-	"NSSTATE_STARTING_MIRROR",
-	"NSSTATE_CHECKOUT_SPEC", /* initial speculative checkout */
-	"NSSTATE_WAIT_REMOTE_MIRROR",
-	"NSSTATE_CHECKOUT",
-	"NSSTATE_CHECKEDOUT",
-	"NSSTATE_BUILD",
+	"NSSTATE_EXECUTING_STEPS",
 	"NSSTATE_DONE",
 	"NSSTATE_FAILED",
 };
@@ -430,6 +425,152 @@ saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 			 saib_sul_task_cancel, 500 * LWS_US_PER_MS);
 }
 
+static void saib_step_reap_cb(void *opaque, const struct lws_spawn_resource_us *res,
+			    siginfo_t *si, int we_killed_him);
+
+int
+saib_spawn_step(struct sai_nspawn *ns)
+{
+	struct lws_spawn_piped_info info;
+	struct saib_opaque_spawn *op;
+	const char *pargs[16];
+	char *p, *ps, step[1024];
+	int n, count = 0;
+
+	if (!ns->task || !ns->task->steps[0])
+		return 1;
+
+	p = ns->task->steps;
+	for (n = 0; n < ns->current_step; n++) {
+		p = strchr(p, '\n');
+		if (!p)
+			return 1;
+		p++;
+	}
+
+	ps = strchr(p, '\n');
+	if (ps)
+		*ps = '\0';
+	lws_strncpy(step, p, sizeof(step));
+	if (ps)
+		*ps = '\n';
+
+	lwsl_notice("%s: step %d: %s\n", __func__, ns->current_step, step);
+
+	struct lws_tokenize ts;
+
+	lws_tokenize_init(&ts, step, LWS_TOKENIZE_F_NO_INTEGERS |
+				     LWS_TOKENIZE_F_NO_FLOATS |
+				     LWS_TOKENIZE_F_SLASH_NONTERM |
+				     LWS_TOKENIZE_F_DOT_NONTERM |
+				     LWS_TOKENIZE_F_MINUS_NONTERM);
+	ts.flags_and = LWS_TOKENIZE_F_NO_INTEGERS |
+		       LWS_TOKENIZE_F_NO_FLOATS |
+		       LWS_TOKENIZE_F_SLASH_NONTERM |
+		       LWS_TOKENIZE_F_DOT_NONTERM |
+		       LWS_TOKENIZE_F_MINUS_NONTERM;
+
+	do {
+		ts.e = lws_tokenize(&ts);
+		if (ts.e == LWS_TOKZE_TOKEN) {
+			pargs[count++] = ts.token;
+			ts.token[ts.token_len] = '\0';
+		}
+	} while (ts.e > 0 && count < 15);
+	pargs[count] = NULL;
+
+	static char path[512];
+
+	if (pargs[1] && !strcmp(pargs[1], "mirror") && count > 4) {
+		lws_snprintf(path, sizeof(path), "%s/git-mirror/%s",
+			     builder.home, pargs[4]);
+		pargs[4] = path;
+	}
+
+	if (pargs[1] && !strcmp(pargs[1], "checkout") && count > 3) {
+		lws_snprintf(path, sizeof(path), "%s/git-mirror/%s",
+			     builder.home, pargs[2]);
+		pargs[2] = path;
+	}
+
+
+	memset(&info, 0, sizeof(info));
+	info.vh = builder.vhost;
+	info.exec_array = pargs;
+	info.protocol_name = "sai-stdxxx";
+	info.timeout_us = 5 * 60 * LWS_US_PER_SEC;
+	info.reap_cb = saib_step_reap_cb;
+
+	op = malloc(sizeof(*op));
+	if (!op)
+		return -1;
+	memset(op, 0, sizeof(*op));
+
+	op->ns = ns;
+	ns->op = op;
+
+	info.opaque = op;
+	info.owner = &builder.lsp_owner;
+	info.plsp = &op->lsp;
+
+	if (lws_spawn_piped(&info) == NULL) {
+		lwsl_err("%s: lws_spawn_piped for step failed\n", __func__);
+		ns->op = NULL;
+		return -1;
+	}
+
+	return 0;
+}
+
+static void
+saib_step_reap_cb(void *opaque, const struct lws_spawn_resource_us *res, siginfo_t *si,
+		int we_killed_him)
+{
+	struct saib_opaque_spawn *op = (struct saib_opaque_spawn *)opaque;
+	struct sai_nspawn *ns = op->ns;
+	int exit_code = -1;
+
+	if (we_killed_him)
+		goto fail;
+
+#if !defined(WIN32)
+	if (si->si_code == CLD_EXITED)
+		exit_code = si->si_status;
+#else
+	exit_code = si->retcode & 0xff;
+#endif
+
+	if (exit_code == 0) {
+		char *p, log[128];
+
+		lws_snprintf(log, sizeof(log), " Step %d OK:", ns->current_step);
+		saib_log_chunk_create(ns, log, strlen(log), 3);
+
+		ns->current_step++;
+		p = ns->task->steps;
+		for (int n = 0; n < ns->current_step; n++) {
+			p = strchr(p, '\n');
+			if (!p || !p[1]) {
+				/* no more steps */
+				saib_set_ns_state(ns, NSSTATE_BUILD);
+				goto onward;
+			}
+			p++;
+		}
+
+		if (saib_spawn_step(ns))
+			goto fail;
+
+		goto onward;
+	}
+
+fail:
+	saib_set_ns_state(ns, NSSTATE_FAILED);
+onward:
+	ns->op = NULL;
+	free(op);
+}
+
 extern struct lws_spawn_piped *lsp_suspender;
 
 int
@@ -651,52 +792,14 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		 */
 		ns->inp[n] = '\0';
 
-		/* the git mirror is in the build host's /home/sai, NOT the
-		 * mounted overlayfs */
-
-		m = lws_snprintf(ns->path, sizeof(ns->path),
-				 "%s%cgit-mirror", builder.home, csep);
-
-		if (mkdir(ns->path, 0755) && errno != EEXIST)
-			goto ebail;
-
-		lws_strncpy(url, ns->git_repo_url, sizeof(url));
-
-		/*
-		 * We want to convert the repo url to a unique subdir name
-		 * that's safe, like http___warmcat.com_repo_sai
-		 */
-
-		lws_filename_purify_inplace(url);
-		{
-			char *q = url;
-			while (*q) {
-				if (*q == '/')
-					*q = '_';
-				if (*q == '.')
-					*q = '_';
-				q++;
-			}
-		}
-		m += lws_snprintf(ns->path + m, sizeof(ns->path) - (unsigned int)m, "%c%s",
-				  csep, url);
-		if (mkdir(ns->path, 0755) && errno != EEXIST) {
-			lwsl_err("%s: unable to create %s\n", __func__,
-				 ns->path);
-			goto bail;
-		}
-		lwsl_notice("%s: created %s\n", __func__, ns->path);
-
-		/* manage the mirror dir using build host credentials */
-
-		saib_set_ns_state(ns, NSSTATE_STARTING_MIRROR);
+		saib_set_ns_state(ns, NSSTATE_EXECUTING_STEPS);
 
 		ns->user_cancel = 0;
 		ns->spins = 0;
-		ns->mirror_wait_budget = 120;
+		ns->current_step = 0;
 
-		if (saib_start_mirror(ns)) {
-			lwsl_err("%s: saib_start_mirror failed\n", __func__);
+		if (saib_spawn_step(ns)) {
+			lwsl_err("%s: saib_spawn_step failed\n", __func__);
 			goto bail;
 		}
 
