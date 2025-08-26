@@ -85,7 +85,6 @@ int
 sais_metrics_db_init(struct vhd *vhd)
 {
 	char db_path[PATH_MAX];
-	char *err_msg = 0;
 	int rc;
 
 	if (vhd->pdb_metrics)
@@ -106,24 +105,9 @@ sais_metrics_db_init(struct vhd *vhd)
 		return 1;
 	}
 
-	const char *sql = "CREATE TABLE IF NOT EXISTS build_metrics ("
-			  "key TEXT, "
-			  "unixtime INTEGER, "
-			  "builder_name TEXT, "
-			  "spawn TEXT, "
-			  "project_name TEXT, "
-			  "ref TEXT, "
-			  "parallel INTEGER, "
-			  "us_cpu_user INTEGER, "
-			  "us_cpu_sys INTEGER, "
-			  "peak_mem_rss INTEGER, "
-			  "stg_bytes INTEGER, "
-			  "PRIMARY KEY(key, unixtime));";
-
-	rc = sqlite3_exec(vhd->pdb_metrics, sql, 0, 0, &err_msg);
-	if (rc != SQLITE_OK) {
-		lwsl_err("%s: failed to create table: %s\n", __func__, err_msg);
-		sqlite3_free(err_msg);
+	if (lws_struct_sq3_create_table(vhd->pdb_metrics,
+					lsm_schema_sq3_map_build_metric)) {
+		lwsl_err("%s: failed to create build_metrics table\n", __func__);
 		sqlite3_close(vhd->pdb_metrics);
 		vhd->pdb_metrics = NULL;
 		return 1;
@@ -184,8 +168,6 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 
 	lws_dll2_owner_clear(&owner);
 	lws_dll2_add_tail(&dbm.list, &owner);
-
-	lwsl_notice("%s: Adding metric to db for key %s\n", __func__, dbm.key);
 
 	if (lws_struct_sq3_serialize(vhd->pdb_metrics,
 				     lsm_schema_sq3_map_build_metric,

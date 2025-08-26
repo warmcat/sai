@@ -477,13 +477,13 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 	uint64_t rid;
 	int n, m;
 
+	sais_metrics_db_init(vhd);
+
 	if (pss->bulk_binary_data) {
 		lwsl_info("%s: bulk %d\n", __func__, (int)bl);
 		m = (int)bl;
 		goto handle;
 	}
-
-	sais_metrics_db_init(vhd);
 
 	/*
 	 * use the schema name on the incoming JSON to decide what kind of
@@ -1028,8 +1028,6 @@ bail:
 
 	case SAIM_WSSCH_BUILDER_METRIC:
 		metric = (const sai_build_metric_t *)pss->a.dest;
-		lwsl_notice("%s: Received build metric for builder %s\n",
-			    __func__, metric->builder_name);
 		sais_metrics_db_add(vhd, metric);
 		lwsac_free(&pss->a.ac);
 		break;

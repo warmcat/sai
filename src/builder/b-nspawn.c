@@ -272,8 +272,6 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 			m->peak_mem_rss = res->peak_mem_rss;
 			m->stg_bytes = du.size_in_bytes;
 
-			lwsl_notice("%s: Queuing build metric for project %s\n",
-				    __func__, m->project_name);
 			lws_dll2_add_tail(&m->list, &ns->spm->build_metric_list);
 			if (lws_ss_request_tx(ns->spm->ss))
 				lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
@@ -555,7 +553,6 @@ saib_spawn_step(struct sai_nspawn *ns)
 
 	op->ns = ns;
 	ns->op = op;
-	op->spawn = lws_strdup(one_step);
 
 	info.opaque = op;
 	info.owner = &builder.lsp_owner;
