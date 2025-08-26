@@ -334,7 +334,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 				 ns->task->uuid, (unsigned long long)lws_now_usecs(),
 				 chunk->stdfd, (int)chunk->len);
 
-			if (ns->finished_when_logs_drained && !ns->chunk_cache.count)
+			if (ns->finished_when_logs_drained && ns->chunk_cache.count == 1)
 				/*
 				 * Let the last guy report the finished state
 				 */
