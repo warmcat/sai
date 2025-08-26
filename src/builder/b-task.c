@@ -57,15 +57,13 @@ enum {
 static const char * const nsstates[] = {
 	"NSSTATE_INIT",
 	"NSSTATE_MOUNTING",
-	"NSSTATE_STARTING_MIRROR",
-	"NSSTATE_CHECKOUT_SPEC", /* initial speculative checkout */
-	"NSSTATE_WAIT_REMOTE_MIRROR",
-	"NSSTATE_CHECKOUT",
-	"NSSTATE_CHECKEDOUT",
-	"NSSTATE_BUILD",
+	"NSSTATE_EXECUTING_STEPS",
 	"NSSTATE_DONE",
+	"NSSTATE_UPLOADING_ARTIFACTS",
 	"NSSTATE_FAILED",
 };
+
+static void saib_start_artifact_upload(struct sai_nspawn *ns);
 
 int
 saib_set_ns_state(struct sai_nspawn *ns, int state)
@@ -76,9 +74,15 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 	ns->state = (uint8_t)state;
 	ns->state_changed = 1;
 
-	n = lws_snprintf(log, sizeof(log), ">saib> %s\n", nsstates[state]);
+	if (state >= 0 && state < (int)LWS_ARRAY_SIZE(nsstates))
+		n = lws_snprintf(log, sizeof(log), ">saib> %s\n", nsstates[state]);
+	else
+		n = lws_snprintf(log, sizeof(log), ">saib> ILLEGAL_STATE %d\n", (int)state);
 
 	saib_log_chunk_create(ns, log, (unsigned int)n, 3);
+
+	if (state == NSSTATE_UPLOADING_ARTIFACTS)
+		saib_start_artifact_upload(ns);
 
 	if (state == NSSTATE_FAILED) {
 		ns->retcode = SAISPRF_EXIT | 254;
@@ -302,18 +306,14 @@ artifact_glob_cb(void *data, const char *path)
  * of the task and reset the nspawn.
  */
 
-void
-saib_task_grace(struct sai_nspawn *ns)
+static void
+saib_start_artifact_upload(struct sai_nspawn *ns)
 {
 	char filt[32], scandir[256];
 	struct lws_tokenize ts;
 	uint8_t *p, *p1, *ps;
 	lws_dir_glob_t g;
 	int m;
-
-	ns->finished_when_logs_drained = 1;
-	lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
-			 saib_sub_cleaner_cb, 20 * LWS_USEC_PER_SEC);
 
 	if (!ns->spm)
 		return;
@@ -408,6 +408,14 @@ scan:
 	}
 }
 
+void
+saib_task_grace(struct sai_nspawn *ns)
+{
+	ns->finished_when_logs_drained = 1;
+	lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
+			 saib_sub_cleaner_cb, 20 * LWS_USEC_PER_SEC);
+}
+
 static void
 saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 {
@@ -442,9 +450,9 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 	lws_struct_args_t a;
 	sai_cancel_t *can;
 	sai_rebuild_t *reb;
-	char url[128], *p;
 	sai_task_t *task;
 	int n, m;
+	char *p;
 
 	/*
 	 * use the schema name on the incoming JSON to decide what kind of
@@ -651,52 +659,13 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		 */
 		ns->inp[n] = '\0';
 
-		/* the git mirror is in the build host's /home/sai, NOT the
-		 * mounted overlayfs */
-
-		m = lws_snprintf(ns->path, sizeof(ns->path),
-				 "%s%cgit-mirror", builder.home, csep);
-
-		if (mkdir(ns->path, 0755) && errno != EEXIST)
-			goto ebail;
-
-		lws_strncpy(url, ns->git_repo_url, sizeof(url));
-
-		/*
-		 * We want to convert the repo url to a unique subdir name
-		 * that's safe, like http___warmcat.com_repo_sai
-		 */
-
-		lws_filename_purify_inplace(url);
-		{
-			char *q = url;
-			while (*q) {
-				if (*q == '/')
-					*q = '_';
-				if (*q == '.')
-					*q = '_';
-				q++;
-			}
-		}
-		m += lws_snprintf(ns->path + m, sizeof(ns->path) - (unsigned int)m, "%c%s",
-				  csep, url);
-		if (mkdir(ns->path, 0755) && errno != EEXIST) {
-			lwsl_err("%s: unable to create %s\n", __func__,
-				 ns->path);
-			goto bail;
-		}
-		lwsl_notice("%s: created %s\n", __func__, ns->path);
-
-		/* manage the mirror dir using build host credentials */
-
-		saib_set_ns_state(ns, NSSTATE_STARTING_MIRROR);
+		saib_set_ns_state(ns, NSSTATE_EXECUTING_STEPS);
 
 		ns->user_cancel = 0;
 		ns->spins = 0;
-		ns->mirror_wait_budget = 120;
 
-		if (saib_start_mirror(ns)) {
-			lwsl_err("%s: saib_start_mirror failed\n", __func__);
+		if (saib_spawn_build(ns)) {
+			lwsl_err("%s: saib_spawn_build failed\n", __func__);
 			goto bail;
 		}
 
@@ -794,7 +763,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		      		lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
 			      		 struct sai_nspawn *ns = lws_container_of(d, struct sai_nspawn, list);
 
-			       		if (ns->state == NSSTATE_BUILD)
+			       		if (ns->state == NSSTATE_EXECUTING_STEPS)
 						any_busy = 1;
 
 		       		} lws_end_foreach_dll(d);

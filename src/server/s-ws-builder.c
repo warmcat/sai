@@ -272,7 +272,7 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 
 	if (log->channel == 3 && log->log) { /* control channel */
 		int step;
-		if (sscanf(log->log, " Step %d OK:", &step) == 1) {
+		if (sscanf(log->log, " Step %d:", &step) == 1) {
 			char event_uuid[33];
 			sqlite3 *pdb = NULL;
 			char q[256], esc_uuid[129];
@@ -602,6 +602,7 @@ handle:
 					    sizeof(live_cb->sai_hash));
 				lws_strncpy(live_cb->lws_hash, build->lws_hash,
 					    sizeof(live_cb->lws_hash));
+				live_cb->windows = build->windows;
 				live_cb->online = 1;
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
@@ -623,6 +624,7 @@ handle:
 						    sizeof(live_cb->sai_hash));
 					lws_strncpy(live_cb->lws_hash, build->lws_hash,
 						    sizeof(live_cb->lws_hash));
+					live_cb->windows = build->windows;
 					live_cb->wsi = pss->wsi;
 					live_cb->online = 1;
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
@@ -697,6 +699,9 @@ bail:
 			/*
 			 * We have reached the end of the logs for this task
 			 */
+
+			sais_dump_logs_to_db(&vhd->sul_logcache);
+
 			lwsl_info("%s: log->finished says 0x%x, dur %lluus\n",
 				 __func__, log->finished, (unsigned long long)(
 				 log->timestamp - pss->first_log_timestamp));

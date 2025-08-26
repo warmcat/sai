@@ -116,6 +116,7 @@ typedef struct {
 	char			uuid[65];
 	char			builder_name[96];
 	char			cpack[128];
+	char			steps[4096];
 
 	struct lwsac		*ac_task_container;
 
@@ -129,8 +130,6 @@ typedef struct {
 	uint64_t		duration;
 	int			state;
 	int			uid;
-	int			build_step;
-	int			build_step_count;
 
 	char			told_ongoing;
 } sai_task_t;
@@ -194,15 +193,13 @@ struct sai_nspawn {
 
 	int				retcode;
 	int				instance_idx;
-	int				mirror_wait_budget;
-	int				parallel;
 
 	uint8_t				spins;
 	uint8_t				state;		/* NSSTATE_ */
 	uint8_t				stdcount;
 	uint8_t				term_budget;
 
-	int				build_step;
+	int				current_step;
 	int				build_step_count;
 
 	uint8_t				finished_when_logs_drained:1;
@@ -445,6 +442,8 @@ typedef struct sai_plat {
 	int			instances;
 	int			ongoing;
 
+	char			windows;
+
 	int			index; /* used to create unique build dir path */
 } sai_plat_t;
 
@@ -490,7 +489,6 @@ typedef struct sai_build_metric {
 	char		builder_name[96];
 	char		project_name[96];
 	char		ref[96];
-	int		parallel;
 	uint64_t	us_cpu_user;
 	uint64_t	us_cpu_sys;
 	uint64_t	wallclock_us;
@@ -505,7 +503,6 @@ typedef struct sai_build_metric_db {
 	char		builder_name[96];
 	char		project_name[96];
 	char		ref[96];
-	int		parallel;
 	uint64_t	us_cpu_user;
 	uint64_t	us_cpu_sys;
 	uint64_t	wallclock_us;
@@ -519,12 +516,13 @@ extern const lws_struct_map_t
 	lsm_schema_sq3_map_event[],
 	lsm_schema_json_map_log[],
 	lsm_schema_sq3_map_log[],
+	lsm_schema_sq3_map_plat[1],
 	lsm_schema_json_map_artifact[1],
 	lsm_schema_sq3_map_artifact[1],
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
-	lsm_event[9],
-	lsm_task[23],
+	lsm_event[10],
+	lsm_task[22],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],
@@ -540,9 +538,9 @@ extern const lws_struct_map_t
 	lsm_schema_build_metric[1],
 	lsm_schema_sq3_map_build_metric[1]
 ;
-extern const lws_struct_map_t lsm_build_metric[10];
-extern const lws_struct_map_t lsm_plat[8];
-extern const lws_struct_map_t lsm_plat_for_json[12];
+extern const lws_struct_map_t lsm_build_metric[9];
+extern const lws_struct_map_t lsm_plat[9];
+extern const lws_struct_map_t lsm_plat_for_json[13];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];

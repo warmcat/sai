@@ -72,6 +72,13 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	int n = 0;
 
 	/*
+	 * Are there some logs to dump?
+	 */
+
+	if (spm->logs_in_flight)
+		goto send_logs; /* nothing to send */
+
+	/*
 	 * Any build metrics to process?
 	 */
 
@@ -237,12 +244,9 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		return LWSSSSRET_OK;
 	}
 
-	/*
-	 * Are there some logs to dump?
-	 */
+	return 1;
 
-	if (!spm->logs_in_flight)
-		return 1; /* nothing to send */
+send_logs:
 
 	/*
 	 * Yes somebody has some logs... since we handle all logs on any
@@ -313,23 +317,6 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		if (spm != ns->spm)
 			continue;
 
-		if (ns->state_changed) {
-			ns->state_changed = 0;
-
-			switch (ns->state) {
-			case NSSTATE_CHECKEDOUT:
-				saib_set_ns_state(ns, NSSTATE_BUILD);
-				if (saib_spawn_build(ns)) {
-					lwsl_err("%s: saib_spawn failed\n",
-						 __func__);
-					saib_set_ns_state(ns, NSSTATE_FAILED);
-				}
-				break;
-			default:
-				break;
-			}
-		}
-
 		if (!ns->chunk_cache.count || !ns->chunk_cache.tail)
 			continue;
 
@@ -351,7 +338,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 				 ns->task->uuid, (unsigned long long)lws_now_usecs(),
 				 chunk->stdfd, (int)chunk->len);
 
-			if (ns->finished_when_logs_drained && !ns->chunk_cache.count)
+			if (ns->finished_when_logs_drained && ns->chunk_cache.count == 1)
 				/*
 				 * Let the last guy report the finished state
 				 */
@@ -382,13 +369,13 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 			   spm->logs_in_flight);
 
 		if (ns->finished_when_logs_drained && !ns->chunk_cache.count) {
-
 			/*
 			 * He's in DONE state, and the draining he was waiting
-			 * for has now happened
+			 * for has now happened.
 			 */
 			lwsl_notice("%s: drained and empty\n", __func__);
-			saib_task_destroy(ns);
+			ns->finished_when_logs_drained = 0;
+			saib_set_ns_state(ns, NSSTATE_UPLOADING_ARTIFACTS);
 		}
 
 		break;
@@ -518,7 +505,7 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
                        int load = -1;
 
                        if (il) {
-                               il->state = (ns->state == NSSTATE_BUILD);
+                               il->state = (ns->state == NSSTATE_EXECUTING_STEPS);
 
                                if (!il->state) {
                                        /* If the instance is idle, its load is 0, regardless of system load. */

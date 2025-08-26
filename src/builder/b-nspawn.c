@@ -239,7 +239,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 
 		n = lws_snprintf(s, sizeof(s),
 			 ">saib> Step %d: Total [ %s u / %s s, Mem: %sB, Stg: %sB ], Step [ %s u / %s s, Mem: %sB, Stg: %sB ]\n",
-			 ns->build_step + 1, h1, h2, h3, h4, h5, h6, h7, h8);
+			 ns->current_step + 1, h1, h2, h3, h4, h5, h6, h7, h8);
 	
 		saib_log_chunk_create(ns, s, (size_t)n, 3);
 	}
@@ -272,7 +272,6 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 			lws_strncpy(m->builder_name, ns->sp->name, sizeof(m->builder_name));
 			lws_strncpy(m->project_name, ns->project_name, sizeof(m->project_name));
 			lws_strncpy(m->ref, ns->ref, sizeof(m->ref));
-			m->parallel = ns->parallel;
 			m->us_cpu_user = res->us_cpu_user;
 			m->us_cpu_sys = res->us_cpu_sys;
 			m->wallclock_us = (uint64_t)(lws_now_usecs() - op->start_time);
@@ -285,8 +284,8 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		}
 	}
 
-	ns->build_step++;
-	if (ns->build_step < ns->build_step_count) {
+	ns->current_step++;
+	if (ns->current_step < ns->build_step_count) {
 		/* there are more steps, spawn the next one */
 		if (ns)
 			ns->op = NULL;
@@ -324,7 +323,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	return;
 
 fail:
-	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED", ns->build_step + 1);
+	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED", ns->current_step + 1);
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	saib_task_grace(ns);
@@ -352,7 +351,7 @@ static const char * const runscript_win_first =
 	"set HOME=%s\n"
 	"cd %s &&"
 	" rmdir /s /q build & "
-	"%s"
+	"%s < NUL"
 ;
 
 static const char * const runscript_win_next =
@@ -364,7 +363,7 @@ static const char * const runscript_win_next =
 	"set SAI_LOGPROXY_TTY1=%s\n"
 	"set HOME=%s\n"
 	"cd %s &&"
-	"%s"
+	"%s < NUL"
 ;
 
 #else
@@ -389,7 +388,7 @@ static const char * const runscript_first =
 	"set -e\n"
 	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
 	"rm -rf build\n"
-	"%s\n"
+	"%s < /dev/null\n"
 	"exit $?\n"
 ;
 
@@ -412,7 +411,7 @@ static const char * const runscript_next =
 	"export SAI_LOGPROXY_TTY1=%s\n"
 	"set -e\n"
 	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
-	"%s\n"
+	"%s < /dev/null\n"
 	"exit $?\n"
 ;
 
@@ -424,13 +423,13 @@ saib_spawn_step(struct sai_nspawn *ns);
 int
 saib_spawn_build(struct sai_nspawn *ns)
 {
-	const char *p = ns->task->build;
+	const char *p = ns->task->steps;
 	int n;
 
-	ns->build_step = 0;
+	ns->current_step = 0;
 	ns->build_step_count = 0;
 
-	lwsl_hexdump_err(ns->task->build, strlen(ns->task->build));
+	lwsl_hexdump_err(ns->task->steps, strlen(ns->task->steps));
 
 	while ((p = strchr(p, '\n'))) {
 		ns->build_step_count++;
@@ -482,12 +481,12 @@ saib_spawn_step(struct sai_nspawn *ns)
 #endif
 
 	char one_step[4096];
-	const char *p_build = ns->task->build, *q;
+	const char *p_build = ns->task->steps, *q;
 	int step = 0;
 
-	// lwsl_hexdump_notice(ns->task->build, strlen(ns->task->build));
+	lwsl_hexdump_notice(ns->task->steps, strlen(ns->task->steps));
 
-	while (step < ns->build_step && (p_build = strchr(p_build, '\n'))) {
+	while (step < ns->current_step && (p_build = strchr(p_build, '\n'))) {
 		p_build++;
 		step++;
 	}
@@ -523,18 +522,18 @@ saib_spawn_step(struct sai_nspawn *ns)
 
 #if defined(WIN32)
 	n = lws_snprintf(st, sizeof(st),
-			 ns->build_step ? runscript_win_next : runscript_win_first,
+			 ns->current_step ? runscript_win_next : runscript_win_first,
 			 ns->instance_idx,
-			 ns->parallel ? ns->parallel : 1,
+			 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
 			 ns->inp, one_step);
 #else
 	n = lws_snprintf(st, sizeof(st),
-			 ns->build_step ? runscript_next : runscript_first,
+			 ns->current_step ? runscript_next : runscript_first,
 			 builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_idx,
-			 ns->parallel ? ns->parallel : 1,
+			 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,
 			 builder.home, one_step);

@@ -69,17 +69,9 @@ struct saib_ws_pss;
 enum {
 	NSSTATE_INIT,
 	NSSTATE_MOUNTING,
-	NSSTATE_STARTING_MIRROR,
-	/* speculatively see if we can already check out locally */
-	NSSTATE_CHECKOUT_SPEC,
-	/* we are stuck waiting for remote mirror thread */
-	NSSTATE_WAIT_REMOTE_MIRROR,
-	/* remote mirror completed, we can check out locally */
-	NSSTATE_CHECKOUT,
-	/* we have finished with threadpool / wait for remote */
-	NSSTATE_CHECKEDOUT,
-	NSSTATE_BUILD,
+	NSSTATE_EXECUTING_STEPS,
 	NSSTATE_DONE,
+	NSSTATE_UPLOADING_ARTIFACTS,
 	NSSTATE_FAILED,
 };
 
@@ -240,5 +232,3 @@ saib_get_system_cpu(struct sai_builder *b);
 
 int saib_get_cpu_count(void);
 
-int saib_start_mirror(struct sai_nspawn *ns);
-int saib_start_checkout(struct sai_nspawn *ns);

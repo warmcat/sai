@@ -773,24 +773,6 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 
 	sais_event_db_close(vhd, &pdb);
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
-		lwsl_err("%s: unable to open event-specific database for reset\n",
-				__func__);
-		return SAI_DB_RESULT_ERROR;
-	}
-	lws_snprintf(cmd, sizeof(cmd), "update tasks set build_step=0 where uuid='%s'",
-		     esc);
-	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
-	if (ret != SQLITE_OK) {
-		sais_event_db_close(vhd, &pdb);
-		if (ret == SQLITE_BUSY)
-			return SAI_DB_RESULT_BUSY;
-		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
-			 sqlite3_errmsg(pdb));
-		return SAI_DB_RESULT_ERROR;
-	}
-	sais_event_db_close(vhd, &pdb);
-
 	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
 
 	sais_task_cancel(vhd, task_uuid);
@@ -870,7 +852,52 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	task->repo_name		= task->one_event->repo_name;
 	task->git_ref		= task->one_event->ref;
 	task->git_hash		= task->one_event->hash;
+	task->git_repo_url      = task->one_event->repo_fetchurl;
 	task->ac_task_container = pss->a.ac;
+
+	if (!task->git_repo_url || !task->git_repo_url[0]) {
+		lwsl_err("%s: task %s has no repo_fetchurl, failing\n",
+			 __func__, task->uuid);
+		sais_set_task_state(vhd, NULL, NULL, task->uuid, SAIES_FAIL, 0, 0);
+		free(task);
+		lwsac_free(&pss->ac_alloc_task);
+
+		return 1; /* try again for another task */
+	}
+
+	lwsl_notice("%s: windows: %d\n", __func__, cb->windows);
+
+	char url[128], mirror_path[256];
+
+	lws_strncpy(url, task->one_event->repo_fetchurl, sizeof(url));
+	lws_filename_purify_inplace(url);
+	char *q = url;
+	while (*q) {
+		if (*q == '/')
+			*q = '_';
+		if (*q == '.')
+			*q = '_';
+		q++;
+	}
+
+	lws_snprintf(mirror_path, sizeof(mirror_path), "%s", url);
+
+	if (cb->windows)
+		lws_snprintf(task->steps, sizeof(task->steps),
+			"git_helper.bat mirror \"%s\" %s %s %s\n"
+			"git_helper.bat checkout \"%s\" \"build/%s\" %s\n"
+			"%s",
+			task->git_repo_url, task->git_ref, task->git_hash, mirror_path,
+			mirror_path, task->repo_name, task->git_hash,
+			task->build);
+	else
+		lws_snprintf(task->steps, sizeof(task->steps),
+			"git_helper.sh mirror \"%s\" %s %s %s\n"
+			"git_helper.sh checkout \"%s\" \"build/%s\" %s\n"
+			"%s",
+			task->git_repo_url, task->git_ref, task->git_hash, mirror_path,
+			mirror_path, task->repo_name, task->git_hash,
+			task->build);
 
 	/*
 	 * add to server's estimate of builder's ongoing tasks...

@@ -437,6 +437,10 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 			struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
 						sai_plat_list);
 
+#if defined(WIN32)
+			sp->windows = 1;
+#endif
+
 			/*
 			 * ... for each nspawn on the platform...
 			 */

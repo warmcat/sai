@@ -139,7 +139,7 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 	lws_strncpy(dbm.builder_name, m->builder_name, sizeof(dbm.builder_name));
 	lws_strncpy(dbm.project_name, m->project_name, sizeof(dbm.project_name));
 	lws_strncpy(dbm.ref, m->ref, sizeof(dbm.ref));
-	dbm.parallel = m->parallel;
+	//dbm.parallel = m->parallel;
 	dbm.us_cpu_user = m->us_cpu_user;
 	dbm.us_cpu_sys = m->us_cpu_sys;
 	dbm.wallclock_us = m->wallclock_us;

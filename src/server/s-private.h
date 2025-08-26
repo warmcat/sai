@@ -229,9 +229,6 @@ struct vhd {
 	sais_t server;
 };
 
-extern const lws_struct_map_t lsm_plat[];
-extern const lws_struct_map_t lsm_schema_sq3_map_plat[];
-
 extern struct lws_context *
 sai_lws_context_from_json(const char *config_dir,
 			  struct lws_context_creation_info *info,
