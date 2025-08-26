@@ -874,9 +874,13 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	task->ac_task_container = pss->a.ac;
 
 	if (!task->git_repo_url || !task->git_repo_url[0]) {
-		lwsl_err("%s: task %s has no repo_fetchurl\n", __func__,
-			 task->uuid);
-		goto bail;
+		lwsl_err("%s: task %s has no repo_fetchurl, failing\n",
+			 __func__, task->uuid);
+		sais_set_task_state(vhd, NULL, NULL, task->uuid, SAIES_FAIL, 0, 0);
+		free(task);
+		lwsac_free(&pss->ac_alloc_task);
+
+		return 1; /* try again for another task */
 	}
 
 	lwsl_notice("%s: windows: %d\n", __func__, cb->windows);
