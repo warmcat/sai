@@ -593,6 +593,18 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 		return SAI_DB_RESULT_ERROR;
 	}
 
+	lws_snprintf(cmd, sizeof(cmd), "update build_steps set state=0 where task_uuid='%s'",
+		     esc);
+	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+	if (ret != SQLITE_OK) {
+		sais_event_db_close(vhd, &pdb);
+		if (ret == SQLITE_BUSY)
+			return SAI_DB_RESULT_BUSY;
+		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
+			 sqlite3_errmsg(pdb));
+		return SAI_DB_RESULT_ERROR;
+	}
+
 	sais_event_db_close(vhd, &pdb);
 
 	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
