@@ -38,7 +38,7 @@ static const lws_struct_map_t lsm_viewerstate_members[] = {
 };
 
 const lws_struct_map_t lsm_schema_map_m_to_b[] = {
-	LSM_SCHEMA	(sai_task_t, NULL, lsm_task, "com-warmcat-sai-ta"),
+	LSM_SCHEMA	(sai_step_assignment_t, NULL, lsm_step_assignment, "com.warmcat.sai.step-assignment"),
 	LSM_SCHEMA	(sai_cancel_t, NULL, lsm_task_cancel, "com.warmcat.sai.taskcan"),
 	LSM_SCHEMA	(sai_viewer_state_t, NULL, lsm_viewerstate_members,
 						 "com.warmcat.sai.viewerstate"),
@@ -47,7 +47,7 @@ const lws_struct_map_t lsm_schema_map_m_to_b[] = {
 };
 
 enum {
-	SAIB_RX_TASK_ALLOCATION,
+	SAIB_RX_STEP_ASSIGNMENT,
 	SAIB_RX_TASK_CANCEL,
 	SAIB_RX_VIEWERSTATE,
 	SAIB_RX_RESOURCE_REPLY,
@@ -589,115 +589,107 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 					  BUILD_INFO, LWS_BUILD_HASH);
 			saib_log_chunk_create(ns, mb, (unsigned int)ml, 3);
 		}
-		saib_set_ns_state(ns, NSSTATE_INIT);
+		if (!strcmp(ns->step->command, "internal: git mirror")) {
+			saib_set_ns_state(ns, NSSTATE_INIT);
 
 #if defined(__linux__)
-		ns->fsm.layers[0] = "base";
-		ns->fsm.layers[1] = "env";
+			ns->fsm.layers[0] = "base";
+			ns->fsm.layers[1] = "env";
 #endif
 
-		lws_snprintf(ns->fsm.ovname, sizeof(ns->fsm.ovname), "%d-%d.%d",
-			     spm->index, ns->sp->index, ns->instance_idx);
+			lws_snprintf(ns->fsm.ovname, sizeof(ns->fsm.ovname), "%d-%d.%d",
+					spm->index, ns->sp->index, ns->instance_idx);
 
-		lwsl_notice("%s: server %s\n", __func__, ns->server_name);
-		lwsl_notice("%s: project %s\n", __func__, ns->project_name);
-		lwsl_notice("%s: ref %s\n", __func__, ns->ref);
-		lwsl_notice("%s: hash %s\n", __func__, ns->hash);
-		lwsl_notice("%s: distro %s\n", __func__, ns->fsm.distro);
-		lwsl_notice("%s: ovname %s\n", __func__, ns->fsm.ovname);
-		lwsl_notice("%s: git_repo_url %s\n", __func__, ns->git_repo_url);
-		lwsl_notice("%s: mountpoint %s\n", __func__, ns->fsm.mp);
+			lwsl_notice("%s: server %s\n", __func__, ns->server_name);
+			lwsl_notice("%s: project %s\n", __func__, ns->project_name);
+			lwsl_notice("%s: ref %s\n", __func__, ns->ref);
+			lwsl_notice("%s: hash %s\n", __func__, ns->hash);
+			lwsl_notice("%s: distro %s\n", __func__, ns->fsm.distro);
+			lwsl_notice("%s: ovname %s\n", __func__, ns->fsm.ovname);
+			lwsl_notice("%s: git_repo_url %s\n", __func__, ns->git_repo_url);
+			lwsl_notice("%s: mountpoint %s\n", __func__, ns->fsm.mp);
 
-		spm->phase = PHASE_BUILDING;
-		n = lws_snprintf(ns->inp, sizeof(ns->inp), "%s%c",
-				 builder.home, csep);
+			spm->phase = PHASE_BUILDING;
+			n = lws_snprintf(ns->inp, sizeof(ns->inp), "%s%c",
+					builder.home, csep);
 
-		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "jobs%c",
-				csep);
-		lws_filename_purify_inplace(ns->inp);
-		if (mkdir(ns->inp, 0755) && errno != EEXIST)
-			goto ebail;
+			n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "jobs%c",
+					csep);
+			lws_filename_purify_inplace(ns->inp);
+			if (mkdir(ns->inp, 0755) && errno != EEXIST)
+				goto ebail;
 
-		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
-				  ns->fsm.ovname, csep);
-		lws_filename_purify_inplace(ns->inp);
-		if (mkdir(ns->inp, 0755) && errno != EEXIST)
-			goto ebail;
+			n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
+					ns->fsm.ovname, csep);
+			lws_filename_purify_inplace(ns->inp);
+			if (mkdir(ns->inp, 0755) && errno != EEXIST)
+				goto ebail;
 
 #if defined(WIN32)
-		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "1%c",
-				  csep);
-		lws_filename_purify_inplace(ns->inp);
-		if (mkdir(ns->inp, 0755) && errno != EEXIST)
-			goto ebail;
+			n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "1%c",
+					csep);
+			lws_filename_purify_inplace(ns->inp);
+			if (mkdir(ns->inp, 0755) && errno != EEXIST)
+				goto ebail;
 #endif
 
-		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
-				  ns->project_name, csep);
-		lws_filename_purify_inplace(ns->inp);
-		if (mkdir(ns->inp, 0755) && errno != EEXIST)
-			goto ebail;
+			n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
+					ns->project_name, csep);
+			lws_filename_purify_inplace(ns->inp);
+			if (mkdir(ns->inp, 0755) && errno != EEXIST)
+				goto ebail;
 
-		/*
-		 * Create a pending upload dir to mv artifacts into while
-		 * we get on with the next job.
-		 */
-		lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "../.sai-uploads");
-		if (mkdir(ns->inp, 0755) && errno != EEXIST)
-			goto ebail;
-		/*
-		 * Snip that last bit off so ns->inp is the fully qualified
-		 * builder instance base dir
-		 */
-		ns->inp[n] = '\0';
+			lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "../.sai-uploads");
+			if (mkdir(ns->inp, 0755) && errno != EEXIST)
+				goto ebail;
+			ns->inp[n] = '\0';
 
-		/* the git mirror is in the build host's /home/sai, NOT the
-		 * mounted overlayfs */
+			m = lws_snprintf(ns->path, sizeof(ns->path),
+					"%s%cgit-mirror", builder.home, csep);
 
-		m = lws_snprintf(ns->path, sizeof(ns->path),
-				 "%s%cgit-mirror", builder.home, csep);
+			if (mkdir(ns->path, 0755) && errno != EEXIST)
+				goto ebail;
 
-		if (mkdir(ns->path, 0755) && errno != EEXIST)
-			goto ebail;
-
-		lws_strncpy(url, ns->git_repo_url, sizeof(url));
-
-		/*
-		 * We want to convert the repo url to a unique subdir name
-		 * that's safe, like http___warmcat.com_repo_sai
-		 */
-
-		lws_filename_purify_inplace(url);
-		{
-			char *q = url;
-			while (*q) {
-				if (*q == '/')
-					*q = '_';
-				if (*q == '.')
-					*q = '_';
-				q++;
+			lws_strncpy(url, ns->git_repo_url, sizeof(url));
+			lws_filename_purify_inplace(url);
+			{
+				char *q = url;
+				while (*q) {
+					if (*q == '/') *q = '_';
+					if (*q == '.') *q = '_';
+					q++;
+				}
 			}
-		}
-		m += lws_snprintf(ns->path + m, sizeof(ns->path) - (unsigned int)m, "%c%s",
-				  csep, url);
-		if (mkdir(ns->path, 0755) && errno != EEXIST) {
-			lwsl_err("%s: unable to create %s\n", __func__,
-				 ns->path);
-			goto bail;
-		}
-		lwsl_notice("%s: created %s\n", __func__, ns->path);
+			m += lws_snprintf(ns->path + m, sizeof(ns->path) - (unsigned int)m, "%c%s",
+					csep, url);
+			if (mkdir(ns->path, 0755) && errno != EEXIST) {
+				lwsl_err("%s: unable to create %s\n", __func__, ns->path);
+				goto bail;
+			}
+			lwsl_notice("%s: created %s\n", __func__, ns->path);
 
-		/* manage the mirror dir using build host credentials */
+			saib_set_ns_state(ns, NSSTATE_STARTING_MIRROR);
+			ns->user_cancel = 0;
+			ns->spins = 0;
+			ns->mirror_wait_budget = 120;
 
-		saib_set_ns_state(ns, NSSTATE_STARTING_MIRROR);
-
-		ns->user_cancel = 0;
-		ns->spins = 0;
-		ns->mirror_wait_budget = 120;
-
-		if (saib_start_mirror(ns)) {
-			lwsl_err("%s: saib_start_mirror failed\n", __func__);
-			goto bail;
+			if (saib_start_mirror(ns)) {
+				lwsl_err("%s: saib_start_mirror failed\n", __func__);
+				goto bail;
+			}
+		} else if (!strcmp(ns->step->command, "internal: git checkout")) {
+			saib_set_ns_state(ns, NSSTATE_CHECKOUT);
+			if (saib_start_checkout(ns)) {
+				lwsl_err("%s: saib_start_checkout failed\n", __func__);
+				goto bail;
+			}
+		} else {
+			/* regular build step */
+			saib_set_ns_state(ns, NSSTATE_BUILD);
+			if (saib_spawn_command(ns, ns->step->command, ns->step->parallel)) {
+				lwsl_err("%s: saib_spawn_command failed\n", __func__);
+				goto bail;
+			}
 		}
 
 		/*
