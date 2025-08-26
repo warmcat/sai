@@ -185,6 +185,8 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 	lws_dll2_owner_clear(&owner);
 	lws_dll2_add_tail(&dbm.list, &owner);
 
+	lwsl_notice("%s: Adding metric to db for key %s\n", __func__, dbm.key);
+
 	if (lws_struct_sq3_serialize(vhd->pdb_metrics,
 				     lsm_schema_sq3_map_build_metric,
 				     &owner, 0)) {
@@ -192,5 +194,8 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 		return 1;
 	}
 
-	return sais_metrics_db_prune(vhd, dbm.key);
+	if (sais_metrics_db_prune(vhd, dbm.key))
+		lwsl_warn("%s: pruning metrics failed\n", __func__);
+
+	return 0;
 }

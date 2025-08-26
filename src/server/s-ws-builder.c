@@ -1028,6 +1028,8 @@ bail:
 
 	case SAIM_WSSCH_BUILDER_METRIC:
 		metric = (const sai_build_metric_t *)pss->a.dest;
+		lwsl_notice("%s: Received build metric for builder %s\n",
+			    __func__, metric->builder_name);
 		sais_metrics_db_add(vhd, metric);
 		lwsac_free(&pss->a.ac);
 		break;
