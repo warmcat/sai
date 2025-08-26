@@ -186,6 +186,10 @@ typedef struct sai_ongoing_task {
 	lws_usec_t		last_log_timestamp;
 } sai_ongoing_task_t;
 
+typedef struct sai_server_rx_taskinfo {
+	char			task_hash[65];
+} sai_server_rx_taskinfo_t;
+
 
 typedef struct sais_plat {
 	lws_dll2_t	list;

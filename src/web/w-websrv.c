@@ -48,6 +48,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_TASKLOGS,	/* new logs for task (ratelimited) */
 	SAIS_WS_WEBSRV_RX_LOADREPORT,	/* builder's cpu load report */
 	SAIS_WS_WEBSRV_RX_TASKACTIVITY,
+	SAIS_WS_WEBSRV_RX_TASKINFO,
 };
 
 /*
@@ -178,6 +179,10 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 	case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
+		saiw_ws_broadcast_raw(vhd, buf, len, 0,
+			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
+		break;
+	case SAIS_WS_WEBSRV_RX_TASKINFO:
 		saiw_ws_broadcast_raw(vhd, buf, len, 0,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;

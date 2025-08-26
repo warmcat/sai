@@ -886,6 +886,13 @@ function sai_event_render(o, now_ut, reset_all_icon)
 				"\" data-event-uuid=\"" + san(e.uuid) + "\" data-platform=\"" + san(t.platform) + "\">";
 			s1 += "<a href=\"/sai/index.html?task=" + t.uuid + "\">" +
 				sai_plat_icon(t.platform, 0) + "</a>";
+			if (t.build_step_count > 0) {
+				s1 += "<div class=\"step-progress\">";
+				for (var i = 0; i < t.build_step_count; i++) {
+					s1 += "<div class=\"step-bar" + (i < t.build_step ? " step-bar-completed" : "") + "\"></div>";
+				}
+				s1 += "</div>";
+			}
 			s1 += "</div>";
 		}
 

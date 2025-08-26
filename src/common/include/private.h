@@ -132,6 +132,8 @@ typedef struct {
 	int			uid;
 
 	char			told_ongoing;
+	int			build_step;
+	int			build_step_count;
 } sai_task_t;
 
 typedef struct sai_plat sai_plat_t;

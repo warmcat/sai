@@ -506,8 +506,17 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		else
 			pss->initial_log_timestamp = 0;
 
-		if (saiw_pss_schedule_taskinfo(pss, ti->task_hash, !!ti->logs))
-			goto soft_error;
+		{
+			char *p = strstr((char *)buf, "com.warmcat.sai.taskinfo");
+
+			if (p) {
+				memcpy(p, "com.warmcat.sai.server.", 23);
+				p += 23;
+				memcpy(p, "taskinfo", 8);
+			}
+
+			saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl);
+		}
 
 		break;
 

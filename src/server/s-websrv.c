@@ -71,6 +71,10 @@ static lws_struct_map_t lsm_browser_platreset[] = {
 	LSM_CARRAY	(sai_browse_rx_platreset_t, platform,   "platform"),
 };
 
+static lws_struct_map_t lsm_server_taskinfo[] = {
+	LSM_CARRAY	(sai_server_rx_taskinfo_t, task_hash, "task_hash"),
+};
+
 static const lws_struct_map_t lsm_viewercount_members[] = {
 	LSM_UNSIGNED(sai_viewer_state_t, viewers,	"count"),
 };
@@ -90,6 +94,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.rebuild"),
 	LSM_SCHEMA	(sai_browse_rx_platreset_t, NULL, lsm_browser_platreset,
 					      "com.warmcat.sai.platreset"),
+	LSM_SCHEMA	(sai_server_rx_taskinfo_t, NULL, lsm_server_taskinfo,
+					      "com.warmcat.sai.server.taskinfo"),
 };
 
 enum {
@@ -100,6 +106,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_VIEWERCOUNT,
 	SAIS_WS_WEBSRV_RX_REBUILD,
 	SAIS_WS_WEBSRV_RX_PLATRESET,
+	SAIS_WS_WEBSRV_RX_TASKINFO,
 };
 
 void
@@ -810,6 +817,88 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			} lws_end_foreach_dll(p);
 		}
 		break;
+	}
+
+	case SAIS_WS_WEBSRV_RX_TASKINFO:
+	{
+		sai_server_rx_taskinfo_t *ti = (sai_server_rx_taskinfo_t *)a.dest;
+		char event_uuid[SAI_EVENTID_LEN + 1];
+		sqlite3 *pdb = NULL;
+		lws_dll2_owner_t o_task, o_event;
+		struct lwsac *ac_task = NULL, *ac_event = NULL;
+		sai_task_t *task;
+		sai_event_t *event;
+		char q[128], esc[129];
+		int n;
+
+		sai_task_uuid_to_event_uuid(event_uuid, ti->task_hash);
+
+		if (sais_event_db_ensure_open(m->vhd, event_uuid, 0, &pdb))
+			break;
+
+		lws_sql_purify(esc, ti->task_hash, sizeof(esc));
+		lws_snprintf(q, sizeof(q), " and uuid='%s'", esc);
+		n = lws_struct_sq3_deserialize(pdb, q, NULL,
+					       lsm_schema_sq3_map_task,
+					       &o_task, &ac_task, 0, 1);
+		sais_event_db_close(m->vhd, &pdb);
+		if (n < 0 || !o_task.head) {
+			lwsac_free(&ac_task);
+			break;
+		}
+
+		task = lws_container_of(o_task.head, sai_task_t, list);
+		lwsl_notice("%s: task %s, build_step %d\n", __func__, task->uuid, task->build_step);
+		task->build_step_count = 5; /* hardcoded total steps */
+
+		lws_sql_purify(esc, event_uuid, sizeof(esc));
+		lws_snprintf(q, sizeof(q), " and uuid='%s'", esc);
+		n = lws_struct_sq3_deserialize(m->vhd->server.pdb, q, NULL,
+					       lsm_schema_sq3_map_event,
+					       &o_event, &ac_event, 0, 1);
+		if (n < 0 || !o_event.head) {
+			lwsac_free(&ac_task);
+			lwsac_free(&ac_event);
+			break;
+		}
+
+		event = lws_container_of(o_event.head, sai_event_t, list);
+
+		{
+			uint8_t buf[LWS_PRE + 4096];
+			uint8_t *p = &buf[LWS_PRE], *end = &buf[sizeof(buf) - LWS_PRE];
+			lws_struct_serialize_t *js;
+			size_t w;
+
+			typedef struct sai_browse_taskreply {
+				const sai_event_t	*event;
+				const sai_task_t	*task;
+			} sai_browse_taskreply_t;
+
+			static lws_struct_map_t lsm_taskreply[] = {
+				LSM_CHILD_PTR(sai_browse_taskreply_t, event, sai_event_t, NULL, lsm_event, "e"),
+				LSM_CHILD_PTR(sai_browse_taskreply_t, task, sai_task_t, NULL, lsm_task, "t"),
+			};
+			const lws_struct_map_t lsm_schema_json_map_taskreply[] = {
+				LSM_SCHEMA(sai_browse_taskreply_t, NULL, lsm_taskreply, "com.warmcat.sai.taskinfo"),
+			};
+			sai_browse_taskreply_t reply = { .event = event, .task = task };
+
+			js = lws_struct_json_serialize_create(lsm_schema_json_map_taskreply,
+							      LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply),
+							      0, &reply);
+			if (js) {
+				n = (int)lws_struct_json_serialize(js, p, (size_t)lws_ptr_diff(end, p), &w);
+				if (n == LSJS_RESULT_FINISH)
+					sais_websrv_queue_tx(m->ss, p, w);
+				lws_struct_json_serialize_destroy(&js);
+			}
+		}
+
+		lwsac_free(&ac_task);
+		lwsac_free(&ac_event);
+		break;
+	}
 	}
 
 	return 0;
