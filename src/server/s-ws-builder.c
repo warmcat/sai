@@ -266,6 +266,9 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 		memset(ot, 0, sizeof(*ot));
 		lws_strncpy(ot->uuid, log->task_uuid, sizeof(ot->uuid));
 		lws_dll2_add_tail(&ot->list, &vhd->ongoing_tasks);
+		if (!lws_sul_is_scheduled(&vhd->sul_activity))
+			lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
+					 sais_activity_cb, 1 * LWS_US_PER_SEC);
 	}
 
 	ot->last_log_timestamp = lws_now_usecs();

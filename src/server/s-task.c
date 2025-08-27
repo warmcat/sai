@@ -902,8 +902,9 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 
 	free(start);
 
-	lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
-			 sais_activity_cb, 1 * LWS_US_PER_SEC);
+	if (vhd->ongoing_tasks.head)
+		lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
+				 sais_activity_cb, 1 * LWS_US_PER_SEC);
 }
 
 int
