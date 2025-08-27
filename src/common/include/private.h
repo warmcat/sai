@@ -50,6 +50,7 @@ typedef enum {
 	SAIES_DELETED				= 7,
 
 	SAIES_NOT_READY_FOR_BUILD		= 8,
+	SAIES_STEP_SUCCESS			= 9,
 } sai_event_state_t;
 
 enum {
@@ -116,7 +117,7 @@ typedef struct {
 	char			uuid[65];
 	char			builder_name[96];
 	char			cpack[128];
-	char			steps[4096];
+	char			script[4096];
 
 	struct lwsac		*ac_task_container;
 
@@ -130,6 +131,7 @@ typedef struct {
 	uint64_t		duration;
 	int			state;
 	int			uid;
+	int			build_step;
 
 	char			told_ongoing;
 } sai_task_t;
@@ -522,7 +524,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[10],
-	lsm_task[22],
+	lsm_task[23],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],

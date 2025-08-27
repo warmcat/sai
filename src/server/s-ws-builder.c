@@ -196,7 +196,6 @@ static void
 sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 {
 	sais_logcache_pertask_t *lcpt = NULL;
-	sai_ongoing_task_t *ot;
 	sai_log_t *hlog;
 
 	/*
@@ -245,37 +244,14 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_logcache,
 				 sais_dump_logs_to_db, 250 * LWS_US_PER_MS);
 
-	/*
-	 * Update ongoing task activity
-	 */
-
-	ot = NULL;
-	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->ongoing_tasks.head) {
-		sai_ongoing_task_t *fot = lws_container_of(p, sai_ongoing_task_t, list);
-
-		if (!strcmp(fot->uuid, log->task_uuid)) {
-			ot = fot;
-			break;
-		}
-	} lws_end_foreach_dll(p);
-
-	if (!ot) {
-		ot = malloc(sizeof(*ot));
-		if (!ot)
-			return;
-		memset(ot, 0, sizeof(*ot));
-		lws_strncpy(ot->uuid, log->task_uuid, sizeof(ot->uuid));
-		lws_dll2_add_tail(&ot->list, &vhd->ongoing_tasks);
-	}
-
-	ot->last_log_timestamp = lws_now_usecs();
-
 	if (log->channel == 3 && log->log) { /* control channel */
 		int step;
-		if (sscanf(log->log, " Step %d:", &step) == 1) {
+		if (!memcmp(log->log, " Step ", 5)) {
 			char event_uuid[33];
 			sqlite3 *pdb = NULL;
 			char q[256], esc_uuid[129];
+
+			step = atoi(&log->log[5]);
 
 			sai_task_uuid_to_event_uuid(event_uuid, log->task_uuid);
 			if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
@@ -707,7 +683,7 @@ bail:
 				 log->timestamp - pss->first_log_timestamp));
 			if (log->finished & SAISPRF_EXIT) {
 				if ((log->finished & 0xff) == 0)
-					n = SAIES_SUCCESS;
+					n = SAIES_STEP_SUCCESS;
 				else
 					n = SAIES_FAIL;
 			} else
@@ -1218,7 +1194,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		 * Don't resend the same status over and over
 		 */
 
-		if (memcmp(pss->last_power_report, start, lws_ptr_diff_size_t(p, start) + 1)) {
+		if (strncmp(pss->last_power_report, (const char *)start, lws_ptr_diff_size_t(p, start) + 1)) {
 			diff = 1;
 			memcpy(pss->last_power_report, start, lws_ptr_diff_size_t(p, start) + 1);
 		}

@@ -160,14 +160,15 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 	 */
 
 	lws_snprintf(update, sizeof(update),
-		"update tasks set state=%d%s%s%s%s%s%s%s%s where uuid='%s'",
+		"update tasks set state=%d%s%s%s%s%s%s%s%s%s where uuid='%s'",
 		 state, builder_uuid ? ",builder='": "",
 			builder_uuid ? esc1 : "",
 			builder_uuid ? "'" : "",
 			builder_name ? ",builder_name='" : "",
 			builder_name ? esc : "",
 			builder_name ? "'" : "",
-			esc3, esc4, esc2);
+			esc3, esc4, state == SAIES_WAITING ? ",build_step=0" : "",
+			esc2);
 
 	if (sqlite3_exec((sqlite3 *)e->pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
 		lwsl_err("%s: %s: %s: fail\n", __func__, update,
@@ -182,6 +183,11 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 	 */
 
 	if (state != task_ostate) {
+
+		if (state == SAIES_PASSED_TO_BUILDER &&
+		    !vhd->sul_activity.list.owner)
+			lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
+					 sais_activity_cb, 1 * LWS_US_PER_SEC);
 
 		lwsl_notice("%s: seen task %s %d -> %d\n", __func__,
 				task_uuid, task_ostate, state);
@@ -267,18 +273,11 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 	sais_event_db_close(vhd, (sqlite3 **)&e->pdb);
 	lwsac_free(&ac);
 
-	if (state == SAIES_SUCCESS || state == SAIES_FAIL || state == SAIES_CANCELLED) {
-		sai_ongoing_task_t *ot = NULL;
-		lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1, vhd->ongoing_tasks.head) {
-			ot = lws_container_of(p, sai_ongoing_task_t, list);
-
-			if (!strcmp(ot->uuid, task_uuid)) {
-				lws_dll2_remove(&ot->list);
-				free(ot);
-				break;
-			}
-		} lws_end_foreach_dll_safe(p, p1);
+	if (state == SAIES_STEP_SUCCESS) {
+		sais_continue_task(vhd, task_uuid);
+		state = SAIES_BEING_BUILT;
 	}
+
 
 	return 0;
 
@@ -802,10 +801,7 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		   const char *platform_name)
 {
 	const sai_task_t *task_template;
-	char esc1[96], esc2[96];
-	lws_dll2_owner_t o;
 	sai_task_t *task = NULL;
-	int n;
 
 	if (cb->ongoing >= cb->instances)
 		return 1;
@@ -818,100 +814,18 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	if (!task_template)
 		return 1;
 
-	task = malloc(sizeof(sai_task_t));
-	if (!task) {
-		lwsac_free(&pss->ac_alloc_task);
-		return -1;
-	}
-	*task = *task_template;
-
 	lwsl_notice("%s: %s: task found %s\n", __func__, platform_name, cb->name);
 
 	/* yes, we will offer it to him */
 
-	if (sais_set_task_state(vhd, cb->name, cb->name, task->uuid,
+	if (sais_set_task_state(vhd, cb->name, cb->name, task_template->uuid,
 				SAIES_PASSED_TO_BUILDER, lws_now_secs(), 0))
 		goto bail;
 
 	/* advance the task state first time we get logs */
 	pss->mark_started = 1;
 
-	/* let's get ahold of his event as well */
-
-	lws_sql_purify(esc1, task->event_uuid, sizeof(esc1));
-	lws_snprintf(esc2, sizeof(esc2), " and uuid='%s'", esc1);
-	n = lws_struct_sq3_deserialize(vhd->server.pdb, esc2, NULL,
-				       lsm_schema_sq3_map_event, &o,
-				       &pss->a.ac, 0, 1);
-	if (n < 0 || !o.head)
-		goto bail;
-
-	task->one_event = lws_container_of(o.head, sai_event_t, list);
-
-	task->server_name	= pss->server_name;
-	task->repo_name		= task->one_event->repo_name;
-	task->git_ref		= task->one_event->ref;
-	task->git_hash		= task->one_event->hash;
-	task->git_repo_url      = task->one_event->repo_fetchurl;
-	task->ac_task_container = pss->a.ac;
-
-	if (!task->git_repo_url || !task->git_repo_url[0]) {
-		lwsl_err("%s: task %s has no repo_fetchurl, failing\n",
-			 __func__, task->uuid);
-		sais_set_task_state(vhd, NULL, NULL, task->uuid, SAIES_FAIL, 0, 0);
-		free(task);
-		lwsac_free(&pss->ac_alloc_task);
-
-		return 1; /* try again for another task */
-	}
-
-	lwsl_notice("%s: windows: %d\n", __func__, cb->windows);
-
-	char url[128], mirror_path[256];
-
-	lws_strncpy(url, task->one_event->repo_fetchurl, sizeof(url));
-	lws_filename_purify_inplace(url);
-	char *q = url;
-	while (*q) {
-		if (*q == '/')
-			*q = '_';
-		if (*q == '.')
-			*q = '_';
-		q++;
-	}
-
-	lws_snprintf(mirror_path, sizeof(mirror_path), "%s", url);
-
-	if (cb->windows)
-		lws_snprintf(task->steps, sizeof(task->steps),
-			"git_helper.bat mirror \"%s\" %s %s %s\n"
-			"git_helper.bat checkout \"%s\" \"build/%s\" %s\n"
-			"%s",
-			task->git_repo_url, task->git_ref, task->git_hash, mirror_path,
-			mirror_path, task->repo_name, task->git_hash,
-			task->build);
-	else
-		lws_snprintf(task->steps, sizeof(task->steps),
-			"git_helper.sh mirror \"%s\" %s %s %s\n"
-			"git_helper.sh checkout \"%s\" \"build/%s\" %s\n"
-			"%s",
-			task->git_repo_url, task->git_ref, task->git_hash, mirror_path,
-			mirror_path, task->repo_name, task->git_hash,
-			task->build);
-
-	/*
-	 * add to server's estimate of builder's ongoing tasks...
-	 */
-	cb->ongoing++;
-
-	lwsl_notice("%s: pre pss->issue_task_owner count %d\n", __func__, pss->issue_task_owner.count);
-
-	lws_dll2_add_tail(&task->pending_assign_list, &pss->issue_task_owner);
-	lws_callback_on_writable(pss->wsi);
-
-	pss->a.ac = NULL;
-
-	sais_platforms_with_tasks_pending(vhd);
+	sais_continue_task(vhd, task_template->uuid);
 
 	/*
 	 * We are going to leave here with a live pss->a.ac (pointed into by
@@ -935,9 +849,10 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 {
 	struct vhd *vhd = lws_container_of(sul, struct vhd, sul_activity);
 	char *p, *start, *end;
-	sai_ongoing_task_t *ot;
 	lws_usec_t now;
 	int cat, first = 1;
+	struct lwsac *ac_events = NULL, *ac_tasks = NULL;
+	lws_dll2_owner_t o_events, o_tasks;
 
 	p = start = malloc(8192);
 	if (!p)
@@ -950,34 +865,220 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 
 	now = lws_now_usecs();
 
-	lws_start_foreach_dll(struct lws_dll2 *, d, vhd->ongoing_tasks.head) {
-		ot = lws_container_of(d, sai_ongoing_task_t, list);
+	if (lws_struct_sq3_deserialize(vhd->server.pdb,
+			" and state != 3 and state != 4 and state != 5 and state != 7",
+			NULL, lsm_schema_sq3_map_event, &o_events, &ac_events, 0, 100) >= 0 &&
+			o_events.head) {
+		lws_start_foreach_dll(struct lws_dll2 *, d, o_events.head) {
+			sai_event_t *e = lws_container_of(d, sai_event_t, list);
+			sqlite3 *pdb = NULL;
 
-		if (now - ot->last_log_timestamp > 10 * LWS_USEC_PER_SEC)
-			cat = 1;
-		else if (now - ot->last_log_timestamp > 3 * LWS_US_PER_SEC)
-			cat = 2;
-		else
-			cat = 3;
+			if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
+				if (lws_struct_sq3_deserialize(pdb,
+						" and (state = 1 or state = 2)",
+						NULL, lsm_schema_sq3_map_task, &o_tasks,
+						&ac_tasks, 0, 100) >= 0 && o_tasks.head) {
+					lws_start_foreach_dll(struct lws_dll2 *, dt, o_tasks.head) {
+						sai_task_t *t = lws_container_of(dt, sai_task_t, list);
 
-		if (!first)
-			*p++ = ',';
+						if (now - (lws_usec_t)(t->last_updated * LWS_US_PER_SEC) > 10 * LWS_US_PER_SEC)
+							cat = 1;
+						else if (now - (lws_usec_t)(t->last_updated * LWS_US_PER_SEC) > 3 * LWS_US_PER_SEC)
+							cat = 2;
+						else
+							cat = 3;
 
-		p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
-				  "{\"uuid\":\"%s\",\"cat\":%d}",
-				  ot->uuid, cat);
-		first = 0;
+						if (!first)
+							*p++ = ',';
 
-	} lws_end_foreach_dll(d);
+						p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+								  "{\"uuid\":\"%s\",\"cat\":%d}",
+								  t->uuid, cat);
+						first = 0;
+					} lws_end_foreach_dll(dt);
+				}
+				lwsac_free(&ac_tasks);
+				sais_event_db_close(vhd, &pdb);
+			}
+		} lws_end_foreach_dll(d);
+	}
+	lwsac_free(&ac_events);
 
 	*p++ = ']';
 	*p++ = '}';
 
-	if (lws_ptr_diff(p, start) > 48)
-		sais_websrv_broadcast(vhd->h_ss_websrv, start, lws_ptr_diff_size_t(p, start));
+	if (!first) {
+		sais_websrv_broadcast(vhd->h_ss_websrv, start,
+				      lws_ptr_diff_size_t(p, start));
+		lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
+				 sais_activity_cb, 1 * LWS_US_PER_SEC);
+	}
 
 	free(start);
+}
 
-	lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
-			 sais_activity_cb, 1 * LWS_US_PER_SEC);
+int
+sais_continue_task(struct vhd *vhd, const char *task_uuid)
+{
+	char event_uuid[33], esc_uuid[129], *p, *start, url[128], mirror_path[256],
+		update[128];
+	lws_dll2_owner_t o, o_event;
+	sai_task_t *task = NULL, *task_template;
+	sai_event_t *event;
+	sai_plat_t *cb;
+	struct pss *pss;
+	sqlite3 *pdb = NULL;
+	int n, build_step;
+	struct lwsac *ac = NULL;
+
+	memset(event_uuid, 0, sizeof(event_uuid));
+	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
+
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) || !pdb)
+		return -1;
+
+	sqlite3_exec(pdb, "ALTER TABLE tasks ADD COLUMN build_step INTEGER;",
+		     NULL, NULL, NULL);
+
+	lwsl_notice("%s: task_uuid %s, pdb %p\n", __func__, task_uuid, pdb);
+
+	lws_sql_purify(esc_uuid, task_uuid, sizeof(esc_uuid));
+	lws_snprintf(update, sizeof(update), " and uuid='%s'", esc_uuid);
+	n = lws_struct_sq3_deserialize(pdb, update, NULL,
+				       lsm_schema_sq3_map_task, &o, &ac, 0, 1);
+	if (n < 0 || !o.head) {
+		sais_event_db_close(vhd, &pdb);
+		lwsac_free(&ac);
+		return -1;
+	}
+
+	task_template = lws_container_of(o.head, sai_task_t, list);
+	task = malloc(sizeof(sai_task_t));
+	if (!task) {
+		lwsac_free(&ac);
+		sais_event_db_close(vhd, &pdb);
+		return -1;
+	}
+	memset(task, 0, sizeof(*task));
+	*task = *task_template;
+	lwsac_free(&ac);
+
+	build_step = task->build_step;
+
+	/* get the event */
+	lws_sql_purify(esc_uuid, event_uuid, sizeof(esc_uuid));
+	lws_snprintf(update, sizeof(update), " and uuid='%s'", esc_uuid);
+	n = lws_struct_sq3_deserialize(vhd->server.pdb, update, NULL,
+				       lsm_schema_sq3_map_event, &o_event,
+				       &task->ac_task_container, 0, 1);
+	if (n < 0 || !o_event.head) {
+		sais_event_db_close(vhd, &pdb);
+		free(task);
+		return -1;
+	}
+
+	event = lws_container_of(o_event.head, sai_event_t, list);
+	task->one_event = event;
+	task->repo_name = event->repo_name;
+	task->git_ref = event->ref;
+	task->git_hash = event->hash;
+	task->git_repo_url = event->repo_fetchurl;
+
+	/* find builder */
+	cb = sais_builder_from_uuid(vhd, task->builder_name, __FILE__, __LINE__);
+	if (!cb) {
+		sais_event_db_close(vhd, &pdb);
+		lwsac_free(&task->ac_task_container);
+		free(task);
+		return -1;
+	}
+
+	lws_strncpy(url, task->one_event->repo_fetchurl, sizeof(url));
+	lws_filename_purify_inplace(url);
+	char *q = url;
+	while (*q) {
+		if (*q == '/') *q = '_';
+		if (*q == '.') *q = '_';
+		q++;
+	}
+	lws_snprintf(mirror_path, sizeof(mirror_path), "%s", url);
+
+	switch (build_step) {
+	case 0: /* git mirror */
+		if (cb->windows)
+			lws_snprintf(task->script, sizeof(task->script),
+				"git_helper.bat mirror \"%s\" %s %s %s",
+				task->git_repo_url, task->git_ref, task->git_hash,
+				mirror_path);
+		else
+			lws_snprintf(task->script, sizeof(task->script),
+				"git_helper.sh mirror \"%s\" %s %s %s",
+				task->git_repo_url, task->git_ref, task->git_hash,
+				mirror_path);
+		break;
+	case 1: /* git checkout */
+		if (cb->windows)
+			lws_snprintf(task->script, sizeof(task->script),
+				"git_helper.bat checkout \"%s\" src %s",
+				mirror_path, task->git_hash);
+		else
+			lws_snprintf(task->script, sizeof(task->script),
+				"git_helper.sh checkout \"%s\" src %s",
+				mirror_path, task->git_hash);
+		break;
+	default:
+		p = start = task->build;
+		n = 0;
+		while (n < build_step - 2 && (p = strchr(p, '\n'))) {
+			p++;
+			n++;
+		}
+
+		if (!p) { /* no more steps */
+			sais_set_task_state(vhd, NULL, NULL, task->uuid, SAIES_SUCCESS, 0, 0);
+			sais_event_db_close(vhd, &pdb);
+			lwsac_free(&task->ac_task_container);
+			free(task);
+			return 0;
+		}
+
+		start = p;
+		p = strchr(start, '\n');
+		if (p)
+			*p = '\0';
+
+		lws_strncpy(task->script, start, sizeof(task->script));
+		break;
+	}
+
+	/* find builder pss */
+	pss = NULL;
+	lws_start_foreach_dll(struct lws_dll2 *, d, vhd->builders.head) {
+		struct pss *pss_ = lws_container_of(d, struct pss, same);
+		if (pss_->wsi == cb->wsi) {
+			pss = pss_;
+			break;
+		}
+	} lws_end_foreach_dll(d);
+
+	if (!pss) {
+		sais_event_db_close(vhd, &pdb);
+		lwsac_free(&task->ac_task_container);
+		free(task);
+		return -1;
+	}
+
+	task->server_name = pss->server_name;
+
+	lws_dll2_add_tail(&task->pending_assign_list, &pss->issue_task_owner);
+	lws_callback_on_writable(pss->wsi);
+
+	lws_sql_purify(esc_uuid, task_uuid, sizeof(esc_uuid));
+	lws_snprintf(update, sizeof(update), "update tasks set build_step=%d where uuid='%s'",
+		     build_step + 1, esc_uuid);
+	sqlite3_exec(pdb, update, NULL, NULL, NULL);
+
+	sais_event_db_close(vhd, &pdb);
+
+	return 0;
 }

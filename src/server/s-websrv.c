@@ -198,6 +198,7 @@ _sais_websrv_broadcast(struct lws_ss_handle *h, void *arg)
 
 	if (lws_buflist_append_segment(&m->bltx, a->buf, a->len) < 0) {
 		lwsl_warn("%s: buflist append fail\n", __func__);
+		lws_ss_start_timeout(h, 1);
 
 		return;
 	}

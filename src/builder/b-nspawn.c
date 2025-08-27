@@ -285,19 +285,9 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	}
 
 	ns->current_step++;
-	if (ns->current_step < ns->build_step_count) {
-		/* there are more steps, spawn the next one */
-		if (ns)
-			ns->op = NULL;
-		if (op->spawn)
-			free(op->spawn);
-		free(op);
-		saib_spawn_step(ns);
-		return;
-	}
 
-	/* all steps succeeded */
-	lwsl_notice("%s: all build steps succeeded\n", __func__);
+	/* step succeeded, wait for next instruction */
+	lwsl_notice("%s: step succeeded\n", __func__);
 
 	if (op->spawn)
 		free(op->spawn);
@@ -323,7 +313,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	return;
 
 fail:
-	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED", ns->current_step + 1);
+	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED\n", ns->current_step + 1);
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	saib_task_grace(ns);
@@ -386,7 +376,7 @@ static const char * const runscript_first =
 	"export SAI_LOGPROXY_TTY0=%s\n"
 	"export SAI_LOGPROXY_TTY1=%s\n"
 	"set -e\n"
-	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
+	"cd %s/jobs/$SAI_OVN\n"
 	"rm -rf build\n"
 	"%s < /dev/null\n"
 	"exit $?\n"
@@ -410,7 +400,30 @@ static const char * const runscript_next =
 	"export SAI_LOGPROXY_TTY0=%s\n"
 	"export SAI_LOGPROXY_TTY1=%s\n"
 	"set -e\n"
-	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
+	"cd %s/jobs/$SAI_OVN\n"
+	"%s < /dev/null\n"
+	"exit $?\n"
+;
+
+static const char * const runscript_build =
+	"#!/bin/bash -x\n"
+#if defined(__APPLE__)
+	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
+#else
+	"export PATH=/usr/local/bin:$PATH\n"
+#endif
+	"export HOME=%s\n"
+	"export SAI_OVN=%s\n"
+	"export SAI_PROJECT=%s\n"
+	"export SAI_REMOTE_REF=%s\n"
+	"export SAI_INSTANCE_IDX=%d\n"
+	"export SAI_PARALLEL=%d\n"
+	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
+	"export SAI_LOGPROXY=%s\n"
+	"export SAI_LOGPROXY_TTY0=%s\n"
+	"export SAI_LOGPROXY_TTY1=%s\n"
+	"set -e\n"
+	"cd %s/jobs/$SAI_OVN/src\n"
 	"%s < /dev/null\n"
 	"exit $?\n"
 ;
@@ -418,34 +431,7 @@ static const char * const runscript_next =
 #endif
 
 int
-saib_spawn_step(struct sai_nspawn *ns);
-
-int
-saib_spawn_build(struct sai_nspawn *ns)
-{
-	const char *p = ns->task->steps;
-	int n;
-
-	ns->current_step = 0;
-	ns->build_step_count = 0;
-
-	lwsl_hexdump_err(ns->task->steps, strlen(ns->task->steps));
-
-	while ((p = strchr(p, '\n'))) {
-		ns->build_step_count++;
-		p++;
-	}
-	ns->build_step_count++;
-
-	n = lws_snprintf(ns->pending_mirror_log, sizeof(ns->pending_mirror_log),
-			"Starting build: %d steps\n", ns->build_step_count);
-	saib_log_chunk_create(ns, ns->pending_mirror_log, (size_t)n, 3);
-
-	return saib_spawn_step(ns);
-}
-
-int
-saib_spawn_step(struct sai_nspawn *ns)
+saib_spawn_script(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
@@ -481,24 +467,7 @@ saib_spawn_step(struct sai_nspawn *ns)
 #endif
 
 	char one_step[4096];
-	const char *p_build = ns->task->steps, *q;
-	int step = 0;
-
-	lwsl_hexdump_notice(ns->task->steps, strlen(ns->task->steps));
-
-	while (step < ns->current_step && (p_build = strchr(p_build, '\n'))) {
-		p_build++;
-		step++;
-	}
-
-	if (p_build) {
-		q = strchr(p_build, '\n');
-		if (q)
-			lws_strnncpy(one_step, p_build, q - p_build, sizeof(one_step));
-		else
-			lws_strncpy(one_step, p_build, sizeof(one_step));
-	} else
-		one_step[0] = '\0';
+	lws_strncpy(one_step, ns->task->script, sizeof(one_step));
 
 #if defined(WIN32)
 	if (_sopen_s(&fd, args, _O_CREAT | _O_TRUNC | _O_WRONLY,
@@ -529,8 +498,17 @@ saib_spawn_step(struct sai_nspawn *ns)
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
 			 ns->inp, one_step);
 #else
+	const char *script_template;
+
+	if (ns->current_step == 0)
+		script_template = runscript_first;
+	else if (ns->current_step == 1)
+		script_template = runscript_next;
+	else
+		script_template = runscript_build;
+
 	n = lws_snprintf(st, sizeof(st),
-			 ns->current_step ? runscript_next : runscript_first,
+			 script_template,
 			 builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_idx,
 			 1,

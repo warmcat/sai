@@ -172,7 +172,8 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_STRING_PTR	(sai_task_t, git_ref,		"git_ref"),
 	LSM_STRING_PTR	(sai_task_t, git_hash,		"git_hash"),
 	LSM_STRING_PTR	(sai_task_t, git_repo_url,	"git_repo_url"),
-	LSM_CARRAY	(sai_task_t, steps,		"steps"),
+	LSM_CARRAY	(sai_task_t, script,		"script"),
+	LSM_SIGNED	(sai_task_t, build_step,	"build_step"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {
