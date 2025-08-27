@@ -312,8 +312,8 @@ saib_power_stay_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
 					sai_plat_list);
 
-			if (sp->ongoing) {
-				lwsl_warn("%s: cancelling idle grace time as ongoing tasks\n", __func__);
+			if (sp->nspawn_owner.count) {
+				lwsl_warn("%s: cancelling idle grace time as ongoing task steps\n", __func__);
 				lws_sul_cancel(&builder.sul_idle);
 				return 0;
 			}
@@ -759,9 +759,11 @@ int main(int argc, const char **argv)
 		 */
 
 		while (n >= 0) {
+#if !defined(WIN32)
 			int status;
-			uint8_t d;
 			pid_t p;
+#endif
+			uint8_t d;
 
 			n = read(0, &d, 1);
 			lwsl_notice("%s: suspend process read returned %d\n", __func__, (int)n);

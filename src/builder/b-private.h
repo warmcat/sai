@@ -208,7 +208,7 @@ rm_rf_cb(const char *dirpath, void *user, struct lws_dir_entry *lde);
 extern const struct lws_protocols protocol_logproxy, protocol_resproxy;
 
 void *
-thread_suspend(void *d);
+saib_thread_suspend(void *d);
 
 
 int

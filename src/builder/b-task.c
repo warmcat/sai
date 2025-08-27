@@ -134,9 +134,6 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 	lws_snprintf(rej->host_platform, sizeof(rej->host_platform), "%s",
 		     sp->name);
 
-	rej->limit = sp->instances;
-	rej->ongoing = sp->ongoing;
-
 	lws_dll2_add_tail(&rej->list, &spm->rejection_list);
 
 	return lws_ss_request_tx(spm->ss) ? -1 : 0;
@@ -153,45 +150,35 @@ saib_task_destroy(struct sai_nspawn *ns)
 	 * If able, builder should reintroduce himself to get
 	 * another task
 	 */
+
 	if (ns->spm) {
 		ns->spm->phase = PHASE_START_ATTACH;
 		if (lws_ss_request_tx(ns->spm->ss))
 			return;
 	}
 
+	if (ns->list.owner && ns->list.owner->count == 1) {
+		int m = 0;
 
-	if (ns->task && ns->task->told_ongoing) {
 		/*
-		 * Account that we're not doing this task any more
+		 * Is it the case that none of the platforms have
+		 * any ongoing jobs then?  We don't any more.
+		 *
+		 * If nobody does, start the grace time for suspend.
 		 */
 
-		// lwsl_notice("%s: ongoing %d -> %d\n", __func__,
-		//	    ns->sp->ongoing, ns->sp->ongoing - 1);
-		ns->sp->ongoing--;
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+			   builder.sai_plat_owner.head) {
+			struct sai_plat *sp = lws_container_of(d,
+				  struct sai_plat, sai_plat_list);
+			if (sp->nspawn_owner.count)
+				m++;
+		} lws_end_foreach_dll_safe(d, d1);
 
-		if (!ns->sp->ongoing) {
-			int m = 0;
-
-			/*
-			 * Is it the case that none of the platforms have
-			 * any ongoing jobs then?  We don't any more.
-			 *
-			 * If nobody does, start the grace time for suspend.
-			 */
-
-			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
-                                   builder.sai_plat_owner.head) {
-				struct sai_plat *sp = lws_container_of(d,
-                                          struct sai_plat, sai_plat_list);
-				if (sp->ongoing)
-					m++;
-			} lws_end_foreach_dll_safe(d, d1);
-
-			if (!m)
-				lws_sul_schedule(builder.context, 0,
-						 &builder.sul_idle, sul_idle_cb,
-						SAI_IDLE_GRACE_US);
-		}
+		if (!m)
+			lws_sul_schedule(builder.context, 0,
+					 &builder.sul_idle, sul_idle_cb,
+					SAI_IDLE_GRACE_US);
 
 		/*
 		 * Schedule informing all the servers we're connected to
@@ -205,6 +192,12 @@ saib_task_destroy(struct sai_nspawn *ns)
 		lwsac_free(&ns->task->ac_task_container);
 		ns->task = NULL;
 	}
+
+	if (ns->script_path[0])
+		unlink(ns->script_path);
+
+	lws_dll2_remove(&ns->list);
+	free(ns);
 }
 
 static void
@@ -540,19 +533,13 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		} lws_end_foreach_dll_safe(d, d1);
 
 		if (!ns) {
-
-			/*
-			 * Full up... reject the task and update every
-			 * server's model of our task load status
-			 */
-
-			lwsl_notice("%s: plat '%s': no idle nspawn (of %d), "
-				    "plat load %d / %d\n", __func__, sp->name,
-				    n, sp->ongoing, sp->instances);
-			if (saib_queue_task_status_update(sp, spm, task->uuid))
+			ns = malloc(sizeof(*ns));
+			if (!ns)
 				return -1;
-
-			return 0;
+			memset(ns, 0, sizeof(*ns));
+			ns->builder = &builder;
+			ns->sp = sp;
+			lws_dll2_add_tail(&ns->list, &sp->nspawn_owner);
 		}
 
 //		lwsl_hexdump_warn(task->build, strlen(task->build));
@@ -661,17 +648,6 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			lwsl_err("%s: saib_spawn_script failed\n", __func__);
 			goto bail;
 		}
-
-		/*
-		 * If we successfully set the threadpool task up, then we
-		 * bump our idea of what is ongoing... completing or failing
-		 * after that needs to adjust sp->ongoing accordingly
-		 */
-
-		lwsl_notice("%s: ongoing %d -> %d\n", __func__, sp->ongoing,
-			    sp->ongoing + 1);
-		sp->ongoing++;
-		ns->task->told_ongoing = 1;
 
 		/* we're busy, we're not in the mood for suspending */
 		lwsl_notice("%s: cancelling suspend grace time\n", __func__);

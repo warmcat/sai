@@ -57,22 +57,21 @@ typedef struct sais_logcache_pertask {
 } sais_logcache_pertask_t;
 
 /* map for a single instance's load */
-static const lws_struct_map_t lsm_instance_load[] = {
-	LSM_UNSIGNED(sai_instance_load_t, cpu_percent,	"cpu_percent"),
-	LSM_UNSIGNED(sai_instance_load_t, state,	"state"),
-};
+//static const lws_struct_map_t lsm_instance_load[] = {
+//	LSM_UNSIGNED(sai_instance_load_t, state,	"state"),
+//};
 
-static const lws_struct_map_t lsm_platform_load[] = {
-	LSM_CARRAY(sai_platform_load_t, platform_name, "platform_name"),
-	LSM_LIST(sai_platform_load_t, loads, sai_instance_load_t, list,
-		 NULL, lsm_instance_load, "loads"),
-};
+// static const lws_struct_map_t lsm_platform_load[] = {
+//	LSM_CARRAY(sai_platform_load_t, platform_name, "platform_name"),
+//	LSM_LIST(sai_platform_load_t, loads, sai_instance_load_t, list,
+//		 NULL, lsm_instance_load, "loads"),
+//};
 
 /* map for the members of the load report object */
 static const lws_struct_map_t lsm_load_report_members[] = {
 	LSM_CARRAY(sai_load_report_t, builder_name,	"builder_name"),
-	LSM_LIST  (sai_load_report_t, platforms, sai_platform_load_t, list,
-		 NULL, lsm_platform_load,		"platforms"),
+//	LSM_LIST  (sai_load_report_t, platforms, sai_platform_load_t, list,
+//		 NULL, lsm_platform_load,		"platforms"),
 };
 
 /*
@@ -281,7 +280,7 @@ sais_builder_from_uuid(struct vhd *vhd, const char *hostname, const char *_file,
 				sai_plat_list);
 
 		if (!strcmp(hostname, cb->name)) {
-			lwsl_err("%s: %s:%d: found live builder %s\n", __func__, _file, _line, hostname);
+			lwsl_info("%s: %s:%d: found live builder %s\n", __func__, _file, _line, hostname);
 			cb->online = 1;
 			return cb;
 		}
@@ -501,6 +500,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 		memset(&pss->a, 0, sizeof(pss->a));
 		pss->a.map_st[0] = lsm_schema_map_ba;
 		pss->a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_map_ba);
+		pss->a.map_st[1] = lsm_schema_map_ba;
+		pss->a.map_entries_st[1] = LWS_ARRAY_SIZE(lsm_schema_map_ba);
 		pss->a.ac_block_size = 4096;
 
 		lws_struct_json_init_parse(&pss->ctx, NULL, &pss->a);
@@ -572,7 +573,6 @@ handle:
 				/* Already exists (reconnect), just update dynamic info */
 				lwsl_err("%s: found live builder for %s\n", __func__, build->name);
 				live_cb->wsi = pss->wsi;
-				live_cb->ongoing = 0; /* Reset ongoing task count on connect */
 				lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 				lws_strncpy(live_cb->sai_hash, build->sai_hash,
 					    sizeof(live_cb->sai_hash));
@@ -595,7 +595,6 @@ handle:
 					memcpy(p_str, build->name, nlen);
 					live_cb->platform = p_str + nlen;
 					memcpy(p_str + nlen, build->platform, plen);
-					live_cb->instances = build->instances;
 					lws_strncpy(live_cb->sai_hash, build->sai_hash,
 						    sizeof(live_cb->sai_hash));
 					lws_strncpy(live_cb->lws_hash, build->lws_hash,
@@ -720,13 +719,8 @@ bail:
 			break;
 		}
 
-		/* update our info about builder state with reality */
-
-		cb->ongoing = rej->ongoing;
-		cb->instances = rej->limit;
-
-		lwsl_notice("%s: builder %s reports occupancy %d/%d (rej %s)\n",
-			    __func__, cb->name, cb->ongoing, cb->instances,
+		lwsl_notice("%s: builder %s reports rejection (rej %s)\n",
+			    __func__, cb->name,
 			    rej->task_uuid[0] ? rej->task_uuid : "none");
 
 		if (rej->task_uuid[0])
@@ -736,6 +730,13 @@ bail:
 		break;
 
 	case SAIM_WSSCH_BUILDER_LOADREPORT:
+		{
+			sai_load_report_t *lr = (sai_load_report_t *)pss->a.dest;
+
+			lwsl_notice("%s: loadreport from %s: ram %uk, disk %uk\n",
+				    __func__, lr->builder_name, lr->free_ram_kib,
+				    lr->free_disk_kib);
+		}
 		// lwsl_wsi_user(pss->wsi, "SAIM_WSSCH_BUILDER_LOADREPORT broadcasting\n");
 		sais_websrv_broadcast(vhd->h_ss_websrv, (const char *)buf, bl);
 		break;

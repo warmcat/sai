@@ -157,10 +157,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 {
 	struct saib_opaque_spawn *op = (struct saib_opaque_spawn *)opaque;
 	struct sai_nspawn *ns = op ? op->ns : NULL;
-
-	// lwsl_warn("%s: reap at %llu: we_killed_him: %d\n", __func__,
-	//	  (unsigned long long)lws_now_usecs(), we_killed_him);
-
+	uint64_t us_wallclock = op ? (uint64_t)(lws_now_usecs() - op->start_time) : 0;
 	int exit_code = -1;
 	char s[256];
 	int n;
@@ -218,29 +215,36 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	lws_dir(ns->inp, &du, lws_dir_du_cb);
 
 	{
-		char h1[40], h2[40], h3[40], h4[40], h5[40], h6[40], h7[40], h8[40];
+		char h1[40], h2[40], h3[40], h4[40], h5[40], h6[40], h7[40], h8[40], h9[40], h10[40];
 
 		ns->us_cpu_user += res->us_cpu_user;
 		ns->us_cpu_sys += res->us_cpu_sys;
+		ns->us_wallclock += us_wallclock;
 
 		if (du.size_in_bytes > ns->worst_stg)
 			ns->worst_stg = du.size_in_bytes;
 		if (res->peak_mem_rss > ns->worst_mem)
 			ns->worst_mem = res->peak_mem_rss;
 
-		lws_humanize(h1, sizeof(h1), ns->us_cpu_user,   humanize_schema_us);
-		lws_humanize(h2, sizeof(h2), ns->us_cpu_sys,    humanize_schema_us);
-		lws_humanize(h3, sizeof(h3), ns->worst_mem,     humanize_schema_si);
-		lws_humanize(h4, sizeof(h4), ns->worst_stg,     humanize_schema_si);
-		lws_humanize(h5, sizeof(h5), res->us_cpu_user,  humanize_schema_us);
-		lws_humanize(h6, sizeof(h6), res->us_cpu_sys,   humanize_schema_us);
-		lws_humanize(h7, sizeof(h7), res->peak_mem_rss, humanize_schema_si);
-		lws_humanize(h8, sizeof(h8), du.size_in_bytes,  humanize_schema_si);
+		lws_humanize_pad(h1,  sizeof(h1),  ns->us_cpu_user,	humanize_schema_us);
+		lws_humanize_pad(h2,  sizeof(h2),  ns->us_cpu_sys,	humanize_schema_us);
+		lws_humanize_pad(h3,  sizeof(h3),  ns->worst_mem,	humanize_schema_si);
+		lws_humanize_pad(h4,  sizeof(h4),  ns->worst_stg,	humanize_schema_si);
+		lws_humanize_pad(h5,  sizeof(h5),  res->us_cpu_user,	humanize_schema_us);
+		lws_humanize_pad(h6,  sizeof(h6),  res->us_cpu_sys,	humanize_schema_us);
+		lws_humanize_pad(h7,  sizeof(h7),  res->peak_mem_rss,	humanize_schema_si);
+		lws_humanize_pad(h8,  sizeof(h8),  du.size_in_bytes,	humanize_schema_si);
+		lws_humanize_pad(h9,  sizeof(h9),  us_wallclock,	humanize_schema_us);
+		lws_humanize_pad(h10, sizeof(h10), ns->us_wallclock,	humanize_schema_us);
 
 		n = lws_snprintf(s, sizeof(s),
-			 ">saib> Step %d: Total [ %s u / %s s, Mem: %sB, Stg: %sB ], Step [ %s u / %s s, Mem: %sB, Stg: %sB ]\n",
-			 ns->current_step + 1, h1, h2, h3, h4, h5, h6, h7, h8);
-	
+			 ">saib> Step %d: [ %s (%s u / %s s), Mem: %sB, Stg: %sB ]\n",
+			 ns->current_step + 1, h9, h5, h6, h7, h8);
+		saib_log_chunk_create(ns, s, (size_t)n, 3);
+
+		n = lws_snprintf(s, sizeof(s),
+			 ">saib>   Task: [ %s (%s u / %s s), Mem: %sB, Stg: %sB ]\n",
+			 h10, h1, h2, h3, h4);
 		saib_log_chunk_create(ns, s, (size_t)n, 3);
 	}
 
@@ -274,7 +278,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 			lws_strncpy(m->ref, ns->ref, sizeof(m->ref));
 			m->us_cpu_user = res->us_cpu_user;
 			m->us_cpu_sys = res->us_cpu_sys;
-			m->wallclock_us = (uint64_t)(lws_now_usecs() - op->start_time);
+			m->wallclock_us = us_wallclock;
 			m->peak_mem_rss = res->peak_mem_rss;
 			m->stg_bytes = du.size_in_bytes;
 
@@ -435,7 +439,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
-	char args[290], st[2048], *p;
+	char st[2048];
 	const char *respath = "unk";
 	const char * cmd[] = {
 		"/bin/ps",
@@ -452,32 +456,28 @@ saib_spawn_script(struct sai_nspawn *ns)
 	char cgroup[128];
 #endif
 
-	lws_strncpy(st, ns->sp->name, sizeof(st));
-	lws_filename_purify_inplace(st);
-	p = st;
-	while ((p = strchr(p, '/')))
-		*p = '_';
-
 #if defined(WIN32)
-	lws_snprintf(args, sizeof(args), "%s\\sai-build-script-%s-%d.bat",
-			builder.home, st, ns->instance_idx);
+	lws_snprintf(ns->script_path, sizeof(ns->script_path),
+		     "%s\\sai-build-script-%s.bat",
+		     builder.home, ns->task->uuid);
 #else
-	lws_snprintf(args, sizeof(args), "%s/sai-build-script-%s-%d.sh",
-			builder.home, st, ns->instance_idx);
+	lws_snprintf(ns->script_path, sizeof(ns->script_path),
+		     "%s/sai-build-script-%s.sh",
+		     builder.home, ns->task->uuid);
 #endif
 
 	char one_step[4096];
 	lws_strncpy(one_step, ns->task->script, sizeof(one_step));
 
 #if defined(WIN32)
-	if (_sopen_s(&fd, args, _O_CREAT | _O_TRUNC | _O_WRONLY,
+	if (_sopen_s(&fd, ns->script_path, _O_CREAT | _O_TRUNC | _O_WRONLY,
 		     _SH_DENYNO, _S_IWRITE))
 		fd = -1;
 #else
-	fd = open(args, O_CREAT | O_TRUNC | O_WRONLY, 0755);
+	fd = open(ns->script_path, O_CREAT | O_TRUNC | O_WRONLY, 0755);
 #endif
 	if (fd < 0) {
-		lwsl_err("%s: unable to open %s for write\n", __func__, args);
+		lwsl_err("%s: unable to open %s for write\n", __func__, ns->script_path);
 		return 1;
 	}
 
@@ -521,13 +521,13 @@ saib_spawn_script(struct sai_nspawn *ns)
 
 	if (write(fd, st, (unsigned int)n) != n) {
 		close(fd);
-		lwsl_err("%s: failed to write runscript to %s\n", __func__, args);
+		lwsl_err("%s: failed to write runscript to %s\n", __func__, ns->script_path);
 		return 1;
 	}
 
 	close(fd);
 
-	cmd[0] = args;
+	cmd[0] = ns->script_path;
 
 #if defined(__linux__)
 	lws_snprintf(cgroup, sizeof(cgroup), "inst-%u-%d", (unsigned int)getpid(), ns->instance_idx);

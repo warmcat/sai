@@ -257,13 +257,10 @@ sais_list_builders(struct vhd *vhd)
 
 		if (live_builder) {
 			builder_from_db->online = 1;
-			builder_from_db->ongoing = live_builder->ongoing;
 			lws_strncpy(builder_from_db->peer_ip, live_builder->peer_ip,
 				    sizeof(builder_from_db->peer_ip));
-		} else {
+		} else
 			builder_from_db->online = 0;
-			builder_from_db->ongoing = 0;
-		}
 
 		builder_from_db->powering_up = 0;
 		builder_from_db->powering_down = 0;

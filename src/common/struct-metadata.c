@@ -21,25 +21,15 @@
  * lws_struct metadata for structs common to builder and server
  */
 
-const lws_struct_map_t lsm_instance_load[] = {
-	LSM_UNSIGNED	(sai_instance_load_t, cpu_percent, "cpu_percent"),
-	LSM_UNSIGNED	(sai_instance_load_t, state,	   "state"),
-};
-
-/* Map for a sai_platform_load_t object */
-const lws_struct_map_t lsm_platform_load[] = {
-	LSM_CARRAY(sai_platform_load_t, platform_name, "platform_name"),
-	LSM_LIST(sai_platform_load_t, loads, sai_instance_load_t, list,
-		 NULL, lsm_instance_load, "loads"),
-};
-
 const lws_struct_map_t lsm_load_report_members[] = {
 	LSM_CARRAY	(sai_load_report_t, builder_name, "builder_name"),
 	LSM_SIGNED	(sai_load_report_t, core_count,	"core_count"),
 	LSM_UNSIGNED	(sai_load_report_t, free_ram_kib, "free_ram_kib"),
 	LSM_UNSIGNED	(sai_load_report_t, free_disk_kib, "free_disk_kib"),
-	LSM_LIST	(sai_load_report_t, platforms, sai_platform_load_t, list,
-			 NULL, lsm_platform_load, "platforms"),
+	LSM_UNSIGNED	(sai_load_report_t, active_steps, "active_steps"),
+	LSM_UNSIGNED	(sai_load_report_t, cpu_percent, "cpu_percent"),
+//	LSM_LIST	(sai_load_report_t, platforms, sai_platform_load_t, list,
+//			 NULL, lsm_platform_load, "platforms"),
 };
 
 const lws_struct_map_t lsm_build_metric[] = {
@@ -78,7 +68,6 @@ const lws_struct_map_t lsm_schema_sq3_map_build_metric[] = {
 const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/include/private.h in sync */
 	LSM_UNSIGNED	(sai_plat_t, uid,		"uid"),
 	LSM_STRING_PTR	(sai_plat_t, name,		"name"),
-	LSM_UNSIGNED	(sai_plat_t, instances,		"instances"),
 	LSM_STRING_PTR	(sai_plat_t, platform,		"platform"),
 	LSM_UNSIGNED	(sai_plat_t, last_seen,		"last_seen"),
 	LSM_CARRAY	(sai_plat_t, peer_ip,		"peer_ip"),
@@ -91,8 +80,6 @@ const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/includ
 const lws_struct_map_t lsm_plat_for_json[] = {
     LSM_UNSIGNED(sai_plat_t, uid,       "uid"),
     LSM_STRING_PTR(sai_plat_t, name,    "name"),
-    LSM_SIGNED(sai_plat_t, ongoing,     "ongoing"), // MUST be present
-    LSM_SIGNED(sai_plat_t, instances,   "instances"),
     LSM_STRING_PTR(sai_plat_t, platform,"platform"),
     LSM_SIGNED(sai_plat_t, online,      "online"), // MUST be present
     LSM_UNSIGNED(sai_plat_t, last_seen, "last_seen"),
@@ -192,8 +179,6 @@ const lws_struct_map_t lsm_schema_sq3_map_task[] = {
 const lws_struct_map_t lsm_task_rej[] = {
 	LSM_CARRAY	(sai_rejection_t, host_platform, "host_platform"),
 	LSM_CARRAY	(sai_rejection_t, task_uuid,	 "task_uuid"),
-	LSM_UNSIGNED	(sai_rejection_t, ongoing,	 "ongoing"),
-	LSM_UNSIGNED	(sai_rejection_t, limit,	 "limit"),
 };
 
 const lws_struct_map_t lsm_schema_json_task_rej[] = {

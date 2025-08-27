@@ -68,7 +68,6 @@ enum enum_paths_global {
 static const char * const paths[] = {
 
 	"platforms[].name",
-	"platforms[].instances",
 	"platforms[].env[].*",
 	"platforms[].env[]",
 	"platforms[].servers",
@@ -78,7 +77,6 @@ static const char * const paths[] = {
 enum enum_paths {
 
 	LEJPM_PLATFORMS_NAME,
-	LEJPM_PLATFORMS_INSTANCES,
 	LEJPM_PLATFORMS_ENV_ITEM,
 	LEJPM_PLATFORMS_ENV,
 	LEJPM_PLATFORMS_SERVERS,
@@ -113,8 +111,6 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 			if (!a->sai_plat)
 				return -1;
 
-			a->sai_plat->instances = 1; /* default */
-
 			lws_strncpy(a->sai_plat->sai_hash, BUILD_INFO,
 				    sizeof(a->sai_plat->sai_hash));
 			lws_strncpy(a->sai_plat->lws_hash, LWS_BUILD_HASH,
@@ -136,38 +132,6 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 	if (!(reason & LEJP_FLAG_CB_IS_VALUE) || !ctx->path_match)
 		return 0;
 
-	if (reason == LEJPCB_VAL_NUM_INT) {
-		n = atoi(ctx->buf);
-		switch (ctx->path_match - 1) {
-
-		case LEJPM_PLATFORMS_INSTANCES:
-			lwsl_notice("%s: instances %d\n", __func__, n);
-			a->sai_plat->instances = n;
-			/*
-			 * Instantiate n nspawns bound to this platform
-			 */
-
-			for (n = 0; n < a->sai_plat->instances; n++) {
-				struct sai_nspawn *ns = malloc(sizeof(*ns));
-				if (!ns)
-					return -1;
-
-				memset(ns, 0, sizeof(*ns));
-				ns->instance_idx = n;
-				ns->builder = &builder;
-				ns->sp = a->sai_plat;
-				ns->task = NULL;
-				lws_dll2_add_head(&ns->list,
-						  &a->sai_plat->nspawn_owner);
-			}
-			break;
-
-		default:
-			break;
-		}
-
-		return 0;
-	}
 
 	if (reason != LEJPCB_VAL_STR_END)
 		return 0;

@@ -57,7 +57,7 @@ saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int
 	// lwsl_notice("%s: broadcast to %d / %d browsers\n", __func__, eff, (int)vhd->browsers.count);	
 }
 
-extern const lws_struct_map_t lsm_load_report_members[2]; 
+extern const lws_struct_map_t lsm_load_report_members[7]; 
 
 /*
  * For decoding specific event data request from browser

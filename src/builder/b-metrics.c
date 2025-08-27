@@ -25,6 +25,8 @@
 #if defined(__linux__)
 #include <sys/statvfs.h>
 #elif defined(__APPLE__)
+#include <sys/mount.h>
+#include <sys/param.h>
 #include <sys/sysctl.h>
 #include <mach/mach.h>
 #include <mach/vm_statistics.h>
@@ -50,23 +52,17 @@ saib_get_free_ram_kib(void)
 	fclose(f);
 	return free_kib;
 #elif defined(__APPLE__)
-	int mib[2];
-	size_t len;
-	uint64_t total_mem;
-	vm_size_t page_size;
-	mach_msg_type_number_t count;
+	mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
 	vm_statistics64_data_t vm_stats;
+	vm_size_t page_size;
 
-	mib[0] = CTL_HW;
-	mib[1] = HW_MEMSIZE;
-	len = sizeof(total_mem);
-	sysctl(mib, 2, &total_mem, &len, NULL, 0);
-
-	count = HOST_VM_INFO64_COUNT;
-	if (host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vm_stats, &count) != KERN_SUCCESS)
+	if (host_statistics64(mach_host_self(), HOST_VM_INFO64,
+			      (host_info64_t)&vm_stats, &count) != KERN_SUCCESS)
 		return 0;
 
-	return (unsigned int)((uint64_t)vm_stats.free_count * vm_stats.pagesize / 1024);
+	host_page_size(mach_host_self(), &page_size);
+
+	return (unsigned int)((uint64_t)vm_stats.free_count * page_size / 1024);
 #elif defined(_WIN32)
 	MEMORYSTATUSEX statex;
 	statex.dwLength = sizeof(statex);
@@ -80,13 +76,20 @@ saib_get_free_ram_kib(void)
 unsigned int
 saib_get_free_disk_kib(const char *path)
 {
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(__linux__)
 	struct statvfs s;
 
 	if (statvfs(path, &s))
 		return 0;
 
 	return (unsigned int)((uint64_t)s.f_bavail * s.f_frsize / 1024);
+#elif defined(__APPLE__)
+	struct statfs s;
+
+	if (statfs(path, &s))
+		return 0;
+
+	return (unsigned int)((uint64_t)s.f_bavail * (uint64_t)s.f_bsize / 1024);
 #elif defined(_WIN32)
 	ULARGE_INTEGER free_bytes;
 

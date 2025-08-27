@@ -160,11 +160,7 @@ sais_central_cb(lws_sorted_usec_list_t *sul)
 			      vhd->server.builder_owner.head) {
 		sai_plat_t *cb = lws_container_of(p, sai_plat_t, sai_plat_list);
 
-		lwsl_debug("%s: checking tasks %s %d %d %p\n", __func__,
-			    cb->name, cb->ongoing, cb->instances, cb->wsi);
-
-		if (cb->wsi && lws_wsi_user(cb->wsi) &&
-		    cb->ongoing < cb->instances)
+		if (cb->wsi && lws_wsi_user(cb->wsi))
 			/*
 			 * try to bind outstanding task to specific builder
 			 * instance

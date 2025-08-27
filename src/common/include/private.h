@@ -60,33 +60,15 @@ enum {
 	SAISPRF_SIGNALLED	= 0x4000,
 };
 
-/*
- * per-instance load data.
- * Sent from builder -> server -> web -> browser.
- */
-typedef struct sai_instance_load {
-	lws_dll2_t		list;
-	unsigned int		cpu_percent; /* CPU usage for this instance * 100 */
-	unsigned int		state;       /* 0 = idle, 1 = running */
-} sai_instance_load_t;
-
-/*
- * load report struct, sent in its own schema.
- */
-typedef struct sai_platform_load {
-	lws_dll2_t		list;        /* Not used, for schema mapping */
-	char			platform_name[128];
-	lws_dll2_owner_t	loads;
-} sai_platform_load_t;
-
 /* The top-level load report message from a builder */
 typedef struct sai_load_report {
 	lws_dll2_t		list; /* For queuing on sai_plat_server */
 	char			builder_name[64];
 	int			core_count;
-	lws_dll2_owner_t	platforms; /* List of sai_platform_load_t */
 	unsigned int		free_ram_kib;
 	unsigned int		free_disk_kib;
+	unsigned int		active_steps;
+	unsigned int		cpu_percent;
 } sai_load_report_t;
 
 /*
@@ -97,6 +79,12 @@ typedef struct sai_viewer_state {
 	lws_dll2_t		list;        /* Not used, for schema mapping */
 	unsigned int		viewers;
 } sai_viewer_state_t;
+
+typedef struct sai_platform_load {
+       lws_dll2_t              list;        /* Not used, for schema mapping */
+       char                    platform_name[128];
+       lws_dll2_owner_t        loads;
+} sai_platform_load_t;
 
 
 struct sai_nspawn;
@@ -134,8 +122,6 @@ typedef struct {
 	int			state;
 	int			uid;
 	int			build_step;
-
-	char			told_ongoing;
 } sai_task_t;
 
 typedef struct sai_plat sai_plat_t;
@@ -156,6 +142,7 @@ struct sai_nspawn {
 
 	char				inp[512];
 	char				path[384];
+	char				script_path[290];
 	char				pending_mirror_log[128];
 
 	/* convenient place to store it */
@@ -182,8 +169,9 @@ struct sai_nspawn {
 	uint64_t			last_cpu_usec;
 	lws_usec_t			last_cpu_usec_time;
 
-	uint64_t			us_cpu_user;	
-	uint64_t			us_cpu_sys;	
+	uint64_t			us_wallclock;
+	uint64_t			us_cpu_user;
+	uint64_t			us_cpu_sys;
 	uint64_t			worst_mem;
 	uint64_t			worst_stg;
 
@@ -221,8 +209,6 @@ typedef struct sai_rejection {
 	struct lws_dll2 list;
 	char		host_platform[65];
 	char		task_uuid[65];
-	int		ongoing;
-	int		limit;
 } sai_rejection_t;
 
 /*
@@ -443,9 +429,6 @@ typedef struct sai_plat {
 	int			powering_up; /* 1 = sai-power is booting it */
 	int			powering_down;
 
-	int			instances;
-	int			ongoing;
-
 	char			windows;
 
 	int			index; /* used to create unique build dir path */
@@ -530,7 +513,7 @@ extern const lws_struct_map_t
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],
-	lsm_task_rej[4],
+	lsm_task_rej[2],
 	lsm_task_cancel[1],
 	lsm_schema_json_map_can[1],
 	lsm_schema_json_map_task[1],
@@ -543,8 +526,8 @@ extern const lws_struct_map_t
 	lsm_schema_sq3_map_build_metric[1]
 ;
 extern const lws_struct_map_t lsm_build_metric[9];
-extern const lws_struct_map_t lsm_plat[9];
-extern const lws_struct_map_t lsm_plat_for_json[13];
+extern const lws_struct_map_t lsm_plat[8];
+extern const lws_struct_map_t lsm_plat_for_json[11];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];

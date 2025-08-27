@@ -297,7 +297,7 @@ sai-device|Helper that coordinates which builds wants and can use specific embed
 sai-expect|Helper run by embedded build flow to capture serial traffic and react to keywords
 sai-jig|Helper for embedded devices that lets another device control its buttons, reset etc as part of the embedded build flow
 
-First you must build lws with appropriate options.
+First you must build main branch lws with appropriate options.
 
 For redhat type distros, you probably need to add /usr/local/lib to the
 /etc/ld.so.conf before ldconfig can rgister the new libwebsockets.so
@@ -305,20 +305,22 @@ For redhat type distros, you probably need to add /usr/local/lib to the
 ```
 $ git clone https://libwebsockets.org/repo/libwebsockets
 $ cd libwebsockets && mkdir build && cd build && \
-  cmake .. -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 -DLWS_WITH_JOSE=1 \
-   -DLWS_WITH_STRUCT_SQLITE3=1 -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1 \
-   -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1
+  cmake .. -DLWS_LOGS_TIMESTAMP=0 -DLWS_WITH_STRUCT_JSON=1 -DLWS_WITH_JOSE=1 \
+   -DLWS_WITH_STRUCT_SQLITE3=1 -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1
 $ make -j && sudo make -j install && sudo ldconfig
 ```
 
 The actual cmake options needed depends on if you are building sai-server and / or
 sai-builder.
 
-Feature|lws options
+lws cmake option|Meaning
 ---|---
-either|`-DLWS_WITH_STRUCT_JSON=1` `-DLWS_WITH_SECURE_STREAMS=1`
-server|`-DLWS_UNIX_SOCK=1` `-DLWS_WITH_GENCRYPTO=1` `-DLWS_WITH_STRUCT_SQLITE3=1` `-DLWS_WITH_JOSE=1`
-builder + related|`-DLWS_WITH_SPAWN=1` `-DLWS_WITH_THREADPOOL=1`
+`-DLWS_LOGS_TIMESTAMP=0` | Avoids duplicating log timestamp in syslog
+`-DLWS_WITH_STRUCT_JSON=1` | Support for struct -> JSON -> struct
+`-DLWS_WITH_STRUCT_SQLITE3=1` | Support for struct -> sqlite3 -> struct
+`-DLWS_WITH_SPAWN=1` | Support for crossplatform process spawning
+`-DLWS_WITH_GENCRYPTO=1` | Supoort for cross-tls library crypto
+`-DLWS_WITH_JOSE=1` | Support for JOSE web tokens
 
 You can also define `-DLWS_WITH_SYS_METRICS=1` on lws to enable build of
 openmetrics pieces in sai when built against lws.
