@@ -963,6 +963,10 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 
 	event = lws_container_of(o_event.head, sai_event_t, list);
 	task->one_event = event;
+	task->repo_name = event->repo_name;
+	task->git_ref = event->ref;
+	task->git_hash = event->hash;
+	task->git_repo_url = event->repo_fetchurl;
 
 	/* find builder */
 	cb = sais_builder_from_uuid(vhd, task->builder_name, __FILE__, __LINE__);
