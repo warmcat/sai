@@ -184,6 +184,11 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 
 	if (state != task_ostate) {
 
+		if (state == SAIES_PASSED_TO_BUILDER &&
+		    !lws_sul_is_scheduled(&vhd->sul_activity))
+			lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
+					 sais_activity_cb, 1 * LWS_US_PER_SEC);
+
 		lwsl_notice("%s: seen task %s %d -> %d\n", __func__,
 				task_uuid, task_ostate, state);
 
@@ -273,18 +278,6 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 		state = SAIES_BEING_BUILT;
 	}
 
-	if (state == SAIES_SUCCESS || state == SAIES_FAIL || state == SAIES_CANCELLED) {
-		sai_ongoing_task_t *ot = NULL;
-		lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1, vhd->ongoing_tasks.head) {
-			ot = lws_container_of(p, sai_ongoing_task_t, list);
-
-			if (!strcmp(ot->uuid, task_uuid)) {
-				lws_dll2_remove(&ot->list);
-				free(ot);
-				break;
-			}
-		} lws_end_foreach_dll_safe(p, p1);
-	}
 
 	return 0;
 
@@ -737,23 +730,10 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 	sqlite3 *pdb = NULL;
 	int ret;
 
-	sai_ongoing_task_t *ot = NULL;
-
 	if (!task_uuid[0])
 		return SAI_DB_RESULT_OK;
 
 	lwsl_notice("%s: received request to reset task %s\n", __func__, task_uuid);
-
-	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
-				   vhd->ongoing_tasks.head) {
-		ot = lws_container_of(p, sai_ongoing_task_t, list);
-
-		if (!strcmp(ot->uuid, task_uuid)) {
-			lws_dll2_remove(&ot->list);
-			free(ot);
-			break;
-		}
-	} lws_end_foreach_dll_safe(p, p1);
 
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
@@ -872,9 +852,10 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 {
 	struct vhd *vhd = lws_container_of(sul, struct vhd, sul_activity);
 	char *p, *start, *end;
-	sai_ongoing_task_t *ot;
 	lws_usec_t now;
 	int cat, first = 1;
+	struct lwsac *ac_events = NULL, *ac_tasks = NULL;
+	lws_dll2_owner_t o_events, o_tasks;
 
 	p = start = malloc(8192);
 	if (!p)
@@ -887,37 +868,56 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 
 	now = lws_now_usecs();
 
-	lws_start_foreach_dll(struct lws_dll2 *, d, vhd->ongoing_tasks.head) {
-		ot = lws_container_of(d, sai_ongoing_task_t, list);
+	if (lws_struct_sq3_deserialize(vhd->server.pdb,
+			" and state != 3 and state != 4 and state != 5 and state != 7",
+			NULL, lsm_schema_sq3_map_event, &o_events, &ac_events, 0, 100) >= 0 &&
+			o_events.head) {
+		lws_start_foreach_dll(struct lws_dll2 *, d, o_events.head) {
+			sai_event_t *e = lws_container_of(d, sai_event_t, list);
+			sqlite3 *pdb = NULL;
 
-		if (now - ot->last_log_timestamp > 10 * LWS_USEC_PER_SEC)
-			cat = 1;
-		else if (now - ot->last_log_timestamp > 3 * LWS_US_PER_SEC)
-			cat = 2;
-		else
-			cat = 3;
+			if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
+				if (lws_struct_sq3_deserialize(pdb,
+						" and (state = 1 or state = 2)",
+						NULL, lsm_schema_sq3_map_task, &o_tasks,
+						&ac_tasks, 0, 100) >= 0 && o_tasks.head) {
+					lws_start_foreach_dll(struct lws_dll2 *, dt, o_tasks.head) {
+						sai_task_t *t = lws_container_of(dt, sai_task_t, list);
 
-		if (!first)
-			*p++ = ',';
+						if (now - (t->last_updated * LWS_US_PER_SEC) > 10 * LWS_US_PER_SEC)
+							cat = 1;
+						else if (now - (t->last_updated * LWS_US_PER_SEC) > 3 * LWS_US_PER_SEC)
+							cat = 2;
+						else
+							cat = 3;
 
-		p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
-				  "{\"uuid\":\"%s\",\"cat\":%d}",
-				  ot->uuid, cat);
-		first = 0;
+						if (!first)
+							*p++ = ',';
 
-	} lws_end_foreach_dll(d);
+						p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+								  "{\"uuid\":\"%s\",\"cat\":%d}",
+								  t->uuid, cat);
+						first = 0;
+					} lws_end_foreach_dll(dt);
+				}
+				lwsac_free(&ac_tasks);
+				sais_event_db_close(vhd, &pdb);
+			}
+		} lws_end_foreach_dll(d);
+	}
+	lwsac_free(&ac_events);
 
 	*p++ = ']';
 	*p++ = '}';
 
-	if (lws_ptr_diff(p, start) > 48)
-		sais_websrv_broadcast(vhd->h_ss_websrv, start, lws_ptr_diff_size_t(p, start));
-
-	free(start);
-
-	if (vhd->ongoing_tasks.head)
+	if (lws_ptr_diff(p, start) > 48) {
+		sais_websrv_broadcast(vhd->h_ss_websrv, start,
+				      lws_ptr_diff_size_t(p, start));
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
 				 sais_activity_cb, 1 * LWS_US_PER_SEC);
+	}
+
+	free(start);
 }
 
 int

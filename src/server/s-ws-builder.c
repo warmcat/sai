@@ -245,33 +245,6 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_logcache,
 				 sais_dump_logs_to_db, 250 * LWS_US_PER_MS);
 
-	/*
-	 * Update ongoing task activity
-	 */
-
-	ot = NULL;
-	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->ongoing_tasks.head) {
-		sai_ongoing_task_t *fot = lws_container_of(p, sai_ongoing_task_t, list);
-
-		if (!strcmp(fot->uuid, log->task_uuid)) {
-			ot = fot;
-			break;
-		}
-	} lws_end_foreach_dll(p);
-
-	if (!ot) {
-		ot = malloc(sizeof(*ot));
-		if (!ot)
-			return;
-		memset(ot, 0, sizeof(*ot));
-		lws_strncpy(ot->uuid, log->task_uuid, sizeof(ot->uuid));
-		lws_dll2_add_tail(&ot->list, &vhd->ongoing_tasks);
-		if (!lws_sul_is_scheduled(&vhd->sul_activity))
-			lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
-					 sais_activity_cb, 1 * LWS_US_PER_SEC);
-	}
-
-	ot->last_log_timestamp = lws_now_usecs();
 
 	if (log->channel == 3 && log->log) { /* control channel */
 		int step;
