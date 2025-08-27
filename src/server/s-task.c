@@ -925,6 +925,9 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) || !pdb)
 		return -1;
 
+	sqlite3_exec(pdb, "ALTER TABLE tasks ADD COLUMN build_step INTEGER;",
+		     NULL, NULL, NULL);
+
 	lwsl_notice("%s: task_uuid %s, pdb %p\n", __func__, task_uuid, pdb);
 
 	lws_sql_purify(esc_uuid, task_uuid, sizeof(esc_uuid));
@@ -944,6 +947,7 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 		sais_event_db_close(vhd, &pdb);
 		return -1;
 	}
+	memset(task, 0, sizeof(*task));
 	*task = *task_template;
 	lwsac_free(&ac);
 
