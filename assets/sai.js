@@ -1006,16 +1006,12 @@ function createBuilderDiv(plat) {
 	innerHTML += `<img class="ip1 tread1" src="/sai/arch-${plat_arch}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
 	innerHTML += `<img class="ip1 tread2" src="/sai/tc-${plat_tc}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
 	innerHTML += `<br>${plat.peer_ip}`;
-	innerHTML += `<div class="instload" id="instload-${plat.name}">`;
-
-	// Create initial idle squares
-	for (let i = 0; i < plat.instances; i++) {
-		innerHTML += `<div class="inst_box inst_idle" title="instance ${i}: idle">` +
-		             `<div class="inst_bar"></div>` +
-		             `</div>`;
-	}
-
-	innerHTML += `</div></td></tr></tbody></table>`;
+	innerHTML += `<div class="instload" id="instload-${plat.name}">` +
+		     `<div class="inst_box inst_idle" title="active steps: 0">` +
+		     `<div class="inst_text">0</div>` +
+		     `<div class="inst_bar"></div>` +
+		     `</div>` +
+		     `</div></td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;
 
@@ -1601,74 +1597,41 @@ function ws_open_sai()
 				break;
 
 	case "com.warmcat.sai.loadreport":
-		if (!jso.platforms || !Array.isArray(jso.platforms)) {
+		const loadContainer = document.getElementById("instload-" + jso.builder_name);
+		if (!loadContainer) {
 			break;
 		}
 
-		for (const platformReport of jso.platforms) {
-			const platformName = platformReport.platform_name;
-			if (!platformName) {
-				continue;
-			}
-			
-			const loadContainer = document.getElementById("instload-" + platformName);
-			if (!loadContainer) {
-				continue;
-			}
+		const instanceDiv = loadContainer.querySelector(".inst_box");
+		if (!instanceDiv) {
+			break;
+		}
 
-			if (platformReport.loads && Array.isArray(platformReport.loads)) {
-				const instanceDivs = loadContainer.getElementsByClassName("inst_box");
-				
-				for (let i = 0; i < platformReport.loads.length; i++) {
-					const instanceLoad = platformReport.loads[i];
-					const instanceDiv = instanceDivs[i];
+		const textDiv = instanceDiv.querySelector(".inst_text");
+		const barDiv = instanceDiv.querySelector(".inst_bar");
 
-					if (!instanceDiv) {
-						break;
-					}
+		if (textDiv) {
+			textDiv.textContent = jso.active_steps;
+		}
 
-					let cpu = instanceLoad.cpu_percent / 10.0;
-					let stateText = instanceLoad.state ? 'busy' : 'idle';
-					instanceDiv.title = `Instance ${i}: ${stateText}\nCPU: ${cpu.toFixed(1)}%`;
+		instanceDiv.title = `Active steps: ${jso.active_steps}\n` +
+				    `CPU: ${(jso.cpu_percent / 10).toFixed(1)}%\n` +
+				    `Free RAM: ${humanize(jso.free_ram_kib * 1024)}B\n` +
+				    `Free Disk: ${humanize(jso.free_disk_kib * 1024)}B`;
 
-					if (instanceLoad.state) {
-						instanceDiv.classList.add("inst_busy");
-						instanceDiv.classList.remove("inst_idle");
-					} else {
-						instanceDiv.classList.add("inst_idle");
-						instanceDiv.classList.remove("inst_busy");
-					}
+		if (jso.active_steps > 0) {
+			instanceDiv.classList.add("inst_busy");
+			instanceDiv.classList.remove("inst_idle");
+		} else {
+			instanceDiv.classList.add("inst_idle");
+			instanceDiv.classList.remove("inst_busy");
+		}
 
-					// The bar is always the first (and only) child of the inst_box div.
-					const bar = instanceDiv.firstChild;
-					if (bar && bar.classList.contains("inst_bar")) {
-						// cpu_percent is in tenths of a percent, relative to ONE core.
-						// So 1000 = 100% = 1 full core.
-						let total_cpu_capacity = jso.core_count * 1000;
-						
-						// Normalize the load to be a percentage of the ENTIRE system's capacity
-						let cpu_percentage = (instanceLoad.cpu_percent / total_cpu_capacity) * 100;
-
-						if (cpu_percentage > 100) cpu_percentage = 100;
-						if (cpu_percentage < 0) cpu_percentage = 0;
-						if (cpu_percentage > 0 && cpu_percentage < 1) cpu_percentage = 1;
-
-						bar.style.height = `${cpu_percentage}%`;
-
-						// Update the class for idle/busy state
-						if (instanceLoad.state) { // state == 1 means busy
-						    instanceDiv.classList.add("inst_busy");
-						    instanceDiv.classList.remove("inst_idle");
-						} else { // state == 0 means idle
-						    instanceDiv.classList.add("inst_idle");
-						    instanceDiv.classList.remove("inst_busy");
-						}
-					} else {
-						// This console log will tell us if the bar element is missing
-						console.error("Could not find .inst_bar child in .inst_box for", instanceDiv);
-					}
-				}
-			}
+		if (barDiv) {
+			let cpu_percentage = (jso.cpu_percent / (jso.core_count * 1000)) * 100;
+			if (cpu_percentage > 100) cpu_percentage = 100;
+			if (cpu_percentage < 0) cpu_percentage = 0;
+			barDiv.style.height = `${cpu_percentage}%`;
 		}
 		break;
 

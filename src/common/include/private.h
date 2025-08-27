@@ -60,33 +60,15 @@ enum {
 	SAISPRF_SIGNALLED	= 0x4000,
 };
 
-/*
- * per-instance load data.
- * Sent from builder -> server -> web -> browser.
- */
-typedef struct sai_instance_load {
-	lws_dll2_t		list;
-	unsigned int		cpu_percent; /* CPU usage for this instance * 100 */
-	unsigned int		state;       /* 0 = idle, 1 = running */
-} sai_instance_load_t;
-
-/*
- * load report struct, sent in its own schema.
- */
-typedef struct sai_platform_load {
-	lws_dll2_t		list;        /* Not used, for schema mapping */
-	char			platform_name[128];
-	lws_dll2_owner_t	loads;
-} sai_platform_load_t;
-
 /* The top-level load report message from a builder */
 typedef struct sai_load_report {
 	lws_dll2_t		list; /* For queuing on sai_plat_server */
 	char			builder_name[64];
 	int			core_count;
-	lws_dll2_owner_t	platforms; /* List of sai_platform_load_t */
 	unsigned int		free_ram_kib;
 	unsigned int		free_disk_kib;
+	unsigned int		active_steps;
+	unsigned int		cpu_percent;
 } sai_load_report_t;
 
 /*
@@ -221,8 +203,6 @@ typedef struct sai_rejection {
 	struct lws_dll2 list;
 	char		host_platform[65];
 	char		task_uuid[65];
-	int		ongoing;
-	int		limit;
 } sai_rejection_t;
 
 /*
@@ -442,9 +422,6 @@ typedef struct sai_plat {
 	uint64_t		last_seen; /* unix time */
 	int			powering_up; /* 1 = sai-power is booting it */
 	int			powering_down;
-
-	int			instances;
-	int			ongoing;
 
 	char			windows;
 

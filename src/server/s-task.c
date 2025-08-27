@@ -806,9 +806,6 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	sai_task_t *task = NULL;
 	int n;
 
-	if (cb->ongoing >= cb->instances)
-		return 1;
-
 	/*
 	 * Look for a task for this platform, on any event that needs building
 	 */

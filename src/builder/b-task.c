@@ -134,9 +134,6 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 	lws_snprintf(rej->host_platform, sizeof(rej->host_platform), "%s",
 		     sp->name);
 
-	rej->limit = sp->instances;
-	rej->ongoing = sp->ongoing;
-
 	lws_dll2_add_tail(&rej->list, &spm->rejection_list);
 
 	return lws_ss_request_tx(spm->ss) ? -1 : 0;
@@ -205,6 +202,9 @@ saib_task_destroy(struct sai_nspawn *ns)
 		lwsac_free(&ns->task->ac_task_container);
 		ns->task = NULL;
 	}
+
+	lws_dll2_remove(&ns->list);
+	free(ns);
 }
 
 static void
@@ -540,19 +540,13 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		} lws_end_foreach_dll_safe(d, d1);
 
 		if (!ns) {
-
-			/*
-			 * Full up... reject the task and update every
-			 * server's model of our task load status
-			 */
-
-			lwsl_notice("%s: plat '%s': no idle nspawn (of %d), "
-				    "plat load %d / %d\n", __func__, sp->name,
-				    n, sp->ongoing, sp->instances);
-			if (saib_queue_task_status_update(sp, spm, task->uuid))
+			ns = malloc(sizeof(*ns));
+			if (!ns)
 				return -1;
-
-			return 0;
+			memset(ns, 0, sizeof(*ns));
+			ns->builder = &builder;
+			ns->sp = sp;
+			lws_dll2_add_tail(&ns->list, &sp->nspawn_owner);
 		}
 
 //		lwsl_hexdump_warn(task->build, strlen(task->build));

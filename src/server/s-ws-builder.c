@@ -720,13 +720,8 @@ bail:
 			break;
 		}
 
-		/* update our info about builder state with reality */
-
-		cb->ongoing = rej->ongoing;
-		cb->instances = rej->limit;
-
-		lwsl_notice("%s: builder %s reports occupancy %d/%d (rej %s)\n",
-			    __func__, cb->name, cb->ongoing, cb->instances,
+		lwsl_notice("%s: builder %s reports rejection (rej %s)\n",
+			    __func__, cb->name,
 			    rej->task_uuid[0] ? rej->task_uuid : "none");
 
 		if (rej->task_uuid[0])
@@ -736,6 +731,13 @@ bail:
 		break;
 
 	case SAIM_WSSCH_BUILDER_LOADREPORT:
+		{
+			sai_load_report_t *lr = (sai_load_report_t *)pss->a.dest;
+
+			lwsl_notice("%s: loadreport from %s: ram %uk, disk %uk\n",
+				    __func__, lr->builder_name, lr->free_ram_kib,
+				    lr->free_disk_kib);
+		}
 		// lwsl_wsi_user(pss->wsi, "SAIM_WSSCH_BUILDER_LOADREPORT broadcasting\n");
 		sais_websrv_broadcast(vhd->h_ss_websrv, (const char *)buf, bl);
 		break;
