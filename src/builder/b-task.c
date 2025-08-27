@@ -588,6 +588,10 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			ns->current_step = 0;
 			ns->spins = 0;
 			ns->user_cancel = 0;
+			ns->us_cpu_user = 0;
+			ns->us_cpu_sys = 0;
+			ns->worst_mem = 0;
+			ns->worst_stg = 0;
 		}
 		ns->spm = spm; /* bind this task to the spm the req came in on */
 
