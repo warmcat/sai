@@ -1003,12 +1003,12 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 	case 1: /* git checkout */
 		if (cb->windows)
 			lws_snprintf(task->script, sizeof(task->script),
-				"git_helper.bat checkout \"%s\" \"build/%s\" %s",
-				mirror_path, task->repo_name, task->git_hash);
+				"git_helper.bat checkout \"%s\" . %s",
+				mirror_path, task->git_hash);
 		else
 			lws_snprintf(task->script, sizeof(task->script),
-				"git_helper.sh checkout \"%s\" \"build/%s\" %s",
-				mirror_path, task->repo_name, task->git_hash);
+				"git_helper.sh checkout \"%s\" . %s",
+				mirror_path, task->git_hash);
 		break;
 	default:
 		p = start = task->build;

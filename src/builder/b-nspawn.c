@@ -284,6 +284,8 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		}
 	}
 
+	ns->current_step++;
+
 	/* step succeeded, wait for next instruction */
 	lwsl_notice("%s: step succeeded\n", __func__);
 
