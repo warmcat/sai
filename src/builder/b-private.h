@@ -229,3 +229,8 @@ saib_get_system_cpu(struct sai_builder *b);
 
 int saib_get_cpu_count(void);
 
+unsigned int
+saib_get_free_ram_kib(void);
+
+unsigned int
+saib_get_free_disk_kib(const char *path);

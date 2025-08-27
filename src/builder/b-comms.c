@@ -482,6 +482,8 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
         */
        lws_strncpy(lr->builder_name, builder.host, sizeof(lr->builder_name));
        lr->core_count = saib_get_cpu_count();
+       lr->free_ram_kib = saib_get_free_ram_kib();
+       lr->free_disk_kib = saib_get_free_disk_kib(builder.home);
 
        int system_load = saib_get_system_cpu(&builder);
 

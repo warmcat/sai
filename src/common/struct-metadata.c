@@ -38,6 +38,8 @@ const lws_struct_map_t lsm_load_report_members[] = {
 	LSM_SIGNED	(sai_load_report_t, core_count,	"core_count"),
 	LSM_LIST	(sai_load_report_t, platforms, sai_platform_load_t, list,
 			 NULL, lsm_platform_load, "platforms"),
+	LSM_UNSIGNED	(sai_load_report_t, free_ram_kib, "free_ram_kib"),
+	LSM_UNSIGNED	(sai_load_report_t, free_disk_kib, "free_disk_kib"),
 };
 
 const lws_struct_map_t lsm_build_metric[] = {

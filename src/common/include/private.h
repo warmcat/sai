@@ -85,6 +85,8 @@ typedef struct sai_load_report {
 	char			builder_name[64];
 	int			core_count;
 	lws_dll2_owner_t	platforms; /* List of sai_platform_load_t */
+	unsigned int		free_ram_kib;
+	unsigned int		free_disk_kib;
 } sai_load_report_t;
 
 /*
