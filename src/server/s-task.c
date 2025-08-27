@@ -921,8 +921,10 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb))
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) || !pdb)
 		return -1;
+
+	lwsl_notice("%s: task_uuid %s, pdb %p\n", __func__, task_uuid, pdb);
 
 	lws_sql_purify(esc_uuid, task_uuid, sizeof(esc_uuid));
 	lws_snprintf(update, sizeof(update), " and uuid='%s'", esc_uuid);
