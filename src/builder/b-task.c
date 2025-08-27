@@ -580,15 +580,15 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 				ns->ref = task->git_ref;
 		ns->hash = task->git_hash;
 		ns->git_repo_url = task->git_repo_url;
-		if (!ns->task) {
+		if (ns->task && ns->task->ac_task_container)
+			lwsac_free(&ns->task->ac_task_container);
+
+		ns->task = task; /* we are owning this nspawn for the duration */
+		if (!task->build_step) {
 			ns->current_step = 0;
 			ns->spins = 0;
 			ns->user_cancel = 0;
-		} else {
-			if (ns->task->ac_task_container)
-				lwsac_free(&ns->task->ac_task_container);
 		}
-		ns->task = task; /* we are owning this nspawn for the duration */
 		ns->spm = spm; /* bind this task to the spm the req came in on */
 
 		{
