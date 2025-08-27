@@ -707,7 +707,7 @@ bail:
 				 log->timestamp - pss->first_log_timestamp));
 			if (log->finished & SAISPRF_EXIT) {
 				if ((log->finished & 0xff) == 0)
-					n = SAIES_SUCCESS;
+					n = SAIES_STEP_SUCCESS;
 				else
 					n = SAIES_FAIL;
 			} else

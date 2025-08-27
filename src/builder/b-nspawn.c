@@ -284,20 +284,8 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		}
 	}
 
-	ns->current_step++;
-	if (ns->current_step < ns->build_step_count) {
-		/* there are more steps, spawn the next one */
-		if (ns)
-			ns->op = NULL;
-		if (op->spawn)
-			free(op->spawn);
-		free(op);
-		saib_spawn_step(ns);
-		return;
-	}
-
-	/* all steps succeeded */
-	lwsl_notice("%s: all build steps succeeded\n", __func__);
+	/* step succeeded, wait for next instruction */
+	lwsl_notice("%s: step succeeded\n", __func__);
 
 	if (op->spawn)
 		free(op->spawn);
@@ -418,34 +406,7 @@ static const char * const runscript_next =
 #endif
 
 int
-saib_spawn_step(struct sai_nspawn *ns);
-
-int
-saib_spawn_build(struct sai_nspawn *ns)
-{
-	const char *p = ns->task->steps;
-	int n;
-
-	ns->current_step = 0;
-	ns->build_step_count = 0;
-
-	lwsl_hexdump_err(ns->task->steps, strlen(ns->task->steps));
-
-	while ((p = strchr(p, '\n'))) {
-		ns->build_step_count++;
-		p++;
-	}
-	ns->build_step_count++;
-
-	n = lws_snprintf(ns->pending_mirror_log, sizeof(ns->pending_mirror_log),
-			"Starting build: %d steps\n", ns->build_step_count);
-	saib_log_chunk_create(ns, ns->pending_mirror_log, (size_t)n, 3);
-
-	return saib_spawn_step(ns);
-}
-
-int
-saib_spawn_step(struct sai_nspawn *ns)
+saib_spawn_script(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
@@ -481,24 +442,7 @@ saib_spawn_step(struct sai_nspawn *ns)
 #endif
 
 	char one_step[4096];
-	const char *p_build = ns->task->steps, *q;
-	int step = 0;
-
-	lwsl_hexdump_notice(ns->task->steps, strlen(ns->task->steps));
-
-	while (step < ns->current_step && (p_build = strchr(p_build, '\n'))) {
-		p_build++;
-		step++;
-	}
-
-	if (p_build) {
-		q = strchr(p_build, '\n');
-		if (q)
-			lws_strnncpy(one_step, p_build, q - p_build, sizeof(one_step));
-		else
-			lws_strncpy(one_step, p_build, sizeof(one_step));
-	} else
-		one_step[0] = '\0';
+	lws_strncpy(one_step, ns->task->script, sizeof(one_step));
 
 #if defined(WIN32)
 	if (_sopen_s(&fd, args, _O_CREAT | _O_TRUNC | _O_WRONLY,

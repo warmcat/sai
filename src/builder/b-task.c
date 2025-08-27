@@ -531,17 +531,12 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 					   sp->nspawn_owner.head) {
 		       struct sai_nspawn *xns = lws_container_of(d,
 						 struct sai_nspawn, list);
-		       char found = 0;
-
-		       n++;
-		       if (!xns->task)
-			       found = 1;
-
-		       if (found) {
+		       if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
 			       ns = xns;
 			       break;
 		       }
-
+		       if (!xns->task && !ns)
+			       ns = xns;
 		} lws_end_foreach_dll_safe(d, d1);
 
 		if (!ns) {
@@ -604,8 +599,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		ns->fsm.layers[1] = "env";
 #endif
 
-		lws_snprintf(ns->fsm.ovname, sizeof(ns->fsm.ovname), "%d-%d.%d",
-			     spm->index, ns->sp->index, ns->instance_idx);
+		lws_snprintf(ns->fsm.ovname, sizeof(ns->fsm.ovname), "%s",
+			     task->uuid);
 
 		lwsl_notice("%s: server %s\n", __func__, ns->server_name);
 		lwsl_notice("%s: project %s\n", __func__, ns->project_name);
@@ -632,20 +627,6 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		if (mkdir(ns->inp, 0755) && errno != EEXIST)
 			goto ebail;
 
-#if defined(WIN32)
-		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "1%c",
-				  csep);
-		lws_filename_purify_inplace(ns->inp);
-		if (mkdir(ns->inp, 0755) && errno != EEXIST)
-			goto ebail;
-#endif
-
-		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
-				  ns->project_name, csep);
-		lws_filename_purify_inplace(ns->inp);
-		if (mkdir(ns->inp, 0755) && errno != EEXIST)
-			goto ebail;
-
 		/*
 		 * Create a pending upload dir to mv artifacts into while
 		 * we get on with the next job.
@@ -664,8 +645,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		ns->user_cancel = 0;
 		ns->spins = 0;
 
-		if (saib_spawn_build(ns)) {
-			lwsl_err("%s: saib_spawn_build failed\n", __func__);
+		if (saib_spawn_script(ns)) {
+			lwsl_err("%s: saib_spawn_script failed\n", __func__);
 			goto bail;
 		}
 

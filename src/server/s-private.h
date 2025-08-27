@@ -306,6 +306,9 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		   const char *cns_name);
 
 int
+sais_continue_task(struct vhd *vhd, const char *task_uuid);
+
+int
 sais_set_task_state(struct vhd *vhd, const char *builder_name,
 		    const char *builder_uuid, const char *task_uuid, int state,
 		    uint64_t started, uint64_t duration);

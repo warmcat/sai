@@ -267,6 +267,11 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 	sais_event_db_close(vhd, (sqlite3 **)&e->pdb);
 	lwsac_free(&ac);
 
+	if (state == SAIES_STEP_SUCCESS) {
+		sais_continue_task(vhd, task_uuid);
+		state = SAIES_BEING_BUILT;
+	}
+
 	if (state == SAIES_SUCCESS || state == SAIES_FAIL || state == SAIES_CANCELLED) {
 		sai_ongoing_task_t *ot = NULL;
 		lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1, vhd->ongoing_tasks.head) {
@@ -818,100 +823,18 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	if (!task_template)
 		return 1;
 
-	task = malloc(sizeof(sai_task_t));
-	if (!task) {
-		lwsac_free(&pss->ac_alloc_task);
-		return -1;
-	}
-	*task = *task_template;
-
 	lwsl_notice("%s: %s: task found %s\n", __func__, platform_name, cb->name);
 
 	/* yes, we will offer it to him */
 
-	if (sais_set_task_state(vhd, cb->name, cb->name, task->uuid,
+	if (sais_set_task_state(vhd, cb->name, cb->name, task_template->uuid,
 				SAIES_PASSED_TO_BUILDER, lws_now_secs(), 0))
 		goto bail;
 
 	/* advance the task state first time we get logs */
 	pss->mark_started = 1;
 
-	/* let's get ahold of his event as well */
-
-	lws_sql_purify(esc1, task->event_uuid, sizeof(esc1));
-	lws_snprintf(esc2, sizeof(esc2), " and uuid='%s'", esc1);
-	n = lws_struct_sq3_deserialize(vhd->server.pdb, esc2, NULL,
-				       lsm_schema_sq3_map_event, &o,
-				       &pss->a.ac, 0, 1);
-	if (n < 0 || !o.head)
-		goto bail;
-
-	task->one_event = lws_container_of(o.head, sai_event_t, list);
-
-	task->server_name	= pss->server_name;
-	task->repo_name		= task->one_event->repo_name;
-	task->git_ref		= task->one_event->ref;
-	task->git_hash		= task->one_event->hash;
-	task->git_repo_url      = task->one_event->repo_fetchurl;
-	task->ac_task_container = pss->a.ac;
-
-	if (!task->git_repo_url || !task->git_repo_url[0]) {
-		lwsl_err("%s: task %s has no repo_fetchurl, failing\n",
-			 __func__, task->uuid);
-		sais_set_task_state(vhd, NULL, NULL, task->uuid, SAIES_FAIL, 0, 0);
-		free(task);
-		lwsac_free(&pss->ac_alloc_task);
-
-		return 1; /* try again for another task */
-	}
-
-	lwsl_notice("%s: windows: %d\n", __func__, cb->windows);
-
-	char url[128], mirror_path[256];
-
-	lws_strncpy(url, task->one_event->repo_fetchurl, sizeof(url));
-	lws_filename_purify_inplace(url);
-	char *q = url;
-	while (*q) {
-		if (*q == '/')
-			*q = '_';
-		if (*q == '.')
-			*q = '_';
-		q++;
-	}
-
-	lws_snprintf(mirror_path, sizeof(mirror_path), "%s", url);
-
-	if (cb->windows)
-		lws_snprintf(task->steps, sizeof(task->steps),
-			"git_helper.bat mirror \"%s\" %s %s %s\n"
-			"git_helper.bat checkout \"%s\" \"build/%s\" %s\n"
-			"%s",
-			task->git_repo_url, task->git_ref, task->git_hash, mirror_path,
-			mirror_path, task->repo_name, task->git_hash,
-			task->build);
-	else
-		lws_snprintf(task->steps, sizeof(task->steps),
-			"git_helper.sh mirror \"%s\" %s %s %s\n"
-			"git_helper.sh checkout \"%s\" \"build/%s\" %s\n"
-			"%s",
-			task->git_repo_url, task->git_ref, task->git_hash, mirror_path,
-			mirror_path, task->repo_name, task->git_hash,
-			task->build);
-
-	/*
-	 * add to server's estimate of builder's ongoing tasks...
-	 */
-	cb->ongoing++;
-
-	lwsl_notice("%s: pre pss->issue_task_owner count %d\n", __func__, pss->issue_task_owner.count);
-
-	lws_dll2_add_tail(&task->pending_assign_list, &pss->issue_task_owner);
-	lws_callback_on_writable(pss->wsi);
-
-	pss->a.ac = NULL;
-
-	sais_platforms_with_tasks_pending(vhd);
+	sais_continue_task(vhd, task_template->uuid);
 
 	/*
 	 * We are going to leave here with a live pss->a.ac (pointed into by
@@ -980,4 +903,157 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 
 	lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
 			 sais_activity_cb, 1 * LWS_US_PER_SEC);
+}
+
+int
+sais_continue_task(struct vhd *vhd, const char *task_uuid)
+{
+	char event_uuid[33], esc_uuid[129], *p, *start, url[128], mirror_path[256],
+		update[128];
+	lws_dll2_owner_t o, o_event;
+	sai_task_t *task = NULL, *task_template;
+	sai_event_t *event;
+	sai_plat_t *cb;
+	struct pss *pss;
+	sqlite3 *pdb;
+	int n, build_step;
+	struct lwsac *ac = NULL;
+
+	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
+
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb))
+		return -1;
+
+	lws_sql_purify(esc_uuid, task_uuid, sizeof(esc_uuid));
+	lws_snprintf(update, sizeof(update), " and uuid='%s'", esc_uuid);
+	n = lws_struct_sq3_deserialize(pdb, update, NULL,
+				       lsm_schema_sq3_map_task, &o, &ac, 0, 1);
+	if (n < 0 || !o.head) {
+		sais_event_db_close(vhd, &pdb);
+		lwsac_free(&ac);
+		return -1;
+	}
+
+	task_template = lws_container_of(o.head, sai_task_t, list);
+	task = malloc(sizeof(sai_task_t));
+	if (!task) {
+		lwsac_free(&ac);
+		sais_event_db_close(vhd, &pdb);
+		return -1;
+	}
+	*task = *task_template;
+	lwsac_free(&ac);
+
+	build_step = task->build_step;
+
+	/* get the event */
+	lws_sql_purify(esc_uuid, event_uuid, sizeof(esc_uuid));
+	lws_snprintf(update, sizeof(update), " and uuid='%s'", esc_uuid);
+	n = lws_struct_sq3_deserialize(vhd->server.pdb, update, NULL,
+				       lsm_schema_sq3_map_event, &o_event,
+				       &task->ac_task_container, 0, 1);
+	if (n < 0 || !o_event.head) {
+		sais_event_db_close(vhd, &pdb);
+		free(task);
+		return -1;
+	}
+
+	event = lws_container_of(o_event.head, sai_event_t, list);
+	task->one_event = event;
+
+	/* find builder */
+	cb = sais_builder_from_uuid(vhd, task->builder_name, __FILE__, __LINE__);
+	if (!cb) {
+		sais_event_db_close(vhd, &pdb);
+		lwsac_free(&task->ac_task_container);
+		free(task);
+		return -1;
+	}
+
+	lws_strncpy(url, task->one_event->repo_fetchurl, sizeof(url));
+	lws_filename_purify_inplace(url);
+	char *q = url;
+	while (*q) {
+		if (*q == '/') *q = '_';
+		if (*q == '.') *q = '_';
+		q++;
+	}
+	lws_snprintf(mirror_path, sizeof(mirror_path), "%s", url);
+
+	switch (build_step) {
+	case 0: /* git mirror */
+		if (cb->windows)
+			lws_snprintf(task->script, sizeof(task->script),
+				"git_helper.bat mirror \"%s\" %s %s %s",
+				task->git_repo_url, task->git_ref, task->git_hash,
+				mirror_path);
+		else
+			lws_snprintf(task->script, sizeof(task->script),
+				"git_helper.sh mirror \"%s\" %s %s %s",
+				task->git_repo_url, task->git_ref, task->git_hash,
+				mirror_path);
+		break;
+	case 1: /* git checkout */
+		if (cb->windows)
+			lws_snprintf(task->script, sizeof(task->script),
+				"git_helper.bat checkout \"%s\" \"build/%s\" %s",
+				mirror_path, task->repo_name, task->git_hash);
+		else
+			lws_snprintf(task->script, sizeof(task->script),
+				"git_helper.sh checkout \"%s\" \"build/%s\" %s",
+				mirror_path, task->repo_name, task->git_hash);
+		break;
+	default:
+		p = start = task->build;
+		n = 0;
+		while (n < build_step - 2 && (p = strchr(p, '\n'))) {
+			p++;
+			n++;
+		}
+
+		if (!p) { /* no more steps */
+			sais_set_task_state(vhd, NULL, NULL, task->uuid, SAIES_SUCCESS, 0, 0);
+			sais_event_db_close(vhd, &pdb);
+			lwsac_free(&task->ac_task_container);
+			free(task);
+			return 0;
+		}
+
+		start = p;
+		p = strchr(start, '\n');
+		if (p)
+			*p = '\0';
+
+		lws_strncpy(task->script, start, sizeof(task->script));
+		break;
+	}
+
+	/* find builder pss */
+	pss = NULL;
+	lws_start_foreach_dll(struct lws_dll2 *, d, vhd->builders.head) {
+		struct pss *pss_ = lws_container_of(d, struct pss, same);
+		if (pss_->wsi == cb->wsi) {
+			pss = pss_;
+			break;
+		}
+	} lws_end_foreach_dll(d);
+
+	if (!pss) {
+		sais_event_db_close(vhd, &pdb);
+		lwsac_free(&task->ac_task_container);
+		free(task);
+		return -1;
+	}
+
+	lws_dll2_add_tail(&task->pending_assign_list, &pss->issue_task_owner);
+	lws_callback_on_writable(pss->wsi);
+
+	lws_sql_purify(esc_uuid, task_uuid, sizeof(esc_uuid));
+	lws_snprintf(update, sizeof(update), "update tasks set build_step=%d where uuid='%s'",
+		     build_step + 1, esc_uuid);
+	sqlite3_exec(pdb, update, NULL, NULL, NULL);
+
+	sais_event_db_close(vhd, &pdb);
+
+	return 0;
 }
