@@ -910,7 +910,7 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 	*p++ = ']';
 	*p++ = '}';
 
-	if (lws_ptr_diff(p, start) > 48) {
+	if (!first) {
 		sais_websrv_broadcast(vhd->h_ss_websrv, start,
 				      lws_ptr_diff_size_t(p, start));
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
