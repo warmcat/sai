@@ -916,10 +916,11 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 	sai_event_t *event;
 	sai_plat_t *cb;
 	struct pss *pss;
-	sqlite3 *pdb;
+	sqlite3 *pdb = NULL;
 	int n, build_step;
 	struct lwsac *ac = NULL;
 
+	memset(event_uuid, 0, sizeof(event_uuid));
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
 	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) || !pdb)
@@ -1055,6 +1056,8 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 		free(task);
 		return -1;
 	}
+
+	task->server_name = pss->server_name;
 
 	lws_dll2_add_tail(&task->pending_assign_list, &pss->issue_task_owner);
 	lws_callback_on_writable(pss->wsi);
