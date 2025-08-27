@@ -737,10 +737,23 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 	sqlite3 *pdb = NULL;
 	int ret;
 
+	sai_ongoing_task_t *ot = NULL;
+
 	if (!task_uuid[0])
 		return SAI_DB_RESULT_OK;
 
 	lwsl_notice("%s: received request to reset task %s\n", __func__, task_uuid);
+
+	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
+				   vhd->ongoing_tasks.head) {
+		ot = lws_container_of(p, sai_ongoing_task_t, list);
+
+		if (!strcmp(ot->uuid, task_uuid)) {
+			lws_dll2_remove(&ot->list);
+			free(ot);
+			break;
+		}
+	} lws_end_foreach_dll_safe(p, p1);
 
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
