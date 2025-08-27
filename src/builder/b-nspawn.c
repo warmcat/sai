@@ -405,6 +405,29 @@ static const char * const runscript_next =
 	"exit $?\n"
 ;
 
+static const char * const runscript_build =
+	"#!/bin/bash -x\n"
+#if defined(__APPLE__)
+	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
+#else
+	"export PATH=/usr/local/bin:$PATH\n"
+#endif
+	"export HOME=%s\n"
+	"export SAI_OVN=%s\n"
+	"export SAI_PROJECT=%s\n"
+	"export SAI_REMOTE_REF=%s\n"
+	"export SAI_INSTANCE_IDX=%d\n"
+	"export SAI_PARALLEL=%d\n"
+	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
+	"export SAI_LOGPROXY=%s\n"
+	"export SAI_LOGPROXY_TTY0=%s\n"
+	"export SAI_LOGPROXY_TTY1=%s\n"
+	"set -e\n"
+	"cd %s/jobs/$SAI_OVN/src\n"
+	"%s < /dev/null\n"
+	"exit $?\n"
+;
+
 #endif
 
 int
@@ -475,8 +498,17 @@ saib_spawn_script(struct sai_nspawn *ns)
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
 			 ns->inp, one_step);
 #else
+	const char *script_template;
+
+	if (ns->current_step == 0)
+		script_template = runscript_first;
+	else if (ns->current_step == 1)
+		script_template = runscript_next;
+	else
+		script_template = runscript_build;
+
 	n = lws_snprintf(st, sizeof(st),
-			 ns->current_step ? runscript_next : runscript_first,
+			 script_template,
 			 builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_idx,
 			 1,
