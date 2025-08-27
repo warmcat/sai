@@ -160,14 +160,15 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 	 */
 
 	lws_snprintf(update, sizeof(update),
-		"update tasks set state=%d%s%s%s%s%s%s%s%s where uuid='%s'",
+		"update tasks set state=%d%s%s%s%s%s%s%s%s%s where uuid='%s'",
 		 state, builder_uuid ? ",builder='": "",
 			builder_uuid ? esc1 : "",
 			builder_uuid ? "'" : "",
 			builder_name ? ",builder_name='" : "",
 			builder_name ? esc : "",
 			builder_name ? "'" : "",
-			esc3, esc4, esc2);
+			esc3, esc4, state == SAIES_WAITING ? ",build_step=0" : "",
+			esc2);
 
 	if (sqlite3_exec((sqlite3 *)e->pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
 		lwsl_err("%s: %s: %s: fail\n", __func__, update,
