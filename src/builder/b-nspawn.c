@@ -374,7 +374,7 @@ static const char * const runscript_first =
 	"export SAI_LOGPROXY_TTY0=%s\n"
 	"export SAI_LOGPROXY_TTY1=%s\n"
 	"set -e\n"
-	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
+	"cd %s/jobs/$SAI_OVN\n"
 	"rm -rf build\n"
 	"%s < /dev/null\n"
 	"exit $?\n"
@@ -398,7 +398,7 @@ static const char * const runscript_next =
 	"export SAI_LOGPROXY_TTY0=%s\n"
 	"export SAI_LOGPROXY_TTY1=%s\n"
 	"set -e\n"
-	"cd %s/jobs/$SAI_OVN/$SAI_PROJECT\n"
+	"cd %s/jobs/$SAI_OVN\n"
 	"%s < /dev/null\n"
 	"exit $?\n"
 ;
