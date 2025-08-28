@@ -30,6 +30,8 @@
 #include <sys/sysctl.h>
 #include <mach/mach.h>
 #include <mach/vm_statistics.h>
+#elif defined(_WIN32)
+#include <windows.h>
 #endif
 
 unsigned int
