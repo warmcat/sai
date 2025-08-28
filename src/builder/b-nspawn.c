@@ -452,32 +452,28 @@ saib_spawn_script(struct sai_nspawn *ns)
 	char cgroup[128];
 #endif
 
-	lws_strncpy(st, ns->sp->name, sizeof(st));
-	lws_filename_purify_inplace(st);
-	p = st;
-	while ((p = strchr(p, '/')))
-		*p = '_';
-
 #if defined(WIN32)
-	lws_snprintf(args, sizeof(args), "%s\\sai-build-script-%s-%d.bat",
-			builder.home, st, ns->instance_idx);
+	lws_snprintf(ns->script_path, sizeof(ns->script_path),
+		     "%s\\sai-build-script-%s.bat",
+		     builder.home, ns->task->uuid);
 #else
-	lws_snprintf(args, sizeof(args), "%s/sai-build-script-%s-%d.sh",
-			builder.home, st, ns->instance_idx);
+	lws_snprintf(ns->script_path, sizeof(ns->script_path),
+		     "%s/sai-build-script-%s.sh",
+		     builder.home, ns->task->uuid);
 #endif
 
 	char one_step[4096];
 	lws_strncpy(one_step, ns->task->script, sizeof(one_step));
 
 #if defined(WIN32)
-	if (_sopen_s(&fd, args, _O_CREAT | _O_TRUNC | _O_WRONLY,
+	if (_sopen_s(&fd, ns->script_path, _O_CREAT | _O_TRUNC | _O_WRONLY,
 		     _SH_DENYNO, _S_IWRITE))
 		fd = -1;
 #else
-	fd = open(args, O_CREAT | O_TRUNC | O_WRONLY, 0755);
+	fd = open(ns->script_path, O_CREAT | O_TRUNC | O_WRONLY, 0755);
 #endif
 	if (fd < 0) {
-		lwsl_err("%s: unable to open %s for write\n", __func__, args);
+		lwsl_err("%s: unable to open %s for write\n", __func__, ns->script_path);
 		return 1;
 	}
 
@@ -521,13 +517,13 @@ saib_spawn_script(struct sai_nspawn *ns)
 
 	if (write(fd, st, (unsigned int)n) != n) {
 		close(fd);
-		lwsl_err("%s: failed to write runscript to %s\n", __func__, args);
+		lwsl_err("%s: failed to write runscript to %s\n", __func__, ns->script_path);
 		return 1;
 	}
 
 	close(fd);
 
-	cmd[0] = args;
+	cmd[0] = ns->script_path;
 
 #if defined(__linux__)
 	lws_snprintf(cgroup, sizeof(cgroup), "inst-%u-%d", (unsigned int)getpid(), ns->instance_idx);

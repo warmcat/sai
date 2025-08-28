@@ -138,6 +138,7 @@ struct sai_nspawn {
 
 	char				inp[512];
 	char				path[384];
+	char				script_path[290];
 	char				pending_mirror_log[128];
 
 	/* convenient place to store it */

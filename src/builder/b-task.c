@@ -203,6 +203,9 @@ saib_task_destroy(struct sai_nspawn *ns)
 		ns->task = NULL;
 	}
 
+	if (ns->script_path[0])
+		unlink(ns->script_path);
+
 	lws_dll2_remove(&ns->list);
 	free(ns);
 }
