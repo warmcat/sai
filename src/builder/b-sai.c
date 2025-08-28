@@ -197,10 +197,17 @@ pvo_resproxy = { /* starting point for resproxy */
 	        NULL,                 /* "child" pvo linked-list */
 	        "protocol-resproxy",        /* protocol name we belong to on this vhost */
 	        "ok"                     /* ignored */
-	};;
+	};
 
-static int
-saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp)
+void *
+saib_thread_suspend(void *d)
+{
+	return NULL;
+}
+
+int
+saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp,
+		       struct lws_vhost **vhost)
 {
 	struct lws_context_creation_info info;
 
@@ -223,7 +230,8 @@ saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp)
 
 	lwsl_notice("%s: %s.%s\n", __func__, info.vhost_name, lp->sockpath);
 
-	if (!lws_create_vhost(context, &info)) {
+	*vhost = lws_create_vhost(context, &info);
+	if (!*vhost) {
 		lwsl_notice("%s: failed to create vh %s\n", __func__,
 			    info.vhost_name);
 		return -1;
@@ -400,9 +408,6 @@ static int
 app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 		    int current, int target)
 {
-	struct lws_context *context = lws_system_context_from_system_mgr(mgr);
-	char pur[128];
-
 	/*
 	 * For the things we care about, let's notice if we are trying to get
 	 * past them when we haven't solved them yet, and make the system
@@ -432,85 +437,6 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 		 * For each platform...
 		 */
 
-		lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
-				           builder.sai_plat_owner.head) {
-			struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
-						sai_plat_list);
-
-#if defined(WIN32)
-			sp->windows = 1;
-#endif
-
-			/*
-			 * ... for each nspawn on the platform...
-			 */
-
-			lws_start_foreach_dll_safe(struct lws_dll2 *, np, np1,
-						   sp->nspawn_owner.head) {
-				struct sai_nspawn *ns =
-					lws_container_of(np, struct sai_nspawn, list);
-				char *p;
-				int n;
-
-				lws_strncpy(pur, sp->name, sizeof(pur));
-				lws_filename_purify_inplace(pur);
-				p = pur;
-				while ((p = strchr(p, '/')))
-					*p = '_';
-
-				/*
-				 * Proxy the control logging channel (this
-				 * is the one that has sai progress info)
-				 */
-
-				lws_snprintf(ns->slp_control.sockpath,
-					     sizeof(ns->slp_control.sockpath),
-#if defined(__linux__)
-					     UDS_PATHNAME_LOGPROXY".%s.%d.saib",
-#else
-					     UDS_PATHNAME_LOGPROXY"/%s.%d.saib",
-#endif
-					     pur, ns->instance_idx);
-
-				ns->slp_control.ns = ns;
-				ns->slp_control.log_channel_idx = 3;
-
-				if (saib_create_listen_uds(context, &ns->slp_control)) {
-					lwsl_err("%s: Failed to create ctl log proxy listen UDS %s\n",
-						 __func__, ns->slp_control.sockpath);
-					return -1;
-				}
-
-				/*
-				 * For each additional logging channel...
-				 */
-
-				for (n = 0; n < (int)LWS_ARRAY_SIZE(ns->slp); n++) {
-
-					/*
-					 * ... create a UDS listening proxy
-					 */
-
-					lws_snprintf(ns->slp[n].sockpath,
-						     sizeof(ns->slp[n].sockpath),
-#if defined(__linux__)
-						     UDS_PATHNAME_LOGPROXY".%s.%d.tty%d",
-#else
-						     UDS_PATHNAME_LOGPROXY"/%s.%d.tty%d",
-#endif
-						     pur, ns->instance_idx, n);
-
-					ns->slp[n].ns = ns;
-					ns->slp[n].log_channel_idx = n + 4;
-
-					if (saib_create_listen_uds(context, &ns->slp[n])) {
-						lwsl_err("%s: Failed to create log proxy listen UDS %s\n",
-							 __func__, ns->slp[n].sockpath);
-						return -1;
-					}
-				}
-			} lws_end_foreach_dll_safe(np, np1);
-		} lws_end_foreach_dll_safe(mp, mp1);
 
 		/*
 		 * Create the resource proxy listeners, one per server link

@@ -122,6 +122,13 @@ typedef struct {
 	int			state;
 	int			uid;
 	int			build_step;
+
+	/* estimations for builder resource consumption */
+	unsigned int		est_peak_mem_kib;
+	unsigned int		est_cpu_load_pct;
+	unsigned int		est_disk_kib;
+
+	char			told_ongoing;
 } sai_task_t;
 
 typedef struct sai_plat sai_plat_t;
@@ -148,6 +155,7 @@ struct sai_nspawn {
 	/* convenient place to store it */
 	struct saib_logproxy		slp_control;
 	struct saib_logproxy		slp[2];
+	struct lws_vhost		*vhosts[3];
 
 	lws_dll2_t			list;		/* sai_plat owner lists sai_nspawns */
 	struct sai_builder		*builder;
@@ -184,7 +192,6 @@ struct sai_nspawn {
 	const char			*git_repo_url;
 
 	int				retcode;
-	int				instance_idx;
 
 	uint8_t				spins;
 	uint8_t				state;		/* NSSTATE_ */
@@ -509,7 +516,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[10],
-	lsm_task[23],
+	lsm_task[26],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],

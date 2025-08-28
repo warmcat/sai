@@ -249,7 +249,14 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	}
 
 	if (op->spawn) {
-		sai_build_metric_t *m = malloc(sizeof(*m));
+		sai_build_metric_t *m;
+
+		if (!ns->spm) {
+			lwsl_err("%s: NULL ns->spm", __func__);
+			goto skip;
+		}
+
+		m = malloc(sizeof(*m));
 
 		if (m) {
 			char hash_input[8192];
@@ -287,6 +294,8 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 				lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
 		}
 	}
+
+skip:
 
 	ns->current_step++;
 
@@ -336,7 +345,6 @@ fail:
 #if defined(WIN32)
 
 static const char * const runscript_win_first =
-	"set SAI_INSTANCE_IDX=%d\n"
 	"set SAI_PARALLEL=%d\n"
 	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"set SAI_LOGPROXY=%s\n"
@@ -349,7 +357,6 @@ static const char * const runscript_win_first =
 ;
 
 static const char * const runscript_win_next =
-	"set SAI_INSTANCE_IDX=%d\n"
 	"set SAI_PARALLEL=%d\n"
 	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"set SAI_LOGPROXY=%s\n"
@@ -373,7 +380,6 @@ static const char * const runscript_first =
 	"export SAI_OVN=%s\n"
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
-	"export SAI_INSTANCE_IDX=%d\n"
 	"export SAI_PARALLEL=%d\n"
 	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"export SAI_LOGPROXY=%s\n"
@@ -397,7 +403,6 @@ static const char * const runscript_next =
 	"export SAI_OVN=%s\n"
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
-	"export SAI_INSTANCE_IDX=%d\n"
 	"export SAI_PARALLEL=%d\n"
 	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"export SAI_LOGPROXY=%s\n"
@@ -420,7 +425,6 @@ static const char * const runscript_build =
 	"export SAI_OVN=%s\n"
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
-	"export SAI_INSTANCE_IDX=%d\n"
 	"export SAI_PARALLEL=%d\n"
 	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"export SAI_LOGPROXY=%s\n"
@@ -492,7 +496,6 @@ saib_spawn_script(struct sai_nspawn *ns)
 #if defined(WIN32)
 	n = lws_snprintf(st, sizeof(st),
 			 ns->current_step ? runscript_win_next : runscript_win_first,
-			 ns->instance_idx,
 			 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
@@ -510,7 +513,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 	n = lws_snprintf(st, sizeof(st),
 			 script_template,
 			 builder.home, ns->fsm.ovname,
-			 ns->project_name, ns->ref, ns->instance_idx,
+			 ns->project_name, ns->ref,
 			 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,
@@ -530,7 +533,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 	cmd[0] = ns->script_path;
 
 #if defined(__linux__)
-	lws_snprintf(cgroup, sizeof(cgroup), "inst-%u-%d", (unsigned int)getpid(), ns->instance_idx);
+	lws_snprintf(cgroup, sizeof(cgroup), "inst-%s", ns->task->uuid);
 #endif
 
 	memset(&info, 0, sizeof(info));

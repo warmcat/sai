@@ -27,6 +27,38 @@
 
 #include "b-private.h"
 
+static int
+saib_can_accept_task(sai_task_t *task)
+{
+	unsigned int free_ram = saib_get_free_ram_kib();
+	unsigned int total_ram = saib_get_total_ram_kib();
+	unsigned int free_disk = saib_get_free_disk_kib(builder.home);
+	unsigned int total_disk = saib_get_total_disk_kib(builder.home);
+	int cpu_load = saib_get_system_cpu(&builder);
+
+	if (total_ram &&
+	    (free_ram - task->est_peak_mem_kib) < (total_ram / 10) * 3) {
+		lwsl_notice("%s: reject task %s: not enough RAM\n", __func__,
+			    task->uuid);
+		return 0;
+	}
+
+	if (total_disk &&
+	    (free_disk - task->est_disk_kib) < (total_disk / 10) * 2) {
+		lwsl_notice("%s: reject task %s: not enough disk space\n",
+			    __func__, task->uuid);
+		return 0;
+	}
+
+	if (cpu_load >= 0 && (cpu_load + (int)task->est_cpu_load_pct) > 50) {
+		lwsl_notice("%s: reject task %s: CPU load too high\n",
+			    __func__, task->uuid);
+		return 0;
+	}
+
+	return 1;
+}
+
 #if !defined(WIN32)
 static char csep = '/';
 #else
@@ -187,6 +219,8 @@ saib_task_destroy(struct sai_nspawn *ns)
 		saib_queue_task_status_update(ns->sp, ns->spm, NULL);
 	}
 
+	int n;
+
 	if (ns->task && ns->task->ac_task_container) {
 		 /* contains the task object */
 		lwsac_free(&ns->task->ac_task_container);
@@ -195,6 +229,18 @@ saib_task_destroy(struct sai_nspawn *ns)
 
 	if (ns->script_path[0])
 		unlink(ns->script_path);
+
+	for (n = 0; n < (int)LWS_ARRAY_SIZE(ns->vhosts); n++)
+		if (ns->vhosts[n]) {
+			lws_vhost_destroy(ns->vhosts[n]);
+			ns->vhosts[n] = NULL;
+		}
+
+	if (ns->slp_control.sockpath[0])
+		unlink(ns->slp_control.sockpath);
+	for (n = 0; n < (int)LWS_ARRAY_SIZE(ns->slp); n++)
+		if (ns->slp[n].sockpath[0])
+			unlink(ns->slp[n].sockpath);
 
 	lws_dll2_remove(&ns->list);
 	free(ns);
@@ -205,8 +251,7 @@ saib_sub_cleaner_cb(lws_sorted_usec_list_t *sul)
 {
 	struct sai_nspawn *ns = lws_container_of(sul, struct sai_nspawn,
 						 sul_cleaner);
-	lwsl_warn("%s: .%d: Destroying task after grace period\n",
-		  __func__, ns->instance_idx);
+	lwsl_warn("%s: Destroying task after grace period\n", __func__);
 
 	saib_task_destroy(ns);
 }
@@ -532,7 +577,16 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			       ns = xns;
 		} lws_end_foreach_dll_safe(d, d1);
 
+		if (!saib_can_accept_task(task)) {
+			if (saib_queue_task_status_update(sp, spm, task->uuid))
+				return -1;
+			return 0;
+		}
+
 		if (!ns) {
+			char pur[128], *p;
+			int n;
+
 			ns = malloc(sizeof(*ns));
 			if (!ns)
 				return -1;
@@ -540,6 +594,52 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			ns->builder = &builder;
 			ns->sp = sp;
 			lws_dll2_add_tail(&ns->list, &sp->nspawn_owner);
+
+			if (strstr(task->script, "sai-device")) {
+				lws_strncpy(pur, sp->name, sizeof(pur));
+			lws_filename_purify_inplace(pur);
+			p = pur;
+			while ((p = strchr(p, '/')))
+				*p = '_';
+
+			lws_snprintf(ns->slp_control.sockpath,
+				     sizeof(ns->slp_control.sockpath),
+#if defined(__linux__)
+				     UDS_PATHNAME_LOGPROXY".%s.saib",
+#else
+				     UDS_PATHNAME_LOGPROXY"/%s.saib",
+#endif
+				     task->uuid);
+			ns->slp_control.ns = ns;
+			ns->slp_control.log_channel_idx = 3;
+			if (saib_create_listen_uds(builder.context, &ns->slp_control,
+						   &ns->vhosts[0])) {
+				lwsl_err("%s: Failed to create ctl log proxy listen UDS %s\n",
+					 __func__, ns->slp_control.sockpath);
+				return -1;
+			}
+
+			for (n = 0; n < (int)LWS_ARRAY_SIZE(ns->slp); n++) {
+				lws_snprintf(ns->slp[n].sockpath,
+					     sizeof(ns->slp[n].sockpath),
+#if defined(__linux__)
+					     UDS_PATHNAME_LOGPROXY".%s.tty%d",
+#else
+					     UDS_PATHNAME_LOGPROXY"/%s.tty%d",
+#endif
+					     task->uuid, n);
+
+				ns->slp[n].ns = ns;
+				ns->slp[n].log_channel_idx = n + 4;
+
+				if (saib_create_listen_uds(builder.context, &ns->slp[n],
+							   &ns->vhosts[n + 1])) {
+					lwsl_err("%s: Failed to create log proxy listen UDS %s\n",
+						 __func__, ns->slp[n].sockpath);
+					return -1;
+				}
+			}
+			}
 		}
 
 //		lwsl_hexdump_warn(task->build, strlen(task->build));
