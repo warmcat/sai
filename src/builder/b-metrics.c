@@ -77,6 +77,75 @@ saib_get_free_ram_kib(void)
 	statex.dwLength = sizeof(statex);
 	GlobalMemoryStatusEx(&statex);
 	return (unsigned int)(statex.ullAvailPhys / 1024);
+#elif defined(__APPLE__)
+	int mib[2];
+	size_t len;
+	uint64_t total_mem;
+
+	mib[0] = CTL_HW;
+	mib[1] = HW_MEMSIZE;
+	len = sizeof(total_mem);
+	sysctl(mib, 2, &total_mem, &len, NULL, 0);
+
+	return (unsigned int)(total_mem / 1024);
+#elif defined(_WIN32)
+	MEMORYSTATUSEX statex;
+	statex.dwLength = sizeof(statex);
+	GlobalMemoryStatusEx(&statex);
+	return (unsigned int)(statex.ullTotalPhys / 1024);
+#else
+	return 0;
+#endif
+}
+
+unsigned int
+saib_get_total_ram_kib(void)
+{
+#if defined(__linux__)
+	char buf[256];
+	FILE *f;
+	unsigned int total_kib = 0;
+
+	f = fopen("/proc/meminfo", "r");
+	if (!f)
+		return 0;
+
+	while (fgets(buf, sizeof(buf), f)) {
+		if (sscanf(buf, "MemTotal: %u kB", &total_kib) == 1)
+			break;
+	}
+
+	fclose(f);
+	return total_kib;
+#else
+	return 0;
+#endif
+}
+
+unsigned int
+saib_get_total_disk_kib(const char *path)
+{
+#if defined(__linux__)
+	struct statvfs s;
+
+	if (statvfs(path, &s))
+		return 0;
+
+	return (unsigned int)((uint64_t)s.f_blocks * s.f_frsize / 1024);
+#elif defined(__APPLE__)
+	struct statfs s;
+
+	if (statfs(path, &s))
+		return 0;
+
+	return (unsigned int)((uint64_t)s.f_blocks * (uint64_t)s.f_bsize / 1024);
+#elif defined(_WIN32)
+	ULARGE_INTEGER total_bytes;
+
+	if (!GetDiskFreeSpaceExA(path, NULL, &total_bytes, NULL))
+		return 0;
+
+	return (unsigned int)(total_bytes.QuadPart / 1024);
 #else
 	return 0;
 #endif

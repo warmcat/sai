@@ -233,4 +233,10 @@ unsigned int
 saib_get_free_ram_kib(void);
 
 unsigned int
+saib_get_total_ram_kib(void);
+
+unsigned int
 saib_get_free_disk_kib(const char *path);
+
+unsigned int
+saib_get_total_disk_kib(const char *path);

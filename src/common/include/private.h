@@ -117,6 +117,11 @@ typedef struct {
 	int			uid;
 	int			build_step;
 
+	/* estimations for builder resource consumption */
+	unsigned int		est_peak_mem_kib;
+	unsigned int		est_cpu_load_pct;
+	unsigned int		est_disk_kib;
+
 	char			told_ongoing;
 } sai_task_t;
 
@@ -179,7 +184,6 @@ struct sai_nspawn {
 	const char			*git_repo_url;
 
 	int				retcode;
-	int				instance_idx;
 
 	uint8_t				spins;
 	uint8_t				state;		/* NSSTATE_ */

@@ -679,6 +679,41 @@ bail:
 	return 1;
 }
 
+static void
+sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task)
+{
+	char query[256];
+	sqlite3_stmt *stmt;
+
+	task->est_peak_mem_kib = 256 * 1024; /* 256MiB default */
+	task->est_cpu_load_pct = 10;
+	task->est_disk_kib = 1024 * 1024; /* 1GiB default */
+
+	if (!vhd->pdb_metrics)
+		return;
+
+	lws_snprintf(query, sizeof(query),
+		     "SELECT AVG(peak_mem_rss), AVG(us_cpu_user), "
+		     "AVG(stg_bytes), AVG(wallclock_us) "
+		     "FROM build_metrics WHERE key = '%s'",
+		     task->taskname);
+
+	if (sqlite3_prepare_v2(vhd->pdb_metrics, query, -1, &stmt, NULL) != SQLITE_OK)
+		return;
+
+	if (sqlite3_step(stmt) == SQLITE_ROW) {
+		uint64_t avg_us_cpu = sqlite3_column_int64(stmt, 1);
+		uint64_t avg_wallclock = sqlite3_column_int64(stmt, 3);
+
+		task->est_peak_mem_kib = sqlite3_column_int(stmt, 0) / 1024;
+		if (avg_wallclock)
+			task->est_cpu_load_pct = (unsigned int)((avg_us_cpu * 100) / avg_wallclock);
+		task->est_disk_kib = sqlite3_column_int(stmt, 2) / 1024;
+	}
+
+	sqlite3_finalize(stmt);
+}
+
 int
 sais_task_cancel(struct vhd *vhd, const char *task_uuid)
 {
@@ -962,6 +997,8 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 	memset(task, 0, sizeof(*task));
 	*task = *task_template;
 	lwsac_free(&ac);
+
+	sais_get_task_metrics_estimates(vhd, task);
 
 	build_step = task->build_step;
 
