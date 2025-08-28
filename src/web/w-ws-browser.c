@@ -681,7 +681,7 @@ again:
 		sch = NULL;
 
 	switch (pss->send_state) {
-	case WSS_IDLE:
+	case WSS_IDLE1:
 
 		/*
 		 * Anything from a task log he's subscribed to?
@@ -701,7 +701,6 @@ again:
 			 */
 
 			if (pss->log_cache_index == pss->log_cache_size) {
-				// lws_usec_t tim;
 				int sr;
 
 				sai_task_uuid_to_event_uuid(event_uuid,
@@ -726,8 +725,6 @@ again:
 					return 0;
 				}
 
-				// tim = lws_now_usecs();
-
 				sr = lws_struct_sq3_deserialize(pdb, esc,
 								"uid,timestamp ",
 								lsm_schema_sq3_map_log,
@@ -745,9 +742,6 @@ again:
 
 				pss->log_cache_index = 0;
 				pss->log_cache_size = (int)pss->logs_owner.count;
-
-				// lwsl_wsi_notice(pss->wsi, "fetched %d logs in %dus", pss->log_cache_size, (int)(lws_now_usecs() - tim));
-
 			}
 
 			if (pss->log_cache_index < pss->log_cache_size) {
@@ -793,44 +787,60 @@ again:
 		}
 
 		/*
-		 * ...then do we have anything on the scheduled ll for this pss?
+		 * Stay in this state if we're in the middle of a
+		 * multi-fragment message
+		 */
+		if (lws_ws_sending_multifragment(pss->wsi))
+			return 0;
+
+		/* fallthru */
+
+	case WSS_IDLE2:
+
+		pss->send_state = WSS_IDLE2;
+
+		/*
+		 * Send anything waiting on broadcast_raw buflist first
 		 */
 
-		if (!sch) {
-			/*
-			 * Send anything waiting on broadcast_raw buflist first
-			 */
+		if (pss->raw_tx) {
+			char som, eom, rb[4096];
+			int used, *pi = (int *)rb;
 
-			if (pss->raw_tx) {
-				char som, eom, rb[4096];
-				int used, *pi = (int *)rb;
-
-				used = lws_buflist_fragment_use(&pss->raw_tx, (uint8_t *)rb,
-								sizeof(rb), &som, &eom);
-				if (!used)
-					return 0;
-
-				// lwsl_wsi_notice(pss->wsi, "writing %d bytes flags 0x%x: '%.*s'",
-				//		(int)(used - (int)sizeof(int)), (int)*pi,
-				//		(int)(used - (int)sizeof(int)), rb + sizeof(int));  
-
-				if (lws_write(pss->wsi, (uint8_t *)rb + sizeof(int),
-							(size_t)used - sizeof(int),
-							(enum lws_write_protocol)*pi) < 0) {
-					lwsl_wsi_err(pss->wsi, "attempt to write %d failed", (int)used - (int)sizeof(int));
-
-					return -1;
-				}
-
-				lws_callback_on_writable(pss->wsi);
-
+			used = lws_buflist_fragment_use(&pss->raw_tx, (uint8_t *)rb,
+							sizeof(rb), &som, &eom);
+			if (!used)
 				return 0;
+
+			// lwsl_wsi_notice(pss->wsi, "writing %d bytes flags 0x%x: '%.*s'",
+			//		(int)(used - (int)sizeof(int)), (int)*pi,
+			//		(int)(used - (int)sizeof(int)), rb + sizeof(int));  
+
+			if (lws_write(pss->wsi, (uint8_t *)rb + sizeof(int),
+						(size_t)used - sizeof(int),
+						(enum lws_write_protocol)*pi) < 0) {
+				lwsl_wsi_err(pss->wsi, "attempt to write %d failed", (int)used - (int)sizeof(int));
+
+				return -1;
 			}
 
+			lws_callback_on_writable(pss->wsi);
 
-			/* ... nope... */
+			if (!lws_ws_sending_multifragment(pss->wsi))
+				pss->send_state = WSS_IDLE1;
+
 			return 0;
 		}
+
+		/*
+		 * Stay in this state if we're in the middle of a
+		 * multi-fragment message, otherwise do whatever the
+		 * sch proposes
+		 */
+
+		if (lws_ws_sending_multifragment(pss->wsi) ||
+		    !sch)
+			return 0;
 
 		pss->toggle_favour_sch = 0;
 		pss->send_state = sch->action;
@@ -853,7 +863,7 @@ again:
 				&sch->ac, 0, -8)) {
 			lwsl_notice("%s: OVERVIEW 2 failed\n", __func__);
 
-			pss->send_state = WSS_IDLE;
+			pss->send_state = WSS_IDLE1;
 			saiw_dealloc_sched(sch);
 
 			return 0;
@@ -955,7 +965,7 @@ again:
 			lws_struct_json_serialize_destroy(&js);
 			switch (n) {
 			case LSJS_RESULT_ERROR:
-				pss->send_state = WSS_IDLE;
+				pss->send_state = WSS_IDLE1;
 				saiw_dealloc_sched(sch);
 				lwsl_err("%s: json ser error\n", __func__);
 				return 1;
@@ -970,7 +980,7 @@ again:
 			}
 		}
 		if (!any) {
-			pss->send_state = WSS_IDLE;
+			pss->send_state = WSS_IDLE1;
 			saiw_dealloc_sched(sch);
 
 			return 0;
@@ -1066,7 +1076,7 @@ enum_tasks:
 
 so_finish:
 		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
-		pss->send_state = WSS_IDLE;
+		pss->send_state = WSS_IDLE1;
 		endo = 1;
 		break;
 
@@ -1145,7 +1155,7 @@ so_finish:
 			switch (lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w)) {
 			case LSJS_RESULT_ERROR:
 				lws_struct_json_serialize_destroy(&js);
-				pss->send_state = WSS_IDLE;
+				pss->send_state = WSS_IDLE1;
 				saiw_dealloc_sched(sch);
 				return 1;
 			case LSJS_RESULT_FINISH:
@@ -1257,7 +1267,7 @@ b_finish:
 		p += w;
 		if (!lws_ptr_diff(p, start)) {
 			saiw_dealloc_sched(sch);
-			pss->send_state = WSS_IDLE;
+			pss->send_state = WSS_IDLE1;
 			lwsl_notice("%s: taskinfo: empty json\n", __func__);
 			return 0;
 		}
@@ -1314,7 +1324,7 @@ send_it:
 
 	if (lg ||
 	    endo ||
-	    (pss->send_state == WSS_IDLE && sch) ||
+	    (pss->send_state == WSS_IDLE1 && sch) ||
 	    (pss->send_state != WSS_SEND_ARTIFACT_INFO && sch && !sch->walk) ||
 	    (pss->send_state == WSS_SEND_ARTIFACT_INFO && (!sch || !sch->owner.head))) {
 
@@ -1329,7 +1339,7 @@ send_it:
 				    pss->sub_task_uuid);
 		}
 
-		pss->send_state = WSS_IDLE;
+		pss->send_state = WSS_IDLE1;
 		saiw_dealloc_sched(sch);
 	}
 
@@ -1342,7 +1352,7 @@ send_it:
 	return 0;
 
 no_sch:
-	pss->send_state = WSS_IDLE;
+	pss->send_state = WSS_IDLE1;
 
 	return 0;
 }

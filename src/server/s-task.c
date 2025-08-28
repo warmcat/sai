@@ -82,6 +82,10 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 	sai_event_t *e = NULL;
 	lws_dll2_owner_t o;
 	int n, task_ostate;
+	int ostate = state;
+
+	if (state == SAIES_STEP_SUCCESS)
+		state = SAIES_BEING_BUILT;
 
 	/*
 	 * Extract the event uuid from the task uuid
@@ -273,11 +277,8 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 	sais_event_db_close(vhd, (sqlite3 **)&e->pdb);
 	lwsac_free(&ac);
 
-	if (state == SAIES_STEP_SUCCESS) {
+	if (ostate == SAIES_STEP_SUCCESS)
 		sais_continue_task(vhd, task_uuid);
-		state = SAIES_BEING_BUILT;
-	}
-
 
 	return 0;
 
@@ -679,6 +680,41 @@ bail:
 	return 1;
 }
 
+static void
+sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task)
+{
+	char query[256];
+	sqlite3_stmt *stmt;
+
+	task->est_peak_mem_kib = 256 * 1024; /* 256MiB default */
+	task->est_cpu_load_pct = 10;
+	task->est_disk_kib = 1024 * 1024; /* 1GiB default */
+
+	if (!vhd->pdb_metrics)
+		return;
+
+	lws_snprintf(query, sizeof(query),
+		     "SELECT AVG(peak_mem_rss), AVG(us_cpu_user), "
+		     "AVG(stg_bytes), AVG(wallclock_us) "
+		     "FROM build_metrics WHERE key = '%s'",
+		     task->taskname);
+
+	if (sqlite3_prepare_v2(vhd->pdb_metrics, query, -1, &stmt, NULL) != SQLITE_OK)
+		return;
+
+	if (sqlite3_step(stmt) == SQLITE_ROW) {
+		uint64_t avg_us_cpu = (uint64_t)sqlite3_column_int64(stmt, 1);
+		uint64_t avg_wallclock = (uint64_t)sqlite3_column_int64(stmt, 3);
+
+		task->est_peak_mem_kib = (unsigned int)(sqlite3_column_int(stmt, 0) / 1024);
+		if (avg_wallclock)
+			task->est_cpu_load_pct = (unsigned int)((avg_us_cpu * 100) / avg_wallclock);
+		task->est_disk_kib = (unsigned int)(sqlite3_column_int(stmt, 2) / 1024);
+	}
+
+	sqlite3_finalize(stmt);
+}
+
 int
 sais_task_cancel(struct vhd *vhd, const char *task_uuid)
 {
@@ -718,6 +754,36 @@ sais_task_cancel(struct vhd *vhd, const char *task_uuid)
 	return 0;
 }
 
+static int
+sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid)
+{
+	sai_cancel_t *can;
+
+	lwsl_notice("%s: builders count %d\n", __func__, vhd->builders.count);
+
+	/*
+	 * For every pss that we have from builders...
+	 */
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->builders.head) {
+		struct pss *pss = lws_container_of(p, struct pss, same);
+
+		/*
+		 * ... queue the task cancel message
+		 */
+		can = malloc(sizeof *can);
+		if (!can)
+			return -1;
+		memset(can, 0, sizeof(*can));
+
+		lws_strncpy(can->task_uuid, task_uuid, sizeof(can->task_uuid));
+		lws_dll2_add_tail(&can->list, &pss->task_cancel_owner);
+		lws_callback_on_writable(pss->wsi);
+
+	} lws_end_foreach_dll(p);
+
+	return 0;
+}
+
 /*
  * Keep the task record itself, but remove all logs and artifacts related to
  * it and reset the task state back to WAITING.
@@ -729,6 +795,8 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 	char esc[96], cmd[256], event_uuid[33];
 	sqlite3 *pdb = NULL;
 	int ret;
+
+	lwsl_notice("%s: task reset %s\n", __func__, task_uuid);
 
 	if (!task_uuid[0])
 		return SAI_DB_RESULT_OK;
@@ -774,7 +842,7 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 
 	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
 
-	sais_task_cancel(vhd, task_uuid);
+	sais_task_stop_on_builders(vhd, task_uuid);
 
 	/*
 	 * Reassess now if there's a builder we can match to a pending task
@@ -787,6 +855,8 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 	 * after there has been a change in tasks
 	 */
 	sais_platforms_with_tasks_pending(vhd);
+
+	lwsl_notice("%s: exiting OK\n", __func__);
 
 	return SAI_DB_RESULT_OK;
 }
@@ -960,6 +1030,8 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 	*task = *task_template;
 	lwsac_free(&ac);
 
+	sais_get_task_metrics_estimates(vhd, task);
+
 	build_step = task->build_step;
 
 	/* get the event */
@@ -976,6 +1048,7 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 
 	event = lws_container_of(o_event.head, sai_event_t, list);
 	task->one_event = event;
+
 	task->repo_name = event->repo_name;
 	task->git_ref = event->ref;
 	task->git_hash = event->hash;

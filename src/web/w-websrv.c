@@ -277,6 +277,9 @@ saiw_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len)
 {
 	saiw_websrv_t *m = (saiw_websrv_t *)lws_ss_to_user_object(h);
 
+	lwsl_ss_notice(h, "sai-web: Queuing from browser -> sai-server");
+	lwsl_hexdump_notice(buf, len);
+
 	if (lws_buflist_append_segment(&m->bltx, buf, len) < 0)
 		return 1;
 

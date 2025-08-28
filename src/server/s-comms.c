@@ -386,7 +386,7 @@ sai_get_head_status(struct vhd *vhd, const char *projname)
 }
 
 static int
-callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
+s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	    void *in, size_t len)
 {
 	struct vhd *vhd = (struct vhd *)lws_protocol_vh_priv_get(
@@ -759,7 +759,7 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	case LWS_CALLBACK_CLOSED:
 		lwsac_free(&pss->query_ac);
 
-		lwsl_user("%s: CLOSED builder conn\n", __func__);
+		lwsl_wsi_user(wsi, "sai-server: CLOSED sai-web conn");
 		/* remove pss from vhd->builders (active connection list) */
 		lws_dll2_remove(&pss->same);
 
@@ -867,4 +867,4 @@ passthru:
 }
 
 const struct lws_protocols protocol_ws =
-	{ "com-warmcat-sai", callback_ws, sizeof(struct pss), 0 };
+	{ "com-warmcat-sai", s_callback_ws, sizeof(struct pss), 0 };

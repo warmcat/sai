@@ -35,7 +35,7 @@
 
 
 static int
-callback_ws_power(struct lws *wsi, enum lws_callback_reasons reason, void *user,
+p_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		  void *in, size_t len)
 {
 	struct vhd *vhd = (struct vhd *)lws_protocol_vh_priv_get(
@@ -100,7 +100,7 @@ callback_ws_power(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	case LWS_CALLBACK_CLOSED:
 		lwsac_free(&pss->query_ac);
 
-		lwsl_user("%s: CLOSED builder conn\n", __func__);
+		lwsl_wsi_user(wsi, "CLOSED builder->power connection", __func__);
 		/* remove pss from vhd->builders */
 		lws_dll2_remove(&pss->same);
 
@@ -169,4 +169,4 @@ passthru:
 }
 
 const struct lws_protocols protocol_ws_power =
-	{ "com-warmcat-sai-power", callback_ws_power, sizeof(struct pss), 0 };
+	{ "com-warmcat-sai-power", p_callback_ws, sizeof(struct pss), 0 };

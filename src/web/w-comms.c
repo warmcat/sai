@@ -441,7 +441,7 @@ saiw_event_db_close_all_now(struct vhd *vhd)
 }
 
 static int
-callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
+w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	    void *in, size_t len)
 {
 	struct vhd *vhd = (struct vhd *)lws_protocol_vh_priv_get(
@@ -595,7 +595,12 @@ callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				    "@com.warmcat.sai-websrv", 23))
 			lwsl_warn("%s: unable to set metadata\n", __func__);
 
-		return lws_ss_client_connect(vhd->h_ss_websrv) ? -1 : 0;
+		r = lws_ss_client_connect(vhd->h_ss_websrv) ? -1 : 0;
+
+		if (r)
+			lwsl_wsi_err(wsi, "client connect for web -> srv failed");
+
+		return r;
 
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
 		saiw_event_db_close_all_now(vhd);
@@ -1026,8 +1031,10 @@ clean_spa:
                 * Returning non-zero rejects it.
                 */
                if (n >= 8 && !strncmp((const char *)buf + n - 8,
-                                       "/builder", 8))
+                                       "/builder", 8)) {
+		       lwsl_wsi_err(wsi, "Terminating unexpected sai-web conn to /builder");
                        return 1; /* Reject builder connections */
+		}
 
                return 0;
  
@@ -1110,14 +1117,19 @@ clean_spa:
 
 		if (lws_hdr_total_length(wsi, WSI_TOKEN_GET_URI)) {
 			if (lws_hdr_copy(wsi, (char *)start, 64,
-					 WSI_TOKEN_GET_URI) < 0)
+					 WSI_TOKEN_GET_URI) < 0) {
+				lwsl_wsi_err(wsi, "URI too long");
 				return -1;
+			}
 		}
 #if defined(LWS_ROLE_H2)
 		else
 			if (lws_hdr_copy(wsi, (char *)start, 64,
-					 WSI_TOKEN_HTTP_COLON_PATH) < 0)
+					 WSI_TOKEN_HTTP_COLON_PATH) < 0) {
+				lwsl_wsi_err(wsi, "path too long");
+
 				return -1;
+			}
 #endif
 
 		if (!memcmp((char *)start, "/sai", 4))
@@ -1201,7 +1213,6 @@ clean_spa:
 
 		lws_dll2_foreach_safe(&pss->sched, NULL, saiw_sched_destroy);
 		lwsac_free(&pss->logs_ac);
-
 		break;
 
 	case LWS_CALLBACK_RECEIVE:
@@ -1213,8 +1224,11 @@ clean_spa:
 		/*
 		 * Browser UI sent us something on websockets
 		 */
-		if (saiw_ws_json_rx_browser(vhd, pss, in, len))
+		if (saiw_ws_json_rx_browser(vhd, pss, in, len)) {
+			lwsl_wsi_err(wsi, "Closing because saiw_ws_json_rx_browser returned it");
+
 			return -1;
+		}
 
 		break;
 
@@ -1238,14 +1252,19 @@ passthru:
 	return lws_callback_http_dummy(wsi, reason, user, in, len);
 
 bail:
+	lwsl_wsi_err(wsi, "Closing on bail");
+
 	return 1;
 
 try_to_reuse:
-	if (lws_http_transaction_completed(wsi))
+	if (lws_http_transaction_completed(wsi)) {
+		lwsl_wsi_err(wsi, "Closing because transaction_completed said so");
+
 		return -1;
+	}
 
 	return 0;
 }
 
 const struct lws_protocols protocol_ws =
-	{ "com-warmcat-sai", callback_ws, sizeof(struct pss), 0 };
+	{ "com-warmcat-sai", w_callback_ws, sizeof(struct pss), 0 };

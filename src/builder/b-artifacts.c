@@ -157,6 +157,12 @@ saib_artifact_state(void *userobj, void *sh, lws_ss_constate_t state,
 			ap->fd = -1;
 		}
 		unlink(ap->path);
+
+		ap->ns->count_artifacts--;
+		if (!ap->ns->count_artifacts) {
+			lwsl_notice("%s: last artifact completed, destroying ns now\n", __func__);
+			saib_task_destroy(ap->ns);
+		}
 		break;
 
 	case LWSSSCS_CONNECTED:

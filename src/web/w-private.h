@@ -75,7 +75,9 @@ typedef struct {
 } sai_notification_t;
 
 typedef enum {
-	WSS_IDLE,
+	WSS_IDLE1,
+	WSS_IDLE2,
+	WSS_IDLE3,
 	WSS_PREPARE_OVERVIEW,
 	WSS_SEND_OVERVIEW,
 	WSS_PREPARE_BUILDER_SUMMARY,

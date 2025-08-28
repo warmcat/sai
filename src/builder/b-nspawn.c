@@ -89,7 +89,7 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 	switch (reason) {
 
 	case LWS_CALLBACK_RAW_CLOSE_FILE:
-		lwsl_warn("%s: RAW_CLOSE_FILE at %llu, wsi %p: fd: %d, stdfd: %d\n",
+		lwsl_info("%s: RAW_CLOSE_FILE at %llu, wsi %p: fd: %d, stdfd: %d\n",
 			  __func__, (unsigned long long)lws_now_usecs(), wsi,
 			  lws_get_socket_fd(wsi), lws_spawn_get_stdfd(wsi));
 
@@ -102,7 +102,6 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 						  __func__);
 		}
 
-               lwsl_wsi_err(wsi, "CLOSING: op %p, op->lsp %p", op, op ? op->lsp : NULL);
 		if (op && op->lsp) {
 			lws_spawn_stdwsi_closed(op->lsp, wsi);
 			if (ns)
@@ -150,6 +149,11 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 struct lws_protocols protocol_stdxxx =
 		{ "sai-stdxxx", callback_sai_stdwsi, 0, 0 };
 
+/*
+ * We are called when the process completed and has been reaped at
+ * lsp level, and we know that all the stdwsi related to the process
+ * are closed.
+ */
 
 static void
 sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
@@ -249,7 +253,14 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	}
 
 	if (op->spawn) {
-		sai_build_metric_t *m = malloc(sizeof(*m));
+		sai_build_metric_t *m;
+
+		if (!ns->spm) {
+			lwsl_err("%s: NULL ns->spm", __func__);
+			goto skip;
+		}
+
+		m = malloc(sizeof(*m));
 
 		if (m) {
 			char hash_input[8192];
@@ -288,6 +299,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		}
 	}
 
+skip:
 	ns->current_step++;
 
 	/* step succeeded, wait for next instruction */
@@ -295,9 +307,6 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 
 	if (op->spawn)
 		free(op->spawn);
-
-	saib_task_grace(ns);
-	saib_set_ns_state(ns, NSSTATE_DONE);
 
 	/*
 	 * add a final zero-length log with the retcode to the list of pending
@@ -310,6 +319,13 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 			__func__, ns->chunk_cache.count,
 			ns->spm ? ns->spm->logs_in_flight : -99);
 
+	/*
+	 * saib_task_grace(ns) sets ns->finished_when_logs_drained 
+	 */
+
+	saib_task_grace(ns);
+	saib_set_ns_state(ns, NSSTATE_DONE);
+
 	if (ns)
 		ns->op = NULL;
 	free(op);
@@ -320,6 +336,9 @@ fail:
 	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED\n", ns->current_step + 1);
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
+	/*
+	 * saib_task_grace(ns) sets ns->finished_when_logs_drained 
+	 */
 	saib_task_grace(ns);
 	saib_set_ns_state(ns, NSSTATE_FAILED);
 
@@ -492,7 +511,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 #if defined(WIN32)
 	n = lws_snprintf(st, sizeof(st),
 			 ns->current_step ? runscript_win_next : runscript_win_first,
-			 ns->instance_idx,
+			 ns->instance_ordinal,
 			 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
@@ -510,7 +529,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 	n = lws_snprintf(st, sizeof(st),
 			 script_template,
 			 builder.home, ns->fsm.ovname,
-			 ns->project_name, ns->ref, ns->instance_idx,
+			 ns->project_name, ns->ref, ns->instance_ordinal,
 			 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,
@@ -530,7 +549,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 	cmd[0] = ns->script_path;
 
 #if defined(__linux__)
-	lws_snprintf(cgroup, sizeof(cgroup), "inst-%u-%d", (unsigned int)getpid(), ns->instance_idx);
+	lws_snprintf(cgroup, sizeof(cgroup), "inst-%s", ns->task->uuid);
 #endif
 
 	memset(&info, 0, sizeof(info));

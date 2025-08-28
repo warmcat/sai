@@ -35,6 +35,8 @@
 #define UDS_PATHNAME_RESPROXY "/var/run/com.warmcat.com.saib.resproxy"
 #endif
 
+#define SAI_BUILDER_INSTANCE_LIMIT 256
+
 struct sai_plat;
 struct sai_builder;
 struct saib_opaque_spawn;
@@ -122,6 +124,13 @@ typedef struct {
 	int			state;
 	int			uid;
 	int			build_step;
+
+	/* estimations for builder resource consumption */
+	unsigned int		est_peak_mem_kib;
+	unsigned int		est_cpu_load_pct;
+	unsigned int		est_disk_kib;
+
+	char			told_ongoing;
 } sai_task_t;
 
 typedef struct sai_plat sai_plat_t;
@@ -148,14 +157,13 @@ struct sai_nspawn {
 	/* convenient place to store it */
 	struct saib_logproxy		slp_control;
 	struct saib_logproxy		slp[2];
+	struct lws_vhost		*vhosts[3];
 
 	lws_dll2_t			list;		/* sai_plat owner lists sai_nspawns */
 	struct sai_builder		*builder;
 	struct lws_fsmount		fsm;
 	struct saib_opaque_spawn	*op;
 	sai_task_t			*task;
-
-	lws_dll2_owner_t		artifact_owner; /* struct artifact_path */
 
 	lws_spawn_resource_us_t		res;
 
@@ -184,15 +192,15 @@ struct sai_nspawn {
 	const char			*git_repo_url;
 
 	int				retcode;
-	int				instance_idx;
+	int				instance_ordinal;
+	int				count_artifacts;
+	int				current_step;
+	int				build_step_count;
 
 	uint8_t				spins;
 	uint8_t				state;		/* NSSTATE_ */
 	uint8_t				stdcount;
 	uint8_t				term_budget;
-
-	int				current_step;
-	int				build_step_count;
 
 	uint8_t				finished_when_logs_drained:1;
 	uint8_t				state_changed:1;
@@ -271,6 +279,7 @@ typedef struct {
 	struct lws_ss_handle 		*ss;
 	void				*opaque_data;
 
+	struct sai_nspawn		*ns;
 	char				task_uuid[65];
 	char				artifact_up_nonce[33];
 	char				artifact_down_nonce[33];
@@ -509,7 +518,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[10],
-	lsm_task[23],
+	lsm_task[26],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],

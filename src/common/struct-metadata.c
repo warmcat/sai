@@ -163,6 +163,9 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_STRING_PTR	(sai_task_t, git_repo_url,	"git_repo_url"),
 	LSM_CARRAY	(sai_task_t, script,		"script"),
 	LSM_SIGNED	(sai_task_t, build_step,	"build_step"),
+	LSM_UNSIGNED	(sai_task_t, est_peak_mem_kib,	"est_peak_mem_kib"),
+	LSM_UNSIGNED	(sai_task_t, est_cpu_load_pct,	"est_cpu_load_pct"),
+	LSM_UNSIGNED	(sai_task_t, est_disk_kib,	"est_disk_kib"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {

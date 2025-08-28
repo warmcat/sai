@@ -253,6 +253,8 @@ send_logs:
 	 *
 	 * For that reason we remember the last dll2 who wrote logs, and start
 	 * looking for the next nspawn with pending logs after him next time.
+	 * (The remembered dll2 is set to NULL when the ns it is inside is
+	 * destroyed).
 	 *
 	 * That requires statefully rotating through...
 	 *
@@ -367,10 +369,14 @@ send_logs:
 			/*
 			 * He's in DONE state, and the draining he was waiting
 			 * for has now happened.
+			 *
+			 * Let's move on to UPLOADING_ARTIFACTS if any, this only
+			 * happens after we sent all the related logs.
 			 */
-			lwsl_notice("%s: drained and empty\n", __func__);
+			lwsl_notice("%s: logs cache drained and empty\n", __func__);
 			ns->finished_when_logs_drained = 0;
-			saib_set_ns_state(ns, NSSTATE_UPLOADING_ARTIFACTS);
+			if (ns->state != NSSTATE_FAILED)
+				saib_set_ns_state(ns, NSSTATE_UPLOADING_ARTIFACTS);
 		}
 
 		break;
@@ -407,6 +413,7 @@ cleanup_on_ss_destroy(struct lws_dll2 *d, void *user)
 			lws_container_of(d, struct sai_nspawn, list);
 
 		if (ns->spm == spm) {
+			lwsl_warn("%s: ns->spm %p, spm %p\n", __func__, ns->spm, spm);
 			/*
 			 * This pss is about to go away, make sure the ns
 			 * can't reference it any more no matter what happens
@@ -590,7 +597,7 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		break;
 
 	case LWSSSCS_CONNECTED:
-		lwsl_user("%s: CONNECTED: %p\n", __func__, spm->ss);
+		lwsl_ss_user(spm->ss, "CONNECTED");
 		spm->phase = PHASE_START_ATTACH;
 		/* Initialize the load report SUL timer for this server connection */
 		lws_sul_cancel(&spm->sul_load_report);
@@ -602,7 +609,7 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		 * clean up any ongoing spawns related to this connection
 		 */
 
-		lwsl_user("%s: DISCONNECTED\n", __func__);
+		lwsl_ss_user(spm->ss, "DISCONNECTED");
 		lws_sul_cancel(&spm->sul_load_report);
 		lws_dll2_foreach_safe(&builder.sai_plat_owner, spm,
 				      cleanup_on_ss_disconnect);

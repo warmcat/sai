@@ -27,6 +27,40 @@
 
 #include "b-private.h"
 
+static int
+saib_can_accept_task(sai_task_t *task)
+{
+#if 0
+	unsigned int free_ram = saib_get_free_ram_kib();
+	unsigned int total_ram = saib_get_total_ram_kib();
+	unsigned int free_disk = saib_get_free_disk_kib(builder.home);
+	unsigned int total_disk = saib_get_total_disk_kib(builder.home);
+//	int cpu_load = saib_get_system_cpu(&builder);
+
+	if (total_ram &&
+	    (free_ram - task->est_peak_mem_kib) < (total_ram / 10) * 3) {
+		lwsl_notice("%s: reject task %s: not enough RAM\n", __func__,
+			    task->uuid);
+		return 1;
+	}
+
+	if (total_disk &&
+	    (free_disk - task->est_disk_kib) < (total_disk / 10) * 2) {
+		lwsl_notice("%s: reject task %s: not enough disk space\n",
+			    __func__, task->uuid);
+		return 1;
+	}
+
+/*	if (cpu_load >= 0 && (cpu_load + (int)task->est_cpu_load_pct) > 50) {
+		lwsl_notice("%s: reject task %s: CPU load too high\n",
+			    __func__, task->uuid);
+		return 1;
+	}
+*/
+#endif
+	return 0; /* acceptable */
+}
+
 #if !defined(WIN32)
 static char csep = '/';
 #else
@@ -112,7 +146,6 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 		return 0;
 
 	rej = malloc(sizeof(*rej));
-
 	if (!rej)
 		return -1;
 
@@ -142,6 +175,8 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 void
 saib_task_destroy(struct sai_nspawn *ns)
 {
+	int n;
+
 	ns->finished_when_logs_drained = 0;
 	lws_sul_cancel(&ns->sul_cleaner);
 	lws_sul_cancel(&ns->sul_task_cancel);
@@ -155,6 +190,13 @@ saib_task_destroy(struct sai_nspawn *ns)
 		ns->spm->phase = PHASE_START_ATTACH;
 		if (lws_ss_request_tx(ns->spm->ss))
 			return;
+
+               /*
+                * If spm is holding on to us as the last reference point,
+                * we can't be used any more since we are goneski
+                */
+               if (ns->spm->last_logging_nspawn == &ns->list)
+                       ns->spm->last_logging_nspawn = NULL;
 	}
 
 	if (ns->list.owner && ns->list.owner->count == 1) {
@@ -196,6 +238,23 @@ saib_task_destroy(struct sai_nspawn *ns)
 	if (ns->script_path[0])
 		unlink(ns->script_path);
 
+	for (n = 0; n < (int)LWS_ARRAY_SIZE(ns->vhosts); n++)
+		if (ns->vhosts[n]) {
+			lws_vhost_destroy(ns->vhosts[n]);
+			ns->vhosts[n] = NULL;
+		}
+
+	if (ns->slp_control.sockpath[0])
+		unlink(ns->slp_control.sockpath);
+	for (n = 0; n < (int)LWS_ARRAY_SIZE(ns->slp); n++)
+		if (ns->slp[n].sockpath[0])
+			unlink(ns->slp[n].sockpath);
+
+	/*
+	 * If stdwsi are lurking around, we can't destroy the ns,
+	 * since they will touch it during their close handling.
+	 */
+
 	lws_dll2_remove(&ns->list);
 	free(ns);
 }
@@ -205,11 +264,19 @@ saib_sub_cleaner_cb(lws_sorted_usec_list_t *sul)
 {
 	struct sai_nspawn *ns = lws_container_of(sul, struct sai_nspawn,
 						 sul_cleaner);
-	lwsl_warn("%s: .%d: Destroying task after grace period\n",
-		  __func__, ns->instance_idx);
+	lwsl_warn("%s: Task completion grace period ended with ns alive\n", __func__);
 
 	saib_task_destroy(ns);
 }
+
+void
+saib_task_grace(struct sai_nspawn *ns)
+{
+	ns->finished_when_logs_drained = 1; /* destroy ns if logs are gone + spawn reaped */
+	lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
+			 saib_sub_cleaner_cb, 20 * LWS_USEC_PER_SEC);
+}
+
 
 static int
 artifact_glob_cb(void *data, const char *path)
@@ -218,7 +285,7 @@ artifact_glob_cb(void *data, const char *path)
 	const char *p, *ph = NULL;
 	struct lws_ss_handle *h;
 	char upp[256], s[384];
-	sai_artifact_t *ap;
+	sai_artifact_t *ap = NULL;
 	int n;
 
 	/*
@@ -271,14 +338,14 @@ artifact_glob_cb(void *data, const char *path)
 	/* take a copy so we can unlink the path later */
 	lws_strncpy(ap->path, upp, sizeof(ap->path));
 
+	lwsl_notice("%s: artifact ss created '%s'\n", __func__, ap->path);
+	ns->count_artifacts++;
+
 	lws_strncpy(ap->task_uuid, ns->task->uuid, sizeof(ap->task_uuid));
 	lws_strncpy(ap->artifact_up_nonce, ns->task->art_up_nonce,
 		    sizeof(ap->artifact_up_nonce));
 	lws_strncpy(ap->blob_filename, ph, sizeof(ap->blob_filename));
 	ap->timestamp = (uint64_t)lws_now_usecs();
-
-	lwsl_notice("%s: artifact ss created '%s'\n", __func__, ap->path);
-
 
 	/*
 	 * We need to set the metadata items for the post urlargs.  spm->url is
@@ -294,7 +361,8 @@ artifact_glob_cb(void *data, const char *path)
 }
 
 /*
- * We're finished with the nspawn / task one way or the other, but there's
+ * We're finished with the nspawn / task one way or the other, specifically
+ * all the stdwsi are closed and we reaped the lws_spawn_piped, but there's
  * still stuff we need to send out.  Give it some time then force destruction
  * of the task and reset the nspawn.
  */
@@ -399,14 +467,14 @@ scan:
 		if (ts.e == LWS_TOKZE_ENDED)
 			break;
 	}
-}
 
-void
-saib_task_grace(struct sai_nspawn *ns)
-{
-	ns->finished_when_logs_drained = 1;
-	lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
-			 saib_sub_cleaner_cb, 20 * LWS_USEC_PER_SEC);
+	if (!ns->count_artifacts) {
+		lwsl_notice("%s: no artifacts, destroying ns now\n", __func__);
+		/* no artifacts to hang around for... nuke the ns now */
+        	lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
+                         saib_sub_cleaner_cb, 1);
+	} else
+		lwsl_notice("%s: created / waiting on %d artifact uploads\n", __func__, ns->count_artifacts);
 }
 
 static void
@@ -503,6 +571,22 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		}
 
 		/*
+		 * There's not already an existing step we accepted,
+		 * using the same uuid?
+		 */
+
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
+			struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
+
+			if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
+				lwsl_err("%s: server offered task that's already running\n", __func__);
+				return 0;
+			}
+		} lws_end_foreach_dll_safe(d, d1);
+
+
+
+		/*
 		 * store a copy of the toplevel ac used for the deserialization
 		 * into the outer part of the c builder wrapper
 		 */
@@ -520,10 +604,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		n = 0;
 		ns = NULL;
-		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
-					   sp->nspawn_owner.head) {
-		       struct sai_nspawn *xns = lws_container_of(d,
-						 struct sai_nspawn, list);
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
+		       struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
 		       if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
 			       ns = xns;
 			       break;
@@ -532,14 +614,91 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			       ns = xns;
 		} lws_end_foreach_dll_safe(d, d1);
 
+		if (saib_can_accept_task(task)) { /* not accepted */
+			if (saib_queue_task_status_update(sp, spm, task->uuid))
+				return -1;
+			return 0;
+		}
+
 		if (!ns) {
+			char pur[128], *p, ordinal_acc[SAI_BUILDER_INSTANCE_LIMIT];
+			int n;
+
 			ns = malloc(sizeof(*ns));
 			if (!ns)
 				return -1;
 			memset(ns, 0, sizeof(*ns));
 			ns->builder = &builder;
 			ns->sp = sp;
+
+			/*
+			 * Find the lowest free ordinal and use that.  It doesn't
+			 * have any meaning for us, but the project being built needs
+			 * it in SAI_INSTANCE_IDX so ctest can use, eg, test ports
+			 * that don't conflict with any other running instance.
+			 */
+
+			memset(ordinal_acc, 0, sizeof(ordinal_acc));
+			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
+			       struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
+			       assert(xns->instance_ordinal < (int)sizeof(ordinal_acc));
+			       ordinal_acc[xns->instance_ordinal] = 1;
+			} lws_end_foreach_dll_safe(d, d1);
+
+			for (n = 0; n < (int)sizeof(ordinal_acc); n++)
+				if (ordinal_acc[n] == 0) {
+					ns->instance_ordinal = n;
+					break;
+				}
+
+
 			lws_dll2_add_tail(&ns->list, &sp->nspawn_owner);
+
+			if (strstr(task->script, "sai-device")) {
+				lws_strncpy(pur, sp->name, sizeof(pur));
+				lws_filename_purify_inplace(pur);
+				p = pur;
+				while ((p = strchr(p, '/')))
+					*p = '_';
+
+				lws_snprintf(ns->slp_control.sockpath,
+						sizeof(ns->slp_control.sockpath),
+#if defined(__linux__)
+						UDS_PATHNAME_LOGPROXY".%s.saib",
+#else
+						UDS_PATHNAME_LOGPROXY"/%s.saib",
+#endif
+						task->uuid);
+				ns->slp_control.ns = ns;
+				ns->slp_control.log_channel_idx = 3;
+				if (saib_create_listen_uds(builder.context, &ns->slp_control,
+							&ns->vhosts[0])) {
+					lwsl_err("%s: Failed to create ctl log proxy listen UDS %s\n",
+							__func__, ns->slp_control.sockpath);
+					return -1;
+				}
+
+				for (n = 0; n < (int)LWS_ARRAY_SIZE(ns->slp); n++) {
+					lws_snprintf(ns->slp[n].sockpath,
+							sizeof(ns->slp[n].sockpath),
+#if defined(__linux__)
+							UDS_PATHNAME_LOGPROXY".%s.tty%d",
+#else
+							UDS_PATHNAME_LOGPROXY"/%s.tty%d",
+#endif
+							task->uuid, n);
+
+					ns->slp[n].ns = ns;
+					ns->slp[n].log_channel_idx = n + 4;
+
+					if (saib_create_listen_uds(builder.context, &ns->slp[n],
+								&ns->vhosts[n + 1])) {
+						lwsl_err("%s: Failed to create log proxy listen UDS %s\n",
+								__func__, ns->slp[n].sockpath);
+						return -1;
+					}
+				}
+			}
 		}
 
 //		lwsl_hexdump_warn(task->build, strlen(task->build));

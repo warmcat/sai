@@ -232,8 +232,9 @@ trees concurrently inside the platform.
 Tests have to take care to disambiguate which instance they are running on,
 since the network namespace is shared between instances that are running in the
 same sai-builder process on the same platform.  An environment var
-`SAI_INSTANCE_IDX` is available inside the each build context set to 0, 1, etc
-according to the builder instance.
+`SAI_INSTANCE_IDX` is available inside the each build context set to 0, 1, 33 etc
+according to the builder instance.  Similar to how fds are allocated in C, the
+lowest unused number is reused each time something new is spawned by Sai.
 
 For network related tests, `SAI_INSTANCE_IDX` should be referred to when
 choosing, eg, a test server port so it will not conflict with what other

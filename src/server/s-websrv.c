@@ -49,9 +49,6 @@ typedef struct sai_sul_retry_ctx {
 	uint8_t			op; /* SAIS_WS_WEBSRV_RX_... */
 } sai_sul_retry_ctx_t;
 
-static void
-sais_websrv_retry_cb(lws_sorted_usec_list_t *sul);
-
 typedef struct websrvss_srv {
 	struct lws_ss_handle 		*ss;
 	struct vhd			*vhd;
@@ -557,39 +554,6 @@ sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 	return SAI_DB_RESULT_OK;
 }
 
-static void
-sais_websrv_retry_cb(lws_sorted_usec_list_t *sul)
-{
-	sai_sul_retry_ctx_t *ctx = lws_container_of(sul, sai_sul_retry_ctx_t, sul);
-	sai_db_result_t r = SAI_DB_RESULT_ERROR;
-
-	switch(ctx->op) {
-	case SAIS_WS_WEBSRV_RX_TASKRESET:
-		r = sais_task_reset(ctx->vhd, ctx->uuid);
-		break;
-	case SAIS_WS_WEBSRV_RX_EVENTRESET:
-		r = sais_event_reset(ctx->vhd, ctx->uuid);
-		break;
-	case SAIS_WS_WEBSRV_RX_EVENTDELETE:
-		r = sais_event_delete(ctx->vhd, ctx->uuid);
-		break;
-	case SAIS_WS_WEBSRV_RX_PLATRESET:
-		r = sais_plat_reset(ctx->vhd, ctx->uuid, ctx->platform);
-		break;
-	}
-
-	if (r == SAI_DB_RESULT_BUSY && ctx->retries-- > 0) {
-		lwsl_notice("Retrying op %d for %s\n", ctx->op, ctx->uuid);
-		lws_sul_schedule(ctx->vhd->context, 0, &ctx->sul,
-				   sais_websrv_retry_cb, 250 * LWS_US_PER_MS);
-		return;
-	}
-
-	if (r != SAI_DB_RESULT_OK)
-		lwsl_err("Failed op %d for %s after retries\n", ctx->op, ctx->uuid);
-
-	free(ctx);
-}
 
 static lws_ss_state_return_t
 websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
@@ -622,26 +586,13 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	switch (a.top_schema_index) {
 	case SAIS_WS_WEBSRV_RX_TASKRESET:
 	{
-		sai_db_result_t r;
-
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 		if (sais_validate_id(ei->event_hash, SAI_TASKID_LEN))
 			goto soft_error;
 
-		r = sais_task_reset(m->vhd, ei->event_hash);
-		if (r == SAI_DB_RESULT_BUSY) {
-			sai_sul_retry_ctx_t *ctx = malloc(sizeof(*ctx));
-
-			if (!ctx)
-				break;
-
-			ctx->vhd = m->vhd;
-			lws_strncpy(ctx->uuid, ei->event_hash, sizeof(ctx->uuid));
-			ctx->retries = 10;
-			ctx->op = SAIS_WS_WEBSRV_RX_TASKRESET;
-			lws_sul_schedule(m->vhd->context, 0, &ctx->sul,
-					   sais_websrv_retry_cb, 250 * LWS_US_PER_MS);
-		}
+		lwsl_ss_warn(m->ss, "SAIS_WS_WEBSRV_RX_TASKRESET: %s: received", ei->event_hash);
+		if (sais_task_reset(m->vhd, ei->event_hash))
+			lwsl_ss_err(m->ss, "taskreset failed");
 		break;
 	}
 
@@ -650,23 +601,14 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		sai_db_result_t r;
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
+
 		if (sais_validate_id(ei->event_hash, SAI_EVENTID_LEN))
 			goto soft_error;
 
 		r = sais_event_reset(m->vhd, ei->event_hash);
-		if (r == SAI_DB_RESULT_BUSY) {
-			sai_sul_retry_ctx_t *ctx = malloc(sizeof(*ctx));
+		if (r)
+			lwsl_ss_err(m->ss, "eventreset failed");
 
-			if (!ctx)
-				break;
-
-			ctx->vhd = m->vhd;
-			lws_strncpy(ctx->uuid, ei->event_hash, sizeof(ctx->uuid));
-			ctx->retries = 10;
-			ctx->op = SAIS_WS_WEBSRV_RX_EVENTRESET;
-			lws_sul_schedule(m->vhd->context, 0, &ctx->sul,
-					   sais_websrv_retry_cb, 250 * LWS_US_PER_MS);
-		}
 		lwsac_free(&a.ac);
 		break;
 	}
@@ -679,19 +621,8 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			goto soft_error;
 
 		r = sais_plat_reset(m->vhd, pr->event_uuid, pr->platform);
-		if (r == SAI_DB_RESULT_BUSY) {
-			sai_sul_retry_ctx_t *ctx = malloc(sizeof(*ctx));
-			if (!ctx)
-				break;
-
-			ctx->vhd = m->vhd;
-			lws_strncpy(ctx->uuid, pr->event_uuid, sizeof(ctx->uuid));
-			lws_strncpy(ctx->platform, pr->platform, sizeof(ctx->platform));
-			ctx->retries = 10;
-			ctx->op = SAIS_WS_WEBSRV_RX_PLATRESET;
-			lws_sul_schedule(m->vhd->context, 0, &ctx->sul,
-					   sais_websrv_retry_cb, 250 * LWS_US_PER_MS);
-		}
+		if (r)
+			lwsl_ss_err(m->ss, "platreset failed");
 		lwsac_free(&a.ac);
 		break;
 	}
@@ -709,18 +640,8 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lwsl_notice("%s: eventdelete %s\n", __func__, ei->event_hash);
 
 		r = sais_event_delete(m->vhd, ei->event_hash);
-		if (r == SAI_DB_RESULT_BUSY) {
-			sai_sul_retry_ctx_t *ctx = malloc(sizeof(*ctx));
-			if (!ctx)
-				break;
-
-			ctx->vhd = m->vhd;
-			lws_strncpy(ctx->uuid, ei->event_hash, sizeof(ctx->uuid));
-			ctx->retries = 10;
-			ctx->op = SAIS_WS_WEBSRV_RX_EVENTDELETE;
-			lws_sul_schedule(m->vhd->context, 0, &ctx->sul,
-					   sais_websrv_retry_cb, 250 * LWS_US_PER_MS);
-		}
+		if (r)
+			lwsl_ss_err(m->ss, "event delete failed");
 		lwsac_free(&a.ac);
 		break;
 	}
