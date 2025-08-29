@@ -571,6 +571,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 						 struct sai_nspawn, list);
 		       if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
 			       ns = xns;
+			       lws_sul_cancel(&ns->sul_cleaner);
 			       break;
 		       }
 		       if (!xns->task && !ns)
