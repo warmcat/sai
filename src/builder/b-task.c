@@ -50,11 +50,11 @@ saib_can_accept_task(sai_task_t *task)
 		return 0;
 	}
 
-	/*if (cpu_load >= 0 && (cpu_load + (int)task->est_cpu_load_pct) > 50) {
+	if (cpu_load >= 0 && (cpu_load + (int)task->est_cpu_load_pct) > 50) {
 		lwsl_notice("%s: reject task %s: CPU load too high\n",
 			    __func__, task->uuid);
 		return 0;
-	}*/
+	}
 
 	return 1;
 }
@@ -571,7 +571,6 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 						 struct sai_nspawn, list);
 		       if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
 			       ns = xns;
-			       lws_sul_cancel(&ns->sul_cleaner);
 			       break;
 		       }
 		       if (!xns->task && !ns)
@@ -581,8 +580,10 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		if (!saib_can_accept_task(task)) {
 			if (saib_queue_task_status_update(sp, spm, task->uuid))
 				return -1;
-		} else {
-			if (!ns) {
+			return 0;
+		}
+
+		if (!ns) {
 			char pur[128], *p;
 			int n;
 
@@ -766,7 +767,6 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		if (saib_queue_task_status_update(sp, spm, NULL)) {
 			goto bail;
-		}
 		}
 
 		break;
