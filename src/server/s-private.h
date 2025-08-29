@@ -185,6 +185,13 @@ typedef struct sais_plat {
 	const char	*plat;
 } sais_plat_t;
 
+typedef struct sai_rejected_task {
+	lws_dll2_t	list;
+	char		task_uuid[65];
+	char		builder_name[96];
+	uint64_t	timestamp;
+} sai_rejected_task_t;
+
 struct vhd {
 	struct lws_context *context;
 	struct lws_vhost *vhost;
@@ -198,6 +205,7 @@ struct vhd {
 	struct lws_dll2_owner		sai_powers;
 	struct lws_dll2_owner		pending_plats;
 	lws_dll2_owner_t		powering_up_list; /* sai_powering_up_plat_t */
+	lws_dll2_owner_t		rejected_tasks; /* sai_rejected_task_t */
 
 	struct lwsac			*ac_plats;
 
@@ -298,7 +306,7 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		   const char *cns_name);
 
 int
-sais_continue_task(struct vhd *vhd, const char *task_uuid);
+sais_prepare_next_step_script(struct vhd *vhd, sai_task_t *task);
 
 int
 sais_set_task_state(struct vhd *vhd, const char *builder_name,

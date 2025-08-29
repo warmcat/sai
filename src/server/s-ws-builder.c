@@ -725,7 +725,8 @@ bail:
 			    rej->task_uuid[0] ? rej->task_uuid : "none");
 
 		if (rej->task_uuid[0])
-			sais_task_reset(vhd, rej->task_uuid);
+			sais_set_task_state(vhd, NULL, NULL, rej->task_uuid,
+					    SAIES_REJECTED, 0, 0);
 
 		lwsac_free(&pss->a.ac);
 		break;

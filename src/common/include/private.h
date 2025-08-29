@@ -51,6 +51,7 @@ typedef enum {
 
 	SAIES_NOT_READY_FOR_BUILD		= 8,
 	SAIES_STEP_SUCCESS			= 9,
+	SAIES_REJECTED				= 10,
 } sai_event_state_t;
 
 enum {

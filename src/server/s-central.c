@@ -150,6 +150,44 @@ void
 sais_central_cb(lws_sorted_usec_list_t *sul)
 {
 	struct vhd *vhd = lws_container_of(sul, struct vhd, sul_central);
+	struct lwsac *ac_events = NULL, *ac_tasks = NULL;
+	lws_dll2_owner_t o_events, o_tasks;
+
+	/*
+	 * First, check for rejected tasks that have cooled down
+	 */
+
+	if (lws_struct_sq3_deserialize(vhd->server.pdb,
+			" and state != 3 and state != 4 and state != 5 and state != 7",
+			NULL, lsm_schema_sq3_map_event, &o_events, &ac_events, 0, 100) >= 0 &&
+			o_events.head) {
+		lws_start_foreach_dll(struct lws_dll2 *, d, o_events.head) {
+			sai_event_t *e = lws_container_of(d, sai_event_t, list);
+			sqlite3 *pdb = NULL;
+
+			if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
+				if (lws_struct_sq3_deserialize(pdb,
+						" and state = 10",
+						NULL, lsm_schema_sq3_map_task, &o_tasks,
+						&ac_tasks, 0, 100) >= 0 && o_tasks.head) {
+					lws_start_foreach_dll(struct lws_dll2 *, dt, o_tasks.head) {
+						sai_task_t *t = lws_container_of(dt, sai_task_t, list);
+
+						if (lws_now_usecs() - (t->last_updated * LWS_US_PER_SEC) > 10 * LWS_US_PER_SEC) {
+							lwsl_notice("%s: task %s cooled down, moving to WAITING\n",
+								    __func__, t->uuid);
+							sais_set_task_state(vhd, NULL, NULL, t->uuid,
+									    SAIES_WAITING, 0, 0);
+						}
+					} lws_end_foreach_dll(dt);
+				}
+				lwsac_free(&ac_tasks);
+				sais_event_db_close(vhd, &pdb);
+			}
+		} lws_end_foreach_dll(d);
+	}
+	lwsac_free(&ac_events);
+
 
 	/*
 	 * For each builder connected to us, see if it can handle a new task,
@@ -160,11 +198,10 @@ sais_central_cb(lws_sorted_usec_list_t *sul)
 			      vhd->server.builder_owner.head) {
 		sai_plat_t *cb = lws_container_of(p, sai_plat_t, sai_plat_list);
 
-		lwsl_debug("%s: checking tasks %s %d %d %p\n", __func__,
-			    cb->name, cb->ongoing, cb->instances, cb->wsi);
+		lwsl_debug("%s: checking tasks %s %p\n", __func__,
+			    cb->name, cb->wsi);
 
-		if (cb->wsi && lws_wsi_user(cb->wsi) &&
-		    cb->ongoing < cb->instances)
+		if (cb->wsi && lws_wsi_user(cb->wsi))
 			/*
 			 * try to bind outstanding task to specific builder
 			 * instance
