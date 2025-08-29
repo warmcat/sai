@@ -229,6 +229,8 @@ saib_task_destroy(struct sai_nspawn *ns)
 		saib_queue_task_status_update(ns->sp, ns->spm, NULL);
 	}
 
+	int n;
+
 	if (ns->task && ns->task->ac_task_container) {
 		 /* contains the task object */
 		lwsac_free(&ns->task->ac_task_container);
@@ -237,6 +239,18 @@ saib_task_destroy(struct sai_nspawn *ns)
 
 	if (ns->script_path[0])
 		unlink(ns->script_path);
+
+	for (n = 0; n < (int)LWS_ARRAY_SIZE(ns->vhosts); n++)
+		if (ns->vhosts[n]) {
+			lws_vhost_destroy(ns->vhosts[n]);
+			ns->vhosts[n] = NULL;
+		}
+
+	if (ns->slp_control.sockpath[0])
+		unlink(ns->slp_control.sockpath);
+	for (n = 0; n < (int)LWS_ARRAY_SIZE(ns->slp); n++)
+		if (ns->slp[n].sockpath[0])
+			unlink(ns->slp[n].sockpath);
 
 	lws_dll2_remove(&ns->list);
 	free(ns);
@@ -591,7 +605,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			ns->sp = sp;
 			lws_dll2_add_tail(&ns->list, &sp->nspawn_owner);
 
-			lws_strncpy(pur, sp->name, sizeof(pur));
+			if (strstr(task->script, "sai-device")) {
+				lws_strncpy(pur, sp->name, sizeof(pur));
 			lws_filename_purify_inplace(pur);
 			p = pur;
 			while ((p = strchr(p, '/')))
@@ -607,7 +622,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 				     task->uuid);
 			ns->slp_control.ns = ns;
 			ns->slp_control.log_channel_idx = 3;
-			if (saib_create_listen_uds(builder.context, &ns->slp_control)) {
+			if (saib_create_listen_uds(builder.context, &ns->slp_control,
+						   &ns->vhosts[0])) {
 				lwsl_err("%s: Failed to create ctl log proxy listen UDS %s\n",
 					 __func__, ns->slp_control.sockpath);
 				return -1;
@@ -626,11 +642,13 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 				ns->slp[n].ns = ns;
 				ns->slp[n].log_channel_idx = n + 4;
 
-				if (saib_create_listen_uds(builder.context, &ns->slp[n])) {
+				if (saib_create_listen_uds(builder.context, &ns->slp[n],
+							   &ns->vhosts[n + 1])) {
 					lwsl_err("%s: Failed to create log proxy listen UDS %s\n",
 						 __func__, ns->slp[n].sockpath);
 					return -1;
 				}
+			}
 			}
 		}
 

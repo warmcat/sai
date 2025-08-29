@@ -149,6 +149,7 @@ struct sai_nspawn {
 	/* convenient place to store it */
 	struct saib_logproxy		slp_control;
 	struct saib_logproxy		slp[2];
+	struct lws_vhost		*vhosts[3];
 
 	lws_dll2_t			list;		/* sai_plat owner lists sai_nspawns */
 	struct sai_builder		*builder;

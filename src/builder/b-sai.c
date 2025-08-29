@@ -199,8 +199,15 @@ pvo_resproxy = { /* starting point for resproxy */
 	        "ok"                     /* ignored */
 	};;
 
+void *
+saib_thread_suspend(void *d)
+{
+	return NULL;
+}
+
 static int
-saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp)
+saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp,
+		       struct lws_vhost **vhost)
 {
 	struct lws_context_creation_info info;
 
@@ -223,7 +230,8 @@ saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp)
 
 	lwsl_notice("%s: %s.%s\n", __func__, info.vhost_name, lp->sockpath);
 
-	if (!lws_create_vhost(context, &info)) {
+	*vhost = lws_create_vhost(context, &info);
+	if (!*vhost) {
 		lwsl_notice("%s: failed to create vh %s\n", __func__,
 			    info.vhost_name);
 		return -1;
