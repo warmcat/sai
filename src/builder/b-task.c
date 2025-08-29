@@ -581,10 +581,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		if (!saib_can_accept_task(task)) {
 			if (saib_queue_task_status_update(sp, spm, task->uuid))
 				return -1;
-			return 0;
-		}
-
-		if (!ns) {
+		} else {
+			if (!ns) {
 			char pur[128], *p;
 			int n;
 
@@ -768,6 +766,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		if (saib_queue_task_status_update(sp, spm, NULL)) {
 			goto bail;
+		}
 		}
 
 		break;
