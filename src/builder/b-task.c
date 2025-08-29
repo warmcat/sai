@@ -50,11 +50,11 @@ saib_can_accept_task(sai_task_t *task)
 		return 0;
 	}
 
-	if (cpu_load >= 0 && (cpu_load + (int)task->est_cpu_load_pct) > 50) {
+	/*if (cpu_load >= 0 && (cpu_load + (int)task->est_cpu_load_pct) > 50) {
 		lwsl_notice("%s: reject task %s: CPU load too high\n",
 			    __func__, task->uuid);
 		return 0;
-	}
+	}*/
 
 	return 1;
 }
