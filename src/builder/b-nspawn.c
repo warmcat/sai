@@ -106,6 +106,8 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		if (op && op->lsp) {
 			lws_spawn_stdwsi_closed(op->lsp, wsi);
 			if (ns) {
+				if (ns->stdcount)
+					ns->stdcount--;
 				lws_cancel_service(ns->builder->context);
 				saib_ns_try_destroy(ns);
 			}
@@ -132,7 +134,7 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 		len = (unsigned int)ilen;
 
-		if (!op || !op->ns || !op->ns->spm) {
+		if (!op || !op->ns || !ns->spm) {
 			printf("%s: (%d) %.*s\n", __func__, (int)lws_spawn_get_stdfd(wsi), (int)len, buf);
 			return -1;
 		}
@@ -581,6 +583,8 @@ saib_spawn_script(struct sai_nspawn *ns)
 
 		return 1;
 	}
+
+	ns->stdcount = 2;
 
 	// lwsl_warn("%s: build script spawn returned at %llu\n", __func__,
 	//	  (unsigned long long)lws_now_usecs());

@@ -204,7 +204,6 @@ struct sai_nspawn {
 	uint8_t				finished_when_logs_drained:1;
 	uint8_t				state_changed:1;
 	uint8_t				user_cancel:1;
-	uint8_t				destroy_pending:1;
 
 };
 
