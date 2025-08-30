@@ -407,7 +407,6 @@ cleanup_on_ss_destroy(struct lws_dll2 *d, void *user)
 			lws_container_of(d, struct sai_nspawn, list);
 
 		if (ns->spm == spm) {
-			lwsl_warn("%s: ns->spm %p, spm %p\n", __func__, ns->spm, spm);
 			/*
 			 * This pss is about to go away, make sure the ns
 			 * can't reference it any more no matter what happens

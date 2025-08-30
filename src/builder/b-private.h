@@ -190,6 +190,9 @@ int
 saib_set_ns_state(struct sai_nspawn *ns, int state);
 
 void
+saib_ns_try_destroy(struct sai_nspawn *ns);
+
+void
 saib_task_destroy(struct sai_nspawn *ns);
 
 void

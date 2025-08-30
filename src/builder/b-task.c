@@ -172,6 +172,18 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 }
 
 void
+saib_ns_try_destroy(struct sai_nspawn *ns)
+{
+	if (!ns->destroy_pending ||
+	    (ns->op && ns->op->lsp && !lws_spawn_stdwsi_am_all_closed(ns->op->lsp)))
+		return;
+
+	lwsl_warn("%s: freeing ns %p\n", __func__, ns);
+
+	free(ns);
+}
+
+void
 saib_task_destroy(struct sai_nspawn *ns)
 {
 	ns->finished_when_logs_drained = 0;
@@ -243,7 +255,9 @@ saib_task_destroy(struct sai_nspawn *ns)
 			unlink(ns->slp[n].sockpath);
 
 	lws_dll2_remove(&ns->list);
-	free(ns);
+
+	ns->destroy_pending = 1;
+	saib_ns_try_destroy(ns);
 }
 
 static void

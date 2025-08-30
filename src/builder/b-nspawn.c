@@ -105,8 +105,10 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
                lwsl_wsi_err(wsi, "CLOSING: op %p, op->lsp %p", op, op ? op->lsp : NULL);
 		if (op && op->lsp) {
 			lws_spawn_stdwsi_closed(op->lsp, wsi);
-			if (ns)
+			if (ns) {
 				lws_cancel_service(ns->builder->context);
+				saib_ns_try_destroy(ns);
+			}
 		}
 		break;
 
