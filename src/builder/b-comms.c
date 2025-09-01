@@ -523,8 +523,8 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 	const char *pq;
 	int n;
 
-	lwsl_user("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
-		  (unsigned int)ack);
+	// lwsl_user("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
+	//	  (unsigned int)ack);
 
 	switch (state) {
 

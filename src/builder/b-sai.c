@@ -307,8 +307,8 @@ saib_power_stay_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		 */
 		lws_sul_cancel(&builder.sul_idle);
 
-		lwsl_warn("%s: %s: stay applied: cancelled idle grace time\n",
-					__func__, builder.host);
+		// lwsl_warn("%s: %s: stay applied: cancelled idle grace time\n",
+		//			__func__, builder.host);
 	} else {
 
 		/*

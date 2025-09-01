@@ -58,10 +58,6 @@ typedef struct sai_job {
 
 } sai_job_t;
 
-const lws_struct_map_t lsm_schema_map_ta[] = {
-	LSM_SCHEMA (sai_task_t,	    NULL, lsm_task,    "com-warmcat-sai-ta"),
-};
-
 extern const lws_struct_map_t lsm_schema_sq3_map_event[];
 extern const lws_ss_info_t ssi_server;
 

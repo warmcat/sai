@@ -308,6 +308,12 @@ skip:
 	if (op->spawn)
 		free(op->spawn);
 
+	if (ns->spm) {
+		ns->spm->phase = PHASE_START_ATTACH;
+		if (lws_ss_request_tx(ns->spm->ss))
+			lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
+	}
+
 	/*
 	 * add a final zero-length log with the retcode to the list of pending
 	 * logs
