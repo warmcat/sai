@@ -580,6 +580,7 @@ handle:
 					    sizeof(live_cb->lws_hash));
 				live_cb->windows = build->windows;
 				live_cb->online = 1;
+				live_cb->rejected_us = 0;
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
 				size_t nlen = strlen(build->name) + 1;
@@ -602,6 +603,7 @@ handle:
 					live_cb->windows = build->windows;
 					live_cb->wsi = pss->wsi;
 					live_cb->online = 1;
+					live_cb->rejected_us = 0;
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 					lws_dll2_add_tail(&live_cb->sai_plat_list, &vhd->server.builder_owner);
 				}
@@ -723,8 +725,10 @@ bail:
 			    __func__, cb->name,
 			    rej->task_uuid[0] ? rej->task_uuid : "none");
 
-		if (rej->task_uuid[0])
+		if (rej->task_uuid[0]) {
+			cb->rejected_us = lws_now_usecs();
 			sais_task_reset(vhd, rej->task_uuid);
+		}
 
 		lwsac_free(&pss->a.ac);
 		break;

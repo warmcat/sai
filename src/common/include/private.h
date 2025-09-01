@@ -439,6 +439,7 @@ typedef struct sai_plat {
 	char			windows;
 
 	int			index; /* used to create unique build dir path */
+	lws_usec_t		rejected_us;
 } sai_plat_t;
 
 typedef struct sai_plat_owner {
@@ -555,4 +556,3 @@ sul_idle_cb(lws_sorted_usec_list_t *sul);
 
 int
 sai_uuid16_create(struct lws_context *context, char *dest33);
-

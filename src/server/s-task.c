@@ -75,7 +75,7 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 		    uint64_t started, uint64_t duration)
 {
 	char update[384], esc[96], esc1[96], esc2[96], esc3[32], esc4[32],
-		event_uuid[33];
+		event_uuid[33], bname[128];
 	unsigned int count = 0, count_good = 0, count_bad = 0;
 	sai_event_state_t oes, sta;
 	struct lwsac *ac = NULL;
@@ -119,6 +119,23 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 				__func__);
 
 		return -1;
+	}
+
+	if (ostate == SAIES_STEP_SUCCESS || state == SAIES_SUCCESS ||
+	    state == SAIES_FAIL || state == SAIES_CANCELLED) {
+		lws_snprintf(update, sizeof(update),
+			"select builder_name from tasks where uuid='%s'", esc2);
+		bname[0] = '\0';
+		if (sqlite3_exec((sqlite3 *)e->pdb, update, sql3_get_string_cb,
+				 bname, NULL) == SQLITE_OK && bname[0]) {
+			sai_plat_t *cb = sais_builder_from_uuid(vhd, bname,
+							__FILE__, __LINE__);
+			if (cb) {
+				lwsl_info("%s: task completion, clear reject "
+					  "for %s\n", __func__, cb->name);
+				cb->rejected_us = 0;
+			}
+		}
 	}
 
 	if (builder_name)
@@ -866,6 +883,13 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 {
 	const sai_task_t *task_template;
 	sai_task_t *task = NULL;
+
+	if (cb->rejected_us &&
+	    lws_now_usecs() - cb->rejected_us < 2 * LWS_US_PER_SEC) {
+		lwsl_info("%s: builder %s in rejection cooldown\n", __func__,
+			  cb->name);
+		return 1; /* Not an error, just can't allocate now */
+	}
 
 	/*
 	 * Look for a task for this platform, on any event that needs building
