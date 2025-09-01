@@ -838,8 +838,6 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 
 	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
 
-	lwsl_notice("%s: stopping task %s on builders\n", __func__, task_uuid);
-	lwsl_notice("%s: stopping task %s on builders\n", __func__, task_uuid);
 	sais_task_stop_on_builders(vhd, task_uuid);
 
 	/*
