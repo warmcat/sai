@@ -1134,6 +1134,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		sai_cancel_t *c = lws_container_of(pss->task_cancel_owner.head,
 						   sai_cancel_t, list);
 
+		lwsl_notice("%s: sending task cancel for %s\n", __func__, c->task_uuid);
 		js = lws_struct_json_serialize_create(lsm_schema_json_map_can,
 				LWS_ARRAY_SIZE(lsm_schema_json_map_can), 0, c);
 		if (!js)
