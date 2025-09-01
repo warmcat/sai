@@ -842,6 +842,8 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 
 	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
 
+	lwsl_notice("%s: stopping task %s on builders\n", __func__, task_uuid);
+	lwsl_notice("%s: stopping task %s on builders\n", __func__, task_uuid);
 	sais_task_stop_on_builders(vhd, task_uuid);
 
 	/*
@@ -1106,7 +1108,6 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 
 		if (!p) { /* no more steps */
 			sais_set_task_state(vhd, NULL, NULL, task->uuid, SAIES_SUCCESS, 0, 0);
-			sais_task_stop_on_builders(vhd, task->uuid);
 			sais_event_db_close(vhd, &pdb);
 			lwsac_free(&task->ac_task_container);
 			free(task);
