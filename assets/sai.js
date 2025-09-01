@@ -1122,6 +1122,12 @@ function ws_open_sai()
 
 	try {
 		sai.onopen = function() {
+			var overlay = document.querySelector(".overlay");
+			if (overlay) {
+				overlay.parentNode.removeChild(overlay);
+			}
+			document.body.classList.remove("overlay-active");
+
 			var par = new URLSearchParams(window.location.search),
 				tid, eid;
 			tid = par.get('task');
@@ -1755,6 +1761,11 @@ function ws_open_sai()
 		};
 
 		sai.onclose = function(ev){
+			var overlay = document.createElement("div");
+			overlay.className = "overlay";
+			document.body.appendChild(overlay);
+			document.body.classList.add("overlay-active");
+
 			console.log("WebSocket closed. Code:", ev.code, "Reason:", ev.reason);
 			myVar = setTimeout(ws_open_sai, 4000);
 		};
