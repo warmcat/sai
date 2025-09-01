@@ -266,7 +266,10 @@ saib_sub_cleaner_cb(lws_sorted_usec_list_t *sul)
 						 sul_cleaner);
 	lwsl_warn("%s: Task completion grace period ended with ns alive\n", __func__);
 
-	saib_task_destroy(ns);
+	// saib_task_destroy(ns);
+	
+	if (ns->op && ns->op->lsp)
+		lws_spawn_piped_kill_child_process(ns->op->lsp);
 }
 
 void
