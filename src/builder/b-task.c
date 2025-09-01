@@ -583,7 +583,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 			if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
 				lwsl_err("%s: server offered task that's already running\n", __func__);
-				return 0;
+			//	return 0;
 			}
 		} lws_end_foreach_dll_safe(d, d1);
 
@@ -733,8 +733,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			lwsac_free(&ns->task->ac_task_container);
 
 		ns->task = task; /* we are owning this nspawn for the duration */
-		if (!task->build_step) {
-			ns->current_step = 0;
+		ns->current_step = task->build_step;
+		if (!ns->current_step) {
 			ns->spins = 0;
 			ns->user_cancel = 0;
 			ns->us_cpu_user = 0;

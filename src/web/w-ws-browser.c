@@ -490,8 +490,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 			saiw_alloc_sched(pss, WSS_PREPARE_OVERVIEW);
 			saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
-			ret = 0;
-			goto bail;
+			break;
 		}
 
 		/*
@@ -566,7 +565,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl);
 		lwsac_free(&a.ac);
 
-		goto bail;
+		break;
 
 	case SAIM_WS_BROWSER_RX_TASKCANCEL:
 
