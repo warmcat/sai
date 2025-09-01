@@ -174,6 +174,7 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 void
 saib_task_destroy(struct sai_nspawn *ns)
 {
+	lwsl_notice("%s: destroying task %s\n", __func__, ns->task ? ns->task->uuid : "null");
 	ns->finished_when_logs_drained = 0;
 	lws_sul_cancel(&ns->sul_cleaner);
 	lws_sul_cancel(&ns->sul_task_cancel);
@@ -671,8 +672,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			lwsac_free(&ns->task->ac_task_container);
 
 		ns->task = task; /* we are owning this nspawn for the duration */
-		ns->current_step = task->build_step;
-		if (!ns->current_step) {
+		if (!task->build_step) {
+			ns->current_step = 0;
 			ns->spins = 0;
 			ns->user_cancel = 0;
 			ns->us_cpu_user = 0;
@@ -775,6 +776,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		can = (sai_cancel_t *)a.dest;
 
+		lwsl_notice("%s: received task cancel for %s\n", __func__, can->task_uuid);
 		lwsl_notice("%s: SAIB_RX_TASK_CANCEL: %s\n", __func__, can->task_uuid);
 
 		lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
