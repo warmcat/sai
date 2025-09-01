@@ -409,7 +409,7 @@ sais_event_reset(struct vhd *vhd, const char *event_uuid)
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
 			sai_task_t *t = lws_container_of(p, sai_task_t, list);
-			if (sais_task_reset(vhd, t->uuid) == SAI_DB_RESULT_BUSY) {
+			if (sais_task_reset(vhd, t->uuid, 0) == SAI_DB_RESULT_BUSY) {
 				sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
 				sais_event_db_close(vhd, &pdb);
 				lwsac_free(&ac);
@@ -532,7 +532,7 @@ sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
 			sai_task_t *t = lws_container_of(p, sai_task_t, list);
-			if (sais_task_reset(vhd, t->uuid) == SAI_DB_RESULT_BUSY) {
+			if (sais_task_reset(vhd, t->uuid, 0) == SAI_DB_RESULT_BUSY) {
 				sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
 				sais_event_db_close(vhd, &pdb);
 				lwsac_free(&ac);
@@ -565,7 +565,7 @@ sais_websrv_retry_cb(lws_sorted_usec_list_t *sul)
 
 	switch(ctx->op) {
 	case SAIS_WS_WEBSRV_RX_TASKRESET:
-		r = sais_task_reset(ctx->vhd, ctx->uuid);
+		r = sais_task_reset(ctx->vhd, ctx->uuid, 0);
 		break;
 	case SAIS_WS_WEBSRV_RX_EVENTRESET:
 		r = sais_event_reset(ctx->vhd, ctx->uuid);
@@ -628,7 +628,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		if (sais_validate_id(ei->event_hash, SAI_TASKID_LEN))
 			goto soft_error;
 
-		r = sais_task_reset(m->vhd, ei->event_hash);
+		r = sais_task_reset(m->vhd, ei->event_hash, 0);
 		if (r == SAI_DB_RESULT_BUSY) {
 			sai_sul_retry_ctx_t *ctx = malloc(sizeof(*ctx));
 

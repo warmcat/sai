@@ -410,7 +410,7 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 								if (task_uuid) {
 									lwsl_notice("%s: resetting task %s from disconnected builder %s\n",
 											__func__, (const char *)task_uuid, cb->name);
-									sais_task_reset(vhd, (const char *)task_uuid);
+									sais_task_reset(vhd, (const char *)task_uuid, 0);
 								}
 							}
 							sqlite3_finalize(sm);
@@ -580,7 +580,6 @@ handle:
 					    sizeof(live_cb->lws_hash));
 				live_cb->windows = build->windows;
 				live_cb->online = 1;
-				live_cb->rejected_us = 0;
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
 				size_t nlen = strlen(build->name) + 1;
@@ -603,7 +602,6 @@ handle:
 					live_cb->windows = build->windows;
 					live_cb->wsi = pss->wsi;
 					live_cb->online = 1;
-					live_cb->rejected_us = 0;
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 					lws_dll2_add_tail(&live_cb->sai_plat_list, &vhd->server.builder_owner);
 				}
@@ -725,10 +723,8 @@ bail:
 			    __func__, cb->name,
 			    rej->task_uuid[0] ? rej->task_uuid : "none");
 
-		if (rej->task_uuid[0]) {
-			cb->rejected_us = lws_now_usecs();
-			sais_task_reset(vhd, rej->task_uuid);
-		}
+		if (rej->task_uuid[0])
+			sais_task_reset(vhd, rej->task_uuid, 1);
 
 		lwsac_free(&pss->a.ac);
 		break;
@@ -1138,7 +1134,6 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		sai_cancel_t *c = lws_container_of(pss->task_cancel_owner.head,
 						   sai_cancel_t, list);
 
-		lwsl_notice("%s: sending task cancel for %s\n", __func__, c->task_uuid);
 		js = lws_struct_json_serialize_create(lsm_schema_json_map_can,
 				LWS_ARRAY_SIZE(lsm_schema_json_map_can), 0, c);
 		if (!js)
