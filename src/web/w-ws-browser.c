@@ -33,28 +33,27 @@
 /*
  * This allows other parts of sai-web to queue a raw buffer to be sent to
  * all connected browsers, eg, for load reports.
+ *
+ * The flags are lws_write() flags.
  */
 void
-saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int api_ver_min, int flags)
+saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int api_ver_min, enum lws_write_protocol flags)
 {
 	int eff = 0;
-	// lwsl_err("%s: sai-web broadcasting to browsers\n", __func__);
-	// lwsl_hexdump_err(buf, len);
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 		struct pss *pss = lws_container_of(p, struct pss, same);
-		int *pi = (int *)((const char *)buf -sizeof(int));
+		int *pi = (int *)((const char *)buf - sizeof(int));
 
 		if (pss->js_api_version >= api_ver_min) {
 			eff++;
-			*pi = flags;
+			*pi = (int)flags;
 
 			if (lws_buflist_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) > 0)
 				lws_callback_on_writable(pss->wsi);
 		}
-	} lws_end_foreach_dll(p);
 
-	// lwsl_notice("%s: broadcast to %d / %d browsers\n", __func__, eff, (int)vhd->browsers.count);	
+	} lws_end_foreach_dll(p);
 }
 
 extern const lws_struct_map_t lsm_load_report_members[7]; 
@@ -790,8 +789,11 @@ again:
 		 * Stay in this state if we're in the middle of a
 		 * multi-fragment message
 		 */
-		if (lws_ws_sending_multifragment(pss->wsi))
+		if (lws_ws_sending_multifragment(pss->wsi)) {
+			lws_callback_on_writable(pss->wsi);
+
 			return 0;
+		}
 
 		/* fallthru */
 
@@ -804,27 +806,36 @@ again:
 		 */
 
 		if (pss->raw_tx) {
-			char som, eom, rb[4096];
-			int used, *pi = (int *)rb;
+			/*
+			 * Notice we are getting the stored flags from the START of the fragment each time.
+			 * that means we can still see the right flags stored with the fragment, even if we
+			 * have partially used the buflist frag and are partway through it.
+			 */
+			int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&pss->raw_tx);
+			char som, eom, rb[1200];
+			int used, final = 1;
+			size_t fsl;
 
-			used = lws_buflist_fragment_use(&pss->raw_tx, (uint8_t *)rb,
-							sizeof(rb), &som, &eom);
+			fsl = lws_buflist_next_segment_len(&pss->raw_tx, NULL);
+
+			/* this is the only buflist user on pss->raw_tx */
+			used = lws_buflist_fragment_use(&pss->raw_tx, (uint8_t *)rb, sizeof(rb), &som, &eom);
 			if (!used)
 				return 0;
-
-			// lwsl_wsi_notice(pss->wsi, "writing %d bytes flags 0x%x: '%.*s'",
-			//		(int)(used - (int)sizeof(int)), (int)*pi,
-			//		(int)(used - (int)sizeof(int)), rb + sizeof(int));  
+			if (used < (int)fsl || ((*pi) & LWS_WRITE_NO_FIN))
+				final = 0;
 
 			if (lws_write(pss->wsi, (uint8_t *)rb + sizeof(int),
 						(size_t)used - sizeof(int),
-						(enum lws_write_protocol)*pi) < 0) {
+						lws_write_ws_flags((((enum lws_write_protocol)*pi) & 0xf), som, final)
+					) < 0) {
 				lwsl_wsi_err(pss->wsi, "attempt to write %d failed", (int)used - (int)sizeof(int));
 
 				return -1;
 			}
 
-			lws_callback_on_writable(pss->wsi);
+			if (lws_buflist_next_segment_len(&pss->raw_tx, NULL))
+				lws_callback_on_writable(pss->wsi);
 
 			if (!lws_ws_sending_multifragment(pss->wsi))
 				pss->send_state = WSS_IDLE1;
@@ -841,6 +852,8 @@ again:
 		if (lws_ws_sending_multifragment(pss->wsi) ||
 		    !sch)
 			return 0;
+
+		/* switch to the pending sch */
 
 		pss->toggle_favour_sch = 0;
 		pss->send_state = sch->action;
