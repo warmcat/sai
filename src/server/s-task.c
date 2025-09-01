@@ -198,6 +198,11 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 
 		sais_taskchange(vhd->h_ss_websrv, task_uuid, state);
 
+		if (state == SAIES_SUCCESS || state == SAIES_FAIL ||
+		    state == SAIES_CANCELLED)
+			lws_sul_schedule(vhd->context, 0, &vhd->sul_central,
+					 sais_central_cb, 1);
+
 		sais_platforms_with_tasks_pending(vhd);
 
 		/*
@@ -757,29 +762,69 @@ sais_task_cancel(struct vhd *vhd, const char *task_uuid)
 static int
 sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid)
 {
+	char event_uuid[33], builder_name[128], esc_uuid[129], q[128];
+	struct pss *pss_match = NULL;
+	sai_plat_t *cb;
+	sqlite3 *pdb = NULL;
 	sai_cancel_t *can;
 
 	lwsl_notice("%s: builders count %d\n", __func__, vhd->builders.count);
 
 	/*
-	 * For every pss that we have from builders...
+	 * We will send the task cancel message only to the builder that was
+	 * assigned the task, if any.
 	 */
+
+	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
+
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+		lwsl_err("%s: unable to open event-specific database\n", __func__);
+		return -1;
+	}
+
+	builder_name[0] = '\0';
+	lws_sql_purify(esc_uuid, task_uuid, sizeof(esc_uuid));
+	lws_snprintf(q, sizeof(q), "select builder_name from tasks where uuid='%s'",
+		     esc_uuid);
+	if (sqlite3_exec(pdb, q, sql3_get_string_cb, builder_name, NULL) !=
+							SQLITE_OK ||
+	    !builder_name[0]) {
+		sais_event_db_close(vhd, &pdb);
+		/*
+		 * This is not an error... the task may not have had a builder
+		 * assigned yet.  There's nothing to do.
+		 */
+		return 0;
+	}
+	sais_event_db_close(vhd, &pdb);
+
+	cb = sais_builder_from_uuid(vhd, builder_name, __FILE__, __LINE__);
+	if (!cb)
+		/* Builder not connected, nothing to do */
+		return 0;
+
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->builders.head) {
 		struct pss *pss = lws_container_of(p, struct pss, same);
-
-		/*
-		 * ... queue the task cancel message
-		 */
-		can = malloc(sizeof *can);
-		if (!can)
-			return -1;
-		memset(can, 0, sizeof(*can));
-
-		lws_strncpy(can->task_uuid, task_uuid, sizeof(can->task_uuid));
-		lws_dll2_add_tail(&can->list, &pss->task_cancel_owner);
-		lws_callback_on_writable(pss->wsi);
-
+		if (pss->wsi == cb->wsi) {
+			pss_match = pss;
+			break;
+		}
 	} lws_end_foreach_dll(p);
+
+	if (!pss_match)
+		/* Builder is live but has no pss? */
+		return 0;
+
+	can = malloc(sizeof *can);
+	if (!can)
+		return -1;
+
+	memset(can, 0, sizeof(*can));
+
+	lws_strncpy(can->task_uuid, task_uuid, sizeof(can->task_uuid));
+
+	lws_dll2_add_tail(&can->list, &pss_match->task_cancel_owner);
+	lws_callback_on_writable(pss_match->wsi);
 
 	return 0;
 }
@@ -790,7 +835,7 @@ sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid)
  */
 
 sai_db_result_t
-sais_task_reset(struct vhd *vhd, const char *task_uuid)
+sais_task_reset(struct vhd *vhd, const char *task_uuid, int from_rejection)
 {
 	char esc[96], cmd[256], event_uuid[33];
 	sqlite3 *pdb = NULL;
@@ -842,15 +887,18 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid)
 
 	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
 
-	lwsl_notice("%s: stopping task %s on builders\n", __func__, task_uuid);
-	lwsl_notice("%s: stopping task %s on builders\n", __func__, task_uuid);
 	sais_task_stop_on_builders(vhd, task_uuid);
 
 	/*
-	 * Reassess now if there's a builder we can match to a pending task
+	 * Reassess now if there's a builder we can match to a pending task,
+	 * but not if we are being reset due to a rejection... that would
+	 * just cause us to spam the builder with the same task again
 	 */
 
-	lws_sul_schedule(vhd->context, 0, &vhd->sul_central, sais_central_cb, 1);
+	if (!from_rejection) {
+		lwsl_err("%s: scheduling sul_central to find a new task\n", __func__);
+		lws_sul_schedule(vhd->context, 0, &vhd->sul_central, sais_central_cb, 1);
+	}
 
 	/*
 	 * Recompute startable task platforms and broadcast to all sai-power,
@@ -1107,6 +1155,7 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 		}
 
 		if (!p) { /* no more steps */
+			lwsl_err("%s: +++++++++++++++++++ determined no more steps after build_step %d for task %s, setting SAIES_SUCCESS\n", __func__, build_step, task->uuid);
 			sais_set_task_state(vhd, NULL, NULL, task->uuid, SAIES_SUCCESS, 0, 0);
 			sais_event_db_close(vhd, &pdb);
 			lwsac_free(&task->ac_task_container);

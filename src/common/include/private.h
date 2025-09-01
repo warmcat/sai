@@ -557,4 +557,3 @@ sul_idle_cb(lws_sorted_usec_list_t *sul);
 
 int
 sai_uuid16_create(struct lws_context *context, char *dest33);
-

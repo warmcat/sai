@@ -157,8 +157,8 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 	 */
 
 	if (rej_task_uuid) {
-		lwsl_notice("%s: builder .%d occupied reject\n",
-			__func__, (int)(intptr_t)spm->opaque_data);
+		lwsl_notice("%s: builder %s occupied reject\n",
+			__func__, sp->name);
 
 		lws_strncpy(rej->task_uuid, rej_task_uuid,
 				sizeof(rej->task_uuid));
@@ -266,17 +266,22 @@ saib_sub_cleaner_cb(lws_sorted_usec_list_t *sul)
 {
 	struct sai_nspawn *ns = lws_container_of(sul, struct sai_nspawn,
 						 sul_cleaner);
-	lwsl_warn("%s: Task completion grace period ended with ns alive\n", __func__);
+	lwsl_warn("%s: +++++ Task completion grace period ended with ns alive\n", __func__);
 
-	// saib_task_destroy(ns);
-	
-	if (ns->op && ns->op->lsp)
+
+	if (ns->op && ns->op->lsp) {
+		lwsl_notice("%s: +++++++++++ killing child process\n", __func__);
 		lws_spawn_piped_kill_child_process(ns->op->lsp);
+	} else {
+		lwsl_err("%s: ========================== unable to kill child process (already dead?)\n", __func__);
+		saib_task_destroy(ns);
+	}
 }
 
 void
 saib_task_grace(struct sai_nspawn *ns)
 {
+	lwsl_err("%s: +++++ starting task grace wait\n", __func__);
 	ns->finished_when_logs_drained = 1; /* destroy ns if logs are gone + spawn reaped */
 	lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
 			 saib_sub_cleaner_cb, 20 * LWS_USEC_PER_SEC);
@@ -583,10 +588,12 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
 			struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
 
-			if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
-				lwsl_err("%s: server offered task that's already running\n", __func__);
+			lwsl_notice("%s: nspawn_census: %s\n", __func__, xns->task->uuid);
+
+//			if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
+//				lwsl_err("%s: server offered task %s that already has an extant nspawn\n", __func__, task->uuid);
 			//	return 0;
-			}
+//			}
 		} lws_end_foreach_dll_safe(d, d1);
 
 
@@ -612,8 +619,9 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
 		       struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
 		       if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
-			       ns = xns;
-			       break;
+				lwsl_warn("%s: server offered task that's already running\n", __func__);
+				saib_queue_task_status_update(sp, spm, task->uuid);
+			       return 0;
 		       }
 		       if (!xns->task && !ns)
 			       ns = xns;
@@ -735,8 +743,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			lwsac_free(&ns->task->ac_task_container);
 
 		ns->task = task; /* we are owning this nspawn for the duration */
-		if (!task->build_step) {
-			ns->current_step = 0;
+		ns->current_step = task->build_step;
+		if (!ns->current_step) {
 			ns->spins = 0;
 			ns->user_cancel = 0;
 			ns->us_cpu_user = 0;
@@ -840,7 +848,6 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		can = (sai_cancel_t *)a.dest;
 
 		lwsl_notice("%s: received task cancel for %s\n", __func__, can->task_uuid);
-		lwsl_notice("%s: SAIB_RX_TASK_CANCEL: %s\n", __func__, can->task_uuid);
 
 		lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
 				           builder.sai_plat_owner.head) {

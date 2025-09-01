@@ -30,20 +30,9 @@
 #include "s-private.h"
 #include "s-metrics-db.h"
 
-typedef struct {
-	int count;
-} count_ctx_t;
-
-#if 0
-static int
-online_builder_count_cb(void *priv, int cols, char **cv, char **cn)
-{
-	count_ctx_t *ctx = (count_ctx_t *)priv;
-	ctx->count++;
-	lwsl_err("%s: FOUND an online builder in DB: %s\n", __func__, cv[0]);
-	return 0;
-}
-#endif
+const lws_struct_map_t lsm_schema_map_ta[] = {
+	LSM_SCHEMA (sai_task_t,	    NULL, lsm_task,    "com-warmcat-sai-ta"),
+};
 
 enum sai_overview_state {
 	SOS_EVENT,
@@ -410,7 +399,7 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 								if (task_uuid) {
 									lwsl_notice("%s: resetting task %s from disconnected builder %s\n",
 											__func__, (const char *)task_uuid, cb->name);
-									sais_task_reset(vhd, (const char *)task_uuid);
+									sais_task_reset(vhd, (const char *)task_uuid, 0);
 								}
 							}
 							sqlite3_finalize(sm);
@@ -723,8 +712,8 @@ bail:
 			    __func__, cb->name,
 			    rej->task_uuid[0] ? rej->task_uuid : "none");
 
-		if (rej->task_uuid[0])
-			sais_task_reset(vhd, rej->task_uuid);
+//		if (rej->task_uuid[0])
+//			sais_task_reset(vhd, rej->task_uuid, 1);
 
 		lwsac_free(&pss->a.ac);
 		break;
@@ -1134,7 +1123,6 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		sai_cancel_t *c = lws_container_of(pss->task_cancel_owner.head,
 						   sai_cancel_t, list);
 
-		lwsl_notice("%s: sending task cancel for %s\n", __func__, c->task_uuid);
 		js = lws_struct_json_serialize_create(lsm_schema_json_map_can,
 				LWS_ARRAY_SIZE(lsm_schema_json_map_can), 0, c);
 		if (!js)
