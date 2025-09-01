@@ -320,7 +320,7 @@ saiw_sched_destroy(struct lws_dll2 *d, void *user);
 
 
 void
-saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int min_api_version, int flags);
+saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int min_api_version, enum lws_write_protocol flags);
 
 void
 saiw_browser_state_changed(struct pss *pss, int established);

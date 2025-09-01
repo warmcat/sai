@@ -89,10 +89,6 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		goto cleanup_and_disconnect;
 	}
 
-	/*
-	 * This is the key: if the message is not yet complete, just return
-	 * and wait for the next fragment. Don't process anything yet.
-	 */
 	if (n == LEJP_CONTINUE) {
 		/*
 		 * Also forward this fragment to browsers if the message is for them.
@@ -102,7 +98,11 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		switch (m->a.top_schema_index) {
 		case SAIS_WS_WEBSRV_RX_LOADREPORT:
 			saiw_ws_broadcast_raw(vhd, buf, len, 0,
-				lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
+				lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, 0));
+			break;
+		case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
+			saiw_ws_broadcast_raw(vhd, buf, len, 0,
+				lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, 0));
 			break;
 		}
 
@@ -174,7 +174,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 	case SAIS_WS_WEBSRV_RX_LOADREPORT:
 		/* Forward the final fragment of the load report */
-		saiw_ws_broadcast_raw(vhd, buf, len, 2,
+		saiw_ws_broadcast_raw(vhd, buf, len, 0,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 	case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
@@ -203,18 +203,30 @@ saiw_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	     int *flags)
 {
 	saiw_websrv_t *m = (saiw_websrv_t *)userobj;
-	char som, eom;
+	char som, eom, final = 1;
+	size_t fsl;
 	int used;
 
 	if (!m->bltx)
 		return LWSSSSRET_TX_DONT_SEND;
 
+	/*
+	 * We can only issue *len at a time.
+	 */
+
+	fsl = lws_buflist_next_segment_len(&m->bltx, NULL);
+
+	if (fsl > *len)
+		final = 0;
+
 	used = lws_buflist_fragment_use(&m->bltx, buf, *len, &som, &eom);
 	if (!used)
 		return LWSSSSRET_TX_DONT_SEND;
 
-	*flags = (som ? LWSSS_FLAG_SOM : 0) | (eom ? LWSSS_FLAG_EOM : 0);
+	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
 	*len = (size_t)used;
+
+	lwsl_ss_notice(m->ss, "TX issuing %d bytes, ss flags %d\n", (int)used, *flags);
 
 	if (m->bltx)
 		return lws_ss_request_tx(m->ss);
