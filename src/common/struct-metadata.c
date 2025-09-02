@@ -166,6 +166,12 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_UNSIGNED	(sai_task_t, est_peak_mem_kib,	"est_peak_mem_kib"),
 	LSM_UNSIGNED	(sai_task_t, est_cpu_load_pct,	"est_cpu_load_pct"),
 	LSM_UNSIGNED	(sai_task_t, est_disk_kib,	"est_disk_kib"),
+
+	LSM_UNSIGNED	(sai_task_t, agg_us_cpu_user,	"agg_us_cpu_user"),
+	LSM_UNSIGNED	(sai_task_t, agg_us_cpu_sys,	"agg_us_cpu_sys"),
+	LSM_UNSIGNED	(sai_task_t, agg_wallclock_us,	"agg_wallclock_us"),
+	LSM_UNSIGNED	(sai_task_t, agg_peak_mem_kib,	"agg_peak_mem_kib"),
+	LSM_UNSIGNED	(sai_task_t, agg_stg_kib,	"agg_stg_kib"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {

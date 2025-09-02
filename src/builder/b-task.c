@@ -744,14 +744,15 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		ns->task = task; /* we are owning this nspawn for the duration */
 		ns->current_step = task->build_step;
-		if (!ns->current_step) {
-			ns->spins = 0;
-			ns->user_cancel = 0;
-			ns->us_cpu_user = 0;
-			ns->us_cpu_sys = 0;
-			ns->worst_mem = 0;
-			ns->worst_stg = 0;
-		}
+
+		ns->spins = 0;
+		ns->user_cancel = 0;
+		ns->us_cpu_user = task->agg_us_cpu_user;
+		ns->us_cpu_sys = task->agg_us_cpu_sys;
+		ns->us_wallclock = task->agg_wallclock_us;
+		ns->worst_mem = task->agg_peak_mem_kib * 1024;
+		ns->worst_stg = task->agg_stg_kib * 1024;
+
 		ns->spm = spm; /* bind this task to the spm the req came in on */
 
 		{

@@ -130,6 +130,13 @@ typedef struct {
 	unsigned int		est_cpu_load_pct;
 	unsigned int		est_disk_kib;
 
+	/* aggregated metrics from previous steps */
+	uint64_t		agg_us_cpu_user;
+	uint64_t		agg_us_cpu_sys;
+	uint64_t		agg_wallclock_us;
+	uint64_t		agg_peak_mem_kib;
+	uint64_t		agg_stg_kib;
+
 	char			told_ongoing;
 } sai_task_t;
 

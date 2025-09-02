@@ -260,6 +260,73 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 	}
 }
 
+static void
+sais_aggregate_task_metrics(struct vhd *vhd, const sai_build_metric_t *metric)
+{
+	char event_uuid[33], esc_uuid[129], update[2048];
+	lws_dll2_owner_t o;
+	sai_task_t *task;
+	sqlite3 *pdb = NULL;
+	struct lwsac *ac = NULL;
+	int n;
+
+	sai_task_uuid_to_event_uuid(event_uuid, metric->key);
+
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) || !pdb)
+		return;
+
+	/*
+	 * We need to get the existing task object from the event db
+	 */
+
+	lws_sql_purify(esc_uuid, metric->key, sizeof(esc_uuid));
+	lws_snprintf(update, sizeof(update), " and uuid='%s'", esc_uuid);
+	n = lws_struct_sq3_deserialize(pdb, update, NULL,
+				       lsm_schema_sq3_map_task, &o, &ac, 0, 1);
+	if (n < 0 || !o.head) {
+		lwsl_err("%s: failed to get task\n", __func__);
+		goto bail;
+	}
+
+	task = lws_container_of(o.head, sai_task_t, list);
+
+	/*
+	 * Aggregate the new stats
+	 */
+
+	task->agg_us_cpu_user += metric->us_cpu_user;
+	task->agg_us_cpu_sys += metric->us_cpu_sys;
+	task->agg_wallclock_us += metric->wallclock_us;
+
+	if (metric->peak_mem_rss / 1024 > task->agg_peak_mem_kib)
+		task->agg_peak_mem_kib = metric->peak_mem_rss / 1024;
+	if (metric->stg_bytes / 1024 > task->agg_stg_kib)
+		task->agg_stg_kib = metric->stg_bytes / 1024;
+
+	/*
+	 * Then, update the tasks table entry for it
+	 */
+
+	lws_snprintf(update, sizeof(update),
+		"UPDATE tasks SET agg_us_cpu_user=%llu, agg_us_cpu_sys=%llu, "
+		"agg_wallclock_us=%llu, agg_peak_mem_kib=%llu, agg_stg_kib=%llu "
+		"WHERE uuid='%s'",
+		(unsigned long long)task->agg_us_cpu_user,
+		(unsigned long long)task->agg_us_cpu_sys,
+		(unsigned long long)task->agg_wallclock_us,
+		(unsigned long long)task->agg_peak_mem_kib,
+		(unsigned long long)task->agg_stg_kib,
+		esc_uuid);
+
+	if (sqlite3_exec(pdb, update, NULL, NULL, NULL) != SQLITE_OK)
+		lwsl_err("%s: %s: %s: fail\n", __func__, update,
+			 sqlite3_errmsg(pdb));
+
+bail:
+	lwsac_free(&ac);
+	sais_event_db_close(vhd, &pdb);
+}
+
 sai_plat_t *
 sais_builder_from_uuid(struct vhd *vhd, const char *hostname, const char *_file, int _line)
 {
@@ -1025,6 +1092,7 @@ bail:
 	case SAIM_WSSCH_BUILDER_METRIC:
 		metric = (const sai_build_metric_t *)pss->a.dest;
 		sais_metrics_db_add(vhd, metric);
+		sais_aggregate_task_metrics(vhd, metric);
 		lwsac_free(&pss->a.ac);
 		break;
 	}
