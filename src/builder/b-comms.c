@@ -269,6 +269,8 @@ send_logs:
 
 	star = NULL;
 	do {
+		uint32_t tries = builder.sai_plat_owner.count;
+
 		if (!spm->last_logging_nspawn) {
 			/* start at the start */
 			sp = spm->last_logging_platform = lws_container_of(
@@ -282,7 +284,7 @@ send_logs:
 		}
 
 		/* if no more nspawns, try moving to next platform */
-		if (!walk) {
+		while (!walk && tries--) {
 			if (!sp->sai_plat_list.next)
 				/* if no more platforms, wrap around to first */
 				sp = spm->last_logging_platform =
@@ -304,6 +306,7 @@ send_logs:
 		if (walk == star) {
 			lwsl_notice("%s: did not find logs: %d expected\n",
 				    __func__, spm->logs_in_flight);
+			spm->logs_in_flight = 0;
 			return 1; /* nothing to do */
 		}
 
@@ -613,6 +616,8 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		lws_sul_cancel(&spm->sul_load_report);
 		lws_dll2_foreach_safe(&builder.sai_plat_owner, spm,
 				      cleanup_on_ss_disconnect);
+		if (lws_ss_request_tx(spm->ss))
+			lwsl_err("%s: failed to reconnect\n", __func__);
 		break;
 
 	case LWSSSCS_ALL_RETRIES_FAILED:

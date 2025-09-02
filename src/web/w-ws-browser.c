@@ -45,12 +45,16 @@ saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int
 		struct pss *pss = lws_container_of(p, struct pss, same);
 		int *pi = (int *)((const char *)buf - sizeof(int));
 
-		if (pss->js_api_version >= api_ver_min) {
+		// if (pss->js_api_version >= api_ver_min) 
+		{
 			eff++;
 			*pi = (int)flags;
 
-			if (lws_buflist_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) > 0)
+			if (lws_buflist_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) < 0)
+				lwsl_wsi_err(pss->wsi, "unable to buflist_append");
+			else {
 				lws_callback_on_writable(pss->wsi);
+			}
 		}
 
 	} lws_end_foreach_dll(p);
@@ -437,7 +441,7 @@ saiw_event_state_change(struct vhd *vhd, const char *event_uuid)
 
 int
 saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
-			size_t bl)
+			size_t bl, unsigned int ss_flags)
 {
 	sai_browse_rx_taskinfo_t *ti;
 	sai_browse_rx_evinfo_t *ei;
@@ -529,7 +533,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl);
+		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 		break;
 
 	case SAIM_WS_BROWSER_RX_EVENTRESET:
@@ -546,7 +550,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		lwsl_notice("%s: received request to reset event %s\n",
 			    __func__, ei->event_hash);
 
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl);
+		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 		break;
 
 	case SAIM_WS_BROWSER_RX_EVENTDELETE:
@@ -562,7 +566,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		lwsl_notice("%s: received request to delete event %s\n",
 			    __func__, ei->event_hash);
 
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl);
+		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 		lwsac_free(&a.ac);
 
 		break;
@@ -592,7 +596,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		 * User is asking us to rebuild a builder
 		 */
 
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl);
+		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 		break;
 
 	case SAIM_WS_BROWSER_RX_PLATRESET:
@@ -603,7 +607,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		 * User is asking us to reset / rebuild a whole platform
 		 */
 
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl);
+		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 		break;
 
 	default:
@@ -1345,7 +1349,7 @@ send_it:
 	    (pss->send_state == WSS_SEND_ARTIFACT_INFO && (!sch || !sch->owner.head))) {
 
 		/* does he want to subscribe to logs? */
-		if (sch && sch->logsub && sch->one_task) {
+		if (sch && sch->logsub && sch->one_task && !pss->subs_list.owner) {
 			strcpy(pss->sub_task_uuid, sch->one_task->uuid);
 			lws_dll2_add_head(&pss->subs_list, &pss->vhd->subs_owner);
 			pss->sub_timestamp = pss->initial_log_timestamp; /* where we got up to */
@@ -1430,5 +1434,5 @@ saiw_update_viewer_count(struct vhd *vhd)
 	lws_struct_json_serialize_destroy(&js);
 
 	if (len > 0)
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf + LWS_PRE, len);
+		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf + LWS_PRE, len, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
 }

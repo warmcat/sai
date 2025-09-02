@@ -34,7 +34,7 @@ typedef struct saiw_websrv {
 
 	lws_struct_args_t		a;
 	struct lejp_ctx			ctx;
-	struct lws_buflist		*bltx;
+	struct lws_buflist		*wbltx;
 } saiw_websrv_t;
 
 extern const lws_struct_map_t lsm_schema_json_map[];
@@ -49,6 +49,28 @@ enum {
 	SAIS_WS_WEBSRV_RX_LOADREPORT,	/* builder's cpu load report */
 	SAIS_WS_WEBSRV_RX_TASKACTIVITY,
 };
+
+int
+saiw_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned int ss_flags)
+{
+	saiw_websrv_t *m = (saiw_websrv_t *)lws_ss_to_user_object(h);
+	unsigned int *pi = (unsigned int *)((const char *)buf - sizeof(int));
+
+	*pi = ss_flags;
+	
+	// lwsl_ss_notice(h, "sai-web: Queuing from browser -> sai-server");
+	// lwsl_hexdump_notice(buf, len);
+
+	if (lws_buflist_append_segment(&m->wbltx, buf - sizeof(int), len + sizeof(int)) < 0) {
+		lwsl_ss_err(h, "failed to append");
+		return 1;
+	}
+
+	if (lws_ss_request_tx(h))
+		lwsl_ss_err(h, "failed to request tx");
+
+	return 0;
+}
 
 /*
  * sai-web is receiving from sai-server
@@ -203,32 +225,51 @@ saiw_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	     int *flags)
 {
 	saiw_websrv_t *m = (saiw_websrv_t *)userobj;
-	char som, eom, final = 1;
-	size_t fsl;
-	int used;
+	int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&m->wbltx), depi;
+	char som, som1, eom, final = 1;
+	size_t fsl, used;
 
-	if (!m->bltx)
+	if (!m->wbltx) {
+		lwsl_notice("%s: nothing to send from web -> srv\n", __func__);
 		return LWSSSSRET_TX_DONT_SEND;
+	}
+
+	depi = *pi;
 
 	/*
 	 * We can only issue *len at a time.
+	 *
+	 * Notice we are getting the stored flags from the START of the fragment each time.
+	 * that means we can still see the right flags stored with the fragment, even if we
+	 * have partially used the buflist frag and are partway through it.
+	 *
+	 * Ergo, only something to skip if we are at som=1.  And also notice that although
+	 * *pi will be right, after the lws_buflist..._use() api, what it points to has been
+	 * destroyed.  So we also dereference *pi into depi for use below.
 	 */
 
-	fsl = lws_buflist_next_segment_len(&m->bltx, NULL);
+	fsl = lws_buflist_next_segment_len(&m->wbltx, NULL);
 
-	if (fsl > *len)
-		final = 0;
+	lws_buflist_fragment_use(&m->wbltx, NULL, 0, &som, &eom);
+	if (som) {
+		fsl -= sizeof(int);
+		lws_buflist_fragment_use(&m->wbltx, buf, sizeof(int), &som1, &eom);
+	}
 
-	used = lws_buflist_fragment_use(&m->bltx, buf, *len, &som, &eom);
+	/* this is the only buflist user on pss->raw_tx */
+	used = (size_t)lws_buflist_fragment_use(&m->wbltx, (uint8_t *)buf, *len, &som1, &eom);
 	if (!used)
 		return LWSSSSRET_TX_DONT_SEND;
 
+	if (used < fsl || (depi & LWS_WRITE_NO_FIN))
+		final = 0;
+
+	*len = used;
 	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
-	*len = (size_t)used;
 
-	lwsl_ss_notice(m->ss, "TX issuing %d bytes, ss flags %d\n", (int)used, *flags);
+	lwsl_ss_notice(m->ss, "Sending %d ssflags %d", (int)*len, (int)*flags);
 
-	if (m->bltx)
+	if (m->wbltx)
 		return lws_ss_request_tx(m->ss);
 
 	return 0;
@@ -253,7 +294,7 @@ saiw_lp_state(void *userobj, void *sh, lws_ss_constate_t state,
 		return lws_ss_request_tx(m->ss);
 
 	case LWSSSCS_DISCONNECTED:
-		lws_buflist_destroy_all_segments(&m->bltx);
+		lws_buflist_destroy_all_segments(&m->wbltx);
 		lwsac_detach(&vhd->builders);
 		break;
 
@@ -280,20 +321,4 @@ const lws_ss_info_t ssi_saiw_websrv = {
 	.streamtype		 = "websrv"
 };
 
-/*
- * send to server
- */
 
-int
-saiw_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len)
-{
-	saiw_websrv_t *m = (saiw_websrv_t *)lws_ss_to_user_object(h);
-
-	lwsl_ss_notice(h, "sai-web: Queuing from browser -> sai-server");
-	lwsl_hexdump_notice(buf, len);
-
-	if (lws_buflist_append_segment(&m->bltx, buf, len) < 0)
-		return 1;
-
-	return !!lws_ss_request_tx(h);
-}
