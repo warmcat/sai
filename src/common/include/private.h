@@ -489,6 +489,7 @@ typedef struct sai_power_state {
 typedef struct sai_build_metric {
 	lws_dll2_t	list;
 	char		key[65];
+	char		task_uuid[65];
 	char		builder_name[96];
 	char		project_name[96];
 	char		ref[96];

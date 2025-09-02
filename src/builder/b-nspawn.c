@@ -284,6 +284,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 					lws_snprintf(m->key + (n * 2), 3,
 						     "%02x", hash[n]);
 
+			lws_strncpy(m->task_uuid, ns->task->uuid, sizeof(m->task_uuid));
 			lws_strncpy(m->builder_name, ns->sp->name, sizeof(m->builder_name));
 			lws_strncpy(m->project_name, ns->project_name, sizeof(m->project_name));
 			lws_strncpy(m->ref, ns->ref, sizeof(m->ref));

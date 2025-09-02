@@ -34,6 +34,7 @@ const lws_struct_map_t lsm_load_report_members[] = {
 
 const lws_struct_map_t lsm_build_metric[] = {
 	LSM_CARRAY	(sai_build_metric_t, key,		"key"),
+	LSM_CARRAY	(sai_build_metric_t, task_uuid,		"task_uuid"),
 	LSM_CARRAY	(sai_build_metric_t, builder_name,	"builder_name"),
 	LSM_CARRAY	(sai_build_metric_t, project_name,	"project_name"),
 	LSM_CARRAY	(sai_build_metric_t, ref,		"ref"),

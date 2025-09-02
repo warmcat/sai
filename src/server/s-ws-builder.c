@@ -270,7 +270,7 @@ sais_aggregate_task_metrics(struct vhd *vhd, const sai_build_metric_t *metric)
 	struct lwsac *ac = NULL;
 	int n;
 
-	sai_task_uuid_to_event_uuid(event_uuid, metric->key);
+	sai_task_uuid_to_event_uuid(event_uuid, metric->task_uuid);
 
 	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) || !pdb)
 		return;
@@ -279,7 +279,7 @@ sais_aggregate_task_metrics(struct vhd *vhd, const sai_build_metric_t *metric)
 	 * We need to get the existing task object from the event db
 	 */
 
-	lws_sql_purify(esc_uuid, metric->key, sizeof(esc_uuid));
+	lws_sql_purify(esc_uuid, metric->task_uuid, sizeof(esc_uuid));
 	lws_snprintf(update, sizeof(update), " and uuid='%s'", esc_uuid);
 	n = lws_struct_sq3_deserialize(pdb, update, NULL,
 				       lsm_schema_sq3_map_task, &o, &ac, 0, 1);
