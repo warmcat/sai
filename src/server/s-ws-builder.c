@@ -86,8 +86,6 @@ static const lws_struct_map_t lsm_schema_map_ba[] = {
 						"com-warmcat-sai-resource"),
 	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric,
 						"com.warmcat.sai.build-metric"),
-	LSM_SCHEMA	(sai_step_result_t, NULL, lsm_step_result,
-						"com.warmcat.sai.step-result"),
 };
 
 enum {
@@ -98,7 +96,6 @@ enum {
 	SAIM_WSSCH_BUILDER_LOADREPORT,
 	SAIM_WSSCH_BUILDER_RESOURCE_REQ,
 	SAIM_WSSCH_BUILDER_METRIC,
-	SAIM_WSSCH_BUILDER_STEP_RESULT,
 };
 
 static void
@@ -261,54 +258,6 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 			}
 		}
 	}
-}
-
-static void
-sais_aggregate_task_metrics(struct vhd *vhd, const sai_build_metric_t *metric)
-{
-	char event_uuid[33], sql[512];
-	sqlite3 *pdb = NULL;
-	sqlite3_stmt *stmt = NULL;
-
-	if (!metric->task_uuid[0])
-		return;
-
-	sai_task_uuid_to_event_uuid(event_uuid, metric->task_uuid);
-
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) || !pdb)
-		return;
-
-	lws_snprintf(sql, sizeof(sql),
-		"UPDATE tasks SET "
-		"agg_us_cpu_user = COALESCE(agg_us_cpu_user, 0) + ?, "
-		"agg_us_cpu_sys = COALESCE(agg_us_cpu_sys, 0) + ?, "
-		"agg_wallclock_us = COALESCE(agg_wallclock_us, 0) + ?, "
-		"agg_peak_mem_kib = MAX(COALESCE(agg_peak_mem_kib, 0), ?), "
-		"agg_stg_kib = MAX(COALESCE(agg_stg_kib, 0), ?) "
-		"WHERE uuid = ?");
-
-	if (sqlite3_prepare_v2(pdb, sql, -1, &stmt, NULL) != SQLITE_OK) {
-		lwsl_err("%s: prepare failed: %s\n", __func__,
-			 sqlite3_errmsg(pdb));
-		goto bail;
-	}
-
-	sqlite3_bind_int64(stmt, 1, (sqlite3_int64)metric->us_cpu_user);
-	sqlite3_bind_int64(stmt, 2, (sqlite3_int64)metric->us_cpu_sys);
-	sqlite3_bind_int64(stmt, 3, (sqlite3_int64)metric->wallclock_us);
-	sqlite3_bind_int64(stmt, 4, (sqlite3_int64)(metric->peak_mem_rss / 1024));
-	sqlite3_bind_int64(stmt, 5, (sqlite3_int64)(metric->stg_bytes / 1024));
-	sqlite3_bind_text(stmt, 6, metric->task_uuid, -1, SQLITE_STATIC);
-
-	if (sqlite3_step(stmt) != SQLITE_DONE)
-		lwsl_err("%s: step failed: %s\n", __func__,
-			 sqlite3_errmsg(pdb));
-
-bail:
-	if (stmt)
-		sqlite3_finalize(stmt);
-
-	sais_event_db_close(vhd, &pdb);
 }
 
 sai_plat_t *
@@ -710,6 +659,33 @@ bail:
 				goto bail;
 		}
 
+		if (log->finished) {
+			/*
+			 * We have reached the end of the logs for this task
+			 */
+
+			sais_dump_logs_to_db(&vhd->sul_logcache);
+
+			lwsl_info("%s: log->finished says 0x%x, dur %lluus\n",
+				 __func__, log->finished, (unsigned long long)(
+				 log->timestamp - pss->first_log_timestamp));
+			if (log->finished & SAISPRF_EXIT) {
+				if ((log->finished & 0xff) == 0)
+					n = SAIES_STEP_SUCCESS;
+				else
+					n = SAIES_FAIL;
+			} else
+				if (log->finished & 8192)
+					n = SAIES_CANCELLED;
+				else
+					n = SAIES_FAIL;
+
+			if (sais_set_task_state(vhd, NULL, NULL, log->task_uuid,
+						n, 0, log->timestamp -
+						      pss->first_log_timestamp))
+				goto bail;
+		}
+
 		lwsac_free(&pss->a.ac);
 
 		break;
@@ -1046,43 +1022,11 @@ bail:
 		sais_resource_check_if_can_accept_queued(wk);
 		break;
 
-	case SAIM_WSSCH_BUILDER_STEP_RESULT:
-	{
-		const sai_step_result_t *res = (const sai_step_result_t *)pss->a.dest;
-		sai_build_metric_t m;
-		int n;
-
-		/* log it for historical / estimation purposes */
-
-		memset(&m, 0, sizeof(m));
-		lws_strncpy(m.key, res->key, sizeof(m.key));
-		lws_strncpy(m.builder_name, res->builder_name, sizeof(m.builder_name));
-		lws_strncpy(m.project_name, res->project_name, sizeof(m.project_name));
-		lws_strncpy(m.ref, res->ref, sizeof(m.ref));
-		m.us_cpu_user = res->us_cpu_user;
-		m.us_cpu_sys = res->us_cpu_sys;
-		m.wallclock_us = res->wallclock_us;
-		m.peak_mem_rss = res->peak_mem_rss;
-		m.stg_bytes = res->stg_bytes;
-		sais_metrics_db_add(vhd, &m);
-
-		/* we have our own copy of the metrics, just need to add uuid */
-		lws_strncpy(m.task_uuid, res->task_uuid, sizeof(m.task_uuid));
-		sais_aggregate_task_metrics(vhd, &m);
-
-		if ((res->exit_code & 0xff) == 0)
-			n = SAIES_STEP_SUCCESS;
-		else
-			n = SAIES_FAIL;
-
-		if (sais_set_task_state(vhd, NULL, NULL, res->task_uuid,
-					n, 0, res->wallclock_us))
-			goto bail;
-
+	case SAIM_WSSCH_BUILDER_METRIC:
+		metric = (const sai_build_metric_t *)pss->a.dest;
+		sais_metrics_db_add(vhd, metric);
 		lwsac_free(&pss->a.ac);
-	}
-	break;
-
+		break;
 	}
 
 	return 0;

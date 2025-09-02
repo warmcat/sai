@@ -34,7 +34,6 @@ const lws_struct_map_t lsm_load_report_members[] = {
 
 const lws_struct_map_t lsm_build_metric[] = {
 	LSM_CARRAY	(sai_build_metric_t, key,		"key"),
-	LSM_CARRAY	(sai_build_metric_t, task_uuid,		"task_uuid"),
 	LSM_CARRAY	(sai_build_metric_t, builder_name,	"builder_name"),
 	LSM_CARRAY	(sai_build_metric_t, project_name,	"project_name"),
 	LSM_CARRAY	(sai_build_metric_t, ref,		"ref"),
@@ -47,24 +46,6 @@ const lws_struct_map_t lsm_build_metric[] = {
 
 const lws_struct_map_t lsm_schema_build_metric[] = {
 	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric, "com.warmcat.sai.build-metric")
-};
-
-const lws_struct_map_t lsm_step_result[] = {
-	LSM_CARRAY	(sai_step_result_t, task_uuid,		"task_uuid"),
-	LSM_CARRAY	(sai_step_result_t, key,		"key"),
-	LSM_CARRAY	(sai_step_result_t, builder_name,	"builder_name"),
-	LSM_CARRAY	(sai_step_result_t, project_name,	"project_name"),
-	LSM_CARRAY	(sai_step_result_t, ref,		"ref"),
-	LSM_UNSIGNED	(sai_step_result_t, us_cpu_user,	"us_cpu_user"),
-	LSM_UNSIGNED	(sai_step_result_t, us_cpu_sys,		"us_cpu_sys"),
-	LSM_UNSIGNED	(sai_step_result_t, wallclock_us,	"wallclock_us"),
-	LSM_UNSIGNED	(sai_step_result_t, peak_mem_rss,	"peak_mem_rss"),
-	LSM_UNSIGNED	(sai_step_result_t, stg_bytes,		"stg_bytes"),
-	LSM_SIGNED	(sai_step_result_t, exit_code,		"exit_code"),
-};
-
-const lws_struct_map_t lsm_schema_step_result[] = {
-	LSM_SCHEMA	(sai_step_result_t, NULL, lsm_step_result, "com.warmcat.sai.step-result")
 };
 
 const lws_struct_map_t lsm_sq3_build_metric[] = {
@@ -185,12 +166,6 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_UNSIGNED	(sai_task_t, est_peak_mem_kib,	"est_peak_mem_kib"),
 	LSM_UNSIGNED	(sai_task_t, est_cpu_load_pct,	"est_cpu_load_pct"),
 	LSM_UNSIGNED	(sai_task_t, est_disk_kib,	"est_disk_kib"),
-
-	LSM_UNSIGNED	(sai_task_t, agg_us_cpu_user,	"agg_us_cpu_user"),
-	LSM_UNSIGNED	(sai_task_t, agg_us_cpu_sys,	"agg_us_cpu_sys"),
-	LSM_UNSIGNED	(sai_task_t, agg_wallclock_us,	"agg_wallclock_us"),
-	LSM_UNSIGNED	(sai_task_t, agg_peak_mem_kib,	"agg_peak_mem_kib"),
-	LSM_UNSIGNED	(sai_task_t, agg_stg_kib,	"agg_stg_kib"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {
