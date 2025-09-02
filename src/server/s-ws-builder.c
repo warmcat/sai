@@ -263,67 +263,48 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 static void
 sais_aggregate_task_metrics(struct vhd *vhd, const sai_build_metric_t *metric)
 {
-	char event_uuid[33], esc_uuid[129], update[2048];
-	lws_dll2_owner_t o;
-	sai_task_t *task;
+	char event_uuid[33], sql[512];
 	sqlite3 *pdb = NULL;
-	struct lwsac *ac = NULL;
-	int n;
+	sqlite3_stmt *stmt = NULL;
+
+	if (!metric->task_uuid[0])
+		return;
 
 	sai_task_uuid_to_event_uuid(event_uuid, metric->task_uuid);
 
 	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) || !pdb)
 		return;
 
-	/*
-	 * We need to get the existing task object from the event db
-	 */
+	lws_snprintf(sql, sizeof(sql),
+		"UPDATE tasks SET "
+		"agg_us_cpu_user = COALESCE(agg_us_cpu_user, 0) + ?, "
+		"agg_us_cpu_sys = COALESCE(agg_us_cpu_sys, 0) + ?, "
+		"agg_wallclock_us = COALESCE(agg_wallclock_us, 0) + ?, "
+		"agg_peak_mem_kib = MAX(COALESCE(agg_peak_mem_kib, 0), ?), "
+		"agg_stg_kib = MAX(COALESCE(agg_stg_kib, 0), ?) "
+		"WHERE uuid = ?");
 
-	lws_sql_purify(esc_uuid, metric->task_uuid, sizeof(esc_uuid));
-	lws_snprintf(update, sizeof(update), " and uuid='%s'", esc_uuid);
-	n = lws_struct_sq3_deserialize(pdb, update, NULL,
-				       lsm_schema_sq3_map_task, &o, &ac, 0, 1);
-	if (n < 0 || !o.head) {
-		lwsl_err("%s: failed to get task\n", __func__);
+	if (sqlite3_prepare_v2(pdb, sql, -1, &stmt, NULL) != SQLITE_OK) {
+		lwsl_err("%s: prepare failed: %s\n", __func__,
+			 sqlite3_errmsg(pdb));
 		goto bail;
 	}
 
-	task = lws_container_of(o.head, sai_task_t, list);
+	sqlite3_bind_int64(stmt, 1, (sqlite3_int64)metric->us_cpu_user);
+	sqlite3_bind_int64(stmt, 2, (sqlite3_int64)metric->us_cpu_sys);
+	sqlite3_bind_int64(stmt, 3, (sqlite3_int64)metric->wallclock_us);
+	sqlite3_bind_int64(stmt, 4, (sqlite3_int64)(metric->peak_mem_rss / 1024));
+	sqlite3_bind_int64(stmt, 5, (sqlite3_int64)(metric->stg_bytes / 1024));
+	sqlite3_bind_text(stmt, 6, metric->task_uuid, -1, SQLITE_STATIC);
 
-	/*
-	 * Aggregate the new stats
-	 */
-
-	task->agg_us_cpu_user += metric->us_cpu_user;
-	task->agg_us_cpu_sys += metric->us_cpu_sys;
-	task->agg_wallclock_us += metric->wallclock_us;
-
-	if (metric->peak_mem_rss / 1024 > task->agg_peak_mem_kib)
-		task->agg_peak_mem_kib = metric->peak_mem_rss / 1024;
-	if (metric->stg_bytes / 1024 > task->agg_stg_kib)
-		task->agg_stg_kib = metric->stg_bytes / 1024;
-
-	/*
-	 * Then, update the tasks table entry for it
-	 */
-
-	lws_snprintf(update, sizeof(update),
-		"UPDATE tasks SET agg_us_cpu_user=%llu, agg_us_cpu_sys=%llu, "
-		"agg_wallclock_us=%llu, agg_peak_mem_kib=%llu, agg_stg_kib=%llu "
-		"WHERE uuid='%s'",
-		(unsigned long long)task->agg_us_cpu_user,
-		(unsigned long long)task->agg_us_cpu_sys,
-		(unsigned long long)task->agg_wallclock_us,
-		(unsigned long long)task->agg_peak_mem_kib,
-		(unsigned long long)task->agg_stg_kib,
-		esc_uuid);
-
-	if (sqlite3_exec(pdb, update, NULL, NULL, NULL) != SQLITE_OK)
-		lwsl_err("%s: %s: %s: fail\n", __func__, update,
+	if (sqlite3_step(stmt) != SQLITE_DONE)
+		lwsl_err("%s: step failed: %s\n", __func__,
 			 sqlite3_errmsg(pdb));
 
 bail:
-	lwsac_free(&ac);
+	if (stmt)
+		sqlite3_finalize(stmt);
+
 	sais_event_db_close(vhd, &pdb);
 }
 
