@@ -613,6 +613,7 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		lws_sul_cancel(&spm->sul_load_report);
 		lws_dll2_foreach_safe(&builder.sai_plat_owner, spm,
 				      cleanup_on_ss_disconnect);
+		lws_ss_request_tx(spm->ss);
 		break;
 
 	case LWSSSCS_ALL_RETRIES_FAILED:
