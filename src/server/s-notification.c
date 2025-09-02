@@ -267,6 +267,7 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 		sn->t.prep[0] = '\0';
 		sn->t.packages[0] = '\0';
 		sn->t.cmake[0] = '\0';
+		sn->t.cpack[0] = '\0';
 		sn->t.artifacts[0] = '\0';
 		sn->explicit_platforms[0] = '\0';
 		return 0;
@@ -571,7 +572,6 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 //		lwsl_notice("%s: New test '%s', '%s', '%s'\n", __func__,
 //			    sn->t.taskname, sn->t.cmake, sn->t.packages);
 
-		sn->t.taskname[0] = '\0';
 		return 0;
 	}
 

@@ -107,24 +107,6 @@ size_t lsm_schema_json_map_array_size = LWS_ARRAY_SIZE(lsm_schema_json_map);
 
 extern const lws_struct_map_t lsm_schema_sq3_map_event[];
 
-#if 0
-/*
- * Let the server know how many browsers are connected, so it can inform
- * builders who can then moderate their reporting rate
- */
-void
-saiw_update_viewer_count(struct vhd *vhd)
-{
-	char buf[128];
-	int n;
-
-	n = lws_snprintf(buf, sizeof(buf),
-			"{\"schema\":\"com.warmcat.sai.viewercount\",\"count\":%u}",
-			(unsigned int)vhd->browsers.count);
-	saiw_websrv_queue_tx(vhd->h_ss_websrv, (uint8_t *)buf, (size_t)n);
-}
-#endif
-
 /* len is typically 16 (event uuid is 32 chars + NUL)
  * But eg, task uuid is concatenated 32-char eventid and 32-char taskid
  */
@@ -1224,7 +1206,8 @@ clean_spa:
 		/*
 		 * Browser UI sent us something on websockets
 		 */
-		if (saiw_ws_json_rx_browser(vhd, pss, in, len)) {
+		if (saiw_ws_json_rx_browser(vhd, pss, in, len, (lws_is_first_fragment(wsi) ? LWSSS_FLAG_SOM : 0) |
+							       (lws_is_final_fragment(wsi) ? LWSSS_FLAG_EOM : 0))) {
 			lwsl_wsi_err(wsi, "Closing because saiw_ws_json_rx_browser returned it");
 
 			return -1;

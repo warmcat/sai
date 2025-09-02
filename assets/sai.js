@@ -1575,6 +1575,23 @@ function ws_open_sai()
 						 	  	 	
 						 	  	console.log(rs);
 						 	  	sai.send(rs);
+
+								/*
+								 * and immediately re-request the task info, so we can get
+								 * the new logs
+								 */
+								var tid = san(e.srcElement.id.substring(8));
+								var rq = "{\"schema\":" +
+									  "\"com.warmcat.sai.taskinfo\"," +
+									  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
+									  "\"logs\": 1," +
+									  "\"last_log_ts\":" + last_log_timestamp + "," +
+									  "\"task_hash\":" +
+									  JSON.stringify(tid) + "}";
+
+								console.log(rq);
+								sai.send(rq);
+
 						 	  	document.getElementById("dlogsn").innerHTML = "";
 						 	  	document.getElementById("dlogst").innerHTML = "";
 						 	  	document.getElementById("logs").innerHTML = "";

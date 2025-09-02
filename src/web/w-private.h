@@ -276,7 +276,7 @@ lws_struct_map_set(const lws_struct_map_t *map, char *u);
 
 int
 saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss,
-			     uint8_t *buf, size_t bl);
+			     uint8_t *buf, size_t bl, unsigned int ss_flags);
 
 void
 sai_task_uuid_to_event_uuid(char *event_uuid33, const char *task_uuid65);
@@ -300,7 +300,7 @@ int
 saiw_task_cancel(struct vhd *vhd, const char *task_uuid);
 
 int
-saiw_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len);
+saiw_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned int ss_flags);
 
 int
 saiw_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,

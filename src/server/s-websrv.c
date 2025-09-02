@@ -37,6 +37,7 @@
 #include <string.h>
 #include <signal.h>
 #include <time.h>
+#include <assert.h>
 
 #include "s-private.h"
 
@@ -159,20 +160,15 @@ reject:
 	return 1;
 }
 
-int
-sais_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len)
-{
-	websrvss_srv_t *m = (websrvss_srv_t *)lws_ss_to_user_object(h);
-	int n;
-
-	n = lws_buflist_append_segment(&m->bltx, buf, len);
-
-	lwsl_notice("%s: appened h %p: %d\n", __func__, h, n);
-	if (lws_ss_request_tx(h))
-		return 1;
-
-	return n < 0;
-}
+/*
+ * sais_webserv_broadcast allows us to queue to broadcast a message to all
+ * sai-web daemons that are connected to us.
+ *
+ * The queue is drained by websrvss_ws_tx() below.
+ *
+ * These messages are defined to all fit in a single fragment and will
+ * cause an assertion if they don't.
+ */
 
 typedef struct {
 	const uint8_t *buf;
@@ -194,7 +190,7 @@ _sais_websrv_broadcast(struct lws_ss_handle *h, void *arg)
 	}
 
 	if (lws_buflist_append_segment(&m->bltx, a->buf, a->len) < 0) {
-		lwsl_warn("%s: buflist append fail\n", __func__);
+		lwsl_err("%s: buflist append fail\n", __func__);
 		lws_ss_start_timeout(h, 1);
 
 		return;
@@ -214,6 +210,7 @@ sais_websrv_broadcast(struct lws_ss_handle *hsrv, const char *str, size_t len)
 
 	lws_ss_server_foreach_client(hsrv, _sais_websrv_broadcast, &a);
 }
+
 
 int
 sais_list_builders(struct vhd *vhd)
@@ -744,6 +741,7 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	       size_t *len, int *flags)
 {
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
+	size_t fsl = lws_buflist_next_segment_len(&m->bltx, NULL); 
 	char som, eom;
 	int used;
 
@@ -754,10 +752,20 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	if (!used)
 		return LWSSSSRET_TX_DONT_SEND;
 
+	// if (!eom) {
+	//	lwsl_err("%s: eom is not set on bltx buflist!\n", __func__);
+	//	lwsl_hexdump_notice(buf, (size_t)used);
+	// }
+
+	if ((size_t)used < fsl) {
+		lwsl_ss_warn(m->ss, "srv->web: clearing eom since used %d < fsl %d\n", (int)used, (int)fsl);
+		eom = 0; /* because we still be back */
+	}
+
 	*flags = (som ? LWSSS_FLAG_SOM : 0) | (eom ? LWSSS_FLAG_EOM : 0);
 	*len = (size_t)used;
 
-	// lwsl_warn("%s: srv -> web: len %d flags %d\n", __func__, (int)*len, (int)*flags);
+	lwsl_ss_warn(m->ss, "srv -> web: len %d flags %d", (int)*len, (int)*flags);
 
 	if (m->bltx)
 		return lws_ss_request_tx(m->ss);
