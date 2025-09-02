@@ -310,7 +310,6 @@ skip:
 		free(op->spawn);
 
 	if (ns->spm) {
-		ns->spm->phase = PHASE_START_ATTACH;
 		if (lws_ss_request_tx(ns->spm->ss))
 			lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
 	}
