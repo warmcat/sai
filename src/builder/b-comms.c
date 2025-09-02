@@ -78,19 +78,15 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	if (spm->logs_in_flight)
 		goto send_logs; /* nothing to send */
 
-	/*
-	 * Any build metrics to process?
-	 */
+	if (spm->step_result_list.count) {
+		struct lws_dll2 *d = lws_dll2_get_head(&spm->step_result_list);
+		sai_step_result_t *r =
+				lws_container_of(d, sai_step_result_t, list);
 
-	if (spm->build_metric_list.count) {
-		struct lws_dll2 *d = lws_dll2_get_head(&spm->build_metric_list);
-		sai_build_metric_t *m =
-				lws_container_of(d, sai_build_metric_t, list);
+		lwsl_notice("%s: issuing step result\n", __func__);
 
-		lwsl_notice("%s: issuing build metric\n", __func__);
-
-		js = lws_struct_json_serialize_create(lsm_schema_build_metric,
-			      LWS_ARRAY_SIZE(lsm_schema_build_metric), 0, m);
+		js = lws_struct_json_serialize_create(lsm_schema_step_result,
+			      LWS_ARRAY_SIZE(lsm_schema_step_result), 0, r);
 		if (!js)
 			return -1;
 
@@ -102,8 +98,8 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 
 		n = (int)w;
 
-		lws_dll2_remove(&m->list);
-		free(m);
+		lws_dll2_remove(&r->list);
+		free(r);
 
 		r = lws_ss_request_tx(spm->ss);
 		if (r)

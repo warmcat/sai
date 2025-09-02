@@ -86,6 +86,8 @@ static const lws_struct_map_t lsm_schema_map_ba[] = {
 						"com-warmcat-sai-resource"),
 	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric,
 						"com.warmcat.sai.build-metric"),
+	LSM_SCHEMA	(sai_step_result_t, NULL, lsm_step_result,
+						"com.warmcat.sai.step-result"),
 };
 
 enum {
@@ -96,6 +98,7 @@ enum {
 	SAIM_WSSCH_BUILDER_LOADREPORT,
 	SAIM_WSSCH_BUILDER_RESOURCE_REQ,
 	SAIM_WSSCH_BUILDER_METRIC,
+	SAIM_WSSCH_BUILDER_STEP_RESULT,
 };
 
 static void
@@ -707,33 +710,6 @@ bail:
 				goto bail;
 		}
 
-		if (log->finished) {
-			/*
-			 * We have reached the end of the logs for this task
-			 */
-
-			sais_dump_logs_to_db(&vhd->sul_logcache);
-
-			lwsl_info("%s: log->finished says 0x%x, dur %lluus\n",
-				 __func__, log->finished, (unsigned long long)(
-				 log->timestamp - pss->first_log_timestamp));
-			if (log->finished & SAISPRF_EXIT) {
-				if ((log->finished & 0xff) == 0)
-					n = SAIES_STEP_SUCCESS;
-				else
-					n = SAIES_FAIL;
-			} else
-				if (log->finished & 8192)
-					n = SAIES_CANCELLED;
-				else
-					n = SAIES_FAIL;
-
-			if (sais_set_task_state(vhd, NULL, NULL, log->task_uuid,
-						n, 0, log->timestamp -
-						      pss->first_log_timestamp))
-				goto bail;
-		}
-
 		lwsac_free(&pss->a.ac);
 
 		break;
@@ -1070,12 +1046,43 @@ bail:
 		sais_resource_check_if_can_accept_queued(wk);
 		break;
 
-	case SAIM_WSSCH_BUILDER_METRIC:
-		metric = (const sai_build_metric_t *)pss->a.dest;
-		sais_metrics_db_add(vhd, metric);
-		sais_aggregate_task_metrics(vhd, metric);
+	case SAIM_WSSCH_BUILDER_STEP_RESULT:
+	{
+		const sai_step_result_t *res = (const sai_step_result_t *)pss->a.dest;
+		sai_build_metric_t m;
+		int n;
+
+		/* log it for historical / estimation purposes */
+
+		memset(&m, 0, sizeof(m));
+		lws_strncpy(m.key, res->key, sizeof(m.key));
+		lws_strncpy(m.builder_name, res->builder_name, sizeof(m.builder_name));
+		lws_strncpy(m.project_name, res->project_name, sizeof(m.project_name));
+		lws_strncpy(m.ref, res->ref, sizeof(m.ref));
+		m.us_cpu_user = res->us_cpu_user;
+		m.us_cpu_sys = res->us_cpu_sys;
+		m.wallclock_us = res->wallclock_us;
+		m.peak_mem_rss = res->peak_mem_rss;
+		m.stg_bytes = res->stg_bytes;
+		sais_metrics_db_add(vhd, &m);
+
+		/* we have our own copy of the metrics, just need to add uuid */
+		lws_strncpy(m.task_uuid, res->task_uuid, sizeof(m.task_uuid));
+		sais_aggregate_task_metrics(vhd, &m);
+
+		if ((res->exit_code & 0xff) == 0)
+			n = SAIES_STEP_SUCCESS;
+		else
+			n = SAIES_FAIL;
+
+		if (sais_set_task_state(vhd, NULL, NULL, res->task_uuid,
+					n, 0, res->wallclock_us))
+			goto bail;
+
 		lwsac_free(&pss->a.ac);
-		break;
+	}
+	break;
+
 	}
 
 	return 0;

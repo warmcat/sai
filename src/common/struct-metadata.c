@@ -49,6 +49,24 @@ const lws_struct_map_t lsm_schema_build_metric[] = {
 	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric, "com.warmcat.sai.build-metric")
 };
 
+const lws_struct_map_t lsm_step_result[] = {
+	LSM_CARRAY	(sai_step_result_t, task_uuid,		"task_uuid"),
+	LSM_CARRAY	(sai_step_result_t, key,		"key"),
+	LSM_CARRAY	(sai_step_result_t, builder_name,	"builder_name"),
+	LSM_CARRAY	(sai_step_result_t, project_name,	"project_name"),
+	LSM_CARRAY	(sai_step_result_t, ref,		"ref"),
+	LSM_UNSIGNED	(sai_step_result_t, us_cpu_user,	"us_cpu_user"),
+	LSM_UNSIGNED	(sai_step_result_t, us_cpu_sys,		"us_cpu_sys"),
+	LSM_UNSIGNED	(sai_step_result_t, wallclock_us,	"wallclock_us"),
+	LSM_UNSIGNED	(sai_step_result_t, peak_mem_rss,	"peak_mem_rss"),
+	LSM_UNSIGNED	(sai_step_result_t, stg_bytes,		"stg_bytes"),
+	LSM_SIGNED	(sai_step_result_t, exit_code,		"exit_code"),
+};
+
+const lws_struct_map_t lsm_schema_step_result[] = {
+	LSM_SCHEMA	(sai_step_result_t, NULL, lsm_step_result, "com.warmcat.sai.step-result")
+};
+
 const lws_struct_map_t lsm_sq3_build_metric[] = {
 	LSM_CARRAY	(sai_build_metric_db_t, key,		"key"),
 	LSM_UNSIGNED	(sai_build_metric_db_t, unixtime,	"unixtime"),

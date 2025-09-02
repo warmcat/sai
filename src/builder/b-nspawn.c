@@ -253,22 +253,21 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	}
 
 	if (op->spawn) {
-		sai_build_metric_t *m;
+		sai_step_result_t *r;
 
 		if (!ns->spm) {
 			lwsl_err("%s: NULL ns->spm", __func__);
 			goto skip;
 		}
 
-		m = malloc(sizeof(*m));
-
-		if (m) {
+		r = malloc(sizeof(*r));
+		if (r) {
 			char hash_input[8192];
 			unsigned char hash[32];
 			struct lws_genhash_ctx ctx;
 			int n;
 
-			memset(m, 0, sizeof(*m));
+			memset(r, 0, sizeof(*r));
 
 			lws_snprintf(hash_input, sizeof(hash_input), "%s%s%s%s",
 				     ns->sp->name, op->spawn,
@@ -281,23 +280,23 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 				lwsl_warn("%s: sha256 failed\n", __func__);
 			else
 				for (n = 0; n < 32; n++)
-					lws_snprintf(m->key + (n * 2), 3,
+					lws_snprintf(r->key + (n * 2), 3,
 						     "%02x", hash[n]);
 
-			lws_strncpy(m->task_uuid, ns->task->uuid, sizeof(m->task_uuid));
-			lws_strncpy(m->builder_name, ns->sp->name, sizeof(m->builder_name));
-			lws_strncpy(m->project_name, ns->project_name, sizeof(m->project_name));
-			lws_strncpy(m->ref, ns->ref, sizeof(m->ref));
-			m->us_cpu_user = res->us_cpu_user;
-			m->us_cpu_sys = res->us_cpu_sys;
-			m->wallclock_us = us_wallclock;
-			m->peak_mem_rss = res->peak_mem_rss;
-			m->stg_bytes = du.size_in_bytes;
+			lws_strncpy(r->task_uuid, ns->task->uuid, sizeof(r->task_uuid));
+			lws_strncpy(r->builder_name, ns->sp->name, sizeof(r->builder_name));
+			lws_strncpy(r->project_name, ns->project_name, sizeof(r->project_name));
+			lws_strncpy(r->ref, ns->ref, sizeof(r->ref));
+			r->us_cpu_user = res->us_cpu_user;
+			r->us_cpu_sys = res->us_cpu_sys;
+			r->wallclock_us = us_wallclock;
+			r->peak_mem_rss = res->peak_mem_rss;
+			r->stg_bytes = du.size_in_bytes;
+			r->exit_code = ns->retcode;
 
-			lws_dll2_add_tail(&m->list, &ns->spm->build_metric_list);
-			if (lws_ss_request_tx(ns->spm->ss))
-				lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
+			lws_dll2_add_tail(&r->list, &ns->spm->step_result_list);
 		}
+		free(op->spawn);
 	}
 
 skip:
@@ -306,20 +305,10 @@ skip:
 	/* step succeeded, wait for next instruction */
 	lwsl_notice("%s: step succeeded\n", __func__);
 
-	if (op->spawn)
-		free(op->spawn);
-
 	if (ns->spm) {
 		if (lws_ss_request_tx(ns->spm->ss))
 			lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
 	}
-
-	/*
-	 * add a final zero-length log with the retcode to the list of pending
-	 * logs
-	 */
-
-	saib_log_chunk_create(ns, NULL, 0, 2);
 
 	lwsl_notice("%s: finished, waiting to drain logs (this ns %d, spm in flight %d)\n",
 			__func__, ns->chunk_cache.count,
