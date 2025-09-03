@@ -28,7 +28,7 @@
 #include "b-private.h"
 
 static int
-saib_can_accept_task(sai_task_t *task)
+saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
 {
 #if 0
 	unsigned int free_ram = saib_get_free_ram_kib();
@@ -58,6 +58,10 @@ saib_can_accept_task(sai_task_t *task)
 	}
 */
 #endif
+
+       if (sp->nspawn_owner.count > 6)
+               return 1; /* nope */
+
 	return 0; /* acceptable */
 }
 
@@ -627,7 +631,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			       ns = xns;
 		} lws_end_foreach_dll_safe(d, d1);
 
-		if (saib_can_accept_task(task)) { /* not accepted */
+               if (saib_can_accept_task(task, sp)) { /* not accepted */
 			if (saib_queue_task_status_update(sp, spm, task->uuid))
 				return -1;
 			return 0;

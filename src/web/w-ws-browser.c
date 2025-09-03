@@ -30,36 +30,6 @@
 
 #include "w-private.h"
 
-/*
- * This allows other parts of sai-web to queue a raw buffer to be sent to
- * all connected browsers, eg, for load reports.
- *
- * The flags are lws_write() flags.
- */
-void
-saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int api_ver_min, enum lws_write_protocol flags)
-{
-	int eff = 0;
-
-	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
-		struct pss *pss = lws_container_of(p, struct pss, same);
-		int *pi = (int *)((const char *)buf - sizeof(int));
-
-		// if (pss->js_api_version >= api_ver_min) 
-		{
-			eff++;
-			*pi = (int)flags;
-
-			if (lws_buflist_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) < 0)
-				lwsl_wsi_err(pss->wsi, "unable to buflist_append");
-			else {
-				lws_callback_on_writable(pss->wsi);
-			}
-		}
-
-	} lws_end_foreach_dll(p);
-}
-
 extern const lws_struct_map_t lsm_load_report_members[7]; 
 
 /*
@@ -156,6 +126,37 @@ enum sai_overview_state {
 	SOS_EVENT,
 	SOS_TASKS,
 };
+
+/*
+ * This allows other parts of sai-web to queue a raw buffer to be sent to
+ * all connected browsers, eg, for load reports.
+ *
+ * The flags are lws_write() flags.
+ */
+void
+saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int api_ver_min, enum lws_write_protocol flags)
+{
+	int eff = 0;
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
+		struct pss *pss = lws_container_of(p, struct pss, same);
+		int *pi = (int *)((const char *)buf - sizeof(int));
+
+		// if (pss->js_api_version >= api_ver_min) 
+		{
+			eff++;
+			*pi = (int)flags;
+
+			if (lws_buflist_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) < 0)
+				lwsl_wsi_err(pss->wsi, "unable to buflist_append");
+			else {
+				lws_callback_on_writable(pss->wsi);
+			}
+		}
+
+	} lws_end_foreach_dll(p);
+}
+
 
 int
 sai_sql3_get_uint64_cb(void *user, int cols, char **values, char **name)
@@ -821,9 +822,7 @@ again:
 			int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&pss->raw_tx), depi = *pi;
 			char som, eom, rb[1200];
 			int used, final = 1;
-			size_t fsl;
-
-			fsl = lws_buflist_next_segment_len(&pss->raw_tx, NULL);
+			size_t fsl = lws_buflist_next_segment_len(&pss->raw_tx, NULL);
 
 			/* this is the only buflist user on pss->raw_tx */
 			used = lws_buflist_fragment_use(&pss->raw_tx, (uint8_t *)rb, sizeof(rb), &som, &eom);
@@ -833,9 +832,9 @@ again:
 				final = 0;
 
 			if (lws_write(pss->wsi, (uint8_t *)rb + ((size_t)som * sizeof(int)),
-						(size_t)used - ((size_t)som * sizeof(int)),
-						lws_write_ws_flags((((enum lws_write_protocol)depi) & 0xf), som, final)
-					) < 0) {
+						(size_t)used  - ((size_t)som * sizeof(int)),
+						(lws_ws_sending_multifragment(pss->wsi) ? LWS_WRITE_CONTINUATION : LWS_WRITE_TEXT) |
+							(!final * LWS_WRITE_NO_FIN)) < 0) {
 				lwsl_wsi_err(pss->wsi, "attempt to write %d failed", (int)used - (int)sizeof(int));
 
 				return -1;
@@ -1164,7 +1163,6 @@ so_finish:
 				LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),
 				0, b);
 			if (!js) {
-				lwsl_err("a\n");
 				lwsac_unreference(&vhd->builders);
 				return 1;
 			}
