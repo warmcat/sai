@@ -177,7 +177,7 @@ sais_central_cb(lws_sorted_usec_list_t *sul)
 
 	if (!vhd->last_check_abandoned_tasks ||
 	    lws_now_usecs() > (vhd->last_check_abandoned_tasks +
-			       (20 * LWS_USEC_PER_SEC))) {
+			       (3 * 60 * LWS_USEC_PER_SEC))) {
 
 		sais_central_clean_abandoned(vhd);
 
