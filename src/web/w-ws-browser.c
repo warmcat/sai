@@ -127,36 +127,6 @@ enum sai_overview_state {
 	SOS_TASKS,
 };
 
-/*
- * This allows other parts of sai-web to queue a raw buffer to be sent to
- * all connected browsers, eg, for load reports.
- *
- * The flags are lws_write() flags.
- */
-void
-saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int api_ver_min, enum lws_write_protocol flags)
-{
-	int eff = 0;
-
-	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
-		struct pss *pss = lws_container_of(p, struct pss, same);
-		int *pi = (int *)((const char *)buf - sizeof(int));
-
-		// if (pss->js_api_version >= api_ver_min) 
-		{
-			eff++;
-			*pi = (int)flags;
-
-			if (lws_buflist_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) < 0)
-				lwsl_wsi_err(pss->wsi, "unable to buflist_append");
-			else {
-				lws_callback_on_writable(pss->wsi);
-			}
-		}
-
-	} lws_end_foreach_dll(p);
-}
-
 
 int
 sai_sql3_get_uint64_cb(void *user, int cols, char **values, char **name)

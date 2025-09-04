@@ -50,6 +50,37 @@ enum {
 	SAIS_WS_WEBSRV_RX_TASKACTIVITY,
 };
 
+/*
+ * This allows other parts of sai-web to queue a raw buffer to be sent to
+ * all connected browsers, eg, for load reports.
+ *
+ * The flags are lws_write() flags.
+ */
+void
+saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int api_ver_min, enum lws_write_protocol flags)
+{
+	int eff = 0;
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
+		struct pss *pss = lws_container_of(p, struct pss, same);
+		int *pi = (int *)((const char *)buf - sizeof(int));
+
+		eff++;
+		*pi = (int)flags;
+
+		if (lws_buflist_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) < 0)
+			lwsl_wsi_err(pss->wsi, "unable to buflist_append"); /* still ask to drain */
+
+		lws_callback_on_writable(pss->wsi);
+
+	} lws_end_foreach_dll(p);
+}
+
+
+/*
+ * Queue messages to send from sai-web to sai-server
+ */
+
 int
 saiw_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned int ss_flags)
 {
@@ -58,13 +89,11 @@ saiw_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned in
 
 	*pi = ss_flags;
 	
-	// lwsl_ss_notice(h, "sai-web: Queuing from browser -> sai-server");
+	// lwsl_ss_notice(h, "sai-web: Queuing sai-web -> sai-server");
 	// lwsl_hexdump_notice(buf, len);
 
-	if (lws_buflist_append_segment(&m->wbltx, buf - sizeof(int), len + sizeof(int)) < 0) {
-		lwsl_ss_err(h, "failed to append");
-		return 1;
-	}
+	if (lws_buflist_append_segment(&m->wbltx, buf - sizeof(int), len + sizeof(int)) < 0)
+		lwsl_ss_err(h, "failed to append"); /* still ask to drain */
 
 	if (lws_ss_request_tx(h))
 		lwsl_ss_err(h, "failed to request tx");
