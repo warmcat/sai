@@ -1201,23 +1201,23 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 	case 0: /* git mirror */
 		if (cb->windows)
 			lws_snprintf(task->script, sizeof(task->script),
-				"git_helper.bat mirror \"%s\" %s %s %s",
+				".\\git_helper.bat mirror \"%s\" %s %s %s",
 				task->git_repo_url, task->git_ref, task->git_hash,
 				mirror_path);
 		else
 			lws_snprintf(task->script, sizeof(task->script),
-				"git_helper.sh mirror \"%s\" %s %s %s",
+				"./git_helper.sh mirror \"%s\" %s %s %s",
 				task->git_repo_url, task->git_ref, task->git_hash,
 				mirror_path);
 		break;
 	case 1: /* git checkout */
 		if (cb->windows)
 			lws_snprintf(task->script, sizeof(task->script),
-				"git_helper.bat checkout \"%s\" src %s",
+				".\\git_helper.bat checkout \"%s\" src %s",
 				mirror_path, task->git_hash);
 		else
 			lws_snprintf(task->script, sizeof(task->script),
-				"git_helper.sh checkout \"%s\" src %s",
+				"./git_helper.sh checkout \"%s\" src %s",
 				mirror_path, task->git_hash);
 		break;
 	default:
