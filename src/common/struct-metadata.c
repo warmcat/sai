@@ -34,14 +34,17 @@ const lws_struct_map_t lsm_load_report_members[] = {
 
 const lws_struct_map_t lsm_build_metric[] = {
 	LSM_CARRAY	(sai_build_metric_t, key,		"key"),
+	LSM_CARRAY	(sai_build_metric_t, task_uuid,		"task_uuid"),
 	LSM_CARRAY	(sai_build_metric_t, builder_name,	"builder_name"),
 	LSM_CARRAY	(sai_build_metric_t, project_name,	"project_name"),
 	LSM_CARRAY	(sai_build_metric_t, ref,		"ref"),
+	LSM_UNSIGNED	(sai_build_metric_t, unixtime,		"unixtime"),
 	LSM_UNSIGNED	(sai_build_metric_t, us_cpu_user,	"us_cpu_user"),
 	LSM_UNSIGNED	(sai_build_metric_t, us_cpu_sys,	"us_cpu_sys"),
 	LSM_UNSIGNED	(sai_build_metric_t, wallclock_us,	"wallclock_us"),
 	LSM_UNSIGNED	(sai_build_metric_t, peak_mem_rss,	"peak_mem_rss"),
 	LSM_UNSIGNED	(sai_build_metric_t, stg_bytes,		"stg_bytes"),
+	LSM_SIGNED	(sai_build_metric_t, parallel,		"parallel"),
 };
 
 const lws_struct_map_t lsm_schema_build_metric[] = {
@@ -50,6 +53,7 @@ const lws_struct_map_t lsm_schema_build_metric[] = {
 
 const lws_struct_map_t lsm_sq3_build_metric[] = {
 	LSM_CARRAY	(sai_build_metric_db_t, key,		"key"),
+	LSM_CARRAY	(sai_build_metric_db_t, task_uuid,	"task_uuid"),
 	LSM_UNSIGNED	(sai_build_metric_db_t, unixtime,	"unixtime"),
 	LSM_CARRAY	(sai_build_metric_db_t, builder_name,	"builder_name"),
 	LSM_CARRAY	(sai_build_metric_db_t, project_name,	"project_name"),
@@ -59,6 +63,7 @@ const lws_struct_map_t lsm_sq3_build_metric[] = {
 	LSM_UNSIGNED	(sai_build_metric_db_t, wallclock_us,	"wallclock_us"),
 	LSM_UNSIGNED	(sai_build_metric_db_t, peak_mem_rss,	"peak_mem_rss"),
 	LSM_UNSIGNED	(sai_build_metric_db_t, stg_bytes,	"stg_bytes"),
+	LSM_SIGNED	(sai_build_metric_db_t, parallel,	"parallel"),
 };
 
 const lws_struct_map_t lsm_schema_sq3_map_build_metric[] = {
@@ -166,6 +171,7 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_UNSIGNED	(sai_task_t, est_peak_mem_kib,	"est_peak_mem_kib"),
 	LSM_UNSIGNED	(sai_task_t, est_cpu_load_pct,	"est_cpu_load_pct"),
 	LSM_UNSIGNED	(sai_task_t, est_disk_kib,	"est_disk_kib"),
+	LSM_SIGNED	(sai_task_t, parallel,		"parallel"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {

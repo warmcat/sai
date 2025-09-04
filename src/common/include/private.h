@@ -130,6 +130,7 @@ typedef struct {
 	unsigned int		est_cpu_load_pct;
 	unsigned int		est_disk_kib;
 
+	int			parallel;
 	char			told_ongoing;
 } sai_task_t;
 
@@ -482,19 +483,23 @@ typedef struct sai_power_state {
 typedef struct sai_build_metric {
 	lws_dll2_t	list;
 	char		key[65];
+	char		task_uuid[65];
 	char		builder_name[96];
 	char		project_name[96];
 	char		ref[96];
+	uint64_t	unixtime;
 	uint64_t	us_cpu_user;
 	uint64_t	us_cpu_sys;
 	uint64_t	wallclock_us;
 	uint64_t	peak_mem_rss;
 	uint64_t	stg_bytes;
+	int		parallel;
 } sai_build_metric_t;
 
 typedef struct sai_build_metric_db {
 	lws_dll2_t	list; /* for lws_struct */
 	char		key[65];
+	char		task_uuid[65];
 	uint64_t	unixtime;
 	char		builder_name[96];
 	char		project_name[96];
@@ -504,6 +509,7 @@ typedef struct sai_build_metric_db {
 	uint64_t	wallclock_us;
 	uint64_t	peak_mem_rss;
 	uint64_t	stg_bytes;
+	int		parallel;
 } sai_build_metric_db_t;
 
 extern const lws_struct_map_t
@@ -518,7 +524,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[10],
-	lsm_task[26],
+	lsm_task[27],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],
@@ -534,7 +540,7 @@ extern const lws_struct_map_t
 	lsm_schema_build_metric[1],
 	lsm_schema_sq3_map_build_metric[1]
 ;
-extern const lws_struct_map_t lsm_build_metric[9];
+extern const lws_struct_map_t lsm_build_metric[12];
 extern const lws_struct_map_t lsm_plat[8];
 extern const lws_struct_map_t lsm_plat_for_json[11];
 

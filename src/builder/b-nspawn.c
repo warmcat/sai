@@ -44,137 +44,6 @@ static char csep = '/';
 static char csep = '\\';
 #endif
 
-const char *git_helper_sh =
-	"#!/bin/bash\n"
-	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
-	"set -e\n"
-	"echo \"git_helper_sh: starting\"\n"
-	"OPERATION=$1\n"
-	"shift\n"
-	"if [ \"$OPERATION\" == \"mirror\" ]; then\n"
-	"    REMOTE_URL=$1\n"
-	"    REF=$2\n"
-	"    HASH=$3\n"
-	"    MIRROR_PATH=\"$HOME/git-mirror/$4\"\n"
-	"    for i in $(seq 1 60); do\n"
-	"        if [ -d \"$MIRROR_PATH/.git\" ]; then\n"
-	"            if git -C \"$MIRROR_PATH\" rev-parse -q --verify \"ref-$HASH\" > /dev/null; then\n"
-	"                exit 0\n"
-	"            fi\n"
-	"        fi\n"
-	"        if mkdir \"$MIRROR_PATH.lock\" 2>/dev/null; then\n"
-	"            trap 'rm -rf \"$MIRROR_PATH.lock\"' EXIT\n"
-	"            if [ -d \"$MIRROR_PATH/.git\" ]; then\n"
-	"                if git -C \"$MIRROR_PATH\" rev-parse -q --verify \"ref-$HASH\" > /dev/null; then\n"
-	"                    exit 0\n"
-	"                fi\n"
-	"            fi\n"
-	"            mkdir -p \"$MIRROR_PATH\"\n"
-	"            if [ ! -d \"$MIRROR_PATH/.git\" ]; then\n"
-	"                git init --bare \"$MIRROR_PATH\"\n"
-	"            fi\n"
-	"            REFSPEC=\"$REF:ref-$HASH\"\n"
-	"            git -C \"$MIRROR_PATH\" fetch \"$REMOTE_URL\" \"+$REFSPEC\"\n"
-	"            exit 0\n"
-	"        fi\n"
-	"        echo \"git mirror locked, waiting...\"\n"
-	"        sleep 1\n"
-	"    done\n"
-	"    exit 1\n"
-	"elif [ \"$OPERATION\" == \"checkout\" ]; then\n"
-	"    MIRROR_PATH=\"$HOME/git-mirror/$1\"\n"
-	"    BUILD_DIR=$2\n"
-	"    HASH=$3\n"
-	"    if [ ! -d \"$BUILD_DIR/.git\" ]; then\n"
-	"        rm -rf \"$BUILD_DIR\"\n"
-	"        mkdir -p \"$BUILD_DIR\"\n"
-	"        git -C \"$BUILD_DIR\" init\n"
-	"    fi\n"
-	"    if ! git -C \"$BUILD_DIR\" fetch \"$MIRROR_PATH\" \"ref-$HASH\"; then\n"
-	"        exit 2\n"
-	"    fi\n"
-	"    git -C \"$BUILD_DIR\" checkout -f \"$HASH\"\n"
-	"    git -C \"$BUILD_DIR\" clean -fdx\n"
-	"else\n"
-	"    exit 1\n"
-	"fi\n"
-	"echo \">>> Git helper script finished.\"\n"
-	"exit 0\n"
-;
-
-const char *git_helper_bat =
-	"@echo on\n"
-	"setlocal EnableDelayedExpansion\n"
-	"echo \"git_helper_bat: starting\"\n"
-	"set \"OPERATION=%~1\"\n"
-	"echo \"OPERATION: !OPERATION!\"\n"
-	"if /i \"!OPERATION!\"==\"mirror\" (\n"
-	"    set \"REMOTE_URL=%~2\"\n"
-	"    set \"REF=%~3\"\n"
-	"    set \"HASH=%~4\"\n"
-	"    set \"MIRROR_PATH=%HOME%\\\\git-mirror\\\\%~5\"\n"
-	"    echo \"REMOTE_URL: !REMOTE_URL!\"\n"
-	"    echo \"REF: !REF!\"\n"
-	"    echo \"HASH: !HASH!\"\n"
-	"    echo \"MIRROR_PATH: !MIRROR_PATH!\"\n"
-	"    :lock_wait\n"
-	"    mkdir \"!MIRROR_PATH!.lock\" 2>nul\n"
-	"    if errorlevel 1 (\n"
-	"        echo \"git mirror locked, waiting...\"\n"
-	"        timeout /t 1 /nobreak > nul\n"
-	"        goto :lock_wait\n"
-	"    )\n"
-	"    if exist \"!MIRROR_PATH!\\\\.git\" (\n"
-	"        git -C \"!MIRROR_PATH!\" rev-parse -q --verify \"ref-!HASH!\" > nul 2> nul\n"
-	"        if exist !MIRROR_PATH!\\\\.git if not errorlevel 1 (\n"
-	"            rmdir \"!MIRROR_PATH!.lock\"\n"
-	"            exit /b 0\n"
-	"        )\n"
-	"    )\n"
-	"    if not exist \"!MIRROR_PATH!\\\\.\" (\n"
-	"    mkdir \"!MIRROR_PATH!\"\n"
-	"    )\n"
-	"    if not exist \"!MIRROR_PATH!\\\\.git\" (\n"
-	"        git init --bare \"!MIRROR_PATH!\"\n"
-	"        if errorlevel 1 (\n"
-	"            rmdir \"!MIRROR_PATH!.lock\"\n"
-	"            exit /b 1\n"
-	"        )\n"
-	"    )\n"
-	"    set \"REFSPEC=!REF!:ref-!HASH!\"\n"
-	"    echo \"REFSPEC: !REFSPEC!\"\n"
-	"    git -C \"!MIRROR_PATH!\" fetch \"!REMOTE_URL!\" \"!REFSPEC!\" 2>&1\n"
-	"    if !ERRORLEVEL! neq 0 (\n"
-	"        echo \"git fetch failed with errorlevel !ERRORLEVEL!\"\n"
-	"        rmdir \"!MIRROR_PATH!.lock\"\n"
-	"        exit /b 1\n"
-	"    )\n"
-	"    rmdir \"!MIRROR_PATH!.lock\"\n"
-	"    exit /b 0\n"
-	")\n"
-	"if /i \"!OPERATION!\"==\"checkout\" (\n"
-	"    set \"MIRROR_PATH=%HOME%\\\\git-mirror\\\\%~2\"\n"
-	"    set \"BUILD_DIR=%~3\"\n"
-	"    set \"HASH=%~4\"\n"
-	"    echo \"MIRROR_PATH: !MIRROR_PATH!\"\n"
-	"    echo \"BUILD_DIR: !BUILD_DIR!\"\n"
-	"    echo \"HASH: !HASH!\"\n"
-	"    if not exist \"!BUILD_DIR!\\\\.git\" (\n"
-	"        if exist \"!BUILD_DIR!\\\\\" rmdir /s /q \"!BUILD_DIR!\"\n"
-	"        mkdir \"!BUILD_DIR!\"\n"
-	"        git -C \"!BUILD_DIR!\" init\n"
-	"        if errorlevel 1 exit /b 1\n"
-	"    )\n"
-	"    git -C \"!BUILD_DIR!\" fetch \"!MIRROR_PATH!\" \"ref-!HASH!\"\n"
-	"    if errorlevel 1 exit /b 2\n"
-	"    git -C \"!BUILD_DIR!\" checkout -f \"!HASH!\"\n"
-	"    if errorlevel 1 exit /b 1\n"
-	"    echo \">>> Git helper script finished.\"\n"
-	"    exit /b 0\n"
-	")\n"
-	"exit /b 1\n"
-;
-
 extern struct lws_vhost *builder_vhost;
 
 struct ws_capture_chunk *
@@ -418,11 +287,14 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 			lws_strncpy(m->builder_name, ns->sp->name, sizeof(m->builder_name));
 			lws_strncpy(m->project_name, ns->project_name, sizeof(m->project_name));
 			lws_strncpy(m->ref, ns->ref, sizeof(m->ref));
+			lws_strncpy(m->task_uuid, ns->task->uuid, sizeof(m->task_uuid));
+			m->unixtime = (uint64_t)time(NULL);
 			m->us_cpu_user = res->us_cpu_user;
 			m->us_cpu_sys = res->us_cpu_sys;
 			m->wallclock_us = us_wallclock;
 			m->peak_mem_rss = res->peak_mem_rss;
 			m->stg_bytes = du.size_in_bytes;
+			m->parallel = ns->task->parallel;
 
 			lws_dll2_add_tail(&m->list, &ns->spm->build_metric_list);
 			if (lws_ss_request_tx(ns->spm->ss))
@@ -649,7 +521,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 	n = lws_snprintf(st, sizeof(st),
 			 ns->current_step ? runscript_win_next : runscript_win_first,
 			 ns->instance_ordinal,
-			 1,
+			 ns->task->parallel ? ns->task->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
 			 ns->inp, one_step);
@@ -667,7 +539,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 			 script_template,
 			 builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_ordinal,
-			 1,
+			 ns->task->parallel ? ns->task->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,
 			 builder.home, one_step);
@@ -711,7 +583,11 @@ saib_spawn_script(struct sai_nspawn *ns)
 
 	op->ns = ns;
 	ns->op = op;
+#if defined(WIN32)
+	op->spawn = _strdup(one_step);
+#else
 	op->spawn = strdup(one_step);
+#endif
 	op->start_time = lws_now_usecs();
 
 	info.opaque = op;

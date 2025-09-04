@@ -24,8 +24,142 @@
 #include <signal.h>
 #include <sys/stat.h>
 #include <assert.h>
+#include <fcntl.h>
 
 #include "b-private.h"
+
+const char *git_helper_sh =
+	"#!/bin/bash\n"
+	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
+	"set -e\n"
+	"echo \"git_helper_sh: starting\"\n"
+	"OPERATION=$1\n"
+	"shift\n"
+	"if [ \"$OPERATION\" == \"mirror\" ]; then\n"
+	"    REMOTE_URL=$1\n"
+	"    REF=$2\n"
+	"    HASH=$3\n"
+	"    MIRROR_PATH=\"$HOME/git-mirror/$4\"\n"
+	"    for i in $(seq 1 60); do\n"
+	"        if [ -d \"$MIRROR_PATH/.git\" ]; then\n"
+	"            if git -C \"$MIRROR_PATH\" rev-parse -q --verify \"ref-$HASH\" > /dev/null; then\n"
+	"                exit 0\n"
+	"            fi\n"
+	"        fi\n"
+	"        if mkdir \"$MIRROR_PATH.lock\" 2>/dev/null; then\n"
+	"            trap 'rm -rf \"$MIRROR_PATH.lock\"' EXIT\n"
+	"            if [ -d \"$MIRROR_PATH/.git\" ]; then\n"
+	"                if git -C \"$MIRROR_PATH\" rev-parse -q --verify \"ref-$HASH\" > /dev/null; then\n"
+	"                    exit 0\n"
+	"                fi\n"
+	"            fi\n"
+	"            mkdir -p \"$MIRROR_PATH\"\n"
+	"            if [ ! -d \"$MIRROR_PATH/.git\" ]; then\n"
+	"                git init --bare \"$MIRROR_PATH\"\n"
+	"            fi\n"
+	"            REFSPEC=\"$REF:ref-$HASH\"\n"
+	"            git -C \"$MIRROR_PATH\" fetch \"$REMOTE_URL\" \"+$REFSPEC\"\n"
+	"            exit 0\n"
+	"        fi\n"
+	"        echo \"git mirror locked, waiting...\"\n"
+	"        sleep 1\n"
+	"    done\n"
+	"    exit 1\n"
+	"elif [ \"$OPERATION\" == \"checkout\" ]; then\n"
+	"    MIRROR_PATH=\"$HOME/git-mirror/$1\"\n"
+	"    BUILD_DIR=$2\n"
+	"    HASH=$3\n"
+	"    if [ ! -d \"$BUILD_DIR/.git\" ]; then\n"
+	"        rm -rf \"$BUILD_DIR\"\n"
+	"        mkdir -p \"$BUILD_DIR\"\n"
+	"        git -C \"$BUILD_DIR\" init\n"
+	"    fi\n"
+	"    if ! git -C \"$BUILD_DIR\" fetch \"$MIRROR_PATH\" \"ref-$HASH\"; then\n"
+	"        exit 2\n"
+	"    fi\n"
+	"    git -C \"$BUILD_DIR\" checkout -f \"$HASH\"\n"
+	"    git -C \"$BUILD_DIR\" clean -fdx\n"
+	"else\n"
+	"    exit 1\n"
+	"fi\n"
+	"echo \">>> Git helper script finished.\"\n"
+	"exit 0\n"
+;
+
+const char *git_helper_bat =
+	"@echo on\n"
+	"setlocal EnableDelayedExpansion\n"
+	"echo \"git_helper_bat: starting\"\n"
+	"set \"OPERATION=%~1\"\n"
+	"echo \"OPERATION: !OPERATION!\"\n"
+	"if /i \"!OPERATION!\"==\"mirror\" (\n"
+	"    set \"REMOTE_URL=%~2\"\n"
+	"    set \"REF=%~3\"\n"
+	"    set \"HASH=%~4\"\n"
+	"    set \"MIRROR_PATH=%HOME%\\\\git-mirror\\\\%~5\"\n"
+	"    echo \"REMOTE_URL: !REMOTE_URL!\"\n"
+	"    echo \"REF: !REF!\"\n"
+	"    echo \"HASH: !HASH!\"\n"
+	"    echo \"MIRROR_PATH: !MIRROR_PATH!\"\n"
+	"    :lock_wait\n"
+	"    mkdir \"!MIRROR_PATH!.lock\" 2>nul\n"
+	"    if errorlevel 1 (\n"
+	"        echo \"git mirror locked, waiting...\"\n"
+	"        timeout /t 1 /nobreak > nul\n"
+	"        goto :lock_wait\n"
+	"    )\n"
+	"    if exist \"!MIRROR_PATH!\\\\.git\" (\n"
+	"        git -C \"!MIRROR_PATH!\" rev-parse -q --verify \"ref-!HASH!\" > nul 2> nul\n"
+	"        if exist !MIRROR_PATH!\\\\.git if not errorlevel 1 (\n"
+	"            rmdir \"!MIRROR_PATH!.lock\"\n"
+	"            exit /b 0\n"
+	"        )\n"
+	"    )\n"
+	"    if not exist \"!MIRROR_PATH!\\\\.\" (\n"
+	"    mkdir \"!MIRROR_PATH!\"\n"
+	"    )\n"
+	"    if not exist \"!MIRROR_PATH!\\\\.git\" (\n"
+	"        git init --bare \"!MIRROR_PATH!\"\n"
+	"        if errorlevel 1 (\n"
+	"            rmdir \"!MIRROR_PATH!.lock\"\n"
+	"            exit /b 1\n"
+	"        )\n"
+	"    )\n"
+	"    set \"REFSPEC=!REF!:ref-!HASH!\"\n"
+	"    echo \"REFSPEC: !REFSPEC!\"\n"
+	"    git -C \"!MIRROR_PATH!\" fetch \"!REMOTE_URL!\" \"!REFSPEC!\" 2>&1\n"
+	"    if !ERRORLEVEL! neq 0 (\n"
+	"        echo \"git fetch failed with errorlevel !ERRORLEVEL!\"\n"
+	"        rmdir \"!MIRROR_PATH!.lock\"\n"
+	"        exit /b 1\n"
+	"    )\n"
+	"    rmdir \"!MIRROR_PATH!.lock\"\n"
+	"    exit /b 0\n"
+	")\n"
+	"if /i \"!OPERATION!\"==\"checkout\" (\n"
+	"    set \"MIRROR_PATH=%HOME%\\\\git-mirror\\\\%~2\"\n"
+	"    set \"BUILD_DIR=%~3\"\n"
+	"    set \"HASH=%~4\"\n"
+	"    echo \"MIRROR_PATH: !MIRROR_PATH!\"\n"
+	"    echo \"BUILD_DIR: !BUILD_DIR!\"\n"
+	"    echo \"HASH: !HASH!\"\n"
+	"    if not exist \"!BUILD_DIR!\\\\.git\" (\n"
+	"        if exist \"!BUILD_DIR!\\\\\" rmdir /s /q \"!BUILD_DIR!\"\n"
+	"        mkdir \"!BUILD_DIR!\"\n"
+	"        git -C \"!BUILD_DIR!\" init\n"
+	"        if errorlevel 1 exit /b 1\n"
+	"    )\n"
+	"    git -C \"!BUILD_DIR!\" fetch \"!MIRROR_PATH!\" \"ref-!HASH!\"\n"
+	"    if errorlevel 1 exit /b 2\n"
+	"    git -C \"!BUILD_DIR!\" checkout -f \"!HASH!\"\n"
+	"    if errorlevel 1 exit /b 1\n"
+	"    echo \">>> Git helper script finished.\"\n"
+	"    exit /b 0\n"
+	")\n"
+	"exit /b 1\n"
+;
+
+
 
 static int
 saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
@@ -818,36 +952,41 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		{
 			char script_path[512];
 			int fd;
-
+#if !defined(WIN32)
 			/* create git_helper.sh */
 			lws_snprintf(script_path, sizeof(script_path), "%s%cgit_helper.sh",
 				     ns->inp, csep);
-#if defined(WIN32)
-			if (_sopen_s(&fd, script_path, _O_CREAT | _O_TRUNC | _O_WRONLY,
-				     _SH_DENYNO, _S_IWRITE))
-				fd = -1;
-#else
 			fd = open(script_path, O_CREAT | O_TRUNC | O_WRONLY, 0755);
-#endif
-			if (fd >= 0) {
-				write(fd, git_helper_sh, strlen(git_helper_sh));
-				close(fd);
+			if (fd < 0) {
+				lwsl_warn("%s: failed to open git script for write %s\n", __func__, script_path);
+				goto bail;
 			}
 
+			if ((size_t)write(fd, git_helper_sh, strlen(git_helper_sh)) != strlen(git_helper_sh)) {
+				lwsl_warn("%s: failed to write git script %s\n", __func__, script_path);
+				close(fd);
+				goto bail;
+			}
+			close(fd);
+#else
 			/* create git_helper.bat */
 			lws_snprintf(script_path, sizeof(script_path), "%s%cgit_helper.bat",
 					ns->inp, csep);
-#if defined(WIN32)
 			if (_sopen_s(&fd, script_path, _O_CREAT | _O_TRUNC | _O_WRONLY,
 					_SH_DENYNO, _S_IWRITE))
 				fd = -1;
-#else
-			fd = open(script_path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
-#endif
-			if (fd >= 0) {
-				write(fd, git_helper_bat, strlen(git_helper_bat));
-				close(fd);
+			if (fd < 0) {
+				lwsl_warn("%s: failed to open git script for write %s\n", __func__, script_path);
+				goto bail;
 			}
+
+			if ((size_t)write(fd, git_helper_bat, (unsigned int)strlen(git_helper_bat)) != strlen(git_helper_bat)) {
+				lwsl_warn("%s: failed to write git script %s\n", __func__, script_path);
+				close(fd);
+				goto bail;
+			}
+			close(fd);
+#endif
 		}
 
 		saib_set_ns_state(ns, NSSTATE_EXECUTING_STEPS);
@@ -876,9 +1015,8 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		 * connected to about our change in task load status
 		 */
 
-		if (saib_queue_task_status_update(sp, spm, NULL)) {
+		if (saib_queue_task_status_update(sp, spm, NULL))
 			goto bail;
-		}
 
 		break;
 

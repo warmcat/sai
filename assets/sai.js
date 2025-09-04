@@ -656,7 +656,7 @@ function sai_taskinfo_render(t, now_ut)
 		     agify(now_ut, t.t.started) + " ago, Dur: " +
 		     (t.t.duration ? t.t.duration / 1000000 :
 		     	now_ut - t.t.started).toFixed(1) +
-		     	"s</span><div id=\"sai_arts\"></div>";
+			"s</span><div id=\"sai_arts\"></div><div id=\"metrics-summary-" + san(t.t.uuid) + "\"></div>";
 		sai_arts = "";
 	}
 
@@ -1328,6 +1328,22 @@ function ws_open_sai()
                        });
                }
  				break;
+
+			case "com.warmcat.sai.build-metric":
+				var summaryDiv = document.getElementById("metrics-summary-" + jso.task_uuid);
+				if (summaryDiv) {
+					var s = "<div class=\"metric-summary\">" +
+						"Step Metrics: " +
+						"CPU: " + (jso.us_cpu_user / 1000000).toFixed(2) + "s user, " +
+						(jso.us_cpu_sys / 1000000).toFixed(2) + "s sys; " +
+						"Wallclock: " + (jso.wallclock_us / 1000000).toFixed(2) + "s; " +
+						"Mem: " + humanize(jso.peak_mem_rss) + "B; " +
+						"Stg: " + humanize(jso.stg_bytes) + "B; " +
+						"Parallel: " + jso.parallel +
+						"</div>";
+					summaryDiv.innerHTML += s;
+				}
+				break;
 
 			case "sai.warmcat.com.overview":
 				/*
