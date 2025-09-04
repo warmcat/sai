@@ -815,6 +815,41 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		 */
 		ns->inp[n] = '\0';
 
+		{
+			char script_path[512];
+			int fd;
+
+			/* create git_helper.sh */
+			lws_snprintf(script_path, sizeof(script_path), "%s%cgit_helper.sh",
+				     ns->inp, csep);
+#if defined(WIN32)
+			if (_sopen_s(&fd, script_path, _O_CREAT | _O_TRUNC | _O_WRONLY,
+				     _SH_DENYNO, _S_IWRITE))
+				fd = -1;
+#else
+			fd = open(script_path, O_CREAT | O_TRUNC | O_WRONLY, 0755);
+#endif
+			if (fd >= 0) {
+				write(fd, git_helper_sh, strlen(git_helper_sh));
+				close(fd);
+			}
+
+			/* create git_helper.bat */
+			lws_snprintf(script_path, sizeof(script_path), "%s%cgit_helper.bat",
+					ns->inp, csep);
+#if defined(WIN32)
+			if (_sopen_s(&fd, script_path, _O_CREAT | _O_TRUNC | _O_WRONLY,
+					_SH_DENYNO, _S_IWRITE))
+				fd = -1;
+#else
+			fd = open(script_path, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+#endif
+			if (fd >= 0) {
+				write(fd, git_helper_bat, strlen(git_helper_bat));
+				close(fd);
+			}
+		}
+
 		saib_set_ns_state(ns, NSSTATE_EXECUTING_STEPS);
 
 		ns->user_cancel = 0;
