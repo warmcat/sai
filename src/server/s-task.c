@@ -83,6 +83,7 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 	lws_dll2_owner_t o;
 	int n, task_ostate;
 	int ostate = state;
+	uint64_t started_orig = started;
 
 	if (state == SAIES_STEP_SUCCESS)
 		state = SAIES_BEING_BUILT;
@@ -171,7 +172,8 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 			builder_name ? ",builder_name='" : "",
 			builder_name ? esc : "",
 			builder_name ? "'" : "",
-			esc3, esc4, state == SAIES_WAITING ? ",build_step=0" : "",
+			esc3, esc4, state == SAIES_WAITING && started == 1 ?
+						",build_step=0" : "",
 			esc2);
 
 	if (sqlite3_exec((sqlite3 *)e->pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
@@ -969,7 +971,7 @@ sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 	lwsac_free(&ac);
 	sais_event_db_close(vhd, &pdb);
 
-	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
+	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 0, 0);
 
 	sais_task_stop_on_builders(vhd, task_uuid);
 
