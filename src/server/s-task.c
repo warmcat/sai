@@ -172,7 +172,7 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 			builder_name ? ",builder_name='" : "",
 			builder_name ? esc : "",
 			builder_name ? "'" : "",
-			esc3, esc4, state == SAIES_WAITING && started == 1 ?
+			esc3, esc4, state == SAIES_WAITING && started_orig == 1 ?
 						",build_step=0" : "",
 			esc2);
 
