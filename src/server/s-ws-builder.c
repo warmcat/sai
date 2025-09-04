@@ -712,8 +712,8 @@ bail:
 			    __func__, cb->name,
 			    rej->task_uuid[0] ? rej->task_uuid : "none");
 
-//		if (rej->task_uuid[0])
-//			sais_task_reset(vhd, rej->task_uuid, 1);
+		if (rej->task_uuid[0])
+			sais_task_reset(vhd, rej->task_uuid, 1);
 
 		lwsac_free(&pss->a.ac);
 		break;
