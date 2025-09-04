@@ -287,11 +287,14 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 			lws_strncpy(m->builder_name, ns->sp->name, sizeof(m->builder_name));
 			lws_strncpy(m->project_name, ns->project_name, sizeof(m->project_name));
 			lws_strncpy(m->ref, ns->ref, sizeof(m->ref));
+			lws_strncpy(m->task_uuid, ns->task->uuid, sizeof(m->task_uuid));
+			m->unixtime = time(NULL);
 			m->us_cpu_user = res->us_cpu_user;
 			m->us_cpu_sys = res->us_cpu_sys;
 			m->wallclock_us = us_wallclock;
 			m->peak_mem_rss = res->peak_mem_rss;
 			m->stg_bytes = du.size_in_bytes;
+			m->parallel = ns->task->parallel;
 
 			lws_dll2_add_tail(&m->list, &ns->spm->build_metric_list);
 			if (lws_ss_request_tx(ns->spm->ss))
@@ -518,7 +521,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 	n = lws_snprintf(st, sizeof(st),
 			 ns->current_step ? runscript_win_next : runscript_win_first,
 			 ns->instance_ordinal,
-			 1,
+			 ns->task->parallel ? ns->task->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
 			 ns->inp, one_step);
@@ -536,7 +539,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 			 script_template,
 			 builder.home, ns->fsm.ovname,
 			 ns->project_name, ns->ref, ns->instance_ordinal,
-			 1,
+			 ns->task->parallel ? ns->task->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,
 			 builder.home, one_step);

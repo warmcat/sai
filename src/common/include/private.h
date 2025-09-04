@@ -130,6 +130,7 @@ typedef struct {
 	unsigned int		est_cpu_load_pct;
 	unsigned int		est_disk_kib;
 
+	int			parallel;
 	char			told_ongoing;
 } sai_task_t;
 
@@ -482,19 +483,23 @@ typedef struct sai_power_state {
 typedef struct sai_build_metric {
 	lws_dll2_t	list;
 	char		key[65];
+	char		task_uuid[65];
 	char		builder_name[96];
 	char		project_name[96];
 	char		ref[96];
+	uint64_t	unixtime;
 	uint64_t	us_cpu_user;
 	uint64_t	us_cpu_sys;
 	uint64_t	wallclock_us;
 	uint64_t	peak_mem_rss;
 	uint64_t	stg_bytes;
+	int		parallel;
 } sai_build_metric_t;
 
 typedef struct sai_build_metric_db {
 	lws_dll2_t	list; /* for lws_struct */
 	char		key[65];
+	char		task_uuid[65];
 	uint64_t	unixtime;
 	char		builder_name[96];
 	char		project_name[96];
@@ -504,6 +509,7 @@ typedef struct sai_build_metric_db {
 	uint64_t	wallclock_us;
 	uint64_t	peak_mem_rss;
 	uint64_t	stg_bytes;
+	int		parallel;
 } sai_build_metric_db_t;
 
 extern const lws_struct_map_t
