@@ -83,6 +83,7 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 	lws_dll2_owner_t o;
 	int n, task_ostate;
 	int ostate = state;
+	uint64_t started_orig = started;
 
 	if (state == SAIES_STEP_SUCCESS)
 		state = SAIES_BEING_BUILT;
@@ -171,7 +172,8 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 			builder_name ? ",builder_name='" : "",
 			builder_name ? esc : "",
 			builder_name ? "'" : "",
-			esc3, esc4, state == SAIES_WAITING ? ",build_step=0" : "",
+			esc3, esc4, state == SAIES_WAITING && started_orig == 1 ?
+						",build_step=0" : "",
 			esc2);
 
 	if (sqlite3_exec((sqlite3 *)e->pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
@@ -904,6 +906,78 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid, int from_rejection)
 	 * Recompute startable task platforms and broadcast to all sai-power,
 	 * after there has been a change in tasks
 	 */
+	sais_platforms_with_tasks_pending(vhd);
+
+	lwsl_notice("%s: exiting OK\n", __func__);
+
+	return SAI_DB_RESULT_OK;
+}
+
+sai_db_result_t
+sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
+{
+	char esc[96], cmd[256], event_uuid[33];
+	sqlite3 *pdb = NULL;
+	lws_dll2_owner_t o;
+	struct lwsac *ac = NULL;
+	sai_task_t *task;
+	int ret;
+
+	if (!task_uuid[0])
+		return SAI_DB_RESULT_OK;
+
+	lwsl_notice("%s: received request to rebuild last step of task %s\n",
+		    __func__, task_uuid);
+
+	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
+
+	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+		lwsl_err("%s: unable to open event-specific database\n",
+				__func__);
+
+		return SAI_DB_RESULT_ERROR;
+	}
+
+	lws_sql_purify(esc, task_uuid, sizeof(esc));
+	lws_snprintf(cmd, sizeof(cmd), " and uuid='%s'", esc);
+	ret = lws_struct_sq3_deserialize(pdb, cmd, NULL,
+					 lsm_schema_sq3_map_task, &o, &ac, 0, 1);
+	if (ret < 0 || !o.head) {
+		sais_event_db_close(vhd, &pdb);
+		lwsac_free(&ac);
+		return SAI_DB_RESULT_ERROR;
+	}
+
+	task = lws_container_of(o.head, sai_task_t, list);
+
+	if (task->build_step > 0) {
+		lws_snprintf(cmd, sizeof(cmd),
+			     "update tasks set build_step=%d where uuid='%s'",
+			     task->build_step - 1, esc);
+
+		ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+		if (ret != SQLITE_OK) {
+			sais_event_db_close(vhd, &pdb);
+			lwsac_free(&ac);
+			if (ret == SQLITE_BUSY)
+				return SAI_DB_RESULT_BUSY;
+
+			lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
+				 sqlite3_errmsg(pdb));
+			return SAI_DB_RESULT_ERROR;
+		}
+	}
+
+	lwsac_free(&ac);
+	sais_event_db_close(vhd, &pdb);
+
+	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 0, 0);
+
+	sais_task_stop_on_builders(vhd, task_uuid);
+
+	lwsl_err("%s: scheduling sul_central to find a new task\n", __func__);
+	lws_sul_schedule(vhd->context, 0, &vhd->sul_central, sais_central_cb, 1);
+
 	sais_platforms_with_tasks_pending(vhd);
 
 	lwsl_notice("%s: exiting OK\n", __func__);

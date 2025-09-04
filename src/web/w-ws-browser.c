@@ -69,6 +69,8 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.taskreset"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
+			/* shares struct */   "com.warmcat.sai.taskrebuildlaststep"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.eventreset"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.eventdelete"),
@@ -86,6 +88,7 @@ enum {
 	SAIM_WS_BROWSER_RX_TASKINFO,
 	SAIM_WS_BROWSER_RX_EVENTINFO,
 	SAIM_WS_BROWSER_RX_TASKRESET,
+	SAIM_WS_BROWSER_RX_TASKREBUILDLASTSTEP,
 	SAIM_WS_BROWSER_RX_EVENTRESET,
 	SAIM_WS_BROWSER_RX_EVENTDELETE,
 	SAIM_WS_BROWSER_RX_TASKCANCEL,
@@ -500,6 +503,19 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		/*
 		 * User is asking us to reset / rebuild this task
+		 */
+
+		ei = (sai_browse_rx_evinfo_t *)a.dest;
+
+		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
+		break;
+
+	case SAIM_WS_BROWSER_RX_TASKREBUILDLASTSTEP:
+		if (!sais_conn_auth(pss))
+			goto auth_error;
+
+		/*
+		 * User is asking us to rebuild the last step of this task
 		 */
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;

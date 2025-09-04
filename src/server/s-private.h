@@ -289,6 +289,8 @@ sais_activity_cb(lws_sorted_usec_list_t *sul);
 
 sai_db_result_t
 sais_task_reset(struct vhd *vhd, const char *task_uuid, int from_rejection);
+sai_db_result_t
+sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid);
 
 int
 sais_task_cancel(struct vhd *vhd, const char *task_uuid);

@@ -1920,6 +1920,18 @@ window.addEventListener("load", function() {
 					}
 				];
 
+				if (taskDiv.classList.contains("taskstate4") ||
+				    taskDiv.classList.contains("taskstate6"))
+					menuItems.splice(1, 0, {
+						label: "Rebuild last step",
+						callback: () => {
+							sai.send(JSON.stringify({
+								schema: "com.warmcat.sai.taskrebuildlaststep",
+								uuid: taskUuid
+							}));
+						}
+					});
+
 				createContextMenu(event, menuItems);
 			}
 		});
