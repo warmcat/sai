@@ -216,6 +216,15 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		 * Update server with platform status
 		 */
 
+		lws_start_foreach_dll(struct lws_dll2 *, d,
+				      builder.sai_plat_owner.head) {
+			sai_plat_t *p = lws_container_of(d, sai_plat_t, sai_plat_list);
+
+			lwsl_notice("%s: platform %s, windows %d\n", __func__,
+				    p->name, p->windows);
+
+		} lws_end_foreach_dll(d);
+
 		js = lws_struct_json_serialize_create(lsm_schema_map_plat,
 			      LWS_ARRAY_SIZE(lsm_schema_map_plat), 0,
 			      &builder.sai_plat_owner);

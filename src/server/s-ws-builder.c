@@ -532,12 +532,17 @@ handle:
 		 * builder is sending us an array of platforms it provides us
 		 */
 
+		lwsl_hexdump_notice(buf, bl);
+
 		pss->u.o = (sai_plat_owner_t *)pss->a.dest;
 
 		lws_start_foreach_dll(struct lws_dll2 *, pb,
 				      pss->u.o->plat_owner.head) {
 			build = lws_container_of(pb, sai_plat_t, sai_plat_list);
 			sai_plat_t *live_cb;
+
+			lwsl_notice("%s: platform %s, windows %d\n", __func__,
+				    build->name, build->windows);
 
 			/*
 			 * Step 1: Upsert this platform into the persistent database.
