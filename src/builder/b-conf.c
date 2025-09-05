@@ -71,6 +71,7 @@ static const char * const paths[] = {
 	"platforms[].env[].*",
 	"platforms[].env[]",
 	"platforms[].servers",
+	"platforms[].job-limit",
 	"platforms[]",
 };
 
@@ -80,6 +81,7 @@ enum enum_paths {
 	LEJPM_PLATFORMS_ENV_ITEM,
 	LEJPM_PLATFORMS_ENV,
 	LEJPM_PLATFORMS_SERVERS,
+	LEJPM_PLATFORMS_JOB_LIMIT,
 	LEJPM_PLATFORMS,
 };
 
@@ -116,6 +118,8 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 			lws_strncpy(a->sai_plat->lws_hash, LWS_BUILD_HASH,
 				    sizeof(a->sai_plat->lws_hash));
 
+			a->sai_plat->job_limit = 0;
+
 			lws_dll2_add_tail(&a->sai_plat->sai_plat_list,
 					  &a->builder->sai_plat_owner);
 			break;
@@ -132,6 +136,10 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 	if (!(reason & LEJP_FLAG_CB_IS_VALUE) || !ctx->path_match)
 		return 0;
 
+	if (ctx->path_match - 1 == LEJPM_PLATFORMS_JOB_LIMIT) {
+		a->sai_plat->job_limit = (unsigned int)atoi(ctx->buf);
+		lwsl_err("%s: LEJPM_PLATFORMS_JOB_LIMIT %u\n", __func__, a->sai_plat->job_limit);
+	}
 
 	if (reason != LEJPCB_VAL_STR_END)
 		return 0;

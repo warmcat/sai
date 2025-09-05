@@ -638,6 +638,17 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 		return 0;
 	}
 
+	if (ctx->path_match - 1 == LEJPNSAIF_PLAT_BUILD_STAGE &&
+	    reason == LEJPCB_VAL_STR_START) {
+		n = strlen(sn->platbuild);
+
+		if (n && n < sizeof(sn->platbuild) - 2) {
+			sn->platbuild[n++] = '\n';
+			sn->platbuild[n] = '\0';
+		}
+		return 0;
+	}
+
 	/* we only match on the prepared path strings */
 	if (!(reason & LEJP_FLAG_CB_IS_VALUE) || !ctx->path_match)
 		return 0;
@@ -701,20 +712,13 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 		 * The overall build script for this platform
 		 * is appended into the temp sn.platbuild
 		 */
-		if (reason != LEJPCB_VAL_STR_END)
-			break;
 
 		lwsl_err("%s: LEJPNSAIF_PLAT_BUILD_STAGE: %.*s\n", __func__, (int)ctx->npos, (const char *)ctx->buf);
 
 		n = strlen(sn->platbuild);
-		if (n < sizeof(sn->platbuild) - 2) {
-			if (n) {
-				sn->platbuild[n++] = '\n';
-				sn->platbuild[n] = '\0';
-			}
+		if (n < sizeof(sn->platbuild) - 2 && ctx->npos)
 			lws_strnncpy(sn->platbuild + n, ctx->buf, ctx->npos,
 				     sizeof(sn->platbuild) - n);
-		}
 		break;
 
 	case LEJPNSAIF_PLAT_BUILD_ELEMENT:

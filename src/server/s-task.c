@@ -1072,6 +1072,9 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 					lws_start_foreach_dll(struct lws_dll2 *, dt, o_tasks.head) {
 						sai_task_t *t = lws_container_of(dt, sai_task_t, list);
 
+						if (lws_ptr_diff_size_t(end, p) < 100)
+							break;
+
 						if (now - (lws_usec_t)(t->last_updated * LWS_US_PER_SEC) > 10 * LWS_US_PER_SEC)
 							cat = 1;
 						else if (now - (lws_usec_t)(t->last_updated * LWS_US_PER_SEC) > 3 * LWS_US_PER_SEC)

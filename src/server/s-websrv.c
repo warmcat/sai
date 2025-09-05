@@ -767,20 +767,11 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	if (!used)
 		return LWSSSSRET_TX_DONT_SEND;
 
-	// if (!eom) {
-	//	lwsl_err("%s: eom is not set on bltx buflist!\n", __func__);
-	//	lwsl_hexdump_notice(buf, (size_t)used);
-	// }
-
-	if ((size_t)used < fsl) {
-		lwsl_ss_warn(m->ss, "srv->web: clearing eom since used %d < fsl %d\n", (int)used, (int)fsl);
+	if ((size_t)used < fsl)
 		eom = 0; /* because we still be back */
-	}
 
 	*flags = (som ? LWSSS_FLAG_SOM : 0) | (eom ? LWSSS_FLAG_EOM : 0);
 	*len = (size_t)used;
-
-	lwsl_ss_warn(m->ss, "srv -> web: len %d flags %d", (int)*len, (int)*flags);
 
 	if (m->bltx)
 		return lws_ss_request_tx(m->ss);

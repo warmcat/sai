@@ -193,7 +193,7 @@ saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
 */
 #endif
 
-       if (sp->nspawn_owner.count > 6)
+       if (sp->nspawn_owner.count >= (sp->job_limit ? sp->job_limit : 6u))
                return 1; /* nope */
 
 	return 0; /* acceptable */
@@ -660,7 +660,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 	sai_cancel_t *can;
 	sai_rebuild_t *reb;
 	sai_task_t *task;
-	int n, m;
+	int n, m, en;
 	char *p;
 
 	/*
@@ -927,22 +927,33 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "jobs%c",
 				csep);
 		lws_filename_purify_inplace(ns->inp);
-		if (mkdir(ns->inp, 0755) && errno != EEXIST)
+		if (mkdir(ns->inp, 0755) && errno != EEXIST) {
+			en = errno;
+			lwsl_err("%s: mkdir %s -> errno %d\n", __func__, ns->inp, en);
 			goto ebail;
+		}
 
 		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
 				  ns->fsm.ovname, csep);
 		lws_filename_purify_inplace(ns->inp);
-		if (mkdir(ns->inp, 0755) && errno != EEXIST)
+		if (mkdir(ns->inp, 0755) && errno != EEXIST) {
+			en = errno;
+			lwsl_err("%s: mkdir %s -> errno %d\n", __func__, ns->inp, en);
+
 			goto ebail;
+		}
 
 		/*
 		 * Create a pending upload dir to mv artifacts into while
 		 * we get on with the next job.
 		 */
 		lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "../.sai-uploads");
-		if (mkdir(ns->inp, 0755) && errno != EEXIST)
+		if (mkdir(ns->inp, 0755) && errno != EEXIST) {
+			en = errno;
+			lwsl_err("%s: mkdir %s -> errno %d\n", __func__, ns->inp, en);
+
 			goto ebail;
+		}
 		/*
 		 * Snip that last bit off so ns->inp is the fully qualified
 		 * builder instance base dir

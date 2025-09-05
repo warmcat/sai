@@ -438,6 +438,7 @@ typedef struct sai_plat {
 	uint64_t		last_seen; /* unix time */
 	int			powering_up; /* 1 = sai-power is booting it */
 	int			powering_down;
+	unsigned int		job_limit;
 
 	char			windows;
 
