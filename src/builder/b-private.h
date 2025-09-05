@@ -244,3 +244,5 @@ saib_get_total_disk_kib(const char *path);
 int
 saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp, struct lws_vhost **);
 
+extern const char *git_helper_sh;
+extern const char *git_helper_bat;
