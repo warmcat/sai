@@ -155,6 +155,9 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 		memcpy((char *)a->sai_plat->name, temp, (unsigned int)n + 1);
 		lwsl_notice("%s: platform: %.*s, name %s\n", __func__,
 			    ctx->npos, ctx->buf, a->sai_plat->name);
+		if (strstr(a->sai_plat->name, "win") ||
+		    strstr(a->sai_plat->name, "w11"))
+			a->sai_plat->windows = 1;
 		pp = &a->sai_plat->platform;
 		a->sai_plat->index = a->next_plat_index++;
 		break;
