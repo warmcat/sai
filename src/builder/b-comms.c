@@ -347,10 +347,7 @@ send_logs:
 				 ns->task->uuid, (unsigned long long)lws_now_usecs(),
 				 chunk->stdfd, (int)chunk->len);
 
-			if (ns->finished_when_logs_drained && ns->chunk_cache.count == 1)
-				/*
-				 * Let the last guy report the finished state
-				 */
+			if (ns->finished_when_logs_drained && !ns->chunk_cache.count)
 				n += lws_snprintf((char *)p + n, lws_ptr_diff_size_t(end, p) - (unsigned int)n,
 					"\"finished\":%d,", ns->retcode);
 
