@@ -165,34 +165,33 @@ const char *git_helper_bat =
 static int
 saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
 {
-#if 0
-	unsigned int free_ram = saib_get_free_ram_kib();
-	unsigned int total_ram = saib_get_total_ram_kib();
-	unsigned int free_disk = saib_get_free_disk_kib(builder.home);
-	unsigned int total_disk = saib_get_total_disk_kib(builder.home);
-//	int cpu_load = saib_get_system_cpu(&builder);
+	if (task->est_peak_mem_kib || task->est_disk_kib) {
+		/*
+		 * Task has resource estimations, let's check them
+		 */
+		if (builder.ram_reserved_kib + task->est_peak_mem_kib >
+		    builder.ram_limit_kib) {
+			lwsl_notice("%s: reject task %s: not enough RAM\n",
+				    __func__, task->uuid);
+			return 1;
+		}
 
-	if (total_ram &&
-	    (free_ram - task->est_peak_mem_kib) < (total_ram / 10) * 3) {
-		lwsl_notice("%s: reject task %s: not enough RAM\n", __func__,
-			    task->uuid);
-		return 1;
-	}
-
-	if (total_disk &&
-	    (free_disk - task->est_disk_kib) < (total_disk / 10) * 2) {
-		lwsl_notice("%s: reject task %s: not enough disk space\n",
-			    __func__, task->uuid);
-		return 1;
-	}
-
-/*	if (cpu_load >= 0 && (cpu_load + (int)task->est_cpu_load_pct) > 50) {
-		lwsl_notice("%s: reject task %s: CPU load too high\n",
-			    __func__, task->uuid);
-		return 1;
-	}
-*/
-#endif
+		if (builder.disk_reserved_kib + task->est_disk_kib >
+		    builder.disk_total_kib) {
+			lwsl_notice("%s: reject task %s: not enough disk space\n",
+				    __func__, task->uuid);
+			return 1;
+		}
+	} else
+		/*
+		 * No estimations... it's a measurement run, only accept if
+		 * the builder is otherwise idle
+		 */
+		if (builder.ram_reserved_kib || builder.disk_reserved_kib) {
+			lwsl_notice("%s: reject measurement task %s: builder not idle\n",
+				    __func__, task->uuid);
+			return 1;
+		}
 
        if (sp->nspawn_owner.count >= (sp->job_limit ? sp->job_limit : 6u))
                return 1; /* nope */
@@ -406,6 +405,15 @@ saib_task_destroy(struct sai_nspawn *ns)
 		memset(&g, 0, sizeof(g));
 		g.cb = lws_dir_rm_rf_cb;
 		lws_dir(ns->inp, &g, lws_dir_glob_cb);
+	}
+
+	if (ns->task) {
+		builder.ram_reserved_kib -= ns->task->est_peak_mem_kib;
+		builder.disk_reserved_kib -= ns->task->est_disk_kib;
+		if (ns->spm)
+			lws_sul_schedule(builder.context, 0,
+					 &ns->spm->sul_load_report,
+					 saib_sul_load_report_cb, 1);
 	}
 
 	lws_dll2_remove(&ns->list);
@@ -1041,6 +1049,14 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		if (saib_queue_task_status_update(sp, spm, NULL))
 			goto bail;
+
+		/* we accepted it, account for the resources */
+
+		builder.ram_reserved_kib += task->est_peak_mem_kib;
+		builder.disk_reserved_kib += task->est_disk_kib;
+
+		lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
+				 saib_sul_load_report_cb, 1);
 
 		break;
 

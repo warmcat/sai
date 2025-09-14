@@ -1003,6 +1003,10 @@ int main(int argc, const char **argv)
 		info.extensions = extensions;
 #endif
 	info.pt_serv_buf_size = 32 * 1024;
+
+	builder.ram_limit_kib = (saib_get_total_ram_kib() * 8) / 10;
+	builder.disk_total_kib = saib_get_total_disk_kib(builder.home);
+
 	info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
 		       LWS_SERVER_OPTION_VALIDATE_UTF8 |
 		       LWS_SERVER_OPTION_EXPLICIT_VHOSTS;

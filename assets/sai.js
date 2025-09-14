@@ -1012,7 +1012,7 @@ function createBuilderDiv(plat) {
 		     `<div class="inst_text">0</div>` +
 		     `<div class="inst_bar"></div>` +
 		     `</div>` +
-		     `</div></td></tr></tbody></table>`;
+		     `</div><div class="resinfo" id="resinfo-${plat.name}"></div></td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;
 
@@ -1673,6 +1673,18 @@ function ws_open_sai()
 			if (cpu_percentage < 0) cpu_percentage = 0;
 			barDiv.style.height = `${cpu_percentage}%`;
 		}
+
+		const resinfoContainer = document.getElementById("resinfo-" + jso.builder_name);
+		if (resinfoContainer) {
+			let ram_reserved_gb = (jso.ram_reserved_kib / (1024 * 1024)).toFixed(1);
+			let ram_limit_gb = (jso.ram_limit_kib / (1024 * 1024)).toFixed(1);
+			let disk_reserved_gb = (jso.disk_reserved_kib / (1024 * 1024)).toFixed(1);
+			let disk_limit_gb = (jso.disk_limit_kib / (1024 * 1024)).toFixed(1);
+
+			resinfoContainer.innerHTML = `MEM: ${ram_reserved_gb}/${ram_limit_gb}GB<br>` +
+						 `DISK: ${disk_reserved_gb}/${disk_limit_gb}GB`;
+		}
+
 		break;
 
 			case "com-warmcat-sai-artifact":

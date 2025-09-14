@@ -28,6 +28,10 @@ const lws_struct_map_t lsm_load_report_members[] = {
 	LSM_UNSIGNED	(sai_load_report_t, free_disk_kib, "free_disk_kib"),
 	LSM_UNSIGNED	(sai_load_report_t, active_steps, "active_steps"),
 	LSM_UNSIGNED	(sai_load_report_t, cpu_percent, "cpu_percent"),
+	LSM_UNSIGNED	(sai_load_report_t, ram_limit_kib, "ram_limit_kib"),
+	LSM_UNSIGNED	(sai_load_report_t, ram_reserved_kib, "ram_reserved_kib"),
+	LSM_UNSIGNED	(sai_load_report_t, disk_limit_kib, "disk_limit_kib"),
+	LSM_UNSIGNED	(sai_load_report_t, disk_reserved_kib, "disk_reserved_kib"),
 //	LSM_LIST	(sai_load_report_t, platforms, sai_platform_load_t, list,
 //			 NULL, lsm_platform_load, "platforms"),
 };

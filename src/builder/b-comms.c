@@ -496,6 +496,10 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
        lr->free_ram_kib = saib_get_free_ram_kib();
        lr->free_disk_kib = saib_get_free_disk_kib(builder.home);
        lr->cpu_percent = (unsigned int)saib_get_system_cpu(&builder);
+       lr->ram_limit_kib = builder.ram_limit_kib;
+       lr->ram_reserved_kib = builder.ram_reserved_kib;
+       lr->disk_limit_kib = builder.disk_total_kib;
+       lr->disk_reserved_kib = builder.disk_reserved_kib;
        lr->active_steps = 0;
 
        lws_start_foreach_dll(struct lws_dll2 *, p, builder.sai_plat_owner.head) {

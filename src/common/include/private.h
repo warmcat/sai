@@ -71,6 +71,13 @@ typedef struct sai_load_report {
 	unsigned int		free_disk_kib;
 	unsigned int		active_steps;
 	unsigned int		cpu_percent;
+
+	/* resource management */
+
+	uint64_t		ram_limit_kib;
+	uint64_t		ram_reserved_kib;
+	uint64_t		disk_limit_kib;
+	uint64_t		disk_reserved_kib;
 } sai_load_report_t;
 
 /*

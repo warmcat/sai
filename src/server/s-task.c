@@ -24,6 +24,7 @@
 #include <signal.h>
 #include <time.h>
 #include <assert.h>
+#include <libwebsockets/lws-genhash.h>
 
 #include "s-private.h"
 
@@ -688,35 +689,39 @@ bail:
 }
 
 static void
-sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task)
+sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task,
+				const char *key, const char *builder_name)
 {
 	char query[256];
 	sqlite3_stmt *stmt;
 
-	task->est_peak_mem_kib = 256 * 1024; /* 256MiB default */
-	task->est_cpu_load_pct = 10;
-	task->est_disk_kib = 1024 * 1024; /* 1GiB default */
+	/* by default, we don't know the estimates */
+	task->est_peak_mem_kib = 0;
+	task->est_cpu_load_pct = 0;
+	task->est_disk_kib = 0;
 
 	if (!vhd->pdb_metrics)
 		return;
 
+	/*
+	 * Get the estimates from the most recent, exact match for this
+	 * step key on this builder
+	 */
 	lws_snprintf(query, sizeof(query),
-		     "SELECT AVG(peak_mem_rss), AVG(us_cpu_user), "
-		     "AVG(stg_bytes), AVG(wallclock_us) "
-		     "FROM build_metrics WHERE key = '%s'",
-		     task->taskname);
+		     "SELECT peak_mem_rss, stg_bytes FROM build_metrics "
+		     "WHERE key = ? AND builder_name = ? AND parallel = ? "
+		     "ORDER BY unixtime DESC LIMIT 1");
 
 	if (sqlite3_prepare_v2(vhd->pdb_metrics, query, -1, &stmt, NULL) != SQLITE_OK)
 		return;
 
-	if (sqlite3_step(stmt) == SQLITE_ROW) {
-		uint64_t avg_us_cpu = (uint64_t)sqlite3_column_int64(stmt, 1);
-		uint64_t avg_wallclock = (uint64_t)sqlite3_column_int64(stmt, 3);
+	sqlite3_bind_text(stmt, 1, key, -1, SQLITE_STATIC);
+	sqlite3_bind_text(stmt, 2, builder_name, -1, SQLITE_STATIC);
+	sqlite3_bind_int(stmt, 3, task->parallel);
 
-		task->est_peak_mem_kib = (unsigned int)(sqlite3_column_int(stmt, 0) / 1024);
-		if (avg_wallclock)
-			task->est_cpu_load_pct = (unsigned int)((avg_us_cpu * 100) / avg_wallclock);
-		task->est_disk_kib = (unsigned int)(sqlite3_column_int(stmt, 2) / 1024);
+	if (sqlite3_step(stmt) == SQLITE_ROW) {
+		task->est_peak_mem_kib = (unsigned int)(sqlite3_column_int64(stmt, 0) / 1024);
+		task->est_disk_kib = (unsigned int)(sqlite3_column_int64(stmt, 1) / 1024);
 	}
 
 	sqlite3_finalize(stmt);
@@ -1157,7 +1162,9 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 	*task = *task_template;
 	lwsac_free(&ac);
 
-	sais_get_task_metrics_estimates(vhd, task);
+	char key_material[4096], key[65];
+	struct lws_genhash_ctx hash_ctx;
+	uint8_t hash[LWS_GENHASH_SHA256_HASH_LEN];
 
 	build_step = task->build_step;
 
@@ -1248,6 +1255,20 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 		lws_strncpy(task->script, start, sizeof(task->script));
 		break;
 	}
+
+	/*
+	 * The key is a hash of the platform name, script content, project name
+	 * and git ref
+	 */
+	n = lws_snprintf(key_material, sizeof(key_material), "%s%s%s%s",
+			 task->platform, task->script,
+			 task->repo_name, task->git_ref);
+	lws_genhash_init(&hash_ctx, LWS_GENHASH_TYPE_SHA256);
+	lws_genhash_update(&hash_ctx, key_material, (size_t)n);
+	lws_genhash_destroy(&hash_ctx, hash);
+	lws_hex_from_binary(hash, sizeof(hash), key, sizeof(key));
+
+	sais_get_task_metrics_estimates(vhd, task, key, task->builder_name);
 
 	/* find builder pss */
 	pss = NULL;
