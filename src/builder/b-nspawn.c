@@ -371,7 +371,7 @@ static const char * const runscript_win_first =
 	"set SAI_LOGPROXY_TTY0=%s\n"
 	"set SAI_LOGPROXY_TTY1=%s\n"
 	"set HOME=%s\n"
-	"cd %s &&"
+       "cd %s%s &&"
 	" rmdir /s /q build & "
 	"%s < NUL"
 ;
@@ -384,7 +384,7 @@ static const char * const runscript_win_next =
 	"set SAI_LOGPROXY_TTY0=%s\n"
 	"set SAI_LOGPROXY_TTY1=%s\n"
 	"set HOME=%s\n"
-	"cd %s &&"
+       "cd %s%s &&"
 	"%s < NUL"
 ;
 
@@ -524,7 +524,8 @@ saib_spawn_script(struct sai_nspawn *ns)
 			 ns->task->parallel ? ns->task->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
-			 ns->inp, one_step);
+                        ns->inp, ns->current_step > 1 ? "\\src" : "",
+                        one_step);
 #else
 	const char *script_template;
 
