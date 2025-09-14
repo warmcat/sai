@@ -308,8 +308,10 @@ skip:
 	/* step succeeded, wait for next instruction */
 	lwsl_notice("%s: step succeeded\n", __func__);
 
-	if (op->spawn)
+	if (op->spawn) {
 		free(op->spawn);
+		op->spawn = NULL;
+	}
 
 	if (ns->spm) {
 		ns->spm->phase = PHASE_START_ATTACH;

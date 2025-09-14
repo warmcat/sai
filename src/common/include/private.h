@@ -132,6 +132,8 @@ typedef struct {
 
 	int			parallel;
 	char			told_ongoing;
+
+	char			rebuildable;
 } sai_task_t;
 
 typedef struct sai_plat sai_plat_t;
@@ -525,7 +527,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[10],
-	lsm_task[27],
+	lsm_task[28],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],

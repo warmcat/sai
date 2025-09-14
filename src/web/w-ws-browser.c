@@ -260,6 +260,7 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	char qu[192], esc[66], event_uuid[33], esc2[96];
 	sqlite3 *pdb = NULL;
 	lws_dll2_owner_t o;
+	sai_task_t *pt;
 	int n, m;
 
 	if (!sch)
@@ -304,7 +305,8 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	if (n < 0 || !o.head)
 		goto bail;
 
-	sch->one_task = lws_container_of(o.head, sai_task_t, list);
+	pt = lws_container_of(o.head, sai_task_t, list);
+	sch->one_task = pt;
 
 	lwsl_info("%s: browser ws asked for task hash: %s, plat %s\n",
 		 __func__, task_uuid, sch->one_task->platform);
@@ -1044,6 +1046,9 @@ enum_tasks:
 			t->art_up_nonce[0] = '\0';
 			t->art_down_nonce[0] = '\0';
 
+			t->rebuildable = t->state == SAIES_FAIL &&
+				(lws_now_secs() - (t->started + (t->duration / 1000000)) < 24 * 3600);
+
 			/* only one in it at a time */
 			t = lws_container_of(task_owner.head, sai_task_t, list);
 
@@ -1205,6 +1210,9 @@ b_finish:
 
 		task_reply.event = sch->one_event;
 		task_reply.task = sch->one_task;
+		sch->one_task->rebuildable = sch->one_task->state == SAIES_FAIL &&
+				(lws_now_secs() - (sch->one_task->started +
+						(sch->one_task->duration / 1000000)) < 24 * 3600);
 		task_reply.auth_secs = (int)(pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0);
 		task_reply.authorized = pss->authorized;
 		lws_strncpy(task_reply.auth_user, pss->auth_user,

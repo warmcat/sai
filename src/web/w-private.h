@@ -108,7 +108,7 @@ typedef struct saiw_scheduled {
 
 	char			task_uuid[65];
 
-	const sai_task_t	*one_task; /* only for browser */
+	sai_task_t		*one_task; /* only for browser */
 	const sai_event_t	*one_event;
 
 	lws_dll2_t		*walk;
