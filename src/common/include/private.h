@@ -132,6 +132,8 @@ typedef struct {
 
 	int			parallel;
 	char			told_ongoing;
+
+	char			rebuildable;
 } sai_task_t;
 
 typedef struct sai_plat sai_plat_t;

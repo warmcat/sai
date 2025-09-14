@@ -25,6 +25,7 @@
 #include <sys/stat.h>
 #include <assert.h>
 #include <fcntl.h>
+#include <libwebsockets/lws-misc.h>
 
 #include "b-private.h"
 
@@ -394,6 +395,18 @@ saib_task_destroy(struct sai_nspawn *ns)
 	 * If stdwsi are lurking around, we can't destroy the ns,
 	 * since they will touch it during their close handling.
 	 */
+
+	if (ns->task && (ns->retcode & SAISPRF_EXIT) &&
+	    (ns->retcode & 0xff) == 0) {
+		/* Task succeeded, so clean up the directory. */
+		lws_dir_glob_t g;
+
+		lwsl_notice("%s: task %s succeeded, removing job dir %s\n",
+			    __func__, ns->task->uuid, ns->inp);
+		memset(&g, 0, sizeof(g));
+		g.cb = lws_dir_rm_rf_cb;
+		lws_dir(ns->inp, &g, lws_dir_glob_cb);
+	}
 
 	lws_dll2_remove(&ns->list);
 	free(ns);

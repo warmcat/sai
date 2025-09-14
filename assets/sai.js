@@ -883,7 +883,8 @@ function sai_event_render(o, now_ut, reset_all_icon)
 			}
 			
 			s1 += "<div id=\"taskstate_" + t.uuid + "\" class=\"taskstate taskstate" + t.state +
-				"\" data-event-uuid=\"" + san(e.uuid) + "\" data-platform=\"" + san(t.platform) + "\">";
+				"\" data-event-uuid=\"" + san(e.uuid) + "\" data-platform=\"" + san(t.platform) +
+				"\" data-rebuildable=\"" + t.rebuildable + "\">";
 			s1 += "<a href=\"/sai/index.html?task=" + t.uuid + "\">" +
 				sai_plat_icon(t.platform, 0) + "</a>";
 			s1 += "</div>";
@@ -1933,8 +1934,7 @@ window.addEventListener("load", function() {
 					}
 				];
 
-				if (taskDiv.classList.contains("taskstate4") ||
-				    taskDiv.classList.contains("taskstate6"))
+				if (taskDiv.dataset.rebuildable === "1")
 					menuItems.splice(1, 0, {
 						label: "Rebuild last step",
 						callback: () => {

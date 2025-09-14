@@ -97,6 +97,7 @@ struct sai_builder {
 
 	lws_sorted_usec_list_t	sul_idle;
 	lws_sorted_usec_list_t	sul_stay;
+	lws_sorted_usec_list_t	sul_cleanup_jobs;
 
 	const char		*metrics_uri;
 	const char		*metrics_path;

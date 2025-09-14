@@ -60,6 +60,111 @@ int getpid(void) { return 0; }
 #endif
 
 #include "b-private.h"
+#include <libwebsockets/lws-misc.h>
+
+/*
+ * Periodically (eg, once per hour) we walk the jobs dir and find subdirs
+ * that are older than a day.
+ *
+ * These represent failed jobs that were left for inspection, but should now
+ * be cleaned up.
+ *
+ * We are careful not to delete anything that is part of an ongoing job.
+ */
+
+struct active_job_uuids {
+	lws_dll2_owner_t owner;
+};
+
+struct active_job_uuid {
+	lws_dll2_t list;
+	char uuid[65];
+};
+
+static int
+scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
+{
+	struct active_job_uuids *active = (struct active_job_uuids *)user;
+	struct active_job_uuid *aj;
+	char path[512];
+	struct stat sb;
+
+	if (lde->type != LWS_DIR_TYPE_DIR || lde->name[0] == '.')
+		return 0;
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, active->owner.head) {
+		aj = lws_container_of(p, struct active_job_uuid, list);
+		if (!strcmp(aj->uuid, lde->name))
+			/* it's an active job, leave it alone */
+			return 0;
+	} lws_end_foreach_dll(p);
+
+	lws_snprintf(path, sizeof(path), "%s/%s", dirpath, lde->name);
+	if (stat(path, &sb))
+		return 0;
+
+	if (lws_now_secs() - sb.st_mtime > 24 * 3600) {
+		lws_dir_glob_t g;
+
+		lwsl_notice("%s: removing old job dir %s\n", __func__, path);
+		memset(&g, 0, sizeof(g));
+		g.cb = lws_dir_rm_rf_cb;
+		lws_dir(path, &g, lws_dir_glob_cb);
+	}
+
+	return 0;
+}
+
+static void
+sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul)
+{
+	struct sai_builder *b = lws_container_of(sul, struct sai_builder,
+						 sul_cleanup_jobs);
+	struct active_job_uuids active;
+	struct lwsac *ac = NULL;
+	char path[256];
+
+	memset(&active, 0, sizeof(active));
+
+	/*
+	 * We must not delete any active job directories, find out the uuids
+	 * of any active jobs
+	 */
+	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+				   b->sai_plat_owner.head) {
+		struct sai_plat *sp = lws_container_of(d,
+					struct sai_plat, sai_plat_list);
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d2, d3,
+					   sp->nspawn_owner.head) {
+			struct sai_nspawn *ns = lws_container_of(d2,
+						struct sai_nspawn, list);
+			struct active_job_uuid *aj;
+
+			if (!ns->task)
+				continue;
+
+			aj = lwsac_use_zero(&ac, sizeof(*aj), 64);
+			if (!aj)
+				continue;
+
+			lws_strncpy(aj->uuid, ns->task->uuid, sizeof(aj->uuid));
+			lws_dll2_add_tail(&aj->list, &active.owner);
+		} lws_end_foreach_dll_safe(d2, d3);
+	} lws_end_foreach_dll_safe(d, d1);
+
+	/*
+	 * Now we have the active job uuids, scan the jobs dir and check
+	 * for old, inactive job dirs to reap
+	 */
+
+	lws_snprintf(path, sizeof(path), "%s/jobs", b->home);
+	lws_dir(path, &active, scan_jobs_dir_cb);
+
+	lwsac_free(&ac);
+
+	lws_sul_schedule(b->context, 0, &b->sul_cleanup_jobs,
+			 sul_cleanup_jobs_cb, 3600 * LWS_US_PER_SEC);
+}
 
 static const char *config_dir = "/etc/sai/builder";
 static int interrupted;
@@ -474,6 +579,9 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 
 		lws_sul_schedule(builder.context, 0, &builder.sul_stay,
 			 sul_stay_cb, 1000);
+
+		lws_sul_schedule(builder.context, 0, &builder.sul_cleanup_jobs,
+			 sul_cleanup_jobs_cb, 3600 * LWS_US_PER_SEC);
 
 		break;
 	}
