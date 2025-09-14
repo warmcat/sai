@@ -1764,26 +1764,33 @@ function ws_open_sai()
 				if (!redpend) {
 					redpend = 1;
 					setTimeout(function() {
-		redpend = 0;
-		locked = document.body.scrollHeight -
-			document.body.clientHeight <=
-			document.body.scrollTop + 1;
+						redpend = 0;
+						var body = document.body,
+						    html = document.documentElement;
+						var scrollHeight = Math.max(body.scrollHeight, body.offsetHeight,
+									html.clientHeight, html.scrollHeight, html.offsetHeight);
+						var clientHeight = html.clientHeight || body.clientHeight;
+						var scrollTop = html.scrollTop || body.scrollTop;
 
-		if (document.getElementById("logs")) {
-			document.getElementById("logs").innerHTML = logs;
+						// Check if user is near the bottom before DOM update, with a 5px tolerance
+						var locked = scrollHeight - clientHeight <= scrollTop + 5;
 
-			if (document.getElementById("dlogsn"))
-				document.getElementById("dlogsn").innerHTML = lines;
-				
-			if (document.getElementById("dlogst"))
-				document.getElementById("dlogst").innerHTML = times;
-		}
+						if (document.getElementById("logs")) {
+							document.getElementById("logs").innerHTML = logs;
+							if (document.getElementById("dlogsn"))
+								document.getElementById("dlogsn").innerHTML = lines;
+							if (document.getElementById("dlogst"))
+								document.getElementById("dlogst").innerHTML = times;
+						}
 
-		if (locked)
-		   document.body.scrollTop =
-			document.body.scrollHeight -
-			document.body.clientHeight;
-					}, 500);
+						if (locked) {
+							// Defer scroll to give browser time to reflow
+							setTimeout(function() {
+								var newScrollHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
+								window.scrollTo(0, newScrollHeight);
+							}, 0);
+						}
+					}, 200); // Reduced delay for better responsiveness
 				}
 			
 		break;
@@ -1880,17 +1887,7 @@ window.addEventListener("load", function() {
 		document.getElementById("logout").addEventListener("click", post_login_form);
 	}
 	
-	setInterval(function() {
-		update_task_activities();
-
-	    var locked = document.body.scrollHeight -
-	    	document.body.clientHeight <= document.body.scrollTop + 1;
-	
-	    if (locked)
-	     document.body.scrollTop = document.body.scrollHeight -
-	     	document.body.clientHeight;
-
-	}, 500)
+	setInterval(update_task_activities, 500);
 
 	const stickyEl = document.getElementById("sai_sticky");
 	if (stickyEl) {
