@@ -508,7 +508,7 @@ function hsanitize(s)
 	}).replace(/\n/g, '\n');
 }
 
-var pos = 0, lli = 1, lines = "", times = "", locked = 1, tfirst = 0,
+var pos = 0, lli = 1, lines = "", times = "", user_is_following = true, tfirst = 0,
 		cont = [ 0, 0, 0, 0, 0];
 
 function get_appropriate_ws_url()
@@ -1778,15 +1778,6 @@ function ws_open_sai()
 					redpend = 1;
 					setTimeout(function() {
 						redpend = 0;
-						var body = document.body,
-						    html = document.documentElement;
-						var scrollHeight = Math.max(body.scrollHeight, body.offsetHeight,
-									html.clientHeight, html.scrollHeight, html.offsetHeight);
-						var clientHeight = html.clientHeight || body.clientHeight;
-						var scrollTop = html.scrollTop || body.scrollTop;
-
-						// Check if user is near the bottom before DOM update, with a 5px tolerance
-						var locked = scrollHeight - clientHeight <= scrollTop + 5;
 
 						if (document.getElementById("logs")) {
 							document.getElementById("logs").innerHTML = logs;
@@ -1796,14 +1787,14 @@ function ws_open_sai()
 								document.getElementById("dlogst").innerHTML = times;
 						}
 
-						if (locked) {
+						if (user_is_following) {
 							// Defer scroll to give browser time to reflow
 							setTimeout(function() {
 								var newScrollHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight);
 								window.scrollTo(0, newScrollHeight);
 							}, 0);
 						}
-					}, 200); // Reduced delay for better responsiveness
+					}, 200);
 				}
 			
 		break;
@@ -1901,6 +1892,22 @@ window.addEventListener("load", function() {
 	}
 	
 	setInterval(update_task_activities, 500);
+
+	var scroll_timeout;
+	window.addEventListener('scroll', function() {
+		if (scroll_timeout)
+			clearTimeout(scroll_timeout);
+		scroll_timeout = setTimeout(function() {
+			var body = document.body,
+			    html = document.documentElement;
+			var scrollHeight = Math.max(body.scrollHeight, body.offsetHeight,
+						html.clientHeight, html.scrollHeight, html.offsetHeight);
+			var clientHeight = html.clientHeight || body.clientHeight;
+			var scrollTop = html.scrollTop || body.scrollTop;
+
+			user_is_following = scrollHeight - clientHeight <= scrollTop + 5;
+		}, 150);
+	});
 
 	const stickyEl = document.getElementById("sai_sticky");
 	if (stickyEl) {
