@@ -402,6 +402,7 @@ static const char * const runscript_first =
 #endif
 	"export HOME=%s\n"
 	"export SAI_OVN=%s\n"
+	"export SAI_VN=%s\n"
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
 	"export SAI_INSTANCE_IDX=%d\n"
@@ -411,7 +412,7 @@ static const char * const runscript_first =
 	"export SAI_LOGPROXY_TTY0=%s\n"
 	"export SAI_LOGPROXY_TTY1=%s\n"
 	"set -e\n"
-	"cd %s/jobs/$SAI_OVN\n"
+	"cd %s/jobs/$SAI_VN\n"
 	"rm -rf build\n"
 	"%s < /dev/null\n"
 	"exit $?\n"
@@ -426,6 +427,7 @@ static const char * const runscript_next =
 #endif
 	"export HOME=%s\n"
 	"export SAI_OVN=%s\n"
+	"export SAI_VN=%s\n"
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
 	"export SAI_INSTANCE_IDX=%d\n"
@@ -435,7 +437,7 @@ static const char * const runscript_next =
 	"export SAI_LOGPROXY_TTY0=%s\n"
 	"export SAI_LOGPROXY_TTY1=%s\n"
 	"set -e\n"
-	"cd %s/jobs/$SAI_OVN\n"
+	"cd %s/jobs/$SAI_VN\n"
 	"%s < /dev/null\n"
 	"exit $?\n"
 ;
@@ -449,6 +451,7 @@ static const char * const runscript_build =
 #endif
 	"export HOME=%s\n"
 	"export SAI_OVN=%s\n"
+	"export SAI_VN=%s\n"
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
 	"export SAI_INSTANCE_IDX=%d\n"
@@ -458,7 +461,7 @@ static const char * const runscript_build =
 	"export SAI_LOGPROXY_TTY0=%s\n"
 	"export SAI_LOGPROXY_TTY1=%s\n"
 	"set -e\n"
-	"cd %s/jobs/$SAI_OVN/src\n"
+	"cd %s/jobs/$SAI_VN/src\n"
 	"%s < /dev/null\n"
 	"exit $?\n"
 ;
@@ -541,7 +544,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 
 	n = lws_snprintf(st, sizeof(st),
 			 script_template,
-			 builder.home, ns->fsm.ovname,
+			 builder.home, ns->fsm.ovname, ns->inp_vn,
 			 ns->project_name, ns->ref, ns->instance_ordinal,
 			 ns->task->parallel ? ns->task->parallel : 1,
 			 respath, ns->slp_control.sockpath,

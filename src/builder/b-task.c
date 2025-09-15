@@ -943,8 +943,12 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			goto ebail;
 		}
 
+		memcpy(ns->inp_vn, ns->fsm.ovname, 4);
+		memcpy(ns->inp_vn + 4, ns->fsm.ovname + strlen(ns->fsm.ovname) - 4, 4);
+		ns->inp_vn[8] = '\0';
+
 		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
-				  ns->fsm.ovname, csep);
+				  ns->inp_vn, csep);
 		lws_filename_purify_inplace(ns->inp);
 		if (mkdir(ns->inp, 0755) && errno != EEXIST) {
 			en = errno;

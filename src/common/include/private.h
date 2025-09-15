@@ -153,6 +153,7 @@ struct sai_nspawn {
 	lws_dll2_owner_t		chunk_cache;
 
 	char				inp[512];
+	char				inp_vn[16];
 	char				path[384];
 	char				script_path[290];
 	char				pending_mirror_log[128];
