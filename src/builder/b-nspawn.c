@@ -219,7 +219,8 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	lws_dir(ns->inp, &du, lws_dir_du_cb);
 
 	{
-		char h1[40], h2[40], h3[40], h4[40], h5[40], h6[40], h7[40], h8[40], h9[40], h10[40];
+		// char h1[40], h2[40], h3[40], h4[40], h10[40];
+		char h5[40], h6[40], h7[40], h8[40], h9[40];
 
 		ns->us_cpu_user += res->us_cpu_user;
 		ns->us_cpu_sys += res->us_cpu_sys;
@@ -230,26 +231,26 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		if (res->peak_mem_rss > ns->worst_mem)
 			ns->worst_mem = res->peak_mem_rss;
 
-		lws_humanize_pad(h1,  sizeof(h1),  ns->us_cpu_user,	humanize_schema_us);
-		lws_humanize_pad(h2,  sizeof(h2),  ns->us_cpu_sys,	humanize_schema_us);
-		lws_humanize_pad(h3,  sizeof(h3),  ns->worst_mem,	humanize_schema_si);
-		lws_humanize_pad(h4,  sizeof(h4),  ns->worst_stg,	humanize_schema_si);
+		// lws_humanize_pad(h1,  sizeof(h1),  ns->us_cpu_user,	humanize_schema_us);
+		// lws_humanize_pad(h2,  sizeof(h2),  ns->us_cpu_sys,	humanize_schema_us);
+		// lws_humanize_pad(h3,  sizeof(h3),  ns->worst_mem,	humanize_schema_si);
+		// lws_humanize_pad(h4,  sizeof(h4),  ns->worst_stg,	humanize_schema_si);
 		lws_humanize_pad(h5,  sizeof(h5),  res->us_cpu_user,	humanize_schema_us);
 		lws_humanize_pad(h6,  sizeof(h6),  res->us_cpu_sys,	humanize_schema_us);
 		lws_humanize_pad(h7,  sizeof(h7),  res->peak_mem_rss,	humanize_schema_si);
 		lws_humanize_pad(h8,  sizeof(h8),  du.size_in_bytes,	humanize_schema_si);
 		lws_humanize_pad(h9,  sizeof(h9),  us_wallclock,	humanize_schema_us);
-		lws_humanize_pad(h10, sizeof(h10), ns->us_wallclock,	humanize_schema_us);
+		// lws_humanize_pad(h10, sizeof(h10), ns->us_wallclock,	humanize_schema_us);
 
 		n = lws_snprintf(s, sizeof(s),
 			 ">saib> Step %d: [ %s (%s u / %s s), Mem: %sB, Stg: %sB ]\n",
 			 ns->current_step + 1, h9, h5, h6, h7, h8);
 		saib_log_chunk_create(ns, s, (size_t)n, 3);
 
-		n = lws_snprintf(s, sizeof(s),
-			 ">saib>   Task: [ %s (%s u / %s s), Mem: %sB, Stg: %sB ]\n",
-			 h10, h1, h2, h3, h4);
-		saib_log_chunk_create(ns, s, (size_t)n, 3);
+//		n = lws_snprintf(s, sizeof(s),
+//			 ">saib>   Task: [ %s (%s u / %s s), Mem: %sB, Stg: %sB ]\n",
+//			 h10, h1, h2, h3, h4);
+//		saib_log_chunk_create(ns, s, (size_t)n, 3);
 	}
 
 	if (op->spawn) {
