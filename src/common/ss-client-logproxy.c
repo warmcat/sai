@@ -67,6 +67,9 @@ saicom_lp_ss_from_env(struct lws_context *context, const char *env_name)
 
 	if (lws_ss_set_metadata(h, "sockpath", e, strlen(e)))
 		lwsl_warn("%s: metadata set failed\n", __func__);
+
+	lwsl_notice("%s: setting metadata sockpath '%s'\n", __func__, e);
+
 	if (lws_ss_client_connect(h)) {
 		lws_ss_destroy(&h);
 		return NULL;

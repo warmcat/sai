@@ -251,6 +251,8 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 	else
 		n = lws_snprintf(log, sizeof(log), ">saib> ILLEGAL_STATE %d\n", (int)state);
 
+	lwsl_user("%s: task %s: %s\n", __func__, ns->task ? ns->task->uuid : "null", log);
+
 	saib_log_chunk_create(ns, log, (unsigned int)n, 3);
 
 	if (state == NSSTATE_UPLOADING_ARTIFACTS)
@@ -429,7 +431,7 @@ saib_sub_cleaner_cb(lws_sorted_usec_list_t *sul)
 void
 saib_task_grace(struct sai_nspawn *ns)
 {
-	lwsl_err("%s: +++++ starting task grace wait\n", __func__);
+	lwsl_err("%s: +++++ starting task %s grace wait\n", __func__, ns->task ? ns->task->uuid : "null");
 	ns->finished_when_logs_drained = 1; /* destroy ns if logs are gone + spawn reaped */
 	lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
 			 saib_sub_cleaner_cb, 20 * LWS_USEC_PER_SEC);
