@@ -104,10 +104,16 @@ sai_deletion_worker(const char *home_dir)
 		if (!p)
 			continue;
 
-		lws_snprintf(path, sizeof(path), "%s/jobs/%s", home_dir, path);
+		{
+			char full_path[PATH_MAX];
 
-		if (lws_dir(path, NULL, lws_dir_rm_rf_cb))
-			lwsl_err("%s: failed to delete %s\n", __func__, path);
+			lws_snprintf(full_path, sizeof(full_path), "%s/jobs/%s",
+				     home_dir, path);
+
+			if (lws_dir(full_path, NULL, lws_dir_rm_rf_cb))
+				lwsl_err("%s: failed to delete %s\n", __func__,
+					 full_path);
+		}
 	}
 
 	return 0;
