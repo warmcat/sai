@@ -245,8 +245,9 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 		 * Decide how to set the event state based on that
 		 */
 
-		lwsl_notice("%s: ev %s, count %u, count_good %u, count_bad %u\n",
-			    __func__, event_uuid, count, count_good, count_bad);
+		lwsl_notice("%s: ev %s, task %s, state %d -> %d, count %u, good %u, bad %u, oes %d\n",
+			    __func__, event_uuid, task_uuid, task_ostate, state,
+			    count, count_good, count_bad, (int)oes);
 
 		sta = SAIES_BEING_BUILT;
 
