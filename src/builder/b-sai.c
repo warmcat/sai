@@ -37,19 +37,21 @@
 #include <grp.h>
 #endif
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 #include <unistd.h>
 #endif
 
 #if defined(__APPLE__)
 #include <sys/stat.h>	/* for mkdir() */
-#include <unistd.h>	/* for chown() */
 #endif
 
 #if defined(WIN32)
 #include <initguid.h>
 #include <KnownFolders.h>
 #include <Shlobj.h>
+#include <processthreadsapi.h>
+#include <handleapi.h>
+
 
 #if !defined(PATH_MAX)
 #define PATH_MAX MAX_PATH
@@ -61,6 +63,56 @@ int getpid(void) { return 0; }
 
 #include "b-private.h"
 #include <libwebsockets/lws-misc.h>
+
+static int
+sai_deletion_worker(const char *home_dir)
+{
+	char path[LWS_PATH_MAX], *p;
+	ssize_t n;
+
+	lwsl_notice("%s: deletion worker started\n", __func__);
+
+#if defined(WIN32)
+	/*
+	 * On Windows, stdin is not a pipe from the parent but a handle
+	 * value passed on the commandline
+	 */
+	// detach from console...
+	FreeConsole();
+#endif
+
+	while (1) {
+		n = read(0, path, sizeof(path) - 1);
+
+		if (n <= 0) {
+			lwsl_notice("%s: pipe closed, exiting\n", __func__);
+			return 0;
+		}
+
+		path[n] = '\0';
+		p = path;
+
+		/* sanitize: no .. or / or \ */
+		while (*p) {
+			if (*p == '.' || *p == '/' || *p == '\\') {
+				lwsl_err("%s: invalid chars in delete path '%s'\n",
+					 __func__, path);
+				p = NULL;
+				break;
+			}
+			p++;
+		}
+		if (!p)
+			continue;
+
+		lws_snprintf(path, sizeof(path), "%s/jobs/%s", home_dir, path);
+
+		if (lws_dir_rm_rf(path))
+			lwsl_err("%s: failed to delete %s\n", __func__, path);
+	}
+
+	return 0;
+}
 
 /*
  * Periodically (eg, once per hour) we walk the jobs dir and find subdirs
@@ -104,12 +156,12 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 		return 0;
 
 	if (lws_now_secs() - sb.st_mtime > 24 * 3600) {
-		lws_dir_glob_t g;
-
-		lwsl_notice("%s: removing old job dir %s\n", __func__, path);
-		memset(&g, 0, sizeof(g));
-		g.cb = lws_dir_rm_rf_cb;
-		lws_dir(path, &g, lws_dir_glob_cb);
+		lwsl_notice("%s: requesting removal of old job dir %s\n",
+			    __func__, path);
+		if (write(builder.pipe_master_wr, lde->name,
+			  strlen(lde->name)) != (ssize_t)strlen(lde->name))
+			lwsl_err("%s: failed to write to deletion worker\n",
+				 __func__);
 	}
 
 	return 0;
@@ -165,6 +217,7 @@ sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul)
 	lws_sul_schedule(b->context, 0, &b->sul_cleanup_jobs,
 			 sul_cleanup_jobs_cb, 3600 * LWS_US_PER_SEC);
 }
+
 
 static const char *config_dir = "/etc/sai/builder";
 static int interrupted;
@@ -779,6 +832,13 @@ int main(int argc, const char **argv)
 	struct stat sb;
 	const char *p;
 
+	if ((p = lws_cmdline_option(argc, argv, "--home")))
+		/*
+		 * This is the deletion worker process being spawned, it only
+		 * needs to know the home dir to clean up inside
+		 */
+		return sai_deletion_worker(p);
+
 	if ((p = lws_cmdline_option(argc, argv, "-s"))) {
 		ssize_t n = 0;
 
@@ -886,6 +946,13 @@ int main(int argc, const char **argv)
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
 
+	if ((p = lws_cmdline_option(argc, argv, "--home")))
+		/*
+		 * This is the deletion worker process being spawned, it only
+		 * needs to know the home dir to clean up inside
+		 */
+		return sai_deletion_worker(p);
+
 	if ((p = lws_cmdline_option(argc, argv, "-c")))
 		config_dir = p;
 
@@ -948,6 +1015,46 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
+#if !defined(WIN32)
+	{
+		int pfd[2];
+		pid_t pid;
+
+		if (pipe(pfd) == -1) {
+			lwsl_err("pipe() failed\n");
+			return 1;
+		}
+
+		pid = fork();
+		if (pid == -1) {
+			lwsl_err("fork() failed\n");
+			return 1;
+		}
+
+		if (!pid) {
+			/* child: deletion worker */
+			char home_arg[256];
+
+			lws_snprintf(home_arg, sizeof(home_arg), "--home=%s",
+				     builder.home);
+			close(pfd[1]); /* wr */
+			if (dup2(pfd[0], 0) < 0)
+				return 1;
+			close(pfd[0]);
+
+			execlp(argv[0], argv[0], home_arg, "--delete-worker", (char *)NULL);
+			lwsl_err("execlp failed\n");
+			return 1;
+		}
+
+		/* parent */
+		close(pfd[0]); /* rd */
+		builder.pipe_master_wr = pfd[1];
+	}
+#else
+	/* TODO: windows worker process spawn */
+#endif
+
 #if defined(__linux__)
 	/*
 	 * At this point we're still root.  So we should be able
@@ -1003,10 +1110,6 @@ int main(int argc, const char **argv)
 		info.extensions = extensions;
 #endif
 	info.pt_serv_buf_size = 32 * 1024;
-
-	builder.ram_limit_kib = (saib_get_total_ram_kib() * 8) / 10;
-	builder.disk_total_kib = saib_get_total_disk_kib(builder.home);
-
 	info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
 		       LWS_SERVER_OPTION_VALIDATE_UTF8 |
 		       LWS_SERVER_OPTION_EXPLICIT_VHOSTS;

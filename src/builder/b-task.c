@@ -398,13 +398,12 @@ saib_task_destroy(struct sai_nspawn *ns)
 	if (ns->task && (ns->retcode & SAISPRF_EXIT) &&
 	    (ns->retcode & 0xff) == 0) {
 		/* Task succeeded, so clean up the directory. */
-		lws_dir_glob_t g;
-
-		lwsl_notice("%s: task %s succeeded, removing job dir %s\n",
+		lwsl_notice("%s: task %s succeeded, requesting deletion of job dir %s\n",
 			    __func__, ns->task->uuid, ns->inp);
-		memset(&g, 0, sizeof(g));
-		g.cb = lws_dir_rm_rf_cb;
-		lws_dir(ns->inp, &g, lws_dir_glob_cb);
+		if (write(builder.pipe_master_wr, ns->task->uuid,
+			  strlen(ns->task->uuid)) != (ssize_t)strlen(ns->task->uuid))
+			lwsl_err("%s: failed to write to deletion worker\n",
+				 __func__);
 	}
 
 	if (ns->task) {

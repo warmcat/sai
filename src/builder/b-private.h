@@ -138,6 +138,8 @@ struct sai_builder {
 	uint64_t		ram_reserved_kib;
 	uint64_t		disk_total_kib;
 	uint64_t		disk_reserved_kib;
+
+	int			pipe_master_wr;
 };
 
 struct jpargs {
