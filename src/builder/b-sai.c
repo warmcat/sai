@@ -957,13 +957,6 @@ int main(int argc, const char **argv)
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
 
-	if ((p = lws_cmdline_option(argc, argv, "--home")))
-		/*
-		 * This is the deletion worker process being spawned, it only
-		 * needs to know the home dir to clean up inside
-		 */
-		return sai_deletion_worker(p);
-
 	if ((p = lws_cmdline_option(argc, argv, "-c")))
 		config_dir = p;
 
@@ -1011,9 +1004,6 @@ int main(int argc, const char **argv)
 
 		return 1;
 	}
-
-//	lwsl_notice("%s: parsed %s %s %s\n", __func__, builder.metrics_path,
-//			builder.metrics_uri, builder.metrics_secret);
 
 	/*
 	 * We need to sample the true uid / gid we should use inside
@@ -1063,7 +1053,47 @@ int main(int argc, const char **argv)
 		builder.pipe_master_wr = pfd[1];
 	}
 #else
-	/* TODO: windows worker process spawn */
+	{
+		char cmdline[512];
+		HANDLE hChildStd_IN_Rd = NULL;
+		HANDLE hChildStd_IN_Wr = NULL;
+		SECURITY_ATTRIBUTES sa;
+		PROCESS_INFORMATION pi;
+		STARTUPINFOA si;
+
+		sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+		sa.bInheritHandle = TRUE;
+		sa.lpSecurityDescriptor = NULL;
+
+		if (!CreatePipe(&hChildStd_IN_Rd, &hChildStd_IN_Wr, &sa, 0)) {
+			lwsl_err("CreatePipe failed\n");
+			return 1;
+		}
+		if (!SetHandleInformation(hChildStd_IN_Wr, HANDLE_FLAG_INHERIT, 0)) {
+			lwsl_err("SetHandleInformation failed\n");
+			return 1;
+		}
+
+		memset(&pi, 0, sizeof(pi));
+		memset(&si, 0, sizeof(si));
+		si.cb = sizeof(si);
+		si.hStdInput = hChildStd_IN_Rd;
+		si.dwFlags |= STARTF_USESTDHANDLES;
+
+		lws_snprintf(cmdline, sizeof(cmdline), "%s --delete-worker --home=%s",
+			     argv[0], builder.home);
+
+		if (!CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0,
+				    NULL, NULL, &si, &pi)) {
+			lwsl_err("CreateProcess failed\n");
+			return 1;
+		}
+
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+		CloseHandle(hChildStd_IN_Rd);
+		builder.pipe_master_wr_win = hChildStd_IN_Wr;
+	}
 #endif
 
 #if defined(__linux__)
