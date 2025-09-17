@@ -139,7 +139,11 @@ struct sai_builder {
 	uint64_t		disk_total_kib;
 	uint64_t		disk_reserved_kib;
 
+#if !defined(WIN32)
 	int			pipe_master_wr;
+#else
+	void			*pipe_master_wr_win;
+#endif
 };
 
 struct jpargs {

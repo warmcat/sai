@@ -103,7 +103,11 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		}
 
 		if (op && op->lsp) {
-			lws_spawn_stdwsi_closed(op->lsp, wsi);
+			if (lws_spawn_stdwsi_closed(op->lsp, wsi) &&
+			    ns->reap_cb_called) {
+				lwsl_notice("%s: freeing op from stdwsi_cb\n", __func__);
+				free(op);
+			}
 			if (ns)
 				lws_cancel_service(ns->builder->context);
 		}
@@ -335,9 +339,15 @@ skip:
 	saib_task_grace(ns);
 	saib_set_ns_state(ns, NSSTATE_DONE);
 
+	ns->reap_cb_called = 1;
+
 	if (ns)
 		ns->op = NULL;
-	free(op);
+
+	if (lws_spawn_get_stdwsi_open_count(op->lsp) == 0) {
+		lwsl_notice("%s: freeing op from reap_cb\n", __func__);
+		free(op);
+	}
 
 	return;
 
@@ -582,6 +592,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 	memset(op, 0, sizeof(*op));
 
 	op->ns = ns;
+	ns->reap_cb_called = 0;
 	ns->op = op;
 #if defined(WIN32)
 	op->spawn = _strdup(one_step);
