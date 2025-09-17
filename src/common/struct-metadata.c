@@ -173,8 +173,6 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_UNSIGNED	(sai_task_t, est_disk_kib,	"est_disk_kib"),
 	LSM_SIGNED	(sai_task_t, parallel,		"parallel"),
 	LSM_SIGNED	(sai_task_t, rebuildable,	"rebuildable"),
-	LSM_CARRAY	(sai_task_t, last_reset_builder_name, "last_reset_builder_name"),
-	LSM_UNSIGNED	(sai_task_t, last_reset_time, "last_reset_time"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {

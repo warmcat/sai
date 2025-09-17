@@ -331,18 +331,15 @@ sais_event_ran_platform(struct vhd *vhd, const char *event_uuid,
  * Find the most recent task that still needs doing for platform, on any event
  */
 static const sai_task_t *
-sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform,
-		  const char *builder_name)
+sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 {
 	struct lwsac *ac = NULL, *failed_ac = NULL;
-	char esc_plat[96], esc_builder[128], pf[2048], query[384];
+	char esc_plat[96], pf[2048], query[384];
 	lws_dll2_owner_t o, failed_tasks_owner;
 	unsigned int pending_count;
 	int n;
 
 	lws_sql_purify(esc_plat, platform, sizeof(esc_plat));
-	if (builder_name)
-		lws_sql_purify(esc_builder, builder_name, sizeof(esc_builder));
 	assert(platform);
 
 	/*
@@ -384,20 +381,8 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform,
 
 		if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
 
-			if (builder_name)
-				lws_snprintf(query, sizeof(query),
-					"select count(state) from tasks where "
-					"state = 0 and platform = '%s' and "
-					"(last_reset_builder_name is NULL or "
-					"last_reset_builder_name != '%s' or "
-					"last_reset_time < %llu)",
-					esc_plat, esc_builder,
-					(unsigned long long)lws_now_secs() - 30);
-			else
-				lws_snprintf(query, sizeof(query),
-					"select count(state) from tasks where "
-					"state = 0 and platform = '%s'", esc_plat);
-
+			lws_snprintf(query, sizeof(query), "select count(state) from tasks where "
+							   "state = 0 and platform = '%s'", esc_plat);
 			m = sqlite3_exec(pdb, query, sql3_get_integer_cb, &pending_count, NULL);
 		       
 			if (m != SQLITE_OK) {
@@ -500,20 +485,8 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform,
 					lws_dll2_owner_t owner;
 
 					lws_sql_purify(esc_taskname, fti->taskname, sizeof(esc_taskname));
-					if (builder_name)
-						lws_snprintf(pf, sizeof(pf),
-							" and (state = 0) and (platform = '%s') and "
-							"(taskname == '%s') and "
-							"(last_reset_builder_name is NULL or "
-							"last_reset_builder_name != '%s' or "
-							"last_reset_time < %llu)",
-							esc_plat, esc_taskname, esc_builder,
-							(unsigned long long)lws_now_secs() - 30);
-					else
-						lws_snprintf(pf, sizeof(pf),
-							" and (state = 0) and (platform = '%s') and "
-							"(taskname == '%s')",
-							esc_plat, esc_taskname);
+					lws_snprintf(pf, sizeof(pf), " and (state == 0) and (platform == '%s') and (taskname == '%s')",
+						     esc_plat, esc_taskname);
 
 					lwsac_free(&pss->ac_alloc_task);
 					lws_dll2_owner_clear(&owner);
@@ -539,19 +512,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform,
 
 				/* We have fallen back to doing tasks earliest-first */
 
-				if (builder_name)
-					lws_snprintf(pf, sizeof(pf),
-						" and (state = 0) and (platform = '%s') and "
-						"(last_reset_builder_name is NULL or "
-						"last_reset_builder_name != '%s' or "
-						"last_reset_time < %llu)",
-						esc_plat, esc_builder,
-						(unsigned long long)lws_now_secs() - 30);
-				else
-					lws_snprintf(pf, sizeof(pf),
-						" and (state = 0) and (platform = '%s')",
-						esc_plat);
-
+				lws_snprintf(pf, sizeof(pf), " and (state = 0) and (platform = '%s')", esc_plat);
 				lwsac_free(&pss->ac_alloc_task);
 				lws_dll2_owner_t owner;
 				lws_dll2_owner_clear(&owner);
@@ -876,8 +837,7 @@ sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid)
  */
 
 sai_db_result_t
-sais_task_reset(struct vhd *vhd, const char *task_uuid, int from_rejection,
-		const char *builder_name)
+sais_task_reset(struct vhd *vhd, const char *task_uuid, int from_rejection)
 {
 	char esc[96], cmd[256], event_uuid[33];
 	sqlite3 *pdb = NULL;
@@ -898,11 +858,6 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid, int from_rejection,
 
 		return SAI_DB_RESULT_ERROR;
 	}
-
-	sqlite3_exec(pdb, "ALTER TABLE tasks ADD COLUMN last_reset_builder_name;",
-		     NULL, NULL, NULL);
-	sqlite3_exec(pdb, "ALTER TABLE tasks ADD COLUMN last_reset_time;",
-		     NULL, NULL, NULL);
 
 	lws_sql_purify(esc, task_uuid, sizeof(esc));
 	lws_snprintf(cmd, sizeof(cmd), "delete from logs where task_uuid='%s'",
@@ -931,17 +886,6 @@ sais_task_reset(struct vhd *vhd, const char *task_uuid, int from_rejection,
 	}
 
 	sais_event_db_close(vhd, &pdb);
-
-	if (builder_name) {
-		char esc_builder[128];
-		lws_sql_purify(esc_builder, builder_name, sizeof(esc_builder));
-		lws_snprintf(cmd, sizeof(cmd),
-			     "update tasks set last_reset_builder_name='%s', "
-			     "last_reset_time=%llu where uuid='%s'",
-			     esc_builder, (unsigned long long)lws_now_secs(), esc);
-		if (sqlite3_exec(pdb, cmd, NULL, NULL, NULL) != SQLITE_OK)
-			lwsl_warn("failed to set last_reset info\n");
-	}
 
 	sais_set_task_state(vhd, NULL, NULL, task_uuid, SAIES_WAITING, 1, 1);
 
@@ -1057,7 +1001,7 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	 * Look for a task for this platform, on any event that needs building
 	 */
 
-	task_template = sais_task_pending(vhd, pss, platform_name, cb->name);
+	task_template = sais_task_pending(vhd, pss, platform_name);
 	if (!task_template)
 		return 1;
 
