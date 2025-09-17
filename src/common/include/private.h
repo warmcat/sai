@@ -134,6 +134,9 @@ typedef struct {
 	char			told_ongoing;
 
 	char			rebuildable;
+
+	char			last_reset_builder_name[96];
+	uint64_t		last_reset_time;
 } sai_task_t;
 
 typedef struct sai_plat sai_plat_t;
@@ -528,7 +531,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[10],
-	lsm_task[28],
+	lsm_task[30],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],

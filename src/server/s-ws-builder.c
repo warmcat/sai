@@ -399,7 +399,9 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 								if (task_uuid) {
 									lwsl_notice("%s: resetting task %s from disconnected builder %s\n",
 											__func__, (const char *)task_uuid, cb->name);
-									sais_task_reset(vhd, (const char *)task_uuid, 0);
+									sais_task_reset(vhd,
+										(const char *)task_uuid,
+										0, cb->name);
 								}
 							}
 							sqlite3_finalize(sm);
@@ -718,7 +720,7 @@ bail:
 			    rej->task_uuid[0] ? rej->task_uuid : "none");
 
 		if (rej->task_uuid[0])
-			sais_task_reset(vhd, rej->task_uuid, 1);
+			sais_task_reset(vhd, rej->task_uuid, 1, NULL);
 
 		lwsac_free(&pss->a.ac);
 		break;
