@@ -37,19 +37,21 @@
 #include <grp.h>
 #endif
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 #include <unistd.h>
 #endif
 
 #if defined(__APPLE__)
 #include <sys/stat.h>	/* for mkdir() */
-#include <unistd.h>	/* for chown() */
 #endif
 
 #if defined(WIN32)
 #include <initguid.h>
 #include <KnownFolders.h>
 #include <Shlobj.h>
+#include <processthreadsapi.h>
+#include <handleapi.h>
+
 
 #if !defined(PATH_MAX)
 #define PATH_MAX MAX_PATH
@@ -60,6 +62,56 @@ int getpid(void) { return 0; }
 #endif
 
 #include "b-private.h"
+
+static int
+sai_deletion_worker(const char *home_dir)
+{
+	char path[PATH_MAX], *p;
+	ssize_t n;
+
+	lwsl_notice("%s: deletion worker started\n", __func__);
+
+#if defined(WIN32)
+	/*
+	 * On Windows, stdin is not a pipe from the parent but a handle
+	 * value passed on the commandline
+	 */
+	// detach from console...
+	FreeConsole();
+#endif
+
+	while (1) {
+		n = read(0, path, sizeof(path) - 1);
+
+		if (n <= 0) {
+			lwsl_notice("%s: pipe closed, exiting\n", __func__);
+			return 0;
+		}
+
+		path[n] = '\0';
+		p = path;
+
+		/* sanitize: no .. or / or \ */
+		while (*p) {
+			if (*p == '.' || *p == '/' || *p == '\\') {
+				lwsl_err("%s: invalid chars in delete path '%s'\n",
+					 __func__, path);
+				p = NULL;
+				break;
+			}
+			p++;
+		}
+		if (!p)
+			continue;
+
+		lws_snprintf(path, sizeof(path), "%s/jobs/%s", home_dir, path);
+
+		if (lws_dir(path, NULL, lws_dir_rm_rf_cb))
+			lwsl_err("%s: failed to delete %s\n", __func__, path);
+	}
+
+	return 0;
+}
 
 /*
  * Periodically (eg, once per hour) we walk the jobs dir and find subdirs
@@ -105,13 +157,22 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 	/* older than 24h? */
 
 	if (((uint64_t)lws_now_secs() - (uint64_t)sb.st_mtime) > 24ull * 3600u) {
-		lwsl_notice("%s: removing old job dir %s\n", __func__, path);
-		lws_dir(path, NULL, lws_dir_rm_rf_cb);
-
-		/* this may have taken a while... let's wait for next time
-		 * for any others that need to go */
-
-		return 1;
+		lwsl_notice("%s: requesting removal of old job dir %s\n",
+			    __func__, path);
+#if !defined(WIN32)
+		if (write(builder.pipe_master_wr, lde->name,
+			  LWS_POSIX_LENGTH_CAST(strlen(lde->name))) != (ssize_t)strlen(lde->name))
+			lwsl_err("%s: failed to write to deletion worker\n",
+				 __func__);
+#else
+		{
+			DWORD written;
+			if (!WriteFile(builder.pipe_master_wr_win, lde->name,
+				       (DWORD)strlen(lde->name), &written, NULL))
+				lwsl_err("%s: failed to write to deletion worker\n",
+					 __func__);
+		}
+#endif
 	}
 
 	return 0;
@@ -167,6 +228,7 @@ sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul)
 	lws_sul_schedule(b->context, 0, &b->sul_cleanup_jobs,
 			 sul_cleanup_jobs_cb, 60 * LWS_US_PER_SEC);
 }
+
 
 static const char *config_dir = "/etc/sai/builder";
 static int interrupted;
@@ -361,7 +423,7 @@ saib_create_resproxy_listen_uds(struct lws_context *context,
 
 	info.vhost_name			= pv;
 	pv += lws_snprintf(pv, sizeof(vhnames) - (size_t)(pv - vhnames),
-				"resproxy.%u.%d", getpid(), spm->index) + 1;
+				"resproxy.%u.%d", (unsigned int)getpid(), spm->index) + 1;
 	info.options = LWS_SERVER_OPTION_ADOPT_APPLY_LISTEN_ACCEPT_CONFIG |
 		       LWS_SERVER_OPTION_UNIX_SOCK;
 
@@ -781,6 +843,13 @@ int main(int argc, const char **argv)
 	struct stat sb;
 	const char *p;
 
+	if ((p = lws_cmdline_option(argc, argv, "--home")))
+		/*
+		 * This is the deletion worker process being spawned, it only
+		 * needs to know the home dir to clean up inside
+		 */
+		return sai_deletion_worker(p);
+
 	if ((p = lws_cmdline_option(argc, argv, "-s"))) {
 		ssize_t n = 0;
 
@@ -888,6 +957,13 @@ int main(int argc, const char **argv)
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
 
+	if ((p = lws_cmdline_option(argc, argv, "--home")))
+		/*
+		 * This is the deletion worker process being spawned, it only
+		 * needs to know the home dir to clean up inside
+		 */
+		return sai_deletion_worker(p);
+
 	if ((p = lws_cmdline_option(argc, argv, "-c")))
 		config_dir = p;
 
@@ -949,6 +1025,46 @@ int main(int argc, const char **argv)
 		lwsl_err("%s: Can't find %s\n", __func__, builder.home);
 		return 1;
 	}
+
+#if !defined(WIN32)
+	{
+		int pfd[2];
+		pid_t pid;
+
+		if (pipe(pfd) == -1) {
+			lwsl_err("pipe() failed\n");
+			return 1;
+		}
+
+		pid = fork();
+		if (pid == -1) {
+			lwsl_err("fork() failed\n");
+			return 1;
+		}
+
+		if (!pid) {
+			/* child: deletion worker */
+			char home_arg[256];
+
+			lws_snprintf(home_arg, sizeof(home_arg), "--home=%s",
+				     builder.home);
+			close(pfd[1]); /* wr */
+			if (dup2(pfd[0], 0) < 0)
+				return 1;
+			close(pfd[0]);
+
+			execlp(argv[0], argv[0], home_arg, "--delete-worker", (char *)NULL);
+			lwsl_err("execlp failed\n");
+			return 1;
+		}
+
+		/* parent */
+		close(pfd[0]); /* rd */
+		builder.pipe_master_wr = pfd[1];
+	}
+#else
+	/* TODO: windows worker process spawn */
+#endif
 
 #if defined(__linux__)
 	/*

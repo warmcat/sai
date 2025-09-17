@@ -401,9 +401,21 @@ saib_task_destroy(struct sai_nspawn *ns)
 	    (ns->retcode & 0xff) == 0) {
 		/* Task succeeded, so clean up the directory. */
 
-		lwsl_notice("%s: task %s succeeded, removing job dir %s\n",
+		lwsl_notice("%s: task %s succeeded, requesting deletion of job dir %s\n",
 			    __func__, ns->task->uuid, ns->inp);
-		lws_dir(ns->inp, NULL, lws_dir_rm_rf_cb);
+		if (write(builder.pipe_master_wr, ns->task->uuid,
+			  LWS_POSIX_LENGTH_CAST(strlen(ns->task->uuid))) != (ssize_t)strlen(ns->task->uuid))
+			lwsl_err("%s: failed to write to deletion worker\n",
+				 __func__);
+	}
+
+	if (ns->task) {
+		builder.ram_reserved_kib -= ns->task->est_peak_mem_kib;
+		builder.disk_reserved_kib -= ns->task->est_disk_kib;
+		if (ns->spm)
+			lws_sul_schedule(builder.context, 0,
+					 &ns->spm->sul_load_report,
+					 saib_sul_load_report_cb, 1);
 	}
 
 	lws_dll2_remove(&ns->list);
