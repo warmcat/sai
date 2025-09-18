@@ -1933,56 +1933,32 @@ window.addEventListener("load", function() {
 			}
 		});
 	}
-	const resizerLeft = document.getElementById('resizer-left');
-	const resizerRight = document.getElementById('resizer-right');
-	if (resizerLeft && resizerRight) {
-		const leftPane = resizerLeft.previousElementSibling;
-		const middlePane = resizerLeft.nextElementSibling;
-		const rightPane = resizerRight.nextElementSibling;
+	const resizer = document.getElementById('resizer');
+	if (resizer) {
+		const leftPane = resizer.previousElementSibling;
 
 		let x = 0;
 		let leftWidth = 0;
-		let middleWidth = 0;
 
-		const onMouseMoveLeft = (e) => {
+		const onMouseMove = (e) => {
 			const dx = e.clientX - x;
 			const newLeftWidth = leftWidth + dx;
-			leftPane.style.width = `${newLeftWidth}px`;
+			leftPane.style.flex = `0 0 ${newLeftWidth}px`;
 		};
 
-		const onMouseUpLeft = () => {
-			document.removeEventListener('mousemove', onMouseMoveLeft);
-			document.removeEventListener('mouseup', onMouseUpLeft);
+		const onMouseUp = () => {
+			document.removeEventListener('mousemove', onMouseMove);
+			document.removeEventListener('mouseup', onMouseUp);
 		};
 
-		const onMouseDownLeft = (e) => {
+		const onMouseDown = (e) => {
 			x = e.clientX;
 			leftWidth = leftPane.getBoundingClientRect().width;
-			document.addEventListener('mousemove', onMouseMoveLeft);
-			document.addEventListener('mouseup', onMouseUpLeft);
+			document.addEventListener('mousemove', onMouseMove);
+			document.addEventListener('mouseup', onMouseUp);
 		};
 
-		resizerLeft.addEventListener('mousedown', onMouseDownLeft);
-
-		const onMouseMoveRight = (e) => {
-			const dx = e.clientX - x;
-			const newMiddleWidth = middleWidth + dx;
-			middlePane.style.flex = `0 0 ${newMiddleWidth}px`;
-		};
-
-		const onMouseUpRight = () => {
-			document.removeEventListener('mousemove', onMouseMoveRight);
-			document.removeEventListener('mouseup', onMouseUpRight);
-		};
-
-		const onMouseDownRight = (e) => {
-			x = e.clientX;
-			middleWidth = middlePane.getBoundingClientRect().width;
-			document.addEventListener('mousemove', onMouseMoveRight);
-			document.addEventListener('mouseup', onMouseUpRight);
-		};
-
-		resizerRight.addEventListener('mousedown', onMouseDownRight);
+		resizer.addEventListener('mousedown', onMouseDown);
 	}
 }, false);
 

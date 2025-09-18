@@ -1011,13 +1011,9 @@ body.overlay-active {
   height: 100vh;
 }
 .left-pane {
-  width: 180px;
+  flex: 0 0 30%;
+  overflow: auto;
   flex-shrink: 0;
-  overflow: auto;
-}
-.middle-pane {
-  flex: 0 0 20%;
-  overflow: auto;
 }
 .right-pane {
   flex-grow: 1;
