@@ -673,12 +673,7 @@ saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 	n = lws_snprintf(s, sizeof(s), ">saib> Cancelling...\n");
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
-	lws_spawn_piped_kill_child_process(ns->op->lsp);
-	if (!--ns->term_budget)
-		return;
-
-	lws_sul_schedule(ns->builder->context, 0, &ns->sul_task_cancel,
-			 saib_sul_task_cancel, 500 * LWS_US_PER_MS);
+	saib_task_grace(ns);
 }
 
 extern struct lws_spawn_piped *lsp_suspender;
