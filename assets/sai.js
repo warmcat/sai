@@ -1254,12 +1254,33 @@ function ws_open_sai()
 
 				// --- Reconciliation Logic ---
 
-				buildersContainer.innerHTML = ""; // Clear for safety
-				const table = document.createElement("table");
-				table.className = "builders";
-				const tbody = document.createElement("tbody");
-				table.appendChild(tbody);
+				// Step 1: Find the main content area (the TD). Create it if this is the first run.
+				let tdContainer = buildersContainer.querySelector("table td");
+				if (!tdContainer) {
+					buildersContainer.innerHTML = ""; // Clear for safety
+					const table = document.createElement("table");
+					table.className = "builders";
+					const tbody = document.createElement("tbody");
+					const tr = document.createElement("tr");
+					tdContainer = document.createElement("td");
+					tr.appendChild(tdContainer);
+					tbody.appendChild(tr);
+					table.appendChild(tbody);
+					buildersContainer.appendChild(table);
+				}
 
+				// Step 2: Detach all existing builder divs and store them in a map for reuse.
+				// This preserves them so their CSS transitions will work.
+				const existingDivs = new Map();
+				tdContainer.querySelectorAll(".bdr").forEach(div => {
+					const name = div.id.substring(6); // "binfo-" is 6 chars
+					if (name) {
+						existingDivs.set(name, div);
+					}
+				});
+				tdContainer.innerHTML = ""; // Clear the container, but the divs are still in memory.
+
+				// Step 3: Rebuild the group structure from scratch, reusing the old divs.
 				platformsArray.sort((a, b) => {
 					if (a.name && b.name) {
 						return a.name.localeCompare(b.name);
@@ -1267,24 +1288,46 @@ function ws_open_sai()
 					return 0; // Don't sort if names are missing
 				});
 
+				const platformsByGroup = {};
 				for (const plat of platformsArray) {
-					const tr = document.createElement("tr");
-
-					const tdInfo = document.createElement("td");
-					tdInfo.className = "builder-info";
-					const builderDiv = createBuilderDiv(plat);
-					tdInfo.appendChild(builderDiv);
-					tr.appendChild(tdInfo);
-
-					const tdSpreadsheet = document.createElement("td");
-					tdSpreadsheet.className = "spreadsheet-container";
-					tdSpreadsheet.id = "spreadsheet-" + plat.name;
-					tr.appendChild(tdSpreadsheet);
-
-					tbody.appendChild(tr);
+					const groupKey = getBuilderGroupKey(plat.name);
+					if (!platformsByGroup[groupKey]) platformsByGroup[groupKey] = [];
+					platformsByGroup[groupKey].push(plat);
 				}
 
-				buildersContainer.appendChild(table);
+               const groupKeys = Object.keys(platformsByGroup).sort();
+               for (const key of groupKeys) {
+                       const groupPlatforms = platformsByGroup[key];
+                       const nestedPlatforms = groupPlatforms.filter(p => getBuilderHostname(p.name) !== key);
+                       const mainPlatforms = groupPlatforms.filter(p => getBuilderHostname(p.name) === key);
+
+                       if (nestedPlatforms.length > 0) {
+                               const groupDiv = document.createElement("div");
+                               groupDiv.className = "ibuil ibuilctr bdr";
+
+                               const nameDiv = document.createElement("div");
+                               nameDiv.className = "ibuilctrname bdr";
+                               nameDiv.textContent = key;
+                               groupDiv.appendChild(nameDiv);
+
+                               nestedPlatforms.forEach(plat => {
+                                       const div = existingDivs.get(plat.name) || createBuilderDiv(plat);
+                                       div.classList.toggle('offline', !plat.online);
+                                       div.classList.toggle('powering-up', !!plat.powering_up);
+                                       div.classList.toggle('powering-down', !!plat.powering_down);
+                                       groupDiv.appendChild(div);
+                               });
+                               tdContainer.appendChild(groupDiv);
+                       }
+
+                       mainPlatforms.forEach(plat => {
+                               const div = existingDivs.get(plat.name) || createBuilderDiv(plat);
+                               div.classList.toggle('offline', !plat.online);
+                               div.classList.toggle('powering-up', !!plat.powering_up);
+                               div.classList.toggle('powering-down', !!plat.powering_down);
+                               tdContainer.appendChild(div);
+                       });
+               }
  				break;
 
 			case "com.warmcat.sai.build-metric":
@@ -1630,30 +1673,6 @@ function ws_open_sai()
 			if (cpu_percentage < 0) cpu_percentage = 0;
 			barDiv.style.height = `${cpu_percentage}%`;
 		}
-
-		const spreadsheetContainer = document.getElementById("spreadsheet-" + jso.builder_name);
-		if (spreadsheetContainer) {
-			let table = '<table><thead><tr>' +
-				'<th>Task</th><th>Step</th><th>Started</th>' +
-				'<th>Mem (KiB)</th><th>CPU (%)</th><th>Disk (KiB)</th>' +
-				'</tr></thead><tbody>';
-
-			if (jso.active_tasks) {
-				jso.active_tasks.forEach(task => {
-					table += `<tr>` +
-						`<td>${hsanitize(task.task_name)}</td>` +
-						`<td>${hsanitize(task.build_step)}</td>` +
-						`<td>${agify(now_ut, task.started)}</td>` +
-						`<td>${humanize(task.est_peak_mem_kib * 1024)}</td>` +
-						`<td>${task.est_cpu_load_pct}</td>` +
-						`<td>${humanize(task.est_disk_kib * 1024)}</td>` +
-						`</tr>`;
-				});
-			}
-
-			table += '</tbody></table>';
-			spreadsheetContainer.innerHTML = table;
-		}
 		break;
 
 			case "com-warmcat-sai-artifact":
@@ -1830,15 +1849,6 @@ function post_login_form()
 /* stuff that has to be delayed until all the page assets are loaded */
 
 window.addEventListener("load", function() {
-
-	const savedFlex = localStorage.getItem('sai-left-pane-flex');
-	if (savedFlex) {
-		const leftPane = document.querySelector('.left-pane');
-		if (leftPane) {
-			leftPane.style.flex = savedFlex;
-		}
-	}
-
 	const lnameInput = document.getElementById("lname");
 	const lpassInput = document.getElementById("lpass");
 
@@ -1866,9 +1876,9 @@ window.addEventListener("load", function() {
 	ws_open_sai();
 	aging();
 
-	if (document.getElementById("login-button")) {
-		document.getElementById("login-button").addEventListener("click", post_login_form);
-		document.getElementById("logout-button").addEventListener("click", post_login_form);
+	if (document.getElementById("login")) {
+		document.getElementById("login").addEventListener("click", post_login_form);
+		document.getElementById("logout").addEventListener("click", post_login_form);
 	}
 	
 	setInterval(function() {
@@ -1942,34 +1952,7 @@ window.addEventListener("load", function() {
 			}
 		});
 	}
-	const resizer = document.getElementById('resizer');
-	if (resizer) {
-		const leftPane = resizer.previousElementSibling;
 
-		let x = 0;
-		let leftWidth = 0;
-
-		const onMouseMove = (e) => {
-			const dx = e.clientX - x;
-			const newLeftWidth = leftWidth + dx;
-			leftPane.style.flex = `0 0 ${newLeftWidth}px`;
-		};
-
-		const onMouseUp = () => {
-			document.removeEventListener('mousemove', onMouseMove);
-			document.removeEventListener('mouseup', onMouseUp);
-			localStorage.setItem('sai-left-pane-flex', leftPane.style.flex);
-		};
-
-		const onMouseDown = (e) => {
-			x = e.clientX;
-			leftWidth = leftPane.getBoundingClientRect().width;
-			document.addEventListener('mousemove', onMouseMove);
-			document.addEventListener('mouseup', onMouseUp);
-		};
-
-		resizer.addEventListener('mousedown', onMouseDown);
-	}
 }, false);
 
 }());

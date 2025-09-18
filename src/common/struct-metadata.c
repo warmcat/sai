@@ -21,16 +21,6 @@
  * lws_struct metadata for structs common to builder and server
  */
 
-const lws_struct_map_t lsm_active_task_info[] = {
-	LSM_CARRAY	(sai_active_task_info_t, task_uuid, "task_uuid"),
-	LSM_CARRAY	(sai_active_task_info_t, task_name, "task_name"),
-	LSM_SIGNED	(sai_active_task_info_t, build_step, "build_step"),
-	LSM_UNSIGNED	(sai_active_task_info_t, est_peak_mem_kib, "est_peak_mem_kib"),
-	LSM_UNSIGNED	(sai_active_task_info_t, est_cpu_load_pct, "est_cpu_load_pct"),
-	LSM_UNSIGNED	(sai_active_task_info_t, est_disk_kib, "est_disk_kib"),
-	LSM_UNSIGNED	(sai_active_task_info_t, started, "started"),
-};
-
 const lws_struct_map_t lsm_load_report_members[] = {
 	LSM_CARRAY	(sai_load_report_t, builder_name, "builder_name"),
 	LSM_SIGNED	(sai_load_report_t, core_count,	"core_count"),
@@ -38,8 +28,8 @@ const lws_struct_map_t lsm_load_report_members[] = {
 	LSM_UNSIGNED	(sai_load_report_t, free_disk_kib, "free_disk_kib"),
 	LSM_UNSIGNED	(sai_load_report_t, active_steps, "active_steps"),
 	LSM_UNSIGNED	(sai_load_report_t, cpu_percent, "cpu_percent"),
-	LSM_LIST	(sai_load_report_t, active_tasks, sai_active_task_info_t, list,
-			 NULL, lsm_active_task_info, "active_tasks"),
+//	LSM_LIST	(sai_load_report_t, platforms, sai_platform_load_t, list,
+//			 NULL, lsm_platform_load, "platforms"),
 };
 
 const lws_struct_map_t lsm_build_metric[] = {
