@@ -412,7 +412,7 @@ saib_task_destroy(struct sai_nspawn *ns)
 		{
 			DWORD written;
 			if (!WriteFile(builder.pipe_master_wr_win, ns->task->uuid,
-				       strlen(ns->task->uuid), &written, NULL))
+				       (DWORD)strlen(ns->task->uuid), &written, NULL))
 				lwsl_err("%s: failed to write to deletion worker\n",
 					 __func__);
 		}

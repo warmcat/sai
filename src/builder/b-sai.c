@@ -66,8 +66,9 @@ int getpid(void) { return 0; }
 static int
 sai_deletion_worker(const char *home_dir)
 {
-	char path[PATH_MAX], *p;
-	ssize_t n;
+	char *p, line[PATH_MAX], buf[4096];
+	ssize_t n, len = 0;
+	char *nl;
 
 	lwsl_notice("%s: deletion worker started\n", __func__);
 
@@ -80,41 +81,51 @@ sai_deletion_worker(const char *home_dir)
 	FreeConsole();
 #endif
 
-	while (1) {
-		n = read(0, path, sizeof(path) - 1);
-
+	do {
+		n = read(0, buf + len, (sizeof(buf) - 1) - (unsigned int)len);
 		if (n <= 0) {
 			lwsl_notice("%s: pipe closed, exiting\n", __func__);
 			return 0;
 		}
+		len += n;
 
-		path[n] = '\0';
-		p = path;
-
-		/* sanitize: no .. or / or \ */
-		while (*p) {
-			if (*p == '.' || *p == '/' || *p == '\\') {
-				lwsl_err("%s: invalid chars in delete path '%s'\n",
-					 __func__, path);
-				p = NULL;
+		do {
+			nl = memchr(buf, '\n', (unsigned int)len);
+			if (!nl)
 				break;
+
+			*nl = '\0';
+			lws_strncpy(line, buf, sizeof(line));
+
+			len -= (nl - buf) + 1;
+			memmove(buf, nl + 1, (unsigned int)len);
+
+			p = line;
+			/* sanitize: no .. or / or \ */
+			while (*p) {
+				if (*p == '.' || *p == '/' || *p == '\\') {
+					lwsl_err("%s: invalid chars in delete path '%s'\n",
+						 __func__, line);
+					p = NULL;
+					break;
+				}
+				p++;
 			}
-			p++;
-		}
-		if (!p)
-			continue;
+			if (!p)
+				continue;
 
-		{
-			char full_path[PATH_MAX];
+			{
+				char full_path[PATH_MAX];
+				lws_snprintf(full_path, sizeof(full_path),
+					     "%s/jobs/%s", home_dir, line);
 
-			lws_snprintf(full_path, sizeof(full_path), "%s/jobs/%s",
-				     home_dir, path);
+				if (lws_dir(full_path, NULL, lws_dir_rm_rf_cb))
+					lwsl_err("%s: failed to delete %s\n",
+						 __func__, full_path);
+			}
+		} while (1);
 
-			if (lws_dir(full_path, NULL, lws_dir_rm_rf_cb))
-				lwsl_err("%s: failed to delete %s\n", __func__,
-					 full_path);
-		}
-	}
+	} while (1);
 
 	return 0;
 }
@@ -166,15 +177,22 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 		lwsl_notice("%s: requesting removal of old job dir %s\n",
 			    __func__, path);
 #if !defined(WIN32)
-		if (write(builder.pipe_master_wr, lde->name,
-			  LWS_POSIX_LENGTH_CAST(strlen(lde->name))) != (ssize_t)strlen(lde->name))
-			lwsl_err("%s: failed to write to deletion worker\n",
-				 __func__);
+		{
+			char temp[128];
+			int len = lws_snprintf(temp, sizeof(temp), "%s\n", lde->name);
+
+			if (write(builder.pipe_master_wr, temp, (unsigned int)len) != len)
+				lwsl_err("%s: failed to write to deletion worker\n",
+					 __func__);
+		}
 #else
 		{
+			char temp[128];
+			int len = lws_snprintf(temp, sizeof(temp), "%s\n", lde->name);
 			DWORD written;
-			if (!WriteFile(builder.pipe_master_wr_win, lde->name,
-				       (DWORD)strlen(lde->name), &written, NULL))
+
+			if (!WriteFile(builder.pipe_master_wr_win, temp, (DWORD)len,
+				       &written, NULL) || written != (DWORD)len)
 				lwsl_err("%s: failed to write to deletion worker\n",
 					 __func__);
 		}
