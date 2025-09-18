@@ -1254,33 +1254,12 @@ function ws_open_sai()
 
 				// --- Reconciliation Logic ---
 
-				// Step 1: Find the main content area (the TD). Create it if this is the first run.
-				let tdContainer = buildersContainer.querySelector("table td");
-				if (!tdContainer) {
-					buildersContainer.innerHTML = ""; // Clear for safety
-					const table = document.createElement("table");
-					table.className = "builders";
-					const tbody = document.createElement("tbody");
-					const tr = document.createElement("tr");
-					tdContainer = document.createElement("td");
-					tr.appendChild(tdContainer);
-					tbody.appendChild(tr);
-					table.appendChild(tbody);
-					buildersContainer.appendChild(table);
-				}
+				buildersContainer.innerHTML = ""; // Clear for safety
+				const table = document.createElement("table");
+				table.className = "builders";
+				const tbody = document.createElement("tbody");
+				table.appendChild(tbody);
 
-				// Step 2: Detach all existing builder divs and store them in a map for reuse.
-				// This preserves them so their CSS transitions will work.
-				const existingDivs = new Map();
-				tdContainer.querySelectorAll(".bdr").forEach(div => {
-					const name = div.id.substring(6); // "binfo-" is 6 chars
-					if (name) {
-						existingDivs.set(name, div);
-					}
-				});
-				tdContainer.innerHTML = ""; // Clear the container, but the divs are still in memory.
-
-				// Step 3: Rebuild the group structure from scratch, reusing the old divs.
 				platformsArray.sort((a, b) => {
 					if (a.name && b.name) {
 						return a.name.localeCompare(b.name);
@@ -1288,46 +1267,24 @@ function ws_open_sai()
 					return 0; // Don't sort if names are missing
 				});
 
-				const platformsByGroup = {};
 				for (const plat of platformsArray) {
-					const groupKey = getBuilderGroupKey(plat.name);
-					if (!platformsByGroup[groupKey]) platformsByGroup[groupKey] = [];
-					platformsByGroup[groupKey].push(plat);
+					const tr = document.createElement("tr");
+
+					const tdInfo = document.createElement("td");
+					tdInfo.className = "builder-info";
+					const builderDiv = createBuilderDiv(plat);
+					tdInfo.appendChild(builderDiv);
+					tr.appendChild(tdInfo);
+
+					const tdSpreadsheet = document.createElement("td");
+					tdSpreadsheet.className = "spreadsheet-container";
+					tdSpreadsheet.id = "spreadsheet-" + plat.name;
+					tr.appendChild(tdSpreadsheet);
+
+					tbody.appendChild(tr);
 				}
 
-               const groupKeys = Object.keys(platformsByGroup).sort();
-               for (const key of groupKeys) {
-                       const groupPlatforms = platformsByGroup[key];
-                       const nestedPlatforms = groupPlatforms.filter(p => getBuilderHostname(p.name) !== key);
-                       const mainPlatforms = groupPlatforms.filter(p => getBuilderHostname(p.name) === key);
-
-                       if (nestedPlatforms.length > 0) {
-                               const groupDiv = document.createElement("div");
-                               groupDiv.className = "ibuil ibuilctr bdr";
-                               
-                               const nameDiv = document.createElement("div");
-                               nameDiv.className = "ibuilctrname bdr";
-                               nameDiv.textContent = key;
-                               groupDiv.appendChild(nameDiv);
-
-                               nestedPlatforms.forEach(plat => {
-                                       const div = existingDivs.get(plat.name) || createBuilderDiv(plat);
-                                       div.classList.toggle('offline', !plat.online);
-                                       div.classList.toggle('powering-up', !!plat.powering_up);
-                                       div.classList.toggle('powering-down', !!plat.powering_down);
-                                       groupDiv.appendChild(div);
-                               });
-                               tdContainer.appendChild(groupDiv);
-                       }
-
-                       mainPlatforms.forEach(plat => {
-                               const div = existingDivs.get(plat.name) || createBuilderDiv(plat);
-                               div.classList.toggle('offline', !plat.online);
-                               div.classList.toggle('powering-up', !!plat.powering_up);
-                               div.classList.toggle('powering-down', !!plat.powering_down);
-                               tdContainer.appendChild(div);
-                       });
-               }
+				buildersContainer.appendChild(table);
  				break;
 
 			case "com.warmcat.sai.build-metric":
@@ -1674,15 +1631,8 @@ function ws_open_sai()
 			barDiv.style.height = `${cpu_percentage}%`;
 		}
 
-		const builderDiv = document.getElementById("binfo-" + jso.builder_name);
-		if (builderDiv) {
-			let spreadsheet = builderDiv.querySelector('.spreadsheet');
-			if (!spreadsheet) {
-				spreadsheet = document.createElement('div');
-				spreadsheet.className = 'spreadsheet';
-				builderDiv.appendChild(spreadsheet);
-			}
-
+		const spreadsheetContainer = document.getElementById("spreadsheet-" + jso.builder_name);
+		if (spreadsheetContainer) {
 			let table = '<table><thead><tr>' +
 				'<th>Task</th><th>Step</th><th>Started</th>' +
 				'<th>Mem (KiB)</th><th>CPU (%)</th><th>Disk (KiB)</th>' +
@@ -1702,7 +1652,7 @@ function ws_open_sai()
 			}
 
 			table += '</tbody></table>';
-			spreadsheet.innerHTML = table;
+			spreadsheetContainer.innerHTML = table;
 		}
 		break;
 
