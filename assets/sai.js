@@ -1830,6 +1830,15 @@ function post_login_form()
 /* stuff that has to be delayed until all the page assets are loaded */
 
 window.addEventListener("load", function() {
+
+	const savedFlex = localStorage.getItem('sai-left-pane-flex');
+	if (savedFlex) {
+		const leftPane = document.querySelector('.left-pane');
+		if (leftPane) {
+			leftPane.style.flex = savedFlex;
+		}
+	}
+
 	const lnameInput = document.getElementById("lname");
 	const lpassInput = document.getElementById("lpass");
 
@@ -1949,6 +1958,7 @@ window.addEventListener("load", function() {
 		const onMouseUp = () => {
 			document.removeEventListener('mousemove', onMouseMove);
 			document.removeEventListener('mouseup', onMouseUp);
+			localStorage.setItem('sai-left-pane-flex', leftPane.style.flex);
 		};
 
 		const onMouseDown = (e) => {
