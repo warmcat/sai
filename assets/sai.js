@@ -1673,6 +1673,37 @@ function ws_open_sai()
 			if (cpu_percentage < 0) cpu_percentage = 0;
 			barDiv.style.height = `${cpu_percentage}%`;
 		}
+
+		const builderDiv = document.getElementById("binfo-" + jso.builder_name);
+		if (builderDiv) {
+			let spreadsheet = builderDiv.querySelector('.spreadsheet');
+			if (!spreadsheet) {
+				spreadsheet = document.createElement('div');
+				spreadsheet.className = 'spreadsheet';
+				builderDiv.appendChild(spreadsheet);
+			}
+
+			let table = '<table><thead><tr>' +
+				'<th>Task</th><th>Step</th><th>Started</th>' +
+				'<th>Mem (KiB)</th><th>CPU (%)</th><th>Disk (KiB)</th>' +
+				'</tr></thead><tbody>';
+
+			if (jso.active_tasks) {
+				jso.active_tasks.forEach(task => {
+					table += `<tr>` +
+						`<td>${hsanitize(task.task_name)}</td>` +
+						`<td>${hsanitize(task.build_step)}</td>` +
+						`<td>${agify(now_ut, task.started)}</td>` +
+						`<td>${humanize(task.est_peak_mem_kib * 1024)}</td>` +
+						`<td>${task.est_cpu_load_pct}</td>` +
+						`<td>${humanize(task.est_disk_kib * 1024)}</td>` +
+						`</tr>`;
+				});
+			}
+
+			table += '</tbody></table>';
+			spreadsheet.innerHTML = table;
+		}
 		break;
 
 			case "com-warmcat-sai-artifact":
@@ -1876,9 +1907,9 @@ window.addEventListener("load", function() {
 	ws_open_sai();
 	aging();
 
-	if (document.getElementById("login")) {
-		document.getElementById("login").addEventListener("click", post_login_form);
-		document.getElementById("logout").addEventListener("click", post_login_form);
+	if (document.getElementById("login-button")) {
+		document.getElementById("login-button").addEventListener("click", post_login_form);
+		document.getElementById("logout-button").addEventListener("click", post_login_form);
 	}
 	
 	setInterval(function() {
@@ -1952,7 +1983,57 @@ window.addEventListener("load", function() {
 			}
 		});
 	}
-	
+	const resizerLeft = document.getElementById('resizer-left');
+	const resizerRight = document.getElementById('resizer-right');
+	if (resizerLeft && resizerRight) {
+		const leftPane = resizerLeft.previousElementSibling;
+		const middlePane = resizerLeft.nextElementSibling;
+		const rightPane = resizerRight.nextElementSibling;
+
+		let x = 0;
+		let leftWidth = 0;
+		let middleWidth = 0;
+
+		const onMouseMoveLeft = (e) => {
+			const dx = e.clientX - x;
+			const newLeftWidth = leftWidth + dx;
+			leftPane.style.width = `${newLeftWidth}px`;
+		};
+
+		const onMouseUpLeft = () => {
+			document.removeEventListener('mousemove', onMouseMoveLeft);
+			document.removeEventListener('mouseup', onMouseUpLeft);
+		};
+
+		const onMouseDownLeft = (e) => {
+			x = e.clientX;
+			leftWidth = leftPane.getBoundingClientRect().width;
+			document.addEventListener('mousemove', onMouseMoveLeft);
+			document.addEventListener('mouseup', onMouseUpLeft);
+		};
+
+		resizerLeft.addEventListener('mousedown', onMouseDownLeft);
+
+		const onMouseMoveRight = (e) => {
+			const dx = e.clientX - x;
+			const newMiddleWidth = middleWidth + dx;
+			middlePane.style.flex = `0 0 ${newMiddleWidth}px`;
+		};
+
+		const onMouseUpRight = () => {
+			document.removeEventListener('mousemove', onMouseMoveRight);
+			document.removeEventListener('mouseup', onMouseUpRight);
+		};
+
+		const onMouseDownRight = (e) => {
+			x = e.clientX;
+			middleWidth = middlePane.getBoundingClientRect().width;
+			document.addEventListener('mousemove', onMouseMoveRight);
+			document.addEventListener('mouseup', onMouseUpRight);
+		};
+
+		resizerRight.addEventListener('mousedown', onMouseDownRight);
+	}
 }, false);
 
 }());

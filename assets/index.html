@@ -9,47 +9,45 @@
  </head>
 	<body class="overlay-active">
 		<div class="overlay"></div>
-		<div class="summary nailed">
-		<table><tr><td class="topregion">
-			<div class="logo">
-				<img class="logo" src="sai.svg"><br>
-				<span class="logo"><a href="https://warmcat.com/git/sai">Sai git</a></span> 
+		<div class="main-container">
+			<div class="left-pane">
+				<div class="logo">
+					<img class="logo" src="sai.svg"><br>
+					<span class="logo"><a href="https://warmcat.com/git/sai">Sai git</a></span>
 					<span class="logo" id="apirev"></span>
-			<div>
-			<div id="login" class="login">
-				<div id="creds" class="creds hide">
-					 <form class="login">
-					  <label for="lname">Name:</label>
-					  <input class="crin" type="text" id="lname" name="lname" autocomplete="username"><br>
-					  <label for="lpass">Password:</label>
-					  <input class="crin" type="password" id="lpass" name="lpass" autocomplete="current-password"><br>
-					  <input class="crinb" type="button" value="Login" id="login">
-					  <input type="hidden" id="success_redir" name="success_redir" value="">
-					</form> 
 				</div>
-				<div id="logout" class="creds hide">
-					<div id="remauth"></div>
-					<input class="crin" type="button" id="logout" value="Logout">
+				<div id="login" class="login">
+					<div id="creds" class="creds hide">
+						<form class="login">
+							<label for="lname">Name:</label>
+							<input class="crin" type="text" id="lname" name="lname" autocomplete="username"><br>
+							<label for="lpass">Password:</label>
+							<input class="crin" type="password" id="lpass" name="lpass" autocomplete="current-password"><br>
+							<input class="crinb" type="button" value="Login" id="login-button">
+							<input type="hidden" id="success_redir" name="success_redir" value="">
+						</form>
+					</div>
+					<div id="logout" class="creds hide">
+						<div id="remauth"></div>
+						<input class="crin" type="button" id="logout-button" value="Logout">
+					</div>
 				</div>
 			</div>
-			</td><td class="topregion">
-			
-									<div class="builder">
+			<div class="resizer" id="resizer-left"></div>
+			<div class="middle-pane">
 				<div id="sai_builders"></div>
 			</div>
-			</td></tr></table>
-
-		</div>	
-		<div id="sai_sticky" class="sticky"></div>
-		<div id="p2" class="undernailed">
-
-
-				<td colspan=3 class="summary" id="summary">
-      <noscript><span id="noscript" class="noscript">Please enable Javascript</span></noscript>
-					<div id="sai_overview"></div>
-					<div id="sai_task"></div>
-				</td>
-			</tr>
+			<div class="resizer" id="resizer-right"></div>
+			<div class="right-pane">
+				<div id="sai_sticky" class="sticky"></div>
+				<div id="p2" class="undernailed">
+					<div class="summary" id="summary">
+						<noscript><span id="noscript" class="noscript">Please enable Javascript</span></noscript>
+						<div id="sai_overview"></div>
+						<div id="sai_task"></div>
+					</div>
+				</div>
+			</div>
 		</div>
 	</body>
 </html>
