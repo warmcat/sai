@@ -609,7 +609,8 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		lwsl_ss_user(spm->ss, "CONNECTED");
 		spm->phase = PHASE_START_ATTACH;
 		/* Initialize the load report SUL timer for this server connection */
-		lws_sul_cancel(&spm->sul_load_report);
+		lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
+				 saib_sul_load_report_cb, 1);
 
 		return lws_ss_request_tx(spm->ss);
 
