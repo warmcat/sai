@@ -56,12 +56,7 @@ typedef struct sais_logcache_pertask {
 //		 NULL, lsm_instance_load, "loads"),
 //};
 
-/* map for the members of the load report object */
-static const lws_struct_map_t lsm_load_report_members[] = {
-	LSM_CARRAY(sai_load_report_t, builder_name,	"builder_name"),
-//	LSM_LIST  (sai_load_report_t, platforms, sai_platform_load_t, list,
-//		 NULL, lsm_platform_load,		"platforms"),
-};
+#include "../common/struct-metadata.c"
 
 /*
  * The Schema that may be sent to us by a builder
