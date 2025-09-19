@@ -169,6 +169,14 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 
 		n = (int)w;
 
+		lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
+					   lr->active_tasks.head) {
+			sai_active_task_info_t *ati = lws_container_of(p,
+						sai_active_task_info_t, list);
+			lws_dll2_remove(&ati->list);
+			free(ati);
+		} lws_end_foreach_dll_safe(p, p1);
+
 		lws_dll2_remove(&lr->list);
 		free(lr);
 
@@ -497,19 +505,30 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
        lr->free_disk_kib = saib_get_free_disk_kib(builder.home);
        lr->cpu_percent = (unsigned int)saib_get_system_cpu(&builder);
        lr->active_steps = 0;
+       lws_dll2_owner_clear(&lr->active_tasks);
 
        lws_start_foreach_dll(struct lws_dll2 *, p, builder.sai_plat_owner.head) {
 	       sp = lws_container_of(p, sai_plat_t, sai_plat_list);
                lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
                        struct sai_nspawn *ns = lws_container_of(d,
                                                        struct sai_nspawn, list);
-                       if (ns->state == NSSTATE_EXECUTING_STEPS) {
-                               lr->active_steps++;
+                       if (ns->state == NSSTATE_EXECUTING_STEPS && ns->task) {
+                               sai_active_task_info_t *ati = malloc(sizeof(*ati));
+                               if (ati) {
+                                       memset(ati, 0, sizeof(*ati));
+                                       lws_strncpy(ati->task_uuid, ns->task->uuid, sizeof(ati->task_uuid));
+                                       lws_strncpy(ati->task_name, ns->task->taskname, sizeof(ati->task_name));
+                                       ati->build_step = ns->current_step;
+                                       ati->est_peak_mem_kib = ns->task->est_peak_mem_kib;
+                                       ati->est_cpu_load_pct = ns->task->est_cpu_load_pct;
+                                       ati->est_disk_kib = ns->task->est_disk_kib;
+                                       ati->started = ns->task->started;
+                                       lws_dll2_add_tail(&ati->list, &lr->active_tasks);
+                                       lr->active_steps++;
+                               }
 			       somebody_not_idle = 1;
                        }
                } lws_end_foreach_dll(d);
-
-//              lws_dll2_add_tail(&pl->list, &lr->platforms);
        } lws_end_foreach_dll(p);
 
        lws_dll2_add_tail(&lr->list, &spm->load_report_owner);
@@ -609,7 +628,8 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		lwsl_ss_user(spm->ss, "CONNECTED");
 		spm->phase = PHASE_START_ATTACH;
 		/* Initialize the load report SUL timer for this server connection */
-		lws_sul_cancel(&spm->sul_load_report);
+		lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
+				 saib_sul_load_report_cb, 1);
 
 		return lws_ss_request_tx(spm->ss);
 

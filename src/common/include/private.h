@@ -63,6 +63,17 @@ enum {
 };
 
 /* The top-level load report message from a builder */
+typedef struct sai_active_task_info {
+	lws_dll2_t		list;
+	char			task_uuid[65];
+	char			task_name[96];
+	int			build_step;
+	unsigned int		est_peak_mem_kib;
+	unsigned int		est_cpu_load_pct;
+	unsigned int		est_disk_kib;
+	uint64_t		started;
+} sai_active_task_info_t;
+
 typedef struct sai_load_report {
 	lws_dll2_t		list; /* For queuing on sai_plat_server */
 	char			builder_name[64];
@@ -71,6 +82,7 @@ typedef struct sai_load_report {
 	unsigned int		free_disk_kib;
 	unsigned int		active_steps;
 	unsigned int		cpu_percent;
+	lws_dll2_owner_t	active_tasks;
 } sai_load_report_t;
 
 /*
@@ -542,8 +554,9 @@ extern const lws_struct_map_t
 	lsm_rebuild[1],
 	lsm_schema_rebuild[1],
 	lsm_schema_build_metric[1],
-	lsm_schema_sq3_map_build_metric[1]
-;
+	lsm_schema_sq3_map_build_metric[1],
+	lsm_load_report_members[7]
+	;
 extern const lws_struct_map_t lsm_build_metric[12];
 extern const lws_struct_map_t lsm_plat[8];
 extern const lws_struct_map_t lsm_plat_for_json[11];

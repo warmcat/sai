@@ -45,24 +45,6 @@ typedef struct sais_logcache_pertask {
 	lws_dll2_owner_t	cache; /* sai_log_t */
 } sais_logcache_pertask_t;
 
-/* map for a single instance's load */
-//static const lws_struct_map_t lsm_instance_load[] = {
-//	LSM_UNSIGNED(sai_instance_load_t, state,	"state"),
-//};
-
-// static const lws_struct_map_t lsm_platform_load[] = {
-//	LSM_CARRAY(sai_platform_load_t, platform_name, "platform_name"),
-//	LSM_LIST(sai_platform_load_t, loads, sai_instance_load_t, list,
-//		 NULL, lsm_instance_load, "loads"),
-//};
-
-/* map for the members of the load report object */
-static const lws_struct_map_t lsm_load_report_members[] = {
-	LSM_CARRAY(sai_load_report_t, builder_name,	"builder_name"),
-//	LSM_LIST  (sai_load_report_t, platforms, sai_platform_load_t, list,
-//		 NULL, lsm_platform_load,		"platforms"),
-};
-
 /*
  * The Schema that may be sent to us by a builder
  *
@@ -532,17 +514,12 @@ handle:
 		 * builder is sending us an array of platforms it provides us
 		 */
 
-		lwsl_notice("%s: &&&&&&&&&&&&&&&&&&&&&\n", __func__); lwsl_hexdump_notice(buf, bl);
-
 		pss->u.o = (sai_plat_owner_t *)pss->a.dest;
 
 		lws_start_foreach_dll(struct lws_dll2 *, pb,
 				      pss->u.o->plat_owner.head) {
 			build = lws_container_of(pb, sai_plat_t, sai_plat_list);
 			sai_plat_t *live_cb;
-
-			lwsl_notice("%s: ***************** platform %s, windows %d\n", __func__,
-				    build->name, build->windows);
 
 			/*
 			 * Step 1: Upsert this platform into the persistent database.
@@ -727,9 +704,13 @@ bail:
 		{
 			sai_load_report_t *lr = (sai_load_report_t *)pss->a.dest;
 
-			lwsl_notice("%s: loadreport from %s: ram %uk, disk %uk\n",
+			lwsl_notice("%s: @@@@@@@@@@@@@@@@@@ loadreport from %s: ram %uk, disk %uk\n",
 				    __func__, lr->builder_name, lr->free_ram_kib,
 				    lr->free_disk_kib);
+
+			ssize_t wr = write(2, buf, bl);
+			if (wr != (ssize_t)bl)
+				lwsl_notice("%s: write failed\n", __func__);
 		}
 		// lwsl_wsi_user(pss->wsi, "SAIM_WSSCH_BUILDER_LOADREPORT broadcasting\n");
 		sais_websrv_broadcast(vhd->h_ss_websrv, (const char *)buf, bl);
