@@ -262,7 +262,8 @@ struct lws_spawn_piped *lsp_suspender;
 struct sai_builder builder;
 
 extern struct lws_protocols protocol_stdxxx;
-
+static struct lws_protocols protocol_suspender_stdxxx;
+ 
 static const char * const default_ss_policy =
 	"{"
 	  "\"retry\": ["	/* named backoff / retry strategies */
@@ -341,6 +342,7 @@ static const struct lws_protocols *pprotocols[] = {
 	&protocol_stdxxx,
 	&protocol_logproxy,
 	&protocol_resproxy,
+	&protocol_suspender_stdxxx,
 #if defined(LWS_WITH_SYS_METRICS) && defined(LWS_WITH_PLUGINS_BUILTIN)
 	&lws_openmetrics_export_protocols[LWSOMPROIDX_PROX_WS_CLIENT],
 #else
@@ -572,12 +574,51 @@ LWS_SS_INFO("sai_power", saib_power_stay_t)
         .state                          = sai_power_stay_state,
 };
 
+static int
+callback_sai_suspender_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
+		    void *user, void *in, size_t len)
+{
+	uint8_t buf[200];
+	int ilen;
 
-/*
- * We need to keep polling to see if he manually told our sai-power that we
- * should either stay up (manual power-on) or be prepared to go down (manual
- * power-off)
- */
+	switch (reason) {
+
+	case LWS_CALLBACK_RAW_CLOSE_FILE:
+		lws_spawn_stdwsi_closed(lsp_suspender, wsi);
+		break;
+
+	case LWS_CALLBACK_RAW_RX_FILE:
+#if defined(WIN32)
+	{
+		DWORD rb;
+		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf), &rb, NULL)) {
+			lwsl_debug("%s: read on stdwsi failed\n", __func__);
+			return -1;
+		}
+		ilen = (int)rb;
+	}
+#else
+		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf));
+		if (ilen < 1) {
+			lwsl_debug("%s: read on stdwsi failed\n", __func__);
+			return -1;
+		}
+#endif
+
+		len = (unsigned int)ilen;
+		lwsl_notice("%s: suspender: %.*s\n", __func__, (int)len, buf);
+		break;
+
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static struct lws_protocols protocol_suspender_stdxxx =
+		{ "sai-suspender-stdxxx", callback_sai_suspender_stdwsi, 0, 0 };
+
 
 void
 sul_stay_cb(lws_sorted_usec_list_t *sul)
@@ -1227,6 +1268,8 @@ int main(int argc, const char **argv)
 		info.exec_array		= ea;
 		info.max_log_lines	= 100;
 		info.opaque		= (void *)&builder.suspend_nspawn;
+		info.protocol_name      = "sai-suspender-stdxxx";
+		info.plsp		= &lsp_suspender;
 
 		lsp_suspender = lws_spawn_piped(&info);
 		if (!lsp_suspender)
