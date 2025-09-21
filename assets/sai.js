@@ -1595,7 +1595,7 @@ function ws_open_sai()
 
 			case "com.warmcat.sai.loadreport":
 				// Part 1: Update the load indicator in the builder info box
-				const instloadDiv = document.getElementById("instload-" + jso.builder_name);
+				const instloadDiv = document.querySelector('[id^="instload-' + jso.builder_name + '"]');
 				if (instloadDiv) {
 					const instanceDiv = instloadDiv.querySelector(".inst_box");
 					const textDiv = instloadDiv.querySelector(".inst_text");
@@ -1629,7 +1629,7 @@ function ws_open_sai()
 				}
 
 				// Part 2: Update the spreadsheet of active tasks for the builder
-				const spreadsheetContainer = document.getElementById("spreadsheet-" + jso.builder_name);
+				const spreadsheetContainer = document.querySelector('[id^="spreadsheet-' + jso.builder_name + '"]');
 				if (spreadsheetContainer) {
 					if (jso.active_tasks && jso.active_tasks.length > 0) {
 						var now_ut = Math.round((new Date().getTime() / 1000));
