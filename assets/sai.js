@@ -1674,8 +1674,8 @@ function ws_open_sai()
 			barDiv.style.height = `${cpu_percentage}%`;
 		}
 
-		const overviewContainer = document.getElementById("sai_overview");
-		if (overviewContainer) {
+		const spreadsheetContainer = document.getElementById("sai_spreadsheet_container");
+		if (spreadsheetContainer) {
 			if (jso.active_tasks && jso.active_tasks.length > 0) {
 				var now_ut = Math.round((new Date().getTime() / 1000));
 				let html = `<h2>Active Tasks on ${hsanitize(jso.builder_name)}</h2>` +
@@ -1697,8 +1697,14 @@ function ws_open_sai()
 				}
 
 				html += '</tbody></table>';
-				overviewContainer.innerHTML = html;
+				spreadsheetContainer.innerHTML = html;
 				aging();
+			} else {
+				// If this builder was the one showing its tasks, clear the view
+				const h2 = spreadsheetContainer.querySelector("h2");
+				if (h2 && h2.textContent.includes(jso.builder_name)) {
+					spreadsheetContainer.innerHTML = "";
+				}
 			}
 		}
 		break;
