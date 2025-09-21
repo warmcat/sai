@@ -1746,25 +1746,27 @@ function ws_open_sai()
 				if (!redpend) {
 					redpend = 1;
 					setTimeout(function() {
-		redpend = 0;
-		locked = document.body.scrollHeight -
-			document.body.clientHeight <=
-			document.body.scrollTop + 1;
+						const rightPane = document.querySelector('.right-pane');
+						redpend = 0;
+						if (rightPane)
+							locked = rightPane.scrollHeight -
+								rightPane.clientHeight <=
+								rightPane.scrollTop + 1;
 
-		if (document.getElementById("logs")) {
-			document.getElementById("logs").innerHTML = logs;
+						if (document.getElementById("logs")) {
+							document.getElementById("logs").innerHTML = logs;
 
-			if (document.getElementById("dlogsn"))
-				document.getElementById("dlogsn").innerHTML = lines;
-				
-			if (document.getElementById("dlogst"))
-				document.getElementById("dlogst").innerHTML = times;
-		}
+							if (document.getElementById("dlogsn"))
+								document.getElementById("dlogsn").innerHTML = lines;
 
-		if (locked)
-		   document.body.scrollTop =
-			document.body.scrollHeight -
-			document.body.clientHeight;
+							if (document.getElementById("dlogst"))
+								document.getElementById("dlogst").innerHTML = times;
+						}
+
+						if (locked && rightPane)
+						   rightPane.scrollTop =
+							rightPane.scrollHeight -
+							rightPane.clientHeight;
 					}, 500);
 				}
 			
