@@ -954,7 +954,6 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		lwsl_notice("%s: git_repo_url %s\n", __func__, ns->git_repo_url);
 		lwsl_notice("%s: mountpoint %s\n", __func__, ns->fsm.mp);
 
-		spm->phase = PHASE_BUILDING;
 		n = lws_snprintf(ns->inp, sizeof(ns->inp), "%s%c",
 				 builder.home, csep);
 

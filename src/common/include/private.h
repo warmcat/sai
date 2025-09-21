@@ -395,7 +395,6 @@ typedef struct sai_plat_server {
 	lws_dll2_t		*last_logging_nspawn;
 	struct sai_plat		*last_logging_platform;
 
-	int			logs_in_flight;
 	int			phase;
 	int			refcount;
 
@@ -431,7 +430,6 @@ typedef struct sai_plat {
 	lws_dll2_t		sai_plat_list;
 
 	lws_dll2_owner_t	servers; /* list of sai_plat_server_ref_t */
-	lws_dll2_owner_t	chunk_cache;
 
 	char			peer_ip[48];
 

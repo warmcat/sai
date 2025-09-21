@@ -69,7 +69,6 @@ saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 	ns->chunk_cache_size += sizeof(*chunk) + len;
 
 	lws_dll2_add_head(&chunk->list, &ns->chunk_cache);
-	ns->spm->logs_in_flight++;
 
 	return chunk;
 }
@@ -318,11 +317,11 @@ skip:
 		op->spawn = NULL;
 	}
 
-	if (ns->spm) {
-		ns->spm->phase = PHASE_START_ATTACH;
-		if (lws_ss_request_tx(ns->spm->ss))
-			lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
-	}
+//	if (ns->spm) {
+//		ns->spm->phase = PHASE_START_ATTACH;
+//		if (lws_ss_request_tx(ns->spm->ss))
+//			lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
+//	}
 
 	/*
 	 * add a final zero-length log with the retcode to the list of pending
@@ -331,9 +330,8 @@ skip:
 
 	saib_log_chunk_create(ns, NULL, 0, 2);
 
-	lwsl_notice("%s: finished, waiting to drain logs (this ns %d, spm in flight %d)\n",
-			__func__, ns->chunk_cache.count,
-			ns->spm ? ns->spm->logs_in_flight : -99);
+	lwsl_notice("%s: ns finished, waiting to drain %d logs\n",
+			__func__, ns->chunk_cache.count);
 
 	/*
 	 * saib_task_grace(ns) sets ns->finished_when_logs_drained 

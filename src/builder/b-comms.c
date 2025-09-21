@@ -50,6 +50,27 @@ saib_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	return 0;
 }
 
+unsigned int
+saib_get_spm_log_count(struct sai_plat_server *spm)
+{
+	unsigned int spm_logs = 0;
+
+	lws_start_foreach_dll(struct lws_dll2 *, d, builder.sai_plat_owner.head) {
+		sai_plat_t *p = lws_container_of(d, sai_plat_t, sai_plat_list);
+
+		lws_start_foreach_dll(struct lws_dll2 *, d1, p->nspawn_owner.head) {
+			struct sai_nspawn *ns = lws_container_of(d1, struct sai_nspawn, list);
+
+			if (ns->spm == spm && ns->chunk_cache.count)
+				spm_logs += ns->chunk_cache.count;
+
+		} lws_end_foreach_dll(d1);
+	} lws_end_foreach_dll(d);
+
+	return spm_logs;
+}
+
+
 /*
  * We cover requested tx for any instance of a platform that can takes tasks
  * from the same server... it means just by coming here, no particular
@@ -75,8 +96,8 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	 * Are there some logs to dump?
 	 */
 
-	if (spm->logs_in_flight)
-		goto send_logs; /* nothing to send */
+	if (saib_get_spm_log_count(spm))
+		goto send_logs;
 
 	/*
 	 * Any build metrics to process?
@@ -214,11 +235,12 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	}
 
 	switch (spm->phase) {
-	case PHASE_BUILDING:
 	case PHASE_IDLE:
 		break;
 
 	default:
+
+		// lwsl_notice("%s: ++++++++++++++++ updating with platform status\n", __func__);
 
 		/*
 		 * Update server with platform status
@@ -236,8 +258,10 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		js = lws_struct_json_serialize_create(lsm_schema_map_plat,
 			      LWS_ARRAY_SIZE(lsm_schema_map_plat), 0,
 			      &builder.sai_plat_owner);
-		if (!js)
+		if (!js) {
+			lwsl_err("%s: ++++++++++++++++++ FAILED to serialize plat\n", __func__);
 			return -1;
+		}
 
 		n = (int)lws_struct_json_serialize(js, start,
 					      lws_ptr_diff_size_t(end, start), &w);
@@ -250,7 +274,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		spm->phase = PHASE_IDLE;
 		*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
 
-		if (spm->logs_in_flight)
+		if (saib_get_spm_log_count(spm))
 			return lws_ss_request_tx(spm->ss);
 
 		return LWSSSSRET_OK;
@@ -320,12 +344,8 @@ send_logs:
 
 		spm->last_logging_nspawn = walk;
 
-		if (walk == star) {
-			lwsl_notice("%s: did not find logs: %d expected\n",
-				    __func__, spm->logs_in_flight);
-			spm->logs_in_flight = 0;
+		if (walk == star)
 			return 1; /* nothing to do */
-		}
 
 		if (!star) /* take first usable one as the starting point */
 			star = walk;
@@ -378,9 +398,10 @@ send_logs:
 		ns->chunk_cache_size -= sizeof(*chunk) + chunk->len;
 		free(chunk);
 
-		spm->logs_in_flight--;
-		lwsl_debug("%s: spm logs_in_flight %d\n", __func__,
-			   spm->logs_in_flight);
+		/*
+		 * Here we're just looking at the log situation specifically with THIS ns,
+		 * not for any ns that drains to this server
+		 */
 
 		if (ns->finished_when_logs_drained && !ns->chunk_cache.count) {
 			/*
@@ -406,7 +427,7 @@ sendify:
 	*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
 	*len = (unsigned int)n;
 
-	if (spm->phase != PHASE_IDLE || spm->logs_in_flight) {
+	if (spm->phase != PHASE_IDLE || saib_get_spm_log_count(spm)) {
 		r = lws_ss_request_tx(spm->ss);
 		if (r)
 			return r;
