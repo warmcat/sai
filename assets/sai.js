@@ -1631,28 +1631,32 @@ function ws_open_sai()
 			barDiv.style.height = `${cpu_percentage}%`;
 		}
 
-		const spreadsheetContainer = document.getElementById("spreadsheet-" + jso.builder_name);
-		if (spreadsheetContainer) {
-			let table = '<table><thead><tr>' +
-				'<th>Task</th><th>Step</th><th>Started</th>' +
-				'<th>Mem (KiB)</th><th>CPU (%)</th><th>Disk (KiB)</th>' +
-				'</tr></thead><tbody>';
+		const overviewContainer = document.getElementById("sai_overview");
+		if (overviewContainer) {
+			if (jso.active_tasks && jso.active_tasks.length > 0) {
+				var now_ut = Math.round((new Date().getTime() / 1000));
+				let html = `<h2>Active Tasks on ${hsanitize(jso.builder_name)}</h2>` +
+					   '<table class="spreadsheet">' +
+					   '<thead><tr>' +
+					   '<th>Task Name</th>' +
+					   '<th>Build Step</th>' +
+					   '<th>Started</th>' +
+					   '<th>Task UUID</th>' +
+					   '</tr></thead><tbody>';
 
-			if (jso.active_tasks) {
-				jso.active_tasks.forEach(task => {
-					table += `<tr>` +
+				for (const task of jso.active_tasks) {
+					html += '<tr>' +
 						`<td>${hsanitize(task.task_name)}</td>` +
 						`<td>${hsanitize(task.build_step)}</td>` +
-						`<td>${agify(now_ut, task.started)}</td>` +
-						`<td>${humanize(task.est_peak_mem_kib * 1024)}</td>` +
-						`<td>${task.est_cpu_load_pct}</td>` +
-						`<td>${humanize(task.est_disk_kib * 1024)}</td>` +
-						`</tr>`;
-				});
-			}
+						`<td>${agify(now_ut, task.started)} ago</td>` +
+						`<td><a href="?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_uuid.substring(0, 16))}...</a></td>` +
+						'</tr>';
+				}
 
-			table += '</tbody></table>';
-			spreadsheetContainer.innerHTML = table;
+				html += '</tbody></table>';
+				overviewContainer.innerHTML = html;
+				aging();
+			}
 		}
 		break;
 
