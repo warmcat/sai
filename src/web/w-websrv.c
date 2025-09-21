@@ -224,7 +224,8 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		break;
 
 	case SAIS_WS_WEBSRV_RX_LOADREPORT:
-		/* Forward the final fragment of the load report */
+		lwsl_notice("%s: ^^^^^^^^^^^^^^ SAIS_WS_WEBSRV_RX_LOADREPORT forwarding to browser\n", __func__);
+		lwsl_hexdump_notice(buf, len);
 		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n, 0,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
