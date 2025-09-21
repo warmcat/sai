@@ -395,7 +395,7 @@ var lang_zhs = "{" +
 "}}";
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
-	logAnsiState = {},
+	logAnsiState = {}, spreadsheet_contents = {},
 	ongoing_task_activities = {}, last_log_timestamp = 0;
 
 function update_task_activities() {
@@ -1279,6 +1279,9 @@ function ws_open_sai()
 					const tdSpreadsheet = document.createElement("td");
 					tdSpreadsheet.className = "spreadsheet-container";
 					tdSpreadsheet.id = "spreadsheet-" + plat.name;
+					if (spreadsheet_contents[plat.name]) {
+						tdSpreadsheet.innerHTML = spreadsheet_contents[plat.name];
+					}
 					tr.appendChild(tdSpreadsheet);
 
 					tbody.appendChild(tr);
@@ -1631,9 +1634,12 @@ function ws_open_sai()
 				// Part 2: Update the spreadsheet of active tasks for the builder
 				const spreadsheetContainer = document.querySelector('[id^="spreadsheet-' + jso.builder_name + '"]');
 				if (spreadsheetContainer) {
+					const longName = spreadsheetContainer.id.substring("spreadsheet-".length);
+					let html = '';
+
 					if (jso.active_tasks && jso.active_tasks.length > 0) {
 						var now_ut = Math.round((new Date().getTime() / 1000));
-						let html = '<table class="spreadsheet">' +
+						html = '<table class="spreadsheet">' +
 								   '<thead><tr>' +
 								   '<th>Task Name</th>' +
 								   '<th>Build Step</th>' +
@@ -1656,6 +1662,7 @@ function ws_open_sai()
 					} else {
 						spreadsheetContainer.innerHTML = '';
 					}
+					spreadsheet_contents[longName] = html;
 				}
 				break;
 
