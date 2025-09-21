@@ -1673,6 +1673,34 @@ function ws_open_sai()
 			if (cpu_percentage < 0) cpu_percentage = 0;
 			barDiv.style.height = `${cpu_percentage}%`;
 		}
+
+		const overviewContainer = document.getElementById("sai_overview");
+		if (overviewContainer) {
+			if (jso.active_tasks && jso.active_tasks.length > 0) {
+				var now_ut = Math.round((new Date().getTime() / 1000));
+				let html = `<h2>Active Tasks on ${hsanitize(jso.builder_name)}</h2>` +
+					   '<table class="spreadsheet">' +
+					   '<thead><tr>' +
+					   '<th>Task Name</th>' +
+					   '<th>Build Step</th>' +
+					   '<th>Started</th>' +
+					   '<th>Task UUID</th>' +
+					   '</tr></thead><tbody>';
+
+				for (const task of jso.active_tasks) {
+					html += '<tr>' +
+						`<td>${hsanitize(task.task_name)}</td>` +
+						`<td>${hsanitize(task.build_step)}</td>` +
+						`<td>${agify(now_ut, task.started)} ago</td>` +
+						`<td><a href="?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_uuid.substring(0, 16))}...</a></td>` +
+						'</tr>';
+				}
+
+				html += '</tbody></table>';
+				overviewContainer.innerHTML = html;
+				aging();
+			}
+		}
 		break;
 
 			case "com-warmcat-sai-artifact":
