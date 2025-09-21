@@ -46,9 +46,11 @@ struct saib_opaque_spawn {
 	lws_usec_t		start_time;
 };
 
-#define SAI_LOAD_REPORT_US	(1 * LWS_US_PER_SEC)
-#define SAI_IDLE_GRACE_US	(30 * LWS_US_PER_SEC)
-#define SAI_STAY_POLL_US	(20 * LWS_US_PER_SEC)
+#define SAI_LOAD_REPORT_US			(1 * LWS_US_PER_SEC)
+#define SAI_IDLE_GRACE_US			(30 * LWS_US_PER_SEC)
+#define SAI_STAY_POLL_US			(20 * LWS_US_PER_SEC)
+#define SAI_CLEANUP_JOBS_INTERVAL_US		(60 * 60 * LWS_US_PER_SEC)
+#define SAI_CLEANUP_JOB_DIR_MIN_AGE_SECS	(24ull * 3600u)
 
 typedef enum {
 	PHASE_IDLE,

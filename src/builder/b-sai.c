@@ -1,7 +1,7 @@
 /*
  * sai-builder
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -63,72 +63,12 @@ int getpid(void) { return 0; }
 
 #include "b-private.h"
 
-static int
-sai_deletion_worker(const char *home_dir)
-{
-	char *p, line[PATH_MAX], buf[4096];
-	ssize_t n, len = 0;
-	char *nl;
-
-	lwsl_notice("%s: deletion worker started\n", __func__);
-
-#if defined(WIN32)
-	/*
-	 * On Windows, stdin is not a pipe from the parent but a handle
-	 * value passed on the commandline
-	 */
-	// detach from console...
-	FreeConsole();
-#endif
-
-	do {
-		n = read(0, buf + len, (sizeof(buf) - 1) - (unsigned int)len);
-		if (n <= 0) {
-			lwsl_notice("%s: pipe closed, exiting\n", __func__);
-			return 0;
-		}
-		len += n;
-
-		do {
-			nl = memchr(buf, '\n', (unsigned int)len);
-			if (!nl)
-				break;
-
-			*nl = '\0';
-			lws_strncpy(line, buf, sizeof(line));
-
-			len -= (nl - buf) + 1;
-			memmove(buf, nl + 1, (unsigned int)len);
-
-			p = line;
-			/* sanitize: no .. or / or \ */
-			while (*p) {
-				if (*p == '.' || *p == '/' || *p == '\\') {
-					lwsl_err("%s: invalid chars in delete path '%s'\n",
-						 __func__, line);
-					p = NULL;
-					break;
-				}
-				p++;
-			}
-			if (!p)
-				continue;
-
-			{
-				char full_path[PATH_MAX];
-				lws_snprintf(full_path, sizeof(full_path),
-					     "%s/jobs/%s", home_dir, line);
-
-				if (lws_dir(full_path, NULL, lws_dir_rm_rf_cb))
-					lwsl_err("%s: failed to delete %s\n",
-						 __func__, full_path);
-			}
-		} while (1);
-
-	} while (1);
-
-	return 0;
-}
+extern struct lws_protocols protocol_suspender_stdxxx;
+extern int saib_stay_init(void);
+extern int
+scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde);
+extern void
+sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul);
 
 /*
  * Periodically (eg, once per hour) we walk the jobs dir and find subdirs
@@ -149,120 +89,26 @@ struct active_job_uuid {
 	char uuid[65];
 };
 
-static int
-scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
-{
-	struct active_job_uuids *active = (struct active_job_uuids *)user;
-	struct active_job_uuid *aj;
-	char path[512];
-	struct stat sb;
-
-	if (lde->type != LDOT_DIR || lde->name[0] == '.')
-		return 0;
-
-	lws_start_foreach_dll(struct lws_dll2 *, p, active->owner.head) {
-		aj = lws_container_of(p, struct active_job_uuid, list);
-		if (!strcmp(aj->uuid, lde->name))
-			/* it's an active job, leave it alone */
-			return 0;
-	} lws_end_foreach_dll(p);
-
-	lws_snprintf(path, sizeof(path), "%s/%s", dirpath, lde->name);
-	if (stat(path, &sb))
-		return 0;
-
-	/* older than 24h? */
-
-	if (((uint64_t)lws_now_secs() - (uint64_t)sb.st_mtime) > 24ull * 3600u) {
-		lwsl_notice("%s: requesting removal of old job dir %s\n",
-			    __func__, path);
-#if !defined(WIN32)
-		{
-			char temp[128];
-			int len = lws_snprintf(temp, sizeof(temp), "%s\n", lde->name);
-
-			if (write(builder.pipe_master_wr, temp, (unsigned int)len) != len)
-				lwsl_err("%s: failed to write to deletion worker\n",
-					 __func__);
-		}
-#else
-		{
-			char temp[128];
-			int len = lws_snprintf(temp, sizeof(temp), "%s\n", lde->name);
-			DWORD written;
-
-			if (!WriteFile(builder.pipe_master_wr_win, temp, (DWORD)len,
-				       &written, NULL) || written != (DWORD)len)
-				lwsl_err("%s: failed to write to deletion worker\n",
-					 __func__);
-		}
-#endif
-	}
-
-	return 0;
-}
-
-static void
-sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul)
-{
-	struct sai_builder *b = lws_container_of(sul, struct sai_builder,
-						 sul_cleanup_jobs);
-	struct active_job_uuids active;
-	struct lwsac *ac = NULL;
-	char path[256];
-
-	memset(&active, 0, sizeof(active));
-
-	/*
-	 * We must not delete any active job directories, find out the uuids
-	 * of any active jobs
-	 */
-	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
-				   b->sai_plat_owner.head) {
-		struct sai_plat *sp = lws_container_of(d,
-					struct sai_plat, sai_plat_list);
-		lws_start_foreach_dll_safe(struct lws_dll2 *, d2, d3,
-					   sp->nspawn_owner.head) {
-			struct sai_nspawn *ns = lws_container_of(d2,
-						struct sai_nspawn, list);
-			struct active_job_uuid *aj;
-
-			if (!ns->task)
-				continue;
-
-			aj = lwsac_use_zero(&ac, sizeof(*aj), 64);
-			if (!aj)
-				continue;
-
-			lws_strncpy(aj->uuid, ns->task->uuid, sizeof(aj->uuid));
-			lws_dll2_add_tail(&aj->list, &active.owner);
-		} lws_end_foreach_dll_safe(d2, d3);
-	} lws_end_foreach_dll_safe(d, d1);
-
-	/*
-	 * Now we have the active job uuids, scan the jobs dir and check
-	 * for old, inactive job dirs to reap
-	 */
-
-	lws_snprintf(path, sizeof(path), "%s/jobs", b->home);
-	lws_dir(path, &active, scan_jobs_dir_cb);
-
-	lwsac_free(&ac);
-
-	lws_sul_schedule(b->context, 0, &b->sul_cleanup_jobs,
-			 sul_cleanup_jobs_cb, 60 * LWS_US_PER_SEC);
-}
-
-
 static const char *config_dir = "/etc/sai/builder";
 static int interrupted;
 static lws_state_notify_link_t nl;
-struct lws_spawn_piped *lsp_suspender;
 
 struct sai_builder builder;
 
+extern struct lws_spawn_piped *lsp_suspender;
 extern struct lws_protocols protocol_stdxxx;
-static struct lws_protocols protocol_suspender_stdxxx;
+extern struct lws_protocols protocol_suspender_stdxxx;
+
+extern int
+saib_suspender_fork(const char *path);
+extern int
+sai_deletion_worker(const char *home_dir);
+extern int
+saib_suspender_start(void);
+extern int
+saib_power_init(void);
+extern int
+saib_deletion_init(const char *argv0);
  
 static const char * const default_ss_policy =
 	"{"
@@ -394,12 +240,6 @@ pvo_resproxy = { /* starting point for resproxy */
 	        "ok"                     /* ignored */
 	};
 
-void *
-saib_thread_suspend(void *d)
-{
-	return NULL;
-}
-
 int
 saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp,
 		       struct lws_vhost **vhost)
@@ -472,172 +312,6 @@ saib_create_resproxy_listen_uds(struct lws_context *context,
 	return 0;
 }
 
-/*
- * This is used to check with sai-power if we should stay up (due to the power
- * being turned on manually)
- */
-
-
-LWS_SS_USER_TYPEDEF
-        char                    payload[200];
-        size_t                  size;
-        size_t                  pos;
-} saib_power_stay_t;
-
-
-static lws_ss_state_return_t
-saib_power_stay_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
-{
-	if (len < 1)
-		return 0;
-
-	builder.stay = *buf == '1';
-
-//	lwsl_err("%s: stay %d\n", __func__, builder.stay);
-
-	if (builder.stay) {
-		/*
-		 * We need to deal with finding we have been manually powered-on.
-		 * Just cancel any pending grace period
-		 */
-		lws_sul_cancel(&builder.sul_idle);
-
-		// lwsl_warn("%s: %s: stay applied: cancelled idle grace time\n",
-		//			__func__, builder.host);
-	} else {
-
-		/*
-		 * If any plat on this builder has tasks, just
-		 * leave it
-		 */
-		lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
-					builder.sai_plat_owner.head) {
-			struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
-					sai_plat_list);
-
-			if (sp->nspawn_owner.count) {
-				lwsl_warn("%s: cancelling idle grace time as ongoing task steps\n", __func__);
-				lws_sul_cancel(&builder.sul_idle);
-				return 0;
-			}
-
-		} lws_end_foreach_dll_safe(mp, mp1);
-
-		/*
-		* if no ongoing tasks, and we want to go OFF, then start
-		* the idle grace timer.  This will get cancelled if
-		* we start a task during the grace time, otherwise it will
-		* expire and do the power-off or suspend
-		*/
-
-		if (lws_dll2_is_detached(&builder.sul_idle.list)) {
-			lwsl_warn("%s: %s: stay dropped: starting idle grace time\n",
-				__func__, builder.host);
-			lws_sul_schedule(builder.context, 0, &builder.sul_idle,
-					sul_idle_cb, SAI_IDLE_GRACE_US);
-		}
-	}
-
-	return 0;
-}
-
-static lws_ss_state_return_t
-sai_power_stay_state(void *userobj, void *sh, lws_ss_constate_t state,
-               lws_ss_tx_ordinal_t ack)
-{
-        saib_power_stay_t *g = (saib_power_stay_t *)userobj;
-	lws_ss_state_return_t r;
-
-	// lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name(state));
-
-        switch ((int)state) {
-        case LWSSSCS_CREATING:
-
-               if (!builder.url_sai_power)
-                       return LWSSSSRET_DESTROY_ME;
-
-		snprintf(builder.path, sizeof(builder.path) - 1, "%s/stay/%s",
-			 builder.url_sai_power, builder.host);
-
-		r = lws_ss_set_metadata(lws_ss_from_user(g), "url", builder.path, strlen(builder.path));
-		if (r)
-			lwsl_err("%s: set_metadata said %d\n", __func__, (int)r);
-
-                return lws_ss_request_tx(lws_ss_from_user(g));
-        }
-
-        return LWSSSSRET_OK;
-}
-
-LWS_SS_INFO("sai_power", saib_power_stay_t)
-	.rx				= saib_power_stay_rx,
-        .state                          = sai_power_stay_state,
-};
-
-static int
-callback_sai_suspender_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
-		    void *user, void *in, size_t len)
-{
-	uint8_t buf[200];
-	int ilen;
-
-	switch (reason) {
-
-	case LWS_CALLBACK_RAW_CLOSE_FILE:
-		lws_spawn_stdwsi_closed(lsp_suspender, wsi);
-		break;
-
-	case LWS_CALLBACK_RAW_RX_FILE:
-#if defined(WIN32)
-	{
-		DWORD rb;
-		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf), &rb, NULL)) {
-			lwsl_debug("%s: read on stdwsi failed\n", __func__);
-			return -1;
-		}
-		ilen = (int)rb;
-	}
-#else
-		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf));
-		if (ilen < 1) {
-			lwsl_debug("%s: read on stdwsi failed\n", __func__);
-			return -1;
-		}
-#endif
-
-		len = (unsigned int)ilen;
-		lwsl_notice("%s: suspender: %.*s\n", __func__, (int)len, buf);
-		break;
-
-	default:
-		break;
-	}
-
-	return 0;
-}
-
-static struct lws_protocols protocol_suspender_stdxxx =
-		{ "sai-suspender-stdxxx", callback_sai_suspender_stdwsi, 0, 0 };
-
-
-void
-sul_stay_cb(lws_sorted_usec_list_t *sul)
-{
-       lws_ss_state_return_t r;
-
-       /* nothing to do if no sai-power coordinates given */
-       if (!builder.url_sai_power)
-               return;
-
-       r = lws_ss_client_connect(builder.ss_stay);
-
-	if (r)
-		lwsl_ss_err(builder.ss_stay, "Unable to start stay connection (%d)", (int)r);
-
-	lws_sul_schedule(builder.context, 0, &builder.sul_stay,
-			 sul_stay_cb, SAI_STAY_POLL_US);
-}
-
 static int
 app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 		    int current, int target)
@@ -696,21 +370,11 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 
 		} lws_end_foreach_dll(pxx);
 
-		/*
-		 * ss used to query sai-power about stay situation
-		 */
-
-		if (lws_ss_create(builder.context, 0, &ssi_saib_power_stay_t,
-				NULL, &builder.ss_stay, NULL, NULL)) {
-			lwsl_err("%s: failed to create sai-power-stay ss\n", __func__);
+		if (saib_stay_init())
 			return 1;
-		}
-
-		lws_sul_schedule(builder.context, 0, &builder.sul_stay,
-			 sul_stay_cb, 1000);
 
 		lws_sul_schedule(builder.context, 0, &builder.sul_cleanup_jobs,
-			 sul_cleanup_jobs_cb, 3600 * LWS_US_PER_SEC);
+			 sul_cleanup_jobs_cb, SAI_CLEANUP_JOBS_INTERVAL_US);
 
 		break;
 	}
@@ -718,155 +382,6 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 	return 0;
 }
 
-/*
- * This is used to fire http request to sai-power for power-down
- */
-
-
-LWS_SS_USER_TYPEDEF
-        char                    payload[200];
-        size_t                  size;
-        size_t                  pos;
-} saib_power_link_t;
-
-static lws_ss_state_return_t
-saib_power_link_state(void *userobj, void *sh, lws_ss_constate_t state,
-               lws_ss_tx_ordinal_t ack)
-{
-        saib_power_link_t *g = (saib_power_link_t *)userobj;
-	lws_ss_state_return_t r;
-	char path[256];
-
-	lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name(state));
-
-        switch (state) {
-        case LWSSSCS_CREATING:
-		snprintf(path, sizeof(path) - 1, "%s/auto-power-off/%s",
-			 builder.url_sai_power,
-			(const char *)lws_ss_opaque_from_user(g));
-
-		lwsl_notice("%s: setting url metadata %s\n", __func__, path);
-
-		r = lws_ss_set_metadata(lws_ss_from_user(g), "url", path, strlen(path));
-		if (r)
-			lwsl_err("%s: set_metadata said %d\n", __func__, (int)r);
-
-		lws_ss_start_timeout(lws_ss_from_user(g), 3000); /* 3 sec */
-
-                return lws_ss_request_tx(lws_ss_from_user(g));
-
-	case LWSSSCS_TIMEOUT:
-		break;
-
-	default:
-		break;
-	}
-
-        return LWSSSSRET_OK;
-}
-
-static lws_ss_state_return_t
-saib_power_link_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
-{
-	uint8_t te = 0;
-	ssize_t n;
-
-	if (len < 4 || !(flags & LWSSS_FLAG_SOM))
-		return 0;
-
-	if (memcmp(buf, "ACK:", 4)) {
-		lwsl_warn("%s: sai-power didn't start power-off: %.*s\n",
-				__func__, (int)len, (const char *)buf);
-		return LWSSSSRET_OK;
-	}
-
-	lwsl_notice("%s: sai-power scheduling power-off: doing shutdown...\n", __func__);
-
-	/*
-	 * In the grace time for actioning the power-off, we should shutdown
-	 * cleanly
-	 */
-
-	n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
-	if (n != 1)
-		lwsl_err("%s: unable to request shutdown\n", __func__);
-
-	return LWSSSSRET_OK;
-}
-
-
-LWS_SS_INFO("sai_power", saib_power_link_t)
-	.rx				= saib_power_link_rx,
-        .state                          = saib_power_link_state,
-};
-
-
-/*
- * The grace time is up, ask for the suspend
- */
-
-void
-sul_idle_cb(lws_sorted_usec_list_t *sul)
-{
-#if !defined(WIN32)
-	ssize_t n;
-	uint8_t te = 1;
-
-	if (builder.stay)
-		return;
-
-	lwsl_notice("%s: idle period ended...\n", __func__);
-
-	if (builder.power_off_type &&
-	    !strcmp(builder.power_off_type, "suspend")) {
-
-		lwsl_notice("%s: requesting suspend...\n", __func__);
-
-		n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
-		if (n == 1) {
-#if defined(WIN32)
-			Sleep(2000);
-#else
-			sleep(2);
-#endif
-			/*
-			* There were 0 tasks ongoing for us to suspend, start off
-			* with the same assumption and set the idle grace time
-			*/
-			lws_sul_schedule(builder.context, 0, &builder.sul_idle,
-					sul_idle_cb, SAI_IDLE_GRACE_US);
-			lwsl_notice("%s: resuming after suspend\n", __func__);
-		} else
-			lwsl_err("%s: failed to request suspend\n", __func__);
-
-		return;
-	}
-
-	/*
-	 * Do we have a url for sai-power?  If not, nothing we can do.
-	 */
-
-	if (!builder.url_sai_power)
-		return;
-
-	/*
-	 * The plan is ask sai-power to turn us off... we don't know our
-	 * dependency situation since we're just a standalone builder.
-	 *
-	 * We will have to let sai-power figure the deps out and say if
-	 * it's willing to auto power-off or not.
-	 */
-
-	lwsl_notice("%s: creating sai-power ss...\n", __func__);
-
-	if (lws_ss_create(builder.context, 0, &ssi_saib_power_link_t,
-			  (void *)builder.host, NULL, NULL, NULL)) {
-		lwsl_err("%s: failed to create sai-power ss\n", __func__);
-		return;
-	}
-
-#endif
-}
 
 static lws_state_notify_link_t * const app_notifier_list[] = {
 	&nl, NULL
@@ -915,109 +430,11 @@ int main(int argc, const char **argv)
 		 */
 		return sai_deletion_worker(p);
 
-	if ((p = lws_cmdline_option(argc, argv, "-s"))) {
-		ssize_t n = 0;
-
-		printf("%s: Spawn process creation entry...\n", __func__);
-
+	if ((p = lws_cmdline_option(argc, argv, "-s")))
 		/*
-		 * A new process gets started with this option before we drop
-		 * privs.  This allows us to suspend with root privs later.
-		 *
-		 * We just wait until we get a byte on stdin from the main
-		 * process indicating we should suspend.
+		 * This is the suspend / shutdown worker process being spawned
 		 */
-
-		while (n >= 0) {
-#if !defined(WIN32)
-			int status;
-			pid_t p;
-#endif
-			uint8_t d;
-
-			n = read(0, &d, 1);
-			lwsl_notice("%s: suspend process read returned %d\n", __func__, (int)n);
-
-			if (n <= 0)
-				continue;
-
-			if (d == 2) {
-				lwsl_warn("%s: suspend process ending\n", __func__);
-				break;
-			}
-
-#if defined(WIN32)
-			/*
-			 * On Windows, we can use the shutdown command.
-			 * For suspend, we can use rundll32.
-			 */
-			switch(d) {
-			case 0:
-				system("shutdown /s /t 0");
-				break;
-			case 1:
-				system("rundll32.exe powrprof.dll,SetSuspendState 0,1,0");
-				break;
-			case 3:
-				if (builder.rebuild_script_user &&
-				    builder.rebuild_script_root) {
-					if (system(builder.rebuild_script_user) == 0)
-						system(builder.rebuild_script_root);
-				}
-				break;
-			}
-#else
-			p = fork();
-			if (!p)
-				switch(d) {
-				case 0:
-#if defined(__NetBSD__)
-                                       execl("/sbin/shutdown", "/sbin/shutdown", "-h", "now", NULL);
-#else
-					execl("/usr/sbin/shutdown", "/usr/sbin/shutdown", "--halt", "now", NULL);
-#endif
-					break;
-				case 1:
-					execl("/usr/bin/systemctl", "/usr/bin/systemctl", "suspend", NULL);
-					break;
-				case 3:
-					if (builder.rebuild_script_user &&
-					    builder.rebuild_script_root) {
-						char cmd[8192];
-						char user_buf[64];
-						const char *user = "sai";
-						int ret;
-
-						if (builder.perms) {
-							lws_strncpy(user_buf, builder.perms, sizeof(user_buf));
-							if (strchr(user_buf, ':'))
-								*strchr(user_buf, ':') = '\0';
-							user = user_buf;
-						}
-
-						lws_snprintf(cmd, sizeof(cmd),
-							     "su - %s -c '%s'",
-							     user,
-							     builder.rebuild_script_user);
-						ret = system(cmd);
-						if (ret == 0) {
-							lws_snprintf(cmd, sizeof(cmd),
-								     "PATH=/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin %s",
-								     builder.rebuild_script_root);
-							system(cmd);
-						}
-					}
-					break;
-				}
-			else
-				waitpid(p, &status, 0);
-#endif
-		}
-
-		lwsl_notice("%s: exiting suspend process\n", __func__);
-
-		return 0;
-	}
+		return saib_suspender_start();
 
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
@@ -1080,86 +497,6 @@ int main(int argc, const char **argv)
 		lwsl_err("%s: Can't find %s\n", __func__, builder.home);
 		return 1;
 	}
-
-#if !defined(WIN32)
-	{
-		int pfd[2];
-		pid_t pid;
-
-		if (pipe(pfd) == -1) {
-			lwsl_err("pipe() failed\n");
-			return 1;
-		}
-
-		pid = fork();
-		if (pid == -1) {
-			lwsl_err("fork() failed\n");
-			return 1;
-		}
-
-		if (!pid) {
-			/* child: deletion worker */
-			char home_arg[256];
-
-			lws_snprintf(home_arg, sizeof(home_arg), "--home=%s",
-				     builder.home);
-			close(pfd[1]); /* wr */
-			if (dup2(pfd[0], 0) < 0)
-				return 1;
-			close(pfd[0]);
-
-			execlp(argv[0], argv[0], home_arg, "--delete-worker", (char *)NULL);
-			lwsl_err("execlp failed\n");
-			return 1;
-		}
-
-		/* parent */
-		close(pfd[0]); /* rd */
-		builder.pipe_master_wr = pfd[1];
-	}
-#else
-	{
-		char cmdline[512];
-		HANDLE hChildStd_IN_Rd = NULL;
-		HANDLE hChildStd_IN_Wr = NULL;
-		SECURITY_ATTRIBUTES sa;
-		PROCESS_INFORMATION pi;
-		STARTUPINFOA si;
-
-		sa.nLength = sizeof(SECURITY_ATTRIBUTES);
-		sa.bInheritHandle = TRUE;
-		sa.lpSecurityDescriptor = NULL;
-
-		if (!CreatePipe(&hChildStd_IN_Rd, &hChildStd_IN_Wr, &sa, 0)) {
-			lwsl_err("CreatePipe failed\n");
-			return 1;
-		}
-		if (!SetHandleInformation(hChildStd_IN_Wr, HANDLE_FLAG_INHERIT, 0)) {
-			lwsl_err("SetHandleInformation failed\n");
-			return 1;
-		}
-
-		memset(&pi, 0, sizeof(pi));
-		memset(&si, 0, sizeof(si));
-		si.cb = sizeof(si);
-		si.hStdInput = hChildStd_IN_Rd;
-		si.dwFlags |= STARTF_USESTDHANDLES;
-
-		lws_snprintf(cmdline, sizeof(cmdline), "%s --delete-worker --home=%s",
-			     argv[0], builder.home);
-
-		if (!CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0,
-				    NULL, NULL, &si, &pi)) {
-			lwsl_err("CreateProcess failed\n");
-			return 1;
-		}
-
-		CloseHandle(pi.hProcess);
-		CloseHandle(pi.hThread);
-		CloseHandle(hChildStd_IN_Rd);
-		builder.pipe_master_wr_win = hChildStd_IN_Wr;
-	}
-#endif
 
 #if defined(__linux__)
 	/*
@@ -1253,38 +590,12 @@ int main(int argc, const char **argv)
 		goto bail;
 	}
 
-#if !defined(WIN32)
-	{
-		struct lws_spawn_piped_info info;
-		char rpath[PATH_MAX];
-		const char * const ea[] = { rpath, "-s", NULL };
+	saib_power_init();
+	if (saib_deletion_init(argv[0]))
+		goto bail;
 
-		realpath(argv[0], rpath);
-
-		memset(&info, 0, sizeof(info));
-		memset(&builder.suspend_nspawn, 0, sizeof(builder.suspend_nspawn));
-
-		info.vh			= builder.vhost;
-		info.exec_array		= ea;
-		info.max_log_lines	= 100;
-		info.opaque		= (void *)&builder.suspend_nspawn;
-		info.protocol_name      = "sai-suspender-stdxxx";
-		info.plsp		= &lsp_suspender;
-
-		lsp_suspender = lws_spawn_piped(&info);
-		if (!lsp_suspender)
-			lwsl_notice("%s: suspend spawn failed\n", __func__);
-
-		/*
-		* We start off idle, with no tasks on any platform and doing
-		* the grace time before suspend.  If tasks appear, the grace
-		* time will get cancelled.
-		*/
-
-		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
-				 sul_idle_cb, SAI_IDLE_GRACE_US);
-	}
-#endif
+	if (saib_suspender_fork(argv[0]))
+		goto bail;
 
 	while (!lws_service(builder.context, 0) && !interrupted)
 		;
