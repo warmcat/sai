@@ -225,11 +225,11 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 	case SAIS_WS_WEBSRV_RX_LOADREPORT:
 		/* Forward the final fragment of the load report */
-		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n, 0,
+		saiw_ws_broadcast_raw(vhd, buf, len, 0,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 	case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
-		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n, 0,
+		saiw_ws_broadcast_raw(vhd, buf, len, 0,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 	}
