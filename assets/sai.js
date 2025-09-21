@@ -1594,7 +1594,7 @@ function ws_open_sai()
 				break;
 
 	case "com.warmcat.sai.loadreport":
-		const loadContainer = document.getElementById("instload-" + jso.builder_name);
+		const loadContainer = document.querySelector('[id^="spreadsheet-' + jso.builder_name + '."]');
 		if (!loadContainer) {
 			break;
 		}
