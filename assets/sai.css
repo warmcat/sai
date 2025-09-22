@@ -1012,13 +1012,10 @@ body.overlay-active {
 }
 
 .resource-bars {
-	position: absolute;
-	bottom: 2px;
-	left: 2px;
-	right: 2px;
 	display: flex;
 	flex-direction: column;
 	gap: 1px;
+	margin-top: 2px;
 }
 
 .res-bar {
