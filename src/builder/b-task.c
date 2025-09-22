@@ -916,6 +916,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		ns->task = task; /* we are owning this nspawn for the duration */
 		ns->current_step = task->build_step;
+		ns->build_step_count = task->build_step_count;
 		if (!ns->current_step) {
 			ns->spins = 0;
 			ns->user_cancel = 0;

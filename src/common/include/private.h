@@ -137,6 +137,7 @@ typedef struct {
 	int			state;
 	int			uid;
 	int			build_step;
+	int			build_step_count;
 
 	/* estimations for builder resource consumption */
 	unsigned int		est_peak_mem_kib;
