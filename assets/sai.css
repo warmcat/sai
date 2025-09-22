@@ -586,6 +586,7 @@ td.bn {
 	font-weight: normal;
 	font-size: 7pt;
 	padding: 1px;
+	position: relative;
 }
 
 td.bins {
@@ -641,7 +642,6 @@ div.ibuil {
 	user-select: none;
 	-webkit-user-select: none;
 	cursor: pointer;
-	position: relative;
 }
 
 div.ibuilctr {
