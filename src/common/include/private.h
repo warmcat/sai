@@ -68,6 +68,7 @@ typedef struct sai_active_task_info {
 	char			task_uuid[65];
 	char			task_name[96];
 	int			build_step;
+	int			total_steps;
 	unsigned int		est_peak_mem_kib;
 	unsigned int		est_cpu_load_pct;
 	unsigned int		est_disk_kib;
@@ -136,6 +137,7 @@ typedef struct {
 	int			state;
 	int			uid;
 	int			build_step;
+	int			build_step_count;
 
 	/* estimations for builder resource consumption */
 	unsigned int		est_peak_mem_kib;
@@ -538,7 +540,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[10],
-	lsm_task[28],
+	lsm_task[29],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],

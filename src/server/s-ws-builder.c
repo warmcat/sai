@@ -712,7 +712,7 @@ bail:
 			if (wr != (ssize_t)bl)
 				lwsl_notice("%s: write failed\n", __func__);
 		}
-		// lwsl_wsi_user(pss->wsi, "SAIM_WSSCH_BUILDER_LOADREPORT broadcasting\n");
+		lwsl_wsi_user(pss->wsi, "SAIM_WSSCH_BUILDER_LOADREPORT broadcasting\n");
 		sais_websrv_broadcast(vhd->h_ss_websrv, (const char *)buf, bl);
 		break;
 
