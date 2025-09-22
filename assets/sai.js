@@ -257,141 +257,141 @@ const SAI_JS_API_VERSION = 3;
 }.call(this));
 
 var lang_ja = "{" +
-  ""values":{" +
-    ""Summary": "概要"," +
-    ""Log": "ログ"," +
-    ""Tree": "木構造"," +
-    ""Blame": "責任"," +
-    ""Copy Lines": "コピーライン"," +
-    ""Copy Link": "リンクをコピーする"," +
-    ""View Blame": "責任がある"," +
-    ""Remove Blame": "責任を取り除く"," +
-    ""Mode": "モード"," +
-    ""Size": "サイズ"," +
-    ""Name": "名"," +
-    ""s": "秒"," +
-    ""m": "分"," +
-    ""h": "時間"," +
-    "" days": "日々"," +
-	"" weeks": "週"," +
-	"" months": "数ヶ月"," +
-	"" years": "年"," +
-	""Branch Snapshot": "ブランチスナップショット"," +
-	""Tag Snapshot": "タグスナップショット"," +
-	""Commit Snapshot": "スナップショットをコミットする"," +
-	""Description": "説明"," +
-	""Owner": "オーナー"," +
-	""Branch": "ブランチ"," +
-	""Tag": "タグ"," +
-	""Author": "著者"," +
-	""Age": "年齢"," +
-	""Page fetched": "ページを取得した"," +
-	""creation time": "作成時間"," +
-	""created": "作成した"," +
-	""ago": "前"," +
-	""Message": "メッセージ"," +
-	""Download": "ダウンロード"," +
-	""root": "ルート"," +
-	""Committer": "コミッター"," +
-	""Raw Patch": "生パッチ"," +
-	""Page fetched %{pf} ago, creation time: %{ct}ms " +
-	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)": " +
-	""%{pf}間前に取得されたページ, 作成にかかった時間: %{ct}ms " +
-	   "(vhost etag キャッシュヒット: %{ve}%, キャッシュヒット: %{ch}%)"," +
-	""Created %{pf} ago, creation time: %{ct}ms ":" +
-	   ""%{pf}間前に作成されました, 作成にかかった時間: %{ct}ms"" +
+  "\"values\":{" +
+    "\"Summary\": \"概要\"," +
+    "\"Log\": \"ログ\"," +
+    "\"Tree\": \"木構造\"," +
+    "\"Blame\": \"責任\"," +
+    "\"Copy Lines\": \"コピーライン\"," +
+    "\"Copy Link\": \"リンクをコピーする\"," +
+    "\"View Blame\": \"責任がある\"," +
+    "\"Remove Blame\": \"責任を取り除く\"," +
+    "\"Mode\": \"モード\"," +
+    "\"Size\": \"サイズ\"," +
+    "\"Name\": \"名\"," +
+    "\"s\": \"秒\"," +
+    "\"m\": \"分\"," +
+    "\"h\": \"時間\"," +
+    "\" days\": \"日々\"," +
+	"\" weeks\": \"週\"," +
+	"\" months\": \"数ヶ月\"," +
+	"\" years\": \"年\"," +
+	"\"Branch Snapshot\": \"ブランチスナップショット\"," +
+	"\"Tag Snapshot\": \"タグスナップショット\"," +
+	"\"Commit Snapshot\": \"スナップショットをコミットする\"," +
+	"\"Description\": \"説明\"," +
+	"\"Owner\": \"オーナー\"," +
+	"\"Branch\": \"ブランチ\"," +
+	"\"Tag\": \"タグ\"," +
+	"\"Author\": \"著者\"," +
+	"\"Age\": \"年齢\"," +
+	"\"Page fetched\": \"ページを取得した\"," +
+	"\"creation time\": \"作成時間\"," +
+	"\"created\": \"作成した\"," +
+	"\"ago\": \"前\"," +
+	"\"Message\": \"メッセージ\"," +
+	"\"Download\": \"ダウンロード\"," +
+	"\"root\": \"ルート\"," +
+	"\"Committer\": \"コミッター\"," +
+	"\"Raw Patch\": \"生パッチ\"," +
+	"\"Page fetched %{pf} ago, creation time: %{ct}ms " +
+	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)\": " +
+	"\"%{pf}間前に取得されたページ, 作成にかかった時間: %{ct}ms " +
+	   "(vhost etag キャッシュヒット: %{ve}%, キャッシュヒット: %{ch}%)\"," +
+	"\"Created %{pf} ago, creation time: %{ct}ms \":\"" +
+	   "%{pf}間前に作成されました, 作成にかかった時間: %{ct}ms\"" +
   "}}";
 
 var lang_zht = "{" +
-""values":{" +
-  ""Summary": "概要"," +
-  ""Log": "日誌"," +
-  ""Tree": "樹"," +
-  ""Blame": "責怪"," +
-  ""Copy Lines": "複製線"," +
-  ""Copy Link": "複製鏈接"," +
-  ""View Blame": "看責怪"," +
-  ""Remove Blame": "刪除責怪"," +
-  ""Mode": "模式"," +
-  ""Size": "尺寸"," +
-  ""Name": "名稱"," +
-  ""s": "秒"," +
-  ""m": "分鐘"," +
-  ""h": "小時"," +
-  "" days": "天"," +
-  "" weeks": "週"," +
-  "" months": "個月"," +
-  "" years": "年份"," +
-  ""Branch Snapshot": "科快照"," +
-  ""Tag Snapshot": "标签快照"," +
-  ""Commit Snapshot": "提交快照"," +
-  ""Description": "描述"," +
-  ""Owner": "所有者"," +
-  ""Branch": "科"," +
-  ""Tag": "標籤"," +
-  ""Author": "作者"," +
-  ""Age": "年齡"," +
-  ""Page fetched": "頁面已獲取"," +
-  ""creation time": "創作時間"," +
-  ""created": "創建"," +
-  ""ago": "前"," +
-  ""Message": "信息"," +
-  ""Download": "下載"," +
-  ""root": "根源"," +
-  ""Committer": "提交者"," +
-  ""Raw Patch": "原始補丁"," +
-  ""Page fetched %{pf} ago, creation time: %{ct}ms " +
-	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)": " +
-	""頁面%{pf}前獲取, 創作時間: %{ct}ms " +
-	   "(vhost etag 緩存命中: %{ve}%, 緩存命中: %{ch}%)"," +
-  ""Created %{pf} ago, creation time: %{ct}ms ":" +
-	""%{pf}前創建, 創作時間: %{ct}ms "" +
+"\"values\":{" +
+  "\"Summary\": \"概要\"," +
+  "\"Log\": \"日誌\"," +
+  "\"Tree\": \"樹\"," +
+  "\"Blame\": \"責怪\"," +
+  "\"Copy Lines\": \"複製線\"," +
+  "\"Copy Link\": \"複製鏈接\"," +
+  "\"View Blame\": \"看責怪\"," +
+  "\"Remove Blame\": \"刪除責怪\"," +
+  "\"Mode\": \"模式\"," +
+  "\"Size\": \"尺寸\"," +
+  "\"Name\": \"名稱\"," +
+  "\"s\": \"秒\"," +
+  "\"m\": \"分鐘\"," +
+  "\"h\": \"小時\"," +
+  "\" days\": \"天\"," +
+  "\" weeks\": \"週\"," +
+  "\" months\": \"個月\"," +
+  "\" years\": \"年份\"," +
+  "\"Branch Snapshot\": \"科快照\"," +
+  "\"Tag Snapshot\": \"标签快照\"," +
+  "\"Commit Snapshot\": \"提交快照\"," +
+  "\"Description\": \"描述\"," +
+  "\"Owner\": \"所有者\"," +
+  "\"Branch\": \"科\"," +
+  "\"Tag\": \"標籤\"," +
+  "\"Author\": \"作者\"," +
+  "\"Age\": \"年齡\"," +
+  "\"Page fetched\": \"頁面已獲取\"," +
+  "\"creation time\": \"創作時間\"," +
+  "\"created\": \"創建\"," +
+  "\"ago\": \"前\"," +
+  "\"Message\": \"信息\"," +
+  "\"Download\": \"下載\"," +
+  "\"root\": \"根源\"," +
+  "\"Committer\": \"提交者\"," +
+  "\"Raw Patch\": \"原始補丁\"," +
+  "\"Page fetched %{pf} ago, creation time: %{ct}ms " +
+	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)\": " +
+	"\"頁面%{pf}前獲取, 創作時間: %{ct}ms " +
+	   "(vhost etag 緩存命中: %{ve}%, 緩存命中: %{ch}%)\"," +
+  "\"Created %{pf} ago, creation time: %{ct}ms \":\"" +
+	"%{pf}前創建, 創作時間: %{ct}ms \"" +
 "}}";
 
 var lang_zhs = "{" +
-""values":{" +
-  ""Summary": "概要"," +
-  ""Log": "日志"," +
-  ""Tree": "木"," +
-  ""Blame": "归咎"," +
-  ""Copy Lines": "复制线"," +
-  ""Copy Link": "复制链接"," +
-  ""View Blame": "看责备"," +
-  ""Remove Blame": "删除责备"," +
-  ""Mode": "模式"," +
-  ""Size": "尺寸"," +
-  ""Name": "名称"," +
-  ""s": "秒"," +
-  ""m": "分钟"," +
-  ""h": "小时"," +
-  "" days": "天"," +
-  "" weeks": "周"," +
-  "" months": "个月"," +
-  "" years": "年份"," +
-  ""Branch Snapshot": "科快照"," +
-  ""Tag Snapshot": "标签快照"," +
-  ""Commit Snapshot": "提交快照"," +
-  ""Description": "描述"," +
-  ""Owner": "所有者"," +
-  ""Branch": "科"," +
-  ""Tag": "标签"," +
-  ""Author": "作者"," +
-  ""Age": "年龄"," +
-  ""Page fetched": "页面已获取"," +
-  ""creation time": "创作时间"," +
-  ""created": "创建"," +
-  ""ago": "前"," +
-  ""Message": "信息"," +
-  ""Download": "下载"," +
-  ""root": "根源"," +
-  ""Committer": "提交者"," +
-  ""Raw Patch": "原始补丁"," +
-  ""Page fetched %{pf} ago, creation time: %{ct}ms " +
-	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)": " +
-	""页面%{pf}前获取, 创作时间: %{ct}ms " +
-	   "(vhost etag 缓存命中: %{ve}%, 缓存命中: %{ch}%)"," +
-   ""Created %{pf} ago, creation time: %{ct}ms ":" +
-		""%{pf}前创建, 创作时间: %{ct}ms "" +
+"\"values\":{" +
+  "\"Summary\": \"概要\"," +
+  "\"Log\": \"日志\"," +
+  "\"Tree\": \"木\"," +
+  "\"Blame\": \"归咎\"," +
+  "\"Copy Lines\": \"复制线\"," +
+  "\"Copy Link\": \"复制链接\"," +
+  "\"View Blame\": \"看责备\"," +
+  "\"Remove Blame\": \"删除责备\"," +
+  "\"Mode\": \"模式\"," +
+  "\"Size\": \"尺寸\"," +
+  "\"Name\": \"名称\"," +
+  "\"s\": \"秒\"," +
+  "\"m\": \"分钟\"," +
+  "\"h\": \"小时\"," +
+  "\" days\": \"天\"," +
+  "\" weeks\": \"周\"," +
+  "\" months\": \"个月\"," +
+  "\" years\": \"年份\"," +
+  "\"Branch Snapshot\": \"科快照\"," +
+  "\"Tag Snapshot\": \"标签快照\"," +
+  "\"Commit Snapshot\": \"提交快照\"," +
+  "\"Description\": \"描述\"," +
+  "\"Owner\": \"所有者\"," +
+  "\"Branch\": \"科\"," +
+  "\"Tag\": \"标签\"," +
+  "\"Author\": \"作者\"," +
+  "\"Age\": \"年龄\"," +
+  "\"Page fetched\": \"页面已获取\"," +
+  "\"creation time\": \"创作时间\"," +
+  "\"created\": \"创建\"," +
+  "\"ago\": \"前\"," +
+  "\"Message\": \"信息\"," +
+  "\"Download\": \"下载\"," +
+  "\"root\": \"根源\"," +
+  "\"Committer\": \"提交者\"," +
+  "\"Raw Patch\": \"原始补丁\"," +
+  "\"Page fetched %{pf} ago, creation time: %{ct}ms " +
+	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)\": " +
+	"\"页面%{pf}前获取, 创作时间: %{ct}ms " +
+	   "(vhost etag 缓存命中: %{ve}%, 缓存命中: %{ch}%)\"," +
+   "\"Created %{pf} ago, creation time: %{ct}ms \":\"" +
+		"%{pf}前创建, 创作时间: %{ct}ms \"" +
 "}}";
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
@@ -509,6 +509,26 @@ function hsanitize(s)
 	}).replace(/\n/g, '\n');
 }
 
+function renderStepProgress(current, total) {
+    let progressHtml = '<div class="step-progress">';
+    if (total > 0) {
+        for (let i = 1; i <= total; i++) {
+            let blockClass = 'step-block';
+            if (i < current) {
+                blockClass += ' step-done';
+            } else if (i === current) {
+                blockClass += ' step-current';
+            } else {
+                blockClass += ' step-pending';
+            }
+            progressHtml += `<div class="${blockClass}" title="Step ${i} / ${total}"></div>`;
+        }
+    }
+    progressHtml += ` <span class="step-label">${current}/${total}</span>`;
+    progressHtml += '</div>';
+    return progressHtml;
+}
+
 function renderSpreadsheet(tasks) {
 	if (!tasks || tasks.length === 0) {
 		return '';
@@ -525,7 +545,7 @@ function renderSpreadsheet(tasks) {
 	for (const task of tasks) {
 		html += '<tr>' +
 			`<td>${hsanitize(task.task_name)}</td>` +
-			`<td>${hsanitize(task.build_step)}</td>` +
+			`<td>${renderStepProgress(task.build_step, task.total_steps)}</td>` +
 			`<td>${agify(now_ut, task.started)} ago</td>` +
 			`<td><a href="?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_uuid.substring(0, 16))}...</a></td>` +
 			'</tr>';

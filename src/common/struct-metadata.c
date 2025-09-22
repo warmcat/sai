@@ -25,6 +25,7 @@ const lws_struct_map_t lsm_active_task_info[] = {
 	LSM_CARRAY	(sai_active_task_info_t, task_uuid, "task_uuid"),
 	LSM_CARRAY	(sai_active_task_info_t, task_name, "task_name"),
 	LSM_SIGNED	(sai_active_task_info_t, build_step, "build_step"),
+	LSM_SIGNED	(sai_active_task_info_t, total_steps, "total_steps"),
 	LSM_UNSIGNED	(sai_active_task_info_t, est_peak_mem_kib, "est_peak_mem_kib"),
 	LSM_UNSIGNED	(sai_active_task_info_t, est_cpu_load_pct, "est_cpu_load_pct"),
 	LSM_UNSIGNED	(sai_active_task_info_t, est_disk_kib, "est_disk_kib"),

@@ -68,6 +68,7 @@ typedef struct sai_active_task_info {
 	char			task_uuid[65];
 	char			task_name[96];
 	int			build_step;
+	int			total_steps;
 	unsigned int		est_peak_mem_kib;
 	unsigned int		est_cpu_load_pct;
 	unsigned int		est_disk_kib;

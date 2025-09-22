@@ -1025,3 +1025,32 @@ body.overlay-active {
   background-color: #ccc;
   flex-shrink: 0;
 }
+
+.step-progress {
+    display: flex;
+    align-items: center;
+}
+
+.step-block {
+    width: 8px;
+    height: 8px;
+    border: 1px solid #aaa;
+    margin-right: 2px;
+}
+
+.step-done {
+    background-color: #555;
+}
+
+.step-current {
+    background-color: #aaa;
+}
+
+.step-pending {
+    background-color: #fff;
+}
+
+.step-label {
+    font-size: 7pt;
+    margin-left: 4px;
+}
