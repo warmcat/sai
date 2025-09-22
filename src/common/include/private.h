@@ -79,8 +79,10 @@ typedef struct sai_load_report {
 	lws_dll2_t		list; /* For queuing on sai_plat_server */
 	char			builder_name[64];
 	int			core_count;
-	unsigned int		free_ram_kib;
-	unsigned int		free_disk_kib;
+	unsigned int		initial_free_ram_kib;
+	unsigned int		reserved_ram_kib;
+	unsigned int		initial_free_disk_kib;
+	unsigned int		reserved_disk_kib;
 	unsigned int		active_steps;
 	unsigned int		cpu_percent;
 	lws_dll2_owner_t	active_tasks;

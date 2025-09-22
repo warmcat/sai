@@ -35,8 +35,10 @@ const lws_struct_map_t lsm_active_task_info[] = {
 const lws_struct_map_t lsm_load_report_members[] = {
 	LSM_CARRAY	(sai_load_report_t, builder_name, "builder_name"),
 	LSM_SIGNED	(sai_load_report_t, core_count,	"core_count"),
-	LSM_UNSIGNED	(sai_load_report_t, free_ram_kib, "free_ram_kib"),
-	LSM_UNSIGNED	(sai_load_report_t, free_disk_kib, "free_disk_kib"),
+	LSM_UNSIGNED	(sai_load_report_t, initial_free_ram_kib, "initial_free_ram_kib"),
+	LSM_UNSIGNED	(sai_load_report_t, reserved_ram_kib, "reserved_ram_kib"),
+	LSM_UNSIGNED	(sai_load_report_t, initial_free_disk_kib, "initial_free_disk_kib"),
+	LSM_UNSIGNED	(sai_load_report_t, reserved_disk_kib, "reserved_disk_kib"),
 	LSM_UNSIGNED	(sai_load_report_t, active_steps, "active_steps"),
 	LSM_UNSIGNED	(sai_load_report_t, cpu_percent, "cpu_percent"),
 	LSM_LIST	(sai_load_report_t, active_tasks, sai_active_task_info_t, list,
