@@ -804,6 +804,19 @@ img.branch {
 	transition: height 0.2s ease-out; /* Smoothly animate height changes */
 }
 
+.inst_text {
+	position: absolute;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	z-index: 1;
+	color: #000;
+	font-size: 8px;
+	text-align: center;
+	line-height: 16px; /* To center it vertically in the 16px box */
+}
+
 .h-0 { height: 0%; }
 .h-5 { height: 5%; }
 .h-10 { height: 10%; }

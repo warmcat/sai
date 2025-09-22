@@ -1134,6 +1134,8 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 
 	sqlite3_exec(pdb, "ALTER TABLE tasks ADD COLUMN build_step INTEGER;",
 		     NULL, NULL, NULL);
+	sqlite3_exec(pdb, "ALTER TABLE tasks ADD COLUMN build_step_count INTEGER;",
+		     NULL, NULL, NULL);
 
 	lwsl_notice("%s: task_uuid %s, pdb %p\n", __func__, task_uuid, pdb);
 

@@ -481,12 +481,23 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 			}
 
 			if (match) {
+				const char *p;
+				int c;
+
 				/*
 				 * For this platform, we want to create a task
 				 * associated with this event.  Tasks and logs
 				 * associated with an event go in an event-
 				 * specific database file for scalability.
 				 */
+
+				c = 2; /* git mirror and checkout */
+				p = pl->build;
+				while (*p)
+					if (*p++ == '\n')
+						c++;
+
+				pss->sn.t.build_step_count = c;
 
 				lws_strexp_init(&sx, sn, exp_cmake, sn->t.build,
 						sizeof(sn->t.build));
