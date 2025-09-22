@@ -1019,9 +1019,9 @@ body.overlay-active {
 }
 
 .res-bar {
-	height: 2px;
+	height: 3px;
 	background-color: rgba(0, 0, 0, 0.2);
-	border: 1px solid #fff;
+	border: none;
 	width: 100%;
 }
 
