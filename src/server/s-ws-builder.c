@@ -705,8 +705,8 @@ bail:
 			sai_load_report_t *lr = (sai_load_report_t *)pss->a.dest;
 
 			lwsl_notice("%s: @@@@@@@@@@@@@@@@@@ loadreport from %s: ram %uk, disk %uk\n",
-				    __func__, lr->builder_name, lr->free_ram_kib,
-				    lr->free_disk_kib);
+				    __func__, lr->builder_name, lr->reserved_ram_kib,
+				    lr->reserved_disk_kib);
 
 			ssize_t wr = write(2, buf, bl);
 			if (wr != (ssize_t)bl)

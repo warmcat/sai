@@ -508,26 +508,6 @@ function hsanitize(s)
 	}).replace(/\n/g, '\n');
 }
 
-function renderStepProgress(current, total) {
-    let progressHtml = '<div class="step-progress">';
-    if (total > 0) {
-        for (let i = 1; i <= total; i++) {
-            let blockClass = 'step-block';
-            if (i < current) {
-                blockClass += ' step-done';
-            } else if (i === current) {
-                blockClass += ' step-current';
-            } else {
-                blockClass += ' step-pending';
-            }
-            progressHtml += `<div class="${blockClass}" title="Step ${i} / ${total}"></div>`;
-        }
-    }
-    progressHtml += ` <span class="step-label">${current}/${total}</span>`;
-    progressHtml += '</div>';
-    return progressHtml;
-}
-
 function renderSpreadsheet(tasks) {
 	if (!tasks || tasks.length === 0) {
 		return '';
@@ -543,7 +523,7 @@ function renderSpreadsheet(tasks) {
 	for (const task of tasks) {
 		html += '<tr>' +
 			`<td><a href="?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>` +
-			`<td>${renderStepProgress(task.build_step, task.total_steps)}</td>` +
+			`<td>${hsanitize(task.build_step)} / ${hsanitize(task.total_steps)}</td>` +
 			`<td>${agify(now_ut, task.started)} ago</td>` +
 			'</tr>';
 	}
@@ -1049,45 +1029,12 @@ function createBuilderDiv(plat) {
 	innerHTML += `<img class="ip1 zup" data-sai-src="/sai/${plat_os}.svg">`;
 	innerHTML += `<img class="ip1 tread1" data-sai-src="/sai/arch-${plat_arch}.svg">`;
 	innerHTML += `<img class="ip1 tread2" data-sai-src="/sai/tc-${plat_tc}.svg">`;
-	innerHTML += `<br>${plat.peer_ip}`;
-
-	let cached_loadreport = null;
-	let best_match_key = null;
-	for (const short_name in loadreport_data_cache) {
-		if (plat.name.startsWith(short_name)) {
-			if (!best_match_key || short_name.length > best_match_key.length) {
-				best_match_key = short_name;
-			}
-		}
-	}
-	if (best_match_key) {
-		cached_loadreport = loadreport_data_cache[best_match_key];
-	}
-
-	let active_steps = cached_loadreport ? cached_loadreport.active_steps : 0;
-	let busy_class = active_steps > 0 ? "inst_busy" : "inst_idle";
-	let cpu_percentage = 0;
-	let title = `active steps: 0`;
-	let height_class = 'h-0';
-
-	if (cached_loadreport) {
-		title = `Active steps: ${cached_loadreport.active_steps}\n` +
-			`CPU: ${(cached_loadreport.cpu_percent / 10).toFixed(1)}%\n` +
-			`Free RAM: ${humanize(cached_loadreport.free_ram_kib * 1024)}B}\n` +
-			`Free Disk: ${humanize(cached_loadreport.free_disk_kib * 1024)}B`;
-
-		cpu_percentage = (cached_loadreport.cpu_percent / (cached_loadreport.core_count * 1000)) * 100;
-		if (cpu_percentage > 100) cpu_percentage = 100;
-		if (cpu_percentage < 0) cpu_percentage = 0;
-		height_class = `h-${Math.round(cpu_percentage / 5) * 5}`;
-	}
-
-	innerHTML += `<div class="instload" id="instload-${plat.name}">` +
-		     `<div class="inst_box ${busy_class}" title="${title}">` +
-		     `<div class="inst_text">${active_steps}</div>` +
-		     `<div class="inst_bar ${height_class}"></div>` +
-		     `</div>` +
-		     `</div></td></tr></tbody></table>`;
+	innerHTML += `<div class="resource-bars">` +
+		     `<div class="res-bar"><div class="res-bar-inner res-bar-cpu w-0"></div></div>` +
+		     `<div class="res-bar"><div class="res-bar-inner res-bar-ram w-0"></div></div>` +
+		     `<div class="res-bar"><div class="res-bar-inner res-bar-disk w-0"></div></div>` +
+		     `</div>`;
+	innerHTML += `<br>${plat.peer_ip}</td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;
 
@@ -1697,47 +1644,44 @@ function ws_open_sai()
 				// Cache the whole report for subsequent builder redraws
 				loadreport_data_cache[jso.builder_name] = jso;
 
-				// Part 1: Update the load indicator in the builder info box
-				const instloadDiv = document.querySelector('[id^="instload-' + jso.builder_name + '"]');
-				if (instloadDiv) {
-					const instanceDiv = instloadDiv.querySelector(".inst_box");
-					const textDiv = instloadDiv.querySelector(".inst_text");
-					const barDiv = instloadDiv.querySelector(".inst_bar");
+				const builderDiv = document.querySelector('[id^="binfo-' + jso.builder_name + '"]');
+				if (builderDiv) {
+					const cpuBar = builderDiv.querySelector(".res-bar-cpu");
+					const ramBar = builderDiv.querySelector(".res-bar-ram");
+					const diskBar = builderDiv.querySelector(".res-bar-disk");
 
-					if (instanceDiv) {
-						instanceDiv.title = `Active steps: ${jso.active_steps}\n` +
-							`CPU: ${(jso.cpu_percent / 10).toFixed(1)}%\n` +
-							`Free RAM: ${humanize(jso.free_ram_kib * 1024)}B\n` +
-							`Free Disk: ${humanize(jso.free_disk_kib * 1024)}B`;
-
-						if (jso.active_steps > 0) {
-							instanceDiv.classList.add("inst_busy");
-							instanceDiv.classList.remove("inst_idle");
-						} else {
-							instanceDiv.classList.add("inst_idle");
-							instanceDiv.classList.remove("inst_busy");
-						}
-					} else
-						console.log("no instanceDiv");
-
-					if (textDiv) {
-						textDiv.textContent = jso.active_steps;
-					} else
-						console.log("no textdiv");
-
-					if (barDiv) {
+					if (cpuBar) {
 						let cpu_percentage = (jso.cpu_percent / (jso.core_count * 1000)) * 100;
 						if (cpu_percentage > 100) cpu_percentage = 100;
 						if (cpu_percentage < 0) cpu_percentage = 0;
+						let width_class = `w-${Math.round(cpu_percentage / 5) * 5}`;
 
-						barDiv.classList.forEach(c => {
-							if (c.startsWith('h-')) {
-								barDiv.classList.remove(c);
-							}
-						});
+						cpuBar.classList.forEach(c => { if (c.startsWith('w-')) cpuBar.classList.remove(c); });
+						cpuBar.classList.add(width_class);
+					}
+					if (ramBar) {
+						let ram_percentage = 0;
+						if (jso.initial_free_ram_kib > 0) {
+							ram_percentage = (jso.reserved_ram_kib / jso.initial_free_ram_kib) * 100;
+						}
+						if (ram_percentage > 100) ram_percentage = 100;
+						if (ram_percentage < 0) ram_percentage = 0;
+						let width_class = `w-${Math.round(ram_percentage / 5) * 5}`;
 
-						let height_class_val = Math.round(cpu_percentage / 5) * 5;
-						barDiv.classList.add(`h-${height_class_val}`);
+						ramBar.classList.forEach(c => { if (c.startsWith('w-')) ramBar.classList.remove(c); });
+						ramBar.classList.add(width_class);
+					}
+					if (diskBar) {
+						let disk_percentage = 0;
+						if (jso.initial_free_disk_kib > 0) {
+							disk_percentage = (jso.reserved_disk_kib / jso.initial_free_disk_kib) * 100;
+						}
+						if (disk_percentage > 100) disk_percentage = 100;
+						if (disk_percentage < 0) disk_percentage = 0;
+						let width_class = `w-${Math.round(disk_percentage / 5) * 5}`;
+
+						diskBar.classList.forEach(c => { if (c.startsWith('w-')) diskBar.classList.remove(c); });
+						diskBar.classList.add(width_class);
 					}
 				}
 

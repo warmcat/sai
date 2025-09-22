@@ -522,8 +522,10 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
         */
        lws_strncpy(lr->builder_name, builder.host, sizeof(lr->builder_name));
        lr->core_count = saib_get_cpu_count();
-       lr->free_ram_kib = saib_get_free_ram_kib();
-       lr->free_disk_kib = saib_get_free_disk_kib(builder.home);
+       lr->initial_free_ram_kib = saib_get_total_ram_kib();
+       lr->initial_free_disk_kib = saib_get_total_disk_kib(builder.home);
+       lr->reserved_ram_kib = 0;
+       lr->reserved_disk_kib = 0;
        lr->cpu_percent = (unsigned int)saib_get_system_cpu(&builder);
        lr->active_steps = 0;
        lws_dll2_owner_clear(&lr->active_tasks);
@@ -547,6 +549,9 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
                                        ati->started = ns->task->started;
                                        lws_dll2_add_tail(&ati->list, &lr->active_tasks);
                                        lr->active_steps++;
+
+                                       lr->reserved_ram_kib += ns->task->est_peak_mem_kib;
+                                       lr->reserved_disk_kib += ns->task->est_disk_kib;
                                }
 			       somebody_not_idle = 1;
                        }

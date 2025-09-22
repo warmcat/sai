@@ -761,39 +761,6 @@ img.branch {
 	color: rgba(0, 0, 0, 0);
 }
 
-.inst_box {
-    display: inline-block;
-    width: 12px;
-    height: 12px;
-    border: 1px solid #777;
-    margin-left: 2px;
-    vertical-align: middle;
-}
-.inst_idle { background-color: #d0d0d0; }
-.inst_run { background-color: #78c678; }
-.load_text { font-size: 9px; vertical-align: middle; }
-
-/* Container for all instance boxes for a given platform */
-.instload {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 2px;
-	padding-top: 4px;
-	padding-bottom: 4px;
-	min-height: 22px; /* Ensure container doesn't collapse if empty */
-}
-
-/* The outer box for a single instance */
-.inst_box {
-	width: 16px;
-	height: 16px;
-	border: 1px solid #555;
-	box-sizing: border-box;
-	background-color: #ddd; /* Dark background for the meter */
-	position: relative;     /* Needed for positioning the child bar */
-	overflow: hidden;       /* Hide any part of the bar that goes over 100% */
-}
-
 /* The actual colored bar inside the box */
 .inst_bar {
 	background-color: #00afff; /* A nice, high-contrast green */
@@ -802,53 +769,6 @@ img.branch {
 	bottom: 0;
 	left: 0;
 	transition: height 0.2s ease-out; /* Smoothly animate height changes */
-}
-
-.inst_text {
-	position: absolute;
-	top: 0;
-	left: 0;
-	width: 100%;
-	height: 100%;
-	z-index: 1;
-	color: #000;
-	font-size: 8px;
-	text-align: center;
-	line-height: 16px; /* To center it vertically in the 16px box */
-}
-
-.h-0 { height: 0%; }
-.h-5 { height: 5%; }
-.h-10 { height: 10%; }
-.h-15 { height: 15%; }
-.h-20 { height: 20%; }
-.h-25 { height: 25%; }
-.h-30 { height: 30%; }
-.h-35 { height: 35%; }
-.h-40 { height: 40%; }
-.h-45 { height: 45%; }
-.h-50 { height: 50%; }
-.h-55 { height: 55%; }
-.h-60 { height: 60%; }
-.h-65 { height: 65%; }
-.h-70 { height: 70%; }
-.h-75 { height: 75%; }
-.h-80 { height: 80%; }
-.h-85 { height: 85%; }
-.h-90 { height: 90%; }
-.h-95 { height: 95%; }
-.h-100 { height: 100%; }
-
-.inst_idle {	
-	border-color: #555;
-	opacity: 0.3; /* Make idle instances semi-transparent */
-	transition: opacity 0.3s; /* Smoothly fade in/out */
-}
-
-.inst_busy {
-	border-color: #999;
-	opacity: 1.0; /* Ensure busy instances are fully opaque */
-	transition: opacity 0.3s;
 }
 
 @keyframes flash-slow {
@@ -1088,4 +1008,37 @@ body.overlay-active {
 .step-label {
     font-size: 7pt;
     margin-left: 4px;
+}
+
+.resource-bars {
+	position: absolute;
+	bottom: 2px;
+	left: 2px;
+	right: 2px;
+	display: flex;
+	flex-direction: column;
+	gap: 1px;
+}
+
+.res-bar {
+	height: 2px;
+	background-color: rgba(0, 0, 0, 0.2);
+	border: 1px solid #fff;
+}
+
+.res-bar-inner {
+	height: 100%;
+	transition: width 0.2s ease-out;
+}
+
+.res-bar-cpu {
+	background-color: #ff4136; /* Red */
+}
+
+.res-bar-ram {
+	background-color: #0074d9; /* Blue */
+}
+
+.res-bar-disk {
+	background-color: #2ecc40; /* Green */
 }
