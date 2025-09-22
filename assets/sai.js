@@ -257,146 +257,147 @@ const SAI_JS_API_VERSION = 3;
 }.call(this));
 
 var lang_ja = "{" +
-  "\"values\":{" +
-    "\"Summary\": \"概要\"," +
-    "\"Log\": \"ログ\"," +
-    "\"Tree\": \"木構造\"," +
-    "\"Blame\": \"責任\"," +
-    "\"Copy Lines\": \"コピーライン\"," +
-    "\"Copy Link\": \"リンクをコピーする\"," +
-    "\"View Blame\": \"責任がある\"," +
-    "\"Remove Blame\": \"責任を取り除く\"," +
-    "\"Mode\": \"モード\"," +
-    "\"Size\": \"サイズ\"," +
-    "\"Name\": \"名\"," +
-    "\"s\": \"秒\"," +
-    "\"m\": \"分\"," +
-    "\"h\": \"時間\"," +
-    "\" days\": \"日々\"," +
-	"\" weeks\": \"週\"," +
-	"\" months\": \"数ヶ月\"," +
-	"\" years\": \"年\"," +
-	"\"Branch Snapshot\": \"ブランチスナップショット\"," +
-	"\"Tag Snapshot\": \"タグスナップショット\"," +
-	"\"Commit Snapshot\": \"スナップショットをコミットする\"," +
-	"\"Description\": \"説明\"," +
-	"\"Owner\": \"オーナー\"," +
-	"\"Branch\": \"ブランチ\"," +
-	"\"Tag\": \"タグ\"," +
-	"\"Author\": \"著者\"," +
-	"\"Age\": \"年齢\"," +
-	"\"Page fetched\": \"ページを取得した\"," +
-	"\"creation time\": \"作成時間\"," +
-	"\"created\": \"作成した\"," +
-	"\"ago\": \"前\"," +
-	"\"Message\": \"メッセージ\"," +
-	"\"Download\": \"ダウンロード\"," +
-	"\"root\": \"ルート\"," +
-	"\"Committer\": \"コミッター\"," +
-	"\"Raw Patch\": \"生パッチ\"," +
-	"\"Page fetched %{pf} ago, creation time: %{ct}ms " +
- 	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)\": " +
- 	"\"%{pf}間前に取得されたページ, 作成にかかった時間: %{ct}ms " +
- 	   "(vhost etag キャッシュヒット: %{ve}%, キャッシュヒット: %{ch}%)\"," +
- 	"\"Created %{pf} ago, creation time: %{ct}ms \":" +
- 	   "\"%{pf}間前に作成されました, 作成にかかった時間: %{ct}ms\"" +
+  ""values":{" +
+    ""Summary": "概要"," +
+    ""Log": "ログ"," +
+    ""Tree": "木構造"," +
+    ""Blame": "責任"," +
+    ""Copy Lines": "コピーライン"," +
+    ""Copy Link": "リンクをコピーする"," +
+    ""View Blame": "責任がある"," +
+    ""Remove Blame": "責任を取り除く"," +
+    ""Mode": "モード"," +
+    ""Size": "サイズ"," +
+    ""Name": "名"," +
+    ""s": "秒"," +
+    ""m": "分"," +
+    ""h": "時間"," +
+    "" days": "日々"," +
+	"" weeks": "週"," +
+	"" months": "数ヶ月"," +
+	"" years": "年"," +
+	""Branch Snapshot": "ブランチスナップショット"," +
+	""Tag Snapshot": "タグスナップショット"," +
+	""Commit Snapshot": "スナップショットをコミットする"," +
+	""Description": "説明"," +
+	""Owner": "オーナー"," +
+	""Branch": "ブランチ"," +
+	""Tag": "タグ"," +
+	""Author": "著者"," +
+	""Age": "年齢"," +
+	""Page fetched": "ページを取得した"," +
+	""creation time": "作成時間"," +
+	""created": "作成した"," +
+	""ago": "前"," +
+	""Message": "メッセージ"," +
+	""Download": "ダウンロード"," +
+	""root": "ルート"," +
+	""Committer": "コミッター"," +
+	""Raw Patch": "生パッチ"," +
+	""Page fetched %{pf} ago, creation time: %{ct}ms " +
+	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)": " +
+	""%{pf}間前に取得されたページ, 作成にかかった時間: %{ct}ms " +
+	   "(vhost etag キャッシュヒット: %{ve}%, キャッシュヒット: %{ch}%)"," +
+	""Created %{pf} ago, creation time: %{ct}ms ":" +
+	   ""%{pf}間前に作成されました, 作成にかかった時間: %{ct}ms"" +
   "}}";
 
 var lang_zht = "{" +
-"\"values\":{" +
-  "\"Summary\": \"概要\"," +
-  "\"Log\": \"日誌\"," +
-  "\"Tree\": \"樹\"," +
-  "\"Blame\": \"責怪\"," +
-  "\"Copy Lines\": \"複製線\"," +
-  "\"Copy Link\": \"複製鏈接\"," +
-  "\"View Blame\": \"看責怪\"," +
-  "\"Remove Blame\": \"刪除責怪\"," +
-  "\"Mode\": \"模式\"," +
-  "\"Size\": \"尺寸\"," +
-  "\"Name\": \"名稱\"," +
-  "\"s\": \"秒\"," +
-  "\"m\": \"分鐘\"," +
-  "\"h\": \"小時\"," +
-  "\" days\": \"天\"," +
-  "\" weeks\": \"週\"," +
-  "\" months\": \"個月\"," +
-  "\" years\": \"年份\"," +
-  "\"Branch Snapshot\": \"科快照\"," +
-  "\"Tag Snapshot\": \"标签快照\"," +
-  "\"Commit Snapshot\": \"提交快照\"," +
-  "\"Description\": \"描述\"," +
-  "\"Owner\": \"所有者\"," +
-  "\"Branch\": \"科\"," +
-  "\"Tag\": \"標籤\"," +
-  "\"Author\": \"作者\"," +
-  "\"Age\": \"年齡\"," +
-  "\"Page fetched\": \"頁面已獲取\"," +
-  "\"creation time\": \"創作時間\"," +
-  "\"created\": \"創建\"," +
-  "\"ago\": \"前\"," +
-  "\"Message\": \"信息\"," +
-  "\"Download\": \"下載\"," +
-  "\"root\": \"根源\"," +
-  "\"Committer\": \"提交者\"," +
-  "\"Raw Patch\": \"原始補丁\"," +
-  "\"Page fetched %{pf} ago, creation time: %{ct}ms " +
-  	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)\": " +
-  	"\"頁面%{pf}前獲取, 創作時間: %{ct}ms " +
-  	   "(vhost etag 緩存命中: %{ve}%, 緩存命中: %{ch}%)\"," +
-  "\"Created %{pf} ago, creation time: %{ct}ms \":" +
-  	"\"%{pf}前創建, 創作時間: %{ct}ms \"" +
+""values":{" +
+  ""Summary": "概要"," +
+  ""Log": "日誌"," +
+  ""Tree": "樹"," +
+  ""Blame": "責怪"," +
+  ""Copy Lines": "複製線"," +
+  ""Copy Link": "複製鏈接"," +
+  ""View Blame": "看責怪"," +
+  ""Remove Blame": "刪除責怪"," +
+  ""Mode": "模式"," +
+  ""Size": "尺寸"," +
+  ""Name": "名稱"," +
+  ""s": "秒"," +
+  ""m": "分鐘"," +
+  ""h": "小時"," +
+  "" days": "天"," +
+  "" weeks": "週"," +
+  "" months": "個月"," +
+  "" years": "年份"," +
+  ""Branch Snapshot": "科快照"," +
+  ""Tag Snapshot": "标签快照"," +
+  ""Commit Snapshot": "提交快照"," +
+  ""Description": "描述"," +
+  ""Owner": "所有者"," +
+  ""Branch": "科"," +
+  ""Tag": "標籤"," +
+  ""Author": "作者"," +
+  ""Age": "年齡"," +
+  ""Page fetched": "頁面已獲取"," +
+  ""creation time": "創作時間"," +
+  ""created": "創建"," +
+  ""ago": "前"," +
+  ""Message": "信息"," +
+  ""Download": "下載"," +
+  ""root": "根源"," +
+  ""Committer": "提交者"," +
+  ""Raw Patch": "原始補丁"," +
+  ""Page fetched %{pf} ago, creation time: %{ct}ms " +
+	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)": " +
+	""頁面%{pf}前獲取, 創作時間: %{ct}ms " +
+	   "(vhost etag 緩存命中: %{ve}%, 緩存命中: %{ch}%)"," +
+  ""Created %{pf} ago, creation time: %{ct}ms ":" +
+	""%{pf}前創建, 創作時間: %{ct}ms "" +
 "}}";
 
 var lang_zhs = "{" +
-"\"values\":{" +
-  "\"Summary\": \"概要\"," +
-  "\"Log\": \"日志\"," +
-  "\"Tree\": \"木\"," +
-  "\"Blame\": \"归咎\"," +
-  "\"Copy Lines\": \"复制线\"," +
-  "\"Copy Link\": \"复制链接\"," +
-  "\"View Blame\": \"看责备\"," +
-  "\"Remove Blame\": \"删除责备\"," +
-  "\"Mode\": \"模式\"," +
-  "\"Size\": \"尺寸\"," +
-  "\"Name\": \"名称\"," +
-  "\"s\": \"秒\"," +
-  "\"m\": \"分钟\"," +
-  "\"h\": \"小时\"," +
-  "\" days\": \"天\"," +
-  "\" weeks\": \"周\"," +
-  "\" months\": \"个月\"," +
-  "\" years\": \"年份\"," +
-  "\"Branch Snapshot\": \"科快照\"," +
-  "\"Tag Snapshot\": \"标签快照\"," +
-  "\"Commit Snapshot\": \"提交快照\"," +
-  "\"Description\": \"描述\"," +
-  "\"Owner\": \"所有者\"," +
-  "\"Branch\": \"科\"," +
-  "\"Tag\": \"标签\"," +
-  "\"Author\": \"作者\"," +
-  "\"Age\": \"年龄\"," +
-  "\"Page fetched\": \"页面已获取\"," +
-  "\"creation time\": \"创作时间\"," +
-  "\"created\": \"创建\"," +
-  "\"ago\": \"前\"," +
-  "\"Message\": \"信息\"," +
-  "\"Download\": \"下载\"," +
-  "\"root\": \"根源\"," +
-  "\"Committer\": \"提交者\"," +
-  "\"Raw Patch\": \"原始补丁\"," +
-  "\"Page fetched %{pf} ago, creation time: %{ct}ms " +
-	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)\": " +
-	"\"页面%{pf}前获取, 创作时间: %{ct}ms " +
-	   "(vhost etag 缓存命中: %{ve}%, 缓存命中: %{ch}%)\"," +
-   "\"Created %{pf} ago, creation time: %{ct}ms \":" +
-	  	"\"%{pf}前创建, 创作时间: %{ct}ms \"" +	   
+""values":{" +
+  ""Summary": "概要"," +
+  ""Log": "日志"," +
+  ""Tree": "木"," +
+  ""Blame": "归咎"," +
+  ""Copy Lines": "复制线"," +
+  ""Copy Link": "复制链接"," +
+  ""View Blame": "看责备"," +
+  ""Remove Blame": "删除责备"," +
+  ""Mode": "模式"," +
+  ""Size": "尺寸"," +
+  ""Name": "名称"," +
+  ""s": "秒"," +
+  ""m": "分钟"," +
+  ""h": "小时"," +
+  "" days": "天"," +
+  "" weeks": "周"," +
+  "" months": "个月"," +
+  "" years": "年份"," +
+  ""Branch Snapshot": "科快照"," +
+  ""Tag Snapshot": "标签快照"," +
+  ""Commit Snapshot": "提交快照"," +
+  ""Description": "描述"," +
+  ""Owner": "所有者"," +
+  ""Branch": "科"," +
+  ""Tag": "标签"," +
+  ""Author": "作者"," +
+  ""Age": "年龄"," +
+  ""Page fetched": "页面已获取"," +
+  ""creation time": "创作时间"," +
+  ""created": "创建"," +
+  ""ago": "前"," +
+  ""Message": "信息"," +
+  ""Download": "下载"," +
+  ""root": "根源"," +
+  ""Committer": "提交者"," +
+  ""Raw Patch": "原始补丁"," +
+  ""Page fetched %{pf} ago, creation time: %{ct}ms " +
+	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)": " +
+	""页面%{pf}前获取, 创作时间: %{ct}ms " +
+	   "(vhost etag 缓存命中: %{ve}%, 缓存命中: %{ch}%)"," +
+   ""Created %{pf} ago, creation time: %{ct}ms ":" +
+		""%{pf}前创建, 创作时间: %{ct}ms "" +
 "}}";
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
 	logAnsiState = {},
-	ongoing_task_activities = {}, last_log_timestamp = 0;
+	ongoing_task_activities = {}, last_log_timestamp = 0,
+	spreadsheet_data_cache = {}, loadreport_data_cache = {};
 
 function update_task_activities() {
 	for (const uuid in ongoing_task_activities) {
@@ -506,6 +507,32 @@ function hsanitize(s)
 	return s.toString().replace(/[<>"'&]/g, function(chr) {
 		return '&' + table[chr] + ';';
 	}).replace(/\n/g, '\n');
+}
+
+function renderSpreadsheet(tasks) {
+	if (!tasks || tasks.length === 0) {
+		return '';
+	}
+	var now_ut = Math.round((new Date().getTime() / 1000));
+	let html = '<table class="spreadsheet">' +
+			   '<thead><tr>' +
+			   '<th>Task Name</th>' +
+			   '<th>Build Step</th>' +
+			   '<th>Started</th>' +
+			   '<th>Task UUID</th>' +
+			   '</tr></thead><tbody>';
+
+	for (const task of tasks) {
+		html += '<tr>' +
+			`<td>${hsanitize(task.task_name)}</td>` +
+			`<td>${hsanitize(task.build_step)}</td>` +
+			`<td>${agify(now_ut, task.started)} ago</td>` +
+			`<td><a href="?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_uuid.substring(0, 16))}...</a></td>` +
+			'</tr>';
+	}
+
+	html += '</tbody></table>';
+	return html;
 }
 
 var pos = 0, lli = 1, lines = "", times = "", locked = 1, tfirst = 0,
@@ -988,7 +1015,6 @@ function createBuilderDiv(plat) {
 	platDiv.className = "ibuil bdr";
 	if (!plat.online)
 		platDiv.className += " offline";
-	// Add a new class if the builder is powering up
 	if (plat.powering_up)
 		platDiv.className += " powering-up";
 	if (plat.powering_down)
@@ -1007,10 +1033,40 @@ function createBuilderDiv(plat) {
 	innerHTML += `<img class="ip1 tread1" src="/sai/arch-${plat_arch}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
 	innerHTML += `<img class="ip1 tread2" src="/sai/tc-${plat_tc}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
 	innerHTML += `<br>${plat.peer_ip}`;
+
+	let cached_loadreport = null;
+	let best_match_key = null;
+	for (const short_name in loadreport_data_cache) {
+		if (plat.name.startsWith(short_name)) {
+			if (!best_match_key || short_name.length > best_match_key.length) {
+				best_match_key = short_name;
+			}
+		}
+	}
+	if (best_match_key) {
+		cached_loadreport = loadreport_data_cache[best_match_key];
+	}
+
+	let active_steps = cached_loadreport ? cached_loadreport.active_steps : 0;
+	let busy_class = active_steps > 0 ? "inst_busy" : "inst_idle";
+	let cpu_percentage = 0;
+	let title = `active steps: 0`;
+
+	if (cached_loadreport) {
+		title = `Active steps: ${cached_loadreport.active_steps}\n` +
+			`CPU: ${(cached_loadreport.cpu_percent / 10).toFixed(1)}%\n` +
+			`Free RAM: ${humanize(cached_loadreport.free_ram_kib * 1024)}B\n` +
+			`Free Disk: ${humanize(cached_loadreport.free_disk_kib * 1024)}B`;
+
+		cpu_percentage = (cached_loadreport.cpu_percent / (cached_loadreport.core_count * 1000)) * 100;
+		if (cpu_percentage > 100) cpu_percentage = 100;
+		if (cpu_percentage < 0) cpu_percentage = 0;
+	}
+
 	innerHTML += `<div class="instload" id="instload-${plat.name}">` +
-		     `<div class="inst_box inst_idle" title="active steps: 0">` +
-		     `<div class="inst_text">0</div>` +
-		     `<div class="inst_bar"></div>` +
+		     `<div class="inst_box ${busy_class}" title="${title}">` +
+		     `<div class="inst_text">${active_steps}</div>` +
+		     `<div class="inst_bar" style="height: ${cpu_percentage}%;"></div>` +
 		     `</div>` +
 		     `</div></td></tr></tbody></table>`;
 
@@ -1145,11 +1201,11 @@ function ws_open_sai()
 				 console.log("tid " + tid);
 				 
 				 sai.send("{\"schema\":" +
-				 	  "\"com.warmcat.sai.taskinfo\"," +
-					  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
-				 	  "\"logs\": 1," +
-					  "\"last_log_ts\":" + last_log_timestamp + "," +
-				 	  "\"task_hash\":" +
+					  ""com.warmcat.sai.taskinfo"," +
+					  ""js_api_version": " + SAI_JS_API_VERSION + "," +
+					  ""logs": 1," +
+					  ""last_log_ts":" + last_log_timestamp + "," +
+					  ""task_hash":" +
 				 	  JSON.stringify(tid) + "}");
 				 	  
 				 return;
@@ -1165,9 +1221,9 @@ function ws_open_sai()
 				 console.log("eid " + eid);
 				 
 				 sai.send("{\"schema\":" +
-				 	  "\"com.warmcat.sai.eventinfo\"," +
-					  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
-					  "\"event_hash\":" +
+					  ""com.warmcat.sai.eventinfo"," +
+					  ""js_api_version": " + SAI_JS_API_VERSION + "," +
+					  ""event_hash":" +
 				 	  JSON.stringify(eid) + "}");
 				 	  
 				 return;
@@ -1178,7 +1234,7 @@ function ws_open_sai()
 			 */
 			
 			 sai.send("{\"schema\":" +
-			 	  "\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION + "}");
+				  ""com.warmcat.sai.taskinfo", "js_api_version": " + SAI_JS_API_VERSION + "}");
 		};
 
 		sai.onmessage = function got_packet(msg) {
@@ -1252,13 +1308,6 @@ function ws_open_sai()
 					break;
 				}
 
-				const spreadsheet_contents = {};
-				const existing_spreadsheets = document.querySelectorAll(".spreadsheet-container");
-				existing_spreadsheets.forEach(ss => {
-					if (ss.id) {
-						spreadsheet_contents[ss.id] = ss.innerHTML;
-					}
-				});
 
 				// --- Reconciliation Logic ---
 
@@ -1287,9 +1336,21 @@ function ws_open_sai()
 					const tdSpreadsheet = document.createElement("td");
 					tdSpreadsheet.className = "spreadsheet-container";
 					tdSpreadsheet.id = "spreadsheet-" + plat.name;
-					if (spreadsheet_contents[tdSpreadsheet.id]) {
-						tdSpreadsheet.innerHTML = spreadsheet_contents[tdSpreadsheet.id];
+
+					let best_match_key = null;
+					for (const short_name in spreadsheet_data_cache) {
+						if (plat.name.startsWith(short_name)) {
+							if (!best_match_key || short_name.length > best_match_key.length) {
+								best_match_key = short_name;
+							}
+						}
 					}
+
+					if (best_match_key) {
+						tdSpreadsheet.innerHTML = renderSpreadsheet(spreadsheet_data_cache[best_match_key]);
+						aging();
+					}
+
 					tr.appendChild(tdSpreadsheet);
 
 					tbody.appendChild(tr);
@@ -1424,8 +1485,8 @@ function ws_open_sai()
 								addEventListener("click", function(e) {
 					console.log(e);
 						var rs= "{\"schema\":" +
-				 	 	 "\"com.warmcat.sai.eventreset\"," +
-				 	  	 "\"uuid\": " +
+						 ""com.warmcat.sai.eventreset"," +
+						 ""uuid": " +
 				 	  	 	JSON.stringify(san(e.srcElement.id.substring(11))) + "}";
 				 	  	 	
 				 	  	console.log(rs);
@@ -1436,8 +1497,8 @@ function ws_open_sai()
 							addEventListener("click", function(e) {
 					console.log(e);
 						var rs= "{\"schema\":" +
-				 	 	 "\"com.warmcat.sai.eventdelete\"," +
-				 	  	 "\"uuid\": " +
+						 ""com.warmcat.sai.eventdelete"," +
+						 ""uuid": " +
 				 	  	 	JSON.stringify(san(e.srcElement.id.substring(10))) + "}";
 				 	  	 	
 				 	  	console.log(rs);
@@ -1554,8 +1615,8 @@ function ws_open_sai()
 						document.getElementById("rebuild-" + san(jso.t.uuid)).
 							addEventListener("click", function(e) {
 								var rs= "{\"schema\":" +
-						 	 	 "\"com.warmcat.sai.taskreset\"," +
-						 	  	 "\"uuid\": " +
+								 ""com.warmcat.sai.taskreset"," +
+								 ""uuid": " +
 						 	  	 	JSON.stringify(san(e.srcElement.id.substring(8))) + "}";
 						 	  	 	
 						 	  	console.log(rs);
@@ -1567,11 +1628,11 @@ function ws_open_sai()
 								 */
 								var tid = san(e.srcElement.id.substring(8));
 								var rq = "{\"schema\":" +
-									  "\"com.warmcat.sai.taskinfo\"," +
-									  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
-									  "\"logs\": 1," +
-									  "\"last_log_ts\":" + last_log_timestamp + "," +
-									  "\"task_hash\":" +
+									  ""com.warmcat.sai.taskinfo"," +
+									  ""js_api_version": " + SAI_JS_API_VERSION + "," +
+									  ""logs": 1," +
+									  ""last_log_ts":" + last_log_timestamp + "," +
+									  ""task_hash":" +
 									  JSON.stringify(tid) + "}";
 
 								console.log(rq);
@@ -1592,8 +1653,8 @@ function ws_open_sai()
 						document.getElementById("stop-" + san(jso.t.uuid)).
 							addEventListener("click", function(e) {
 								var rs= "{\"schema\":" +
-						 	 	 "\"com.warmcat.sai.taskcan\"," +
-						 	  	 "\"task_uuid\": " +
+								 ""com.warmcat.sai.taskcan"," +
+								 ""task_uuid": " +
 						 	  	 	JSON.stringify(san(e.srcElement.id.substring(5))) + "}";
 						 	  	 console.log(rs);
 						 	  	sai.send(rs);
@@ -1605,6 +1666,9 @@ function ws_open_sai()
 				break;
 
 			case "com.warmcat.sai.loadreport":
+				// Cache the whole report for subsequent builder redraws
+				loadreport_data_cache[jso.builder_name] = jso;
+
 				// Part 1: Update the load indicator in the builder info box
 				const instloadDiv = document.querySelector('[id^="instload-' + jso.builder_name + '"]');
 				if (instloadDiv) {
@@ -1640,33 +1704,16 @@ function ws_open_sai()
 				}
 
 				// Part 2: Update the spreadsheet of active tasks for the builder
+				if (jso.active_tasks && jso.active_tasks.length > 0)
+					spreadsheet_data_cache[jso.builder_name] = jso.active_tasks;
+				else
+					delete spreadsheet_data_cache[jso.builder_name];
+
 				const spreadsheetContainer = document.querySelector('[id^="spreadsheet-' + jso.builder_name + '"]');
 				if (spreadsheetContainer) {
-					if (jso.active_tasks && jso.active_tasks.length > 0) {
-						var now_ut = Math.round((new Date().getTime() / 1000));
-						let html = '<table class="spreadsheet">' +
-								   '<thead><tr>' +
-								   '<th>Task Name</th>' +
-								   '<th>Build Step</th>' +
-								   '<th>Started</th>' +
-								   '<th>Task UUID</th>' +
-								   '</tr></thead><tbody>';
-
-						for (const task of jso.active_tasks) {
-							html += '<tr>' +
-								`<td>${hsanitize(task.task_name)}</td>` +
-								`<td>${hsanitize(task.build_step)}</td>` +
-								`<td>${agify(now_ut, task.started)} ago</td>` +
-								`<td><a href="?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_uuid.substring(0, 16))}...</a></td>` +
-								'</tr>';
-						}
-
-						html += '</tbody></table>';
-						spreadsheetContainer.innerHTML = html;
+					spreadsheetContainer.innerHTML = renderSpreadsheet(spreadsheet_data_cache[jso.builder_name]);
+					if (spreadsheet_data_cache[jso.builder_name])
 						aging();
-					} else {
-						spreadsheetContainer.innerHTML = '';
-					}
 				}
 				break;
 
