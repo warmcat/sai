@@ -1049,9 +1049,9 @@ function createBuilderDiv(plat) {
 	let plat_tc = plat_parts[2] || 'generic';
 
 	let innerHTML = `<table class="nomar"><tbody><tr><td class="bn">`;
-	innerHTML += `<img class="ip1 zup" src="/sai/${plat_os}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
-	innerHTML += `<img class="ip1 tread1" src="/sai/arch-${plat_arch}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
-	innerHTML += `<img class="ip1 tread2" src="/sai/tc-${plat_tc}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
+	innerHTML += `<img class="ip1 zup" data-sai-src="/sai/${plat_os}.svg">`;
+	innerHTML += `<img class="ip1 tread1" data-sai-src="/sai/arch-${plat_arch}.svg">`;
+	innerHTML += `<img class="ip1 tread2" data-sai-src="/sai/tc-${plat_tc}.svg">`;
 	innerHTML += `<br>${plat.peer_ip}`;
 
 	let cached_loadreport = null;
@@ -1071,26 +1071,37 @@ function createBuilderDiv(plat) {
 	let busy_class = active_steps > 0 ? "inst_busy" : "inst_idle";
 	let cpu_percentage = 0;
 	let title = `active steps: 0`;
+	let height_class = 'h-0';
 
 	if (cached_loadreport) {
 		title = `Active steps: ${cached_loadreport.active_steps}\n` +
 			`CPU: ${(cached_loadreport.cpu_percent / 10).toFixed(1)}%\n` +
-			`Free RAM: ${humanize(cached_loadreport.free_ram_kib * 1024)}B\n` +
+			`Free RAM: ${humanize(cached_loadreport.free_ram_kib * 1024)}B}\n` +
 			`Free Disk: ${humanize(cached_loadreport.free_disk_kib * 1024)}B`;
 
 		cpu_percentage = (cached_loadreport.cpu_percent / (cached_loadreport.core_count * 1000)) * 100;
 		if (cpu_percentage > 100) cpu_percentage = 100;
 		if (cpu_percentage < 0) cpu_percentage = 0;
+		height_class = `h-${Math.round(cpu_percentage / 5) * 5}`;
 	}
 
 	innerHTML += `<div class="instload" id="instload-${plat.name}">` +
 		     `<div class="inst_box ${busy_class}" title="${title}">` +
 		     `<div class="inst_text">${active_steps}</div>` +
-		     `<div class="inst_bar" style="height: ${cpu_percentage}%;"></div>` +
+		     `<div class="inst_bar ${height_class}"></div>` +
 		     `</div>` +
 		     `</div></td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;
+
+	const images = platDiv.querySelectorAll('img[data-sai-src]');
+	images.forEach(img => {
+		img.onerror = () => {
+			img.src = '/sai/generic.svg';
+			img.onerror = null; // prevent infinite loops
+		};
+		img.src = img.getAttribute('data-sai-src');
+	});
 
 	const menuItems = [
 		{ label: `<b>SAI Hash:</b> ${plat.sai_hash}` },
@@ -1719,7 +1730,15 @@ function ws_open_sai()
 						let cpu_percentage = (jso.cpu_percent / (jso.core_count * 1000)) * 100;
 						if (cpu_percentage > 100) cpu_percentage = 100;
 						if (cpu_percentage < 0) cpu_percentage = 0;
-						barDiv.style.height = `${cpu_percentage}%`;
+
+						barDiv.classList.forEach(c => {
+							if (c.startsWith('h-')) {
+								barDiv.classList.remove(c);
+							}
+						});
+
+						let height_class_val = Math.round(cpu_percentage / 5) * 5;
+						barDiv.classList.add(`h-${height_class_val}`);
 					}
 				}
 
