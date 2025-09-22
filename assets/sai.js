@@ -1030,9 +1030,9 @@ function createBuilderDiv(plat) {
 	innerHTML += `<img class="ip1 tread1" data-sai-src="/sai/arch-${plat_arch}.svg">`;
 	innerHTML += `<img class="ip1 tread2" data-sai-src="/sai/tc-${plat_tc}.svg">`;
 	innerHTML += `<div class="resource-bars">` +
-		     `<div class="res-bar empty"><div class="res-bar-inner res-bar-cpu w-0"></div></div>` +
-		     `<div class="res-bar empty"><div class="res-bar-inner res-bar-ram w-0"></div></div>` +
-		     `<div class="res-bar empty"><div class="res-bar-inner res-bar-disk w-0"></div></div>` +
+		     `<div class="res-bar"><div class="res-bar-inner res-bar-cpu w-0"></div></div>` +
+		     `<div class="res-bar"><div class="res-bar-inner res-bar-ram w-0"></div></div>` +
+		     `<div class="res-bar"><div class="res-bar-inner res-bar-disk w-0"></div></div>` +
 		     `</div>`;
 	innerHTML += `<br>${plat.peer_ip}</td></tr></tbody></table>`;
 
@@ -1658,10 +1658,6 @@ function ws_open_sai()
 
 						cpuBar.classList.forEach(c => { if (c.startsWith('w-')) cpuBar.classList.remove(c); });
 						cpuBar.classList.add(width_class);
-						if (cpu_percentage > 0)
-							cpuBar.parentElement.classList.remove('empty');
-						else
-							cpuBar.parentElement.classList.add('empty');
 					}
 					if (ramBar) {
 						let ram_percentage = 0;
@@ -1674,10 +1670,6 @@ function ws_open_sai()
 
 						ramBar.classList.forEach(c => { if (c.startsWith('w-')) ramBar.classList.remove(c); });
 						ramBar.classList.add(width_class);
-						if (ram_percentage > 0)
-							ramBar.parentElement.classList.remove('empty');
-						else
-							ramBar.parentElement.classList.add('empty');
 					}
 					if (diskBar) {
 						let disk_percentage = 0;
@@ -1690,10 +1682,6 @@ function ws_open_sai()
 
 						diskBar.classList.forEach(c => { if (c.startsWith('w-')) diskBar.classList.remove(c); });
 						diskBar.classList.add(width_class);
-						if (disk_percentage > 0)
-							diskBar.parentElement.classList.remove('empty');
-						else
-							diskBar.parentElement.classList.add('empty');
 					}
 				}
 

@@ -641,6 +641,7 @@ div.ibuil {
 	user-select: none;
 	-webkit-user-select: none;
 	cursor: pointer;
+	position: relative;
 }
 
 div.ibuilctr {
@@ -1024,6 +1025,7 @@ body.overlay-active {
 	height: 2px;
 	background-color: rgba(0, 0, 0, 0.2);
 	border: 1px solid #fff;
+	width: 100%;
 }
 
 .res-bar-inner {
