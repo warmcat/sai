@@ -90,6 +90,8 @@ struct sai_builder {
 	lws_dll2_owner_t	lsp_owner; /* list of lws_spawn_piped */
 
 	struct lws_ss_handle	*ss_stay;
+	struct lws_ss_handle	*ss_power_off;
+
 
 	struct sai_nspawn	suspend_nspawn;
 

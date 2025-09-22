@@ -229,10 +229,7 @@ saib_power_link_state(void *userobj, void *sh, lws_ss_constate_t state,
 		r = lws_ss_set_metadata(lws_ss_from_user(g), "url", path, strlen(path));
 		if (r)
 			lwsl_err("%s: set_metadata said %d\n", __func__, (int)r);
-
-		lws_ss_start_timeout(lws_ss_from_user(g), 3000); /* 3 sec */
-
-                return lws_ss_request_tx(lws_ss_from_user(g));
+		break;
 
 	case LWSSSCS_TIMEOUT:
 		break;
@@ -320,6 +317,11 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 		return;
 	}
 #endif
+
+	lws_ss_start_timeout(builder.ss_power_off, 3000); /* 3 sec */
+
+	if (lws_ss_request_tx(builder.ss_power_off))
+		lwsl_ss_warn(builder.ss_power_off, "Unable to request tx");
 }
 
 int
@@ -343,7 +345,7 @@ saib_power_init(void)
 	lwsl_notice("%s: creating sai-power ss...\n", __func__);
 
 	if (lws_ss_create(builder.context, 0, &ssi_saib_power_link_t,
-			  (void *)builder.host, NULL, NULL, NULL)) {
+			  (void *)builder.host, &builder.ss_power_off, NULL, NULL)) {
 		lwsl_err("%s: failed to create sai-power ss\n", __func__);
 		return 1;
 	}
