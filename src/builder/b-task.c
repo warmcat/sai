@@ -255,6 +255,12 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 
 	saib_log_chunk_create(ns, log, (unsigned int)n, 3);
 
+	if (state == NSSTATE_EXECUTING_STEPS && ns->spm &&
+	    !lws_sul_is_scheduled(&ns->spm->sul_load_report))
+		lws_sul_schedule(ns->builder->context, 0,
+				 &ns->spm->sul_load_report,
+				 saib_sul_load_report_cb, 1);
+
 	if (state == NSSTATE_UPLOADING_ARTIFACTS)
 		saib_start_artifact_upload(ns);
 
@@ -1051,11 +1057,6 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		/* we're busy, we're not in the mood for suspending */
 		lwsl_notice("%s: cancelling suspend grace time\n", __func__);
 		lws_sul_cancel(&ns->builder->sul_idle);
-
-		/* if we weren't, we should report load on instances now we're busy */
-		if (lws_dll2_is_detached(&spm->sul_load_report.list))
-			lws_sul_schedule(ns->builder->context, 0, &spm->sul_load_report,
-                		 saib_sul_load_report_cb, 1);
 
 		/*
 		 * Let the mirror thread get on with things...

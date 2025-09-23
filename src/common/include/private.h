@@ -417,6 +417,7 @@ struct sai_env {
 typedef struct sai_plat_server_ref {
 	lws_dll2_t		list;
 	sai_plat_server_t	*spm;
+	char			was_active;
 } sai_plat_server_ref_t;
 
 /*
