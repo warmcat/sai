@@ -512,6 +512,9 @@ function renderSpreadsheet(tasks) {
 	if (!tasks || tasks.length === 0) {
 		return '';
 	}
+
+	tasks.sort((a, b) => a.started - b.started);
+
 	var now_ut = Math.round((new Date().getTime() / 1000));
 	let html = '<table class="spreadsheet">' +
 			   '<thead><tr>' +
