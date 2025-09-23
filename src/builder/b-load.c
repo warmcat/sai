@@ -211,15 +211,15 @@ int saib_get_system_cpu(struct sai_builder *b)
 	if (!GetSystemTimes((FILETIME *)&idle, (FILETIME *)&kernel, (FILETIME *)&user))
 		return -1;
 
-	if (b->last_sys_total.QuadPart) {
-		ULONGLONG total_delta, idle_delta;
+	if (b->last_sys_kernel.QuadPart || b->last_sys_user.QuadPart) {
+		ULONGLONG busy_delta, idle_delta;
 
-		total_delta = (kernel.QuadPart - b->last_sys_kernel.QuadPart) +
-			      (user.QuadPart - b->last_sys_user.QuadPart);
+		busy_delta = (kernel.QuadPart - b->last_sys_kernel.QuadPart) +
+			     (user.QuadPart - b->last_sys_user.QuadPart);
 		idle_delta = idle.QuadPart - b->last_sys_idle.QuadPart;
 
-		if (total_delta) {
-			n = (int)(((total_delta - idle_delta) * 1000) / total_delta);
+		if (busy_delta + idle_delta) {
+			n = (int)((busy_delta * 1000) / (busy_delta + idle_delta));
 			if (n > 1000)
 				n = 1000;
 			ret = n;
