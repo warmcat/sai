@@ -508,7 +508,6 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
 {
 	struct sai_plat_server *spm = lws_container_of(sul,
 				       struct sai_plat_server, sul_load_report);
-	char somebody_not_idle = 0;
 
 	/*
 	 * This builder process may have multiple platforms, each with
@@ -554,27 +553,24 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
 					lr->reserved_ram_kib += ns->task->est_peak_mem_kib;
 					lr->reserved_disk_kib += ns->task->est_disk_kib;
 				}
-				somebody_not_idle = 1;
 			}
 		} lws_end_foreach_dll(d);
 
 		/*
-		 * Only send a report for this platform if it has active tasks.
-		 * We could send for all, but this reduces noise.
+		 * Always send a report for this platform, so the UI can clear
+		 * its state when the last task finishes.
 		 */
-		if (lr->active_steps > 0) {
-			lws_dll2_add_tail(&lr->list, &spm->load_report_owner);
-			if (lws_ss_request_tx(spm->ss))
-				lwsl_debug("%s: request tx failed\n", __func__);
-		} else {
-			free(lr);
-		}
+		lws_dll2_add_tail(&lr->list, &spm->load_report_owner);
+		if (lws_ss_request_tx(spm->ss))
+			lwsl_debug("%s: request tx failed\n", __func__);
 	} lws_end_foreach_dll(p);
 
-	if (somebody_not_idle)
-		/* Reschedule the timer only if at least one active instance */
-		lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
-			saib_sul_load_report_cb, SAI_LOAD_REPORT_US);
+	/*
+	 * Always reschedule the timer, so we can send updates even
+	 * when idle, allowing the UI to clear completed tasks.
+	 */
+	lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
+		saib_sul_load_report_cb, SAI_LOAD_REPORT_US);
 }
 
 static lws_ss_state_return_t
