@@ -212,16 +212,18 @@ int saib_get_system_cpu(struct sai_builder *b)
 		return -1;
 
 	if (b->last_sys_kernel.QuadPart || b->last_sys_user.QuadPart) {
-		ULONGLONG busy_delta, idle_delta;
+		ULONGLONG total_delta, idle_delta;
 
-		busy_delta = (kernel.QuadPart - b->last_sys_kernel.QuadPart) +
-			     (user.QuadPart - b->last_sys_user.QuadPart);
+		total_delta = (kernel.QuadPart - b->last_sys_kernel.QuadPart) +
+			      (user.QuadPart - b->last_sys_user.QuadPart);
 		idle_delta = idle.QuadPart - b->last_sys_idle.QuadPart;
 
-		if (busy_delta + idle_delta) {
-			n = (int)((busy_delta * 1000) / (busy_delta + idle_delta));
+		if (total_delta) {
+			n = (int)(((total_delta - idle_delta) * 1000) / total_delta);
 			if (n > 1000)
 				n = 1000;
+			if (n < 0)
+				n = 0;
 			ret = n;
 		}
 	}
