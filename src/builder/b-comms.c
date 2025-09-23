@@ -506,66 +506,75 @@ cleanup_on_ss_disconnect(struct lws_dll2 *d, void *user)
 void
 saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
 {
-       struct sai_plat_server *spm = lws_container_of(sul,
-                                       struct sai_plat_server, sul_load_report);
-       sai_load_report_t *lr = calloc(1, sizeof(*lr));
-       struct sai_plat *sp = NULL;
+	struct sai_plat_server *spm = lws_container_of(sul,
+				       struct sai_plat_server, sul_load_report);
 	char somebody_not_idle = 0;
 
-       if (!lr)
-               return;
+	/*
+	 * This builder process may have multiple platforms, each with
+	 * multiple instances. We report on each platform separately so the
+	 * UI can distinguish them.
+	 */
 
-       /*
-        * This builder process has one name, but may have multiple platforms,
-        * each with multiple instances. For now, we report on the whole builder
-        * under one name.
-        */
-       lws_strncpy(lr->builder_name, builder.host, sizeof(lr->builder_name));
-       lr->core_count = saib_get_cpu_count();
-       lr->initial_free_ram_kib = saib_get_total_ram_kib();
-       lr->initial_free_disk_kib = saib_get_total_disk_kib(builder.home);
-       lr->reserved_ram_kib = 0;
-       lr->reserved_disk_kib = 0;
-       lr->cpu_percent = (unsigned int)saib_get_system_cpu(&builder);
-       lr->active_steps = 0;
-       lws_dll2_owner_clear(&lr->active_tasks);
+	lws_start_foreach_dll(struct lws_dll2 *, p, builder.sai_plat_owner.head) {
+		struct sai_plat *sp = lws_container_of(p, sai_plat_t, sai_plat_list);
+		sai_load_report_t *lr = calloc(1, sizeof(*lr));
 
-       lws_start_foreach_dll(struct lws_dll2 *, p, builder.sai_plat_owner.head) {
-	       sp = lws_container_of(p, sai_plat_t, sai_plat_list);
-               lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
-                       struct sai_nspawn *ns = lws_container_of(d,
-                                                       struct sai_nspawn, list);
-                       if (ns->state == NSSTATE_EXECUTING_STEPS && ns->task) {
-                               sai_active_task_info_t *ati = malloc(sizeof(*ati));
-                               if (ati) {
-                                       memset(ati, 0, sizeof(*ati));
-                                       lws_strncpy(ati->task_uuid, ns->task->uuid, sizeof(ati->task_uuid));
-                                       lws_strncpy(ati->task_name, ns->task->taskname, sizeof(ati->task_name));
-                                       ati->build_step = ns->current_step;
-                                       ati->total_steps = ns->build_step_count;
-                                       ati->est_peak_mem_kib = ns->task->est_peak_mem_kib;
-                                       ati->est_cpu_load_pct = ns->task->est_cpu_load_pct;
-                                       ati->est_disk_kib = ns->task->est_disk_kib;
-                                       ati->started = ns->task->started;
-                                       lws_dll2_add_tail(&ati->list, &lr->active_tasks);
-                                       lr->active_steps++;
+		if (!lr)
+			continue;
 
-                                       lr->reserved_ram_kib += ns->task->est_peak_mem_kib;
-                                       lr->reserved_disk_kib += ns->task->est_disk_kib;
-                               }
-			       somebody_not_idle = 1;
-                       }
-               } lws_end_foreach_dll(d);
-       } lws_end_foreach_dll(p);
+		lws_strncpy(lr->builder_name, sp->name, sizeof(lr->builder_name));
+		lr->core_count = saib_get_cpu_count();
+		lr->initial_free_ram_kib = saib_get_total_ram_kib();
+		lr->initial_free_disk_kib = saib_get_total_disk_kib(builder.home);
+		lr->reserved_ram_kib = 0;
+		lr->reserved_disk_kib = 0;
+		lr->cpu_percent = (unsigned int)saib_get_system_cpu(&builder);
+		lr->active_steps = 0;
+		lws_dll2_owner_clear(&lr->active_tasks);
 
-       lws_dll2_add_tail(&lr->list, &spm->load_report_owner);
-       if (lws_ss_request_tx(spm->ss))
-	       lwsl_debug("%s: request tx failed\n", __func__);
+		lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
+			struct sai_nspawn *ns = lws_container_of(d,
+							struct sai_nspawn, list);
+			if (ns->state == NSSTATE_EXECUTING_STEPS && ns->task) {
+				sai_active_task_info_t *ati = malloc(sizeof(*ati));
+				if (ati) {
+					memset(ati, 0, sizeof(*ati));
+					lws_strncpy(ati->task_uuid, ns->task->uuid, sizeof(ati->task_uuid));
+					lws_strncpy(ati->task_name, ns->task->taskname, sizeof(ati->task_name));
+					ati->build_step = ns->current_step;
+					ati->total_steps = ns->build_step_count;
+					ati->est_peak_mem_kib = ns->task->est_peak_mem_kib;
+					ati->est_cpu_load_pct = ns->task->est_cpu_load_pct;
+					ati->est_disk_kib = ns->task->est_disk_kib;
+					ati->started = ns->task->started;
+					lws_dll2_add_tail(&ati->list, &lr->active_tasks);
+					lr->active_steps++;
+
+					lr->reserved_ram_kib += ns->task->est_peak_mem_kib;
+					lr->reserved_disk_kib += ns->task->est_disk_kib;
+				}
+				somebody_not_idle = 1;
+			}
+		} lws_end_foreach_dll(d);
+
+		/*
+		 * Only send a report for this platform if it has active tasks.
+		 * We could send for all, but this reduces noise.
+		 */
+		if (lr->active_steps > 0) {
+			lws_dll2_add_tail(&lr->list, &spm->load_report_owner);
+			if (lws_ss_request_tx(spm->ss))
+				lwsl_debug("%s: request tx failed\n", __func__);
+		} else {
+			free(lr);
+		}
+	} lws_end_foreach_dll(p);
 
 	if (somebody_not_idle)
 		/* Reschedule the timer only if at least one active instance */
 		lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
-                        saib_sul_load_report_cb, SAI_LOAD_REPORT_US);
+			saib_sul_load_report_cb, SAI_LOAD_REPORT_US);
 }
 
 static lws_ss_state_return_t

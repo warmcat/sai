@@ -1647,7 +1647,7 @@ function ws_open_sai()
 				// Cache the whole report for subsequent builder redraws
 				loadreport_data_cache[jso.builder_name] = jso;
 
-				const builderDiv = document.querySelector('[id^="binfo-' + jso.builder_name + '"]');
+				const builderDiv = document.getElementById('binfo-' + jso.builder_name);
 				if (builderDiv) {
 					const cpuBar = builderDiv.querySelector(".res-bar-cpu");
 					const ramBar = builderDiv.querySelector(".res-bar-ram");
@@ -1694,7 +1694,7 @@ function ws_open_sai()
 				else
 					delete spreadsheet_data_cache[jso.builder_name];
 
-				const spreadsheetContainer = document.querySelector('[id^="spreadsheet-' + jso.builder_name + '"]');
+				const spreadsheetContainer = document.getElementById('spreadsheet-' + jso.builder_name);
 				if (spreadsheetContainer) {
 					spreadsheetContainer.innerHTML = renderSpreadsheet(spreadsheet_data_cache[jso.builder_name]);
 					if (spreadsheet_data_cache[jso.builder_name])
