@@ -834,9 +834,11 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 					lwsl_notice("%s: Marking builder %s as power-managed\n",
 						    __func__, b->name);
 					lws_snprintf(q, sizeof(q),
-						     "UPDATE builders SET power_managed=1 WHERE name='%s'",
+						     "UPDATE builders SET power_managed=1 WHERE name LIKE '%s.%%'",
 						     b->name);
-					sai_sqlite3_statement(vhd->server.pdb, q, "set power_managed");
+					if (sai_sqlite3_statement(vhd->server.pdb, q, "set power_managed"))
+						lwsl_err("%s: Failed to mark builder %s as power-managed\n",
+							 __func__, b->name);
 				} lws_end_foreach_dll(p);
 			}
 
