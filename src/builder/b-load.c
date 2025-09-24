@@ -211,7 +211,7 @@ int saib_get_system_cpu(struct sai_builder *b)
 	if (!GetSystemTimes((FILETIME *)&idle, (FILETIME *)&kernel, (FILETIME *)&user))
 		return -1;
 
-	if (b->last_sys_total.QuadPart) {
+	if (b->last_sys_kernel.QuadPart || b->last_sys_user.QuadPart) {
 		ULONGLONG total_delta, idle_delta;
 
 		total_delta = (kernel.QuadPart - b->last_sys_kernel.QuadPart) +
@@ -220,8 +220,10 @@ int saib_get_system_cpu(struct sai_builder *b)
 
 		if (total_delta) {
 			n = (int)(((total_delta - idle_delta) * 1000) / total_delta);
-			if (n > 1000)
-				n = 1000;
+//			if (n > 1000)
+//				n = 1000;
+			if (n < 0)
+				n = 0;
 			ret = n;
 		}
 	}

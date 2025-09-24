@@ -30,8 +30,6 @@
 
 #include "w-private.h"
 
-extern const lws_struct_map_t lsm_load_report_members[7]; 
-
 /*
  * For decoding specific event data request from browser
  */
