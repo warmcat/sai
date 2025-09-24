@@ -92,6 +92,7 @@ const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/includ
 	LSM_CARRAY	(sai_plat_t, sai_hash,		"sai_hash"),
 	LSM_CARRAY	(sai_plat_t, lws_hash,		"lws_hash"),
 	LSM_UNSIGNED	(sai_plat_t, windows,		"windows"),
+	LSM_UNSIGNED	(sai_plat_t, power_managed,	"power_managed"),
 };
 
 // This is the map for serializing to JSON
@@ -107,7 +108,7 @@ const lws_struct_map_t lsm_plat_for_json[] = {
     LSM_CARRAY(sai_plat_t, sai_hash,    "sai_hash"),
     LSM_CARRAY(sai_plat_t, lws_hash,    "lws_hash"),
     LSM_UNSIGNED(sai_plat_t, windows,    "windows"),
-    LSM_CHAR(sai_plat_t, power_managed, "power_managed"),
+    LSM_UNSIGNED(sai_plat_t, power_managed, "power_managed"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {
@@ -315,7 +316,7 @@ const lws_struct_map_t lsm_schema_sq3_map_artifact[] = {
 
 const lws_struct_map_t lsm_stay[] = {
 	LSM_CARRAY(sai_stay_t, builder_name, "builder_name"),
-	LSM_CHAR(sai_stay_t, stay_on, "stay_on"),
+	LSM_UNSIGNED(sai_stay_t, stay_on, "stay_on"),
 };
 
 const lws_struct_map_t lsm_schema_stay[] = {

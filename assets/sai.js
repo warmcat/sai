@@ -1065,7 +1065,7 @@ function createBuilderDiv(plat) {
 		}
 	];
 
-	if (plat.power_managed) {
+	if (plat.power_managed && authd) {
 		menuItems.push({
 			label: "Stay On",
 			callback: () => {
