@@ -740,7 +740,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		}
 
 		if (!strcmp((char *)start, "/power")) {
-			lwsl_info("%s: ESTABLISHED: power\n", __func__);
+			lwsl_notice("%s: ESTABLISHED: power connection\n", __func__);
 			pss->wsi = wsi;
 			pss->is_power = 1;
 			lws_dll2_add_head(&pss->same, &vhd->sai_powers);
