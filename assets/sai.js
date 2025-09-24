@@ -295,11 +295,11 @@ var lang_ja = "{" +
 	"\"Committer\": \"コミッター\"," +
 	"\"Raw Patch\": \"生パッチ\"," +
 	"\"Page fetched %{pf} ago, creation time: %{ct}ms " +
- 	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)\": " +
- 	"\"%{pf}間前に取得されたページ, 作成にかかった時間: %{ct}ms " +
- 	   "(vhost etag キャッシュヒット: %{ve}%, キャッシュヒット: %{ch}%)\"," +
- 	"\"Created %{pf} ago, creation time: %{ct}ms \":" +
- 	   "\"%{pf}間前に作成されました, 作成にかかった時間: %{ct}ms\"" +
+	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)\": " +
+	"\"%{pf}間前に取得されたページ, 作成にかかった時間: %{ct}ms " +
+	   "(vhost etag キャッシュヒット: %{ve}%, キャッシュヒット: %{ch}%)\"," +
+	"\"Created %{pf} ago, creation time: %{ct}ms \":\"" +
+	   "%{pf}間前に作成されました, 作成にかかった時間: %{ct}ms\"" +
   "}}";
 
 var lang_zht = "{" +
@@ -341,11 +341,11 @@ var lang_zht = "{" +
   "\"Committer\": \"提交者\"," +
   "\"Raw Patch\": \"原始補丁\"," +
   "\"Page fetched %{pf} ago, creation time: %{ct}ms " +
-  	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)\": " +
-  	"\"頁面%{pf}前獲取, 創作時間: %{ct}ms " +
-  	   "(vhost etag 緩存命中: %{ve}%, 緩存命中: %{ch}%)\"," +
-  "\"Created %{pf} ago, creation time: %{ct}ms \":" +
-  	"\"%{pf}前創建, 創作時間: %{ct}ms \"" +
+	   "(vhost etag hits: %{ve}%, cache hits: %{ch}%)\": " +
+	"\"頁面%{pf}前獲取, 創作時間: %{ct}ms " +
+	   "(vhost etag 緩存命中: %{ve}%, 緩存命中: %{ch}%)\"," +
+  "\"Created %{pf} ago, creation time: %{ct}ms \":\"" +
+	"%{pf}前創建, 創作時間: %{ct}ms \"" +
 "}}";
 
 var lang_zhs = "{" +
@@ -396,7 +396,7 @@ var lang_zhs = "{" +
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
 	logAnsiState = {},
-	ongoing_task_activities = {}, last_log_timestamp = 0;
+	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {};
 
 function update_task_activities() {
 	for (const uuid in ongoing_task_activities) {
@@ -506,6 +506,33 @@ function hsanitize(s)
 	return s.toString().replace(/[<>"'&]/g, function(chr) {
 		return '&' + table[chr] + ';';
 	}).replace(/\n/g, '\n');
+}
+
+function renderSpreadsheet(tasks) {
+	if (!tasks || tasks.length === 0) {
+		return '';
+	}
+
+	tasks.sort((a, b) => b.started - a.started || a.task_name.localeCompare(b.task_name));
+
+	var now_ut = Math.round((new Date().getTime() / 1000));
+	let html = '<table class="spreadsheet">' +
+			   '<thead><tr>' +
+			   '<th>Task</th>' +
+			   '<th>Build Step</th>' +
+			   '<th>Started</th>' +
+			   '</tr></thead><tbody>';
+
+	for (const task of tasks) {
+		html += '<tr>' +
+			`<td><a href="?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>` +
+			`<td>${hsanitize(task.build_step)} / ${hsanitize(task.total_steps)}</td>` +
+			`<td>${agify(now_ut, task.started)} ago</td>` +
+			'</tr>';
+	}
+
+	html += '</tbody></table>';
+	return html;
 }
 
 var pos = 0, lli = 1, lines = "", times = "", locked = 1, tfirst = 0,
@@ -988,7 +1015,6 @@ function createBuilderDiv(plat) {
 	platDiv.className = "ibuil bdr";
 	if (!plat.online)
 		platDiv.className += " offline";
-	// Add a new class if the builder is powering up
 	if (plat.powering_up)
 		platDiv.className += " powering-up";
 	if (plat.powering_down)
@@ -1003,18 +1029,26 @@ function createBuilderDiv(plat) {
 	let plat_tc = plat_parts[2] || 'generic';
 
 	let innerHTML = `<table class="nomar"><tbody><tr><td class="bn">`;
-	innerHTML += `<img class="ip1 zup" src="/sai/${plat_os}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
-	innerHTML += `<img class="ip1 tread1" src="/sai/arch-${plat_arch}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
-	innerHTML += `<img class="ip1 tread2" src="/sai/tc-${plat_tc}.svg" onerror="this.src='/sai/generic.svg';this.onerror=null;">`;
-	innerHTML += `<br>${plat.peer_ip}`;
-	innerHTML += `<div class="instload" id="instload-${plat.name}">` +
-		     `<div class="inst_box inst_idle" title="active steps: 0">` +
-		     `<div class="inst_text">0</div>` +
-		     `<div class="inst_bar"></div>` +
-		     `</div>` +
-		     `</div></td></tr></tbody></table>`;
+	innerHTML += `<img class="ip1 zup" data-sai-src="/sai/${plat_os}.svg">`;
+	innerHTML += `<img class="ip1 tread1" data-sai-src="/sai/arch-${plat_arch}.svg">`;
+	innerHTML += `<img class="ip1 tread2" data-sai-src="/sai/tc-${plat_tc}.svg">`;
+	innerHTML += `<div class="resource-bars">` +
+		     `<div class="res-bar"><div class="res-bar-inner res-bar-cpu w-0"></div></div>` +
+		     `<div class="res-bar"><div class="res-bar-inner res-bar-ram w-0"></div></div>` +
+		     `<div class="res-bar"><div class="res-bar-inner res-bar-disk w-0"></div></div>` +
+		     `</div>`;
+	innerHTML += `<br>${plat.peer_ip}</td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;
+
+	const images = platDiv.querySelectorAll('img[data-sai-src]');
+	images.forEach(img => {
+		img.onerror = () => {
+			img.src = '/sai/generic.svg';
+			img.onerror = null; // prevent infinite loops
+		};
+		img.src = img.getAttribute('data-sai-src');
+	});
 
 	const menuItems = [
 		{ label: `<b>SAI Hash:</b> ${plat.sai_hash}` },
@@ -1145,11 +1179,11 @@ function ws_open_sai()
 				 console.log("tid " + tid);
 				 
 				 sai.send("{\"schema\":" +
-				 	  "\"com.warmcat.sai.taskinfo\"," +
+					  "\"com.warmcat.sai.taskinfo\"," +
 					  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
-				 	  "\"logs\": 1," +
+					  "\"logs\": 1," +
 					  "\"last_log_ts\":" + last_log_timestamp + "," +
-				 	  "\"task_hash\":" +
+					  "\"task_hash\":" +
 				 	  JSON.stringify(tid) + "}");
 				 	  
 				 return;
@@ -1165,7 +1199,7 @@ function ws_open_sai()
 				 console.log("eid " + eid);
 				 
 				 sai.send("{\"schema\":" +
-				 	  "\"com.warmcat.sai.eventinfo\"," +
+					  "\"com.warmcat.sai.eventinfo\"," +
 					  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
 					  "\"event_hash\":" +
 				 	  JSON.stringify(eid) + "}");
@@ -1178,7 +1212,7 @@ function ws_open_sai()
 			 */
 			
 			 sai.send("{\"schema\":" +
-			 	  "\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION + "}");
+				  "\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION + "}");
 		};
 
 		sai.onmessage = function got_packet(msg) {
@@ -1252,9 +1286,10 @@ function ws_open_sai()
 					break;
 				}
 
+
 				// --- Reconciliation Logic ---
 
-				buildersContainer.innerHTML = ""; // Clear for safety
+				buildersContainer.innerHTML = "&nbsp;"; // Clear for safety
 				const table = document.createElement("table");
 				table.className = "builders";
 				const tbody = document.createElement("tbody");
@@ -1279,6 +1314,21 @@ function ws_open_sai()
 					const tdSpreadsheet = document.createElement("td");
 					tdSpreadsheet.className = "spreadsheet-container";
 					tdSpreadsheet.id = "spreadsheet-" + plat.name;
+
+					let best_match_key = null;
+					for (const short_name in spreadsheet_data_cache) {
+						if (plat.name.startsWith(short_name)) {
+							if (!best_match_key || short_name.length > best_match_key.length) {
+								best_match_key = short_name;
+							}
+						}
+					}
+
+					if (best_match_key) {
+						tdSpreadsheet.innerHTML = renderSpreadsheet(spreadsheet_data_cache[best_match_key]);
+						aging();
+					}
+
 					tr.appendChild(tdSpreadsheet);
 
 					tbody.appendChild(tr);
@@ -1413,8 +1463,8 @@ function ws_open_sai()
 								addEventListener("click", function(e) {
 					console.log(e);
 						var rs= "{\"schema\":" +
-				 	 	 "\"com.warmcat.sai.eventreset\"," +
-				 	  	 "\"uuid\": " +
+						 "\"com.warmcat.sai.eventreset\"," +
+						 "\"uuid\": " +
 				 	  	 	JSON.stringify(san(e.srcElement.id.substring(11))) + "}";
 				 	  	 	
 				 	  	console.log(rs);
@@ -1425,8 +1475,8 @@ function ws_open_sai()
 							addEventListener("click", function(e) {
 					console.log(e);
 						var rs= "{\"schema\":" +
-				 	 	 "\"com.warmcat.sai.eventdelete\"," +
-				 	  	 "\"uuid\": " +
+						 "\"com.warmcat.sai.eventdelete\"," +
+						 "\"uuid\": " +
 				 	  	 	JSON.stringify(san(e.srcElement.id.substring(10))) + "}";
 				 	  	 	
 				 	  	console.log(rs);
@@ -1543,8 +1593,8 @@ function ws_open_sai()
 						document.getElementById("rebuild-" + san(jso.t.uuid)).
 							addEventListener("click", function(e) {
 								var rs= "{\"schema\":" +
-						 	 	 "\"com.warmcat.sai.taskreset\"," +
-						 	  	 "\"uuid\": " +
+								 "\"com.warmcat.sai.taskreset\"," +
+								 "\"uuid\": " +
 						 	  	 	JSON.stringify(san(e.srcElement.id.substring(8))) + "}";
 						 	  	 	
 						 	  	console.log(rs);
@@ -1581,8 +1631,8 @@ function ws_open_sai()
 						document.getElementById("stop-" + san(jso.t.uuid)).
 							addEventListener("click", function(e) {
 								var rs= "{\"schema\":" +
-						 	 	 "\"com.warmcat.sai.taskcan\"," +
-						 	  	 "\"task_uuid\": " +
+								 "\"com.warmcat.sai.taskcan\"," +
+								 "\"task_uuid\": " +
 						 	  	 	JSON.stringify(san(e.srcElement.id.substring(5))) + "}";
 						 	  	 console.log(rs);
 						 	  	sai.send(rs);
@@ -1593,68 +1643,64 @@ function ws_open_sai()
 				}
 				break;
 
-	case "com.warmcat.sai.loadreport":
-		const loadContainer = document.getElementById("instload-" + jso.builder_name);
-		if (!loadContainer) {
-			break;
-		}
+			case "com.warmcat.sai.loadreport":
+				// Cache the whole report for subsequent builder redraws
+				loadreport_data_cache[jso.builder_name] = jso;
 
-		const instanceDiv = loadContainer.querySelector(".inst_box");
-		if (!instanceDiv) {
-			break;
-		}
+				const builderDiv = document.getElementById('binfo-' + jso.builder_name);
+				if (builderDiv) {
+					const cpuBar = builderDiv.querySelector(".res-bar-cpu");
+					const ramBar = builderDiv.querySelector(".res-bar-ram");
+					const diskBar = builderDiv.querySelector(".res-bar-disk");
 
-		const textDiv = instanceDiv.querySelector(".inst_text");
-		const barDiv = instanceDiv.querySelector(".inst_bar");
+					if (cpuBar) {
+						let cpu_percentage = (jso.cpu_percent / (jso.core_count * 1000)) * 100;
+						if (cpu_percentage > 100) cpu_percentage = 100;
+						if (cpu_percentage < 0) cpu_percentage = 0;
+						let width_class = `w-${Math.round(cpu_percentage / 5) * 5}`;
 
-		if (textDiv) {
-			textDiv.textContent = jso.active_steps;
-		}
+						cpuBar.classList.forEach(c => { if (c.startsWith('w-')) cpuBar.classList.remove(c); });
+						cpuBar.classList.add(width_class);
+					}
+					if (ramBar) {
+						let ram_percentage = 0;
+						if (jso.initial_free_ram_kib > 0) {
+							ram_percentage = (jso.reserved_ram_kib / jso.initial_free_ram_kib) * 100;
+						}
+						if (ram_percentage > 100) ram_percentage = 100;
+						if (ram_percentage < 0) ram_percentage = 0;
+						let width_class = `w-${Math.round(ram_percentage / 5) * 5}`;
 
-		instanceDiv.title = `Active steps: ${jso.active_steps}\n` +
-				    `CPU: ${(jso.cpu_percent / 10).toFixed(1)}%\n` +
-				    `Free RAM: ${humanize(jso.free_ram_kib * 1024)}B\n` +
-				    `Free Disk: ${humanize(jso.free_disk_kib * 1024)}B`;
+						ramBar.classList.forEach(c => { if (c.startsWith('w-')) ramBar.classList.remove(c); });
+						ramBar.classList.add(width_class);
+					}
+					if (diskBar) {
+						let disk_percentage = 0;
+						if (jso.initial_free_disk_kib > 0) {
+							disk_percentage = (jso.reserved_disk_kib / jso.initial_free_disk_kib) * 100;
+						}
+						if (disk_percentage > 100) disk_percentage = 100;
+						if (disk_percentage < 0) disk_percentage = 0;
+						let width_class = `w-${Math.round(disk_percentage / 5) * 5}`;
 
-		if (jso.active_steps > 0) {
-			instanceDiv.classList.add("inst_busy");
-			instanceDiv.classList.remove("inst_idle");
-		} else {
-			instanceDiv.classList.add("inst_idle");
-			instanceDiv.classList.remove("inst_busy");
-		}
+						diskBar.classList.forEach(c => { if (c.startsWith('w-')) diskBar.classList.remove(c); });
+						diskBar.classList.add(width_class);
+					}
+				}
 
-		if (barDiv) {
-			let cpu_percentage = (jso.cpu_percent / (jso.core_count * 1000)) * 100;
-			if (cpu_percentage > 100) cpu_percentage = 100;
-			if (cpu_percentage < 0) cpu_percentage = 0;
-			barDiv.style.height = `${cpu_percentage}%`;
-		}
+				// Part 2: Update the spreadsheet of active tasks for the builder
+				if (jso.active_tasks && jso.active_tasks.length > 0)
+					spreadsheet_data_cache[jso.builder_name] = jso.active_tasks;
+				else
+					delete spreadsheet_data_cache[jso.builder_name];
 
-		const spreadsheetContainer = document.getElementById("spreadsheet-" + jso.builder_name);
-		if (spreadsheetContainer) {
-			let table = '<table><thead><tr>' +
-				'<th>Task</th><th>Step</th><th>Started</th>' +
-				'<th>Mem (KiB)</th><th>CPU (%)</th><th>Disk (KiB)</th>' +
-				'</tr></thead><tbody>';
-
-			if (jso.active_tasks) {
-				jso.active_tasks.forEach(task => {
-					table += `<tr>` +
-						`<td>${hsanitize(task.task_name)}</td>` +
-						`<td>${hsanitize(task.build_step)}</td>` +
-						`<td>${agify(now_ut, task.started)}</td>` +
-						`<td>${humanize(task.est_peak_mem_kib * 1024)}</td>` +
-						`<td>${task.est_cpu_load_pct}</td>` +
-						`<td>${humanize(task.est_disk_kib * 1024)}</td>` +
-						`</tr>`;
-				});
-			}
-
-			table += '</tbody></table>';
-			spreadsheetContainer.innerHTML = table;
-		}
-		break;
+				const spreadsheetContainer = document.getElementById('spreadsheet-' + jso.builder_name);
+				if (spreadsheetContainer) {
+					spreadsheetContainer.innerHTML = renderSpreadsheet(spreadsheet_data_cache[jso.builder_name]);
+					if (spreadsheet_data_cache[jso.builder_name])
+						aging();
+				}
+				break;
 
 			case "com-warmcat-sai-artifact":
 				console.log(jso);
@@ -1678,7 +1724,8 @@ function ws_open_sai()
 						var act = jso.activity[i];
 						ongoing_task_activities[act.uuid] = act.cat;
 					}
-				}
+				} else
+						console.log("no spreadsheetContainer");
 				break;
 
 			case "com.warmcat.sai.unauthorized":

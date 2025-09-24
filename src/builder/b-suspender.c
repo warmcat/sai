@@ -49,8 +49,6 @@
 #if !defined(PATH_MAX)
 #define PATH_MAX MAX_PATH
 #endif
-
-int getpid(void) { return 0; }
 #endif
 
 #include "b-private.h"

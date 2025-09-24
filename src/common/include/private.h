@@ -68,6 +68,7 @@ typedef struct sai_active_task_info {
 	char			task_uuid[65];
 	char			task_name[96];
 	int			build_step;
+	int			total_steps;
 	unsigned int		est_peak_mem_kib;
 	unsigned int		est_cpu_load_pct;
 	unsigned int		est_disk_kib;
@@ -78,8 +79,10 @@ typedef struct sai_load_report {
 	lws_dll2_t		list; /* For queuing on sai_plat_server */
 	char			builder_name[64];
 	int			core_count;
-	unsigned int		free_ram_kib;
-	unsigned int		free_disk_kib;
+	unsigned int		initial_free_ram_kib;
+	unsigned int		reserved_ram_kib;
+	unsigned int		initial_free_disk_kib;
+	unsigned int		reserved_disk_kib;
 	unsigned int		active_steps;
 	unsigned int		cpu_percent;
 	lws_dll2_owner_t	active_tasks;
@@ -136,6 +139,7 @@ typedef struct {
 	int			state;
 	int			uid;
 	int			build_step;
+	int			build_step_count;
 
 	/* estimations for builder resource consumption */
 	unsigned int		est_peak_mem_kib;
@@ -413,6 +417,7 @@ struct sai_env {
 typedef struct sai_plat_server_ref {
 	lws_dll2_t		list;
 	sai_plat_server_t	*spm;
+	char			was_active;
 } sai_plat_server_ref_t;
 
 /*
@@ -538,7 +543,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[10],
-	lsm_task[28],
+	lsm_task[29],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],
@@ -553,7 +558,7 @@ extern const lws_struct_map_t
 	lsm_schema_rebuild[1],
 	lsm_schema_build_metric[1],
 	lsm_schema_sq3_map_build_metric[1],
-	lsm_load_report_members[7]
+	lsm_load_report_members[9]
 	;
 extern const lws_struct_map_t lsm_build_metric[12];
 extern const lws_struct_map_t lsm_plat[8];
