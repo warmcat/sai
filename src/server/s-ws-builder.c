@@ -542,21 +542,6 @@ handle:
 			 * Step 2: Update the long-lived, malloc'd in-memory list.
 			 */
 			sai_plat_t *live_cb;
-			char sel_q[256];
-			unsigned int pm = 0, so = 0;
-
-			lws_snprintf(sel_q, sizeof(sel_q),
-				     "SELECT power_managed, stay_on FROM builders WHERE name='%s'",
-				     build->name);
-
-			sqlite3_stmt *stmt;
-			if (sqlite3_prepare_v2(vhd->server.pdb, sel_q, -1, &stmt, NULL) == SQLITE_OK) {
-				if (sqlite3_step(stmt) == SQLITE_ROW) {
-					pm = sqlite3_column_int(stmt, 0);
-					so = sqlite3_column_int(stmt, 1);
-				}
-				sqlite3_finalize(stmt);
-			}
 			//cb = sais_builder_from_uuid(vhd, build->name);
 			//if (cb)
 			//	sais_builder_disconnected(vhd, cb->wsi);
