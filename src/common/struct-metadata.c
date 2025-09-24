@@ -322,3 +322,19 @@ const lws_struct_map_t lsm_stay[] = {
 const lws_struct_map_t lsm_schema_stay[] = {
 	LSM_SCHEMA(sai_stay_t, NULL, lsm_stay, "com.warmcat.sai.stay"),
 };
+
+const lws_struct_map_t lsm_power_managed_builder[] = {
+	LSM_CARRAY(sai_power_managed_builder_t, name, "name"),
+};
+
+const lws_struct_map_t lsm_power_managed_builders_list[] = {
+	LSM_LIST(sai_power_managed_builders_t, builders,
+		 sai_power_managed_builder_t, list, NULL,
+		 lsm_power_managed_builder, "builders"),
+};
+
+const lws_struct_map_t lsm_schema_power_managed_builders[] = {
+	LSM_SCHEMA(sai_power_managed_builders_t, NULL,
+		   lsm_power_managed_builders_list,
+		   "com.warmcat.sai.power_managed_builders"),
+};

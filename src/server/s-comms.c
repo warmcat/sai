@@ -793,17 +793,20 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			struct lejp_ctx ctx;
 			lws_struct_args_t a;
 			sai_power_state_t *ps;
-			const lws_struct_map_t lsm_schema_power_state[] = {
+			const lws_struct_map_t lsm_schema_map_power[] = {
 				LSM_SCHEMA(sai_power_state_t, NULL, lsm_power_state,
 					   "com.warmcat.sai.powerstate"),
+				LSM_SCHEMA(sai_power_managed_builders_t, NULL,
+					   lsm_power_managed_builders_list,
+					   "com.warmcat.sai.power_managed_builders"),
 			};
 
 			/* This is a message from sai-power */
 			lwsl_notice("RX from sai-power: %.*s\n", (int)len, (const char *)in);
 
 			memset(&a, 0, sizeof(a));
-			a.map_st[0] = lsm_schema_power_state;
-			a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_power_state);
+			a.map_st[0] = lsm_schema_map_power;
+			a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_map_power);
 			a.ac_block_size = 512;
 
 			lws_struct_json_init_parse(&ctx, NULL, &a);
@@ -813,13 +816,28 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				break; // Exit case
 			}
 
-			ps = (sai_power_state_t *)a.dest;
-			if (ps->powering_up) {
-				lwsl_notice("sai-power is powering up: %s\n", ps->host);
-				sais_set_builder_power_state(vhd, ps->host, 1, 0);
-			} else if (ps->powering_down) {
-				lwsl_notice("sai-power is powering down: %s\n", ps->host);
-				sais_set_builder_power_state(vhd, ps->host, 0, 1);
+			if (a.top_schema_index == 0) {
+				ps = (sai_power_state_t *)a.dest;
+				if (ps->powering_up) {
+					lwsl_notice("sai-power is powering up: %s\n", ps->host);
+					sais_set_builder_power_state(vhd, ps->host, 1, 0);
+				} else if (ps->powering_down) {
+					lwsl_notice("sai-power is powering down: %s\n", ps->host);
+					sais_set_builder_power_state(vhd, ps->host, 0, 1);
+				}
+			} else {
+				sai_power_managed_builders_t *pmb = (sai_power_managed_builders_t *)a.dest;
+				lws_start_foreach_dll(struct lws_dll2 *, p, pmb->builders.head) {
+					sai_power_managed_builder_t *b = lws_container_of(p,
+						sai_power_managed_builder_t, list);
+					char q[256];
+					lwsl_notice("%s: Marking builder %s as power-managed\n",
+						    __func__, b->name);
+					lws_snprintf(q, sizeof(q),
+						     "UPDATE builders SET power_managed=1 WHERE name='%s'",
+						     b->name);
+					sai_sqlite3_statement(vhd->server.pdb, q, "set power_managed");
+				} lws_end_foreach_dll(p);
 			}
 
 			lwsac_free(&a.ac);
