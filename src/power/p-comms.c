@@ -117,7 +117,6 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
 			saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
-			int hit = 0;
 
 			/*
 			 * How about any dependency listed?
@@ -127,14 +126,18 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				saip_server_plat_t *sp1 = lws_container_of(px1, saip_server_plat_t, dependencies_list);
 
 				if (!strcmp(sp1->name, plat)) {
-					sp->needed = 1;
+					sp->needed = 2;
 					break;
 				}
 
 			} lws_end_foreach_dll(px1);
 
-			if (hit || !strcmp(sp->name, plat))
-				sp->needed = 1;
+			/*
+			 * Directly listed as needed?
+			 */
+
+			if (!strcmp(sp->name, plat))
+				sp->needed |= 1;
 
 		} lws_end_foreach_dll(px);
 	}

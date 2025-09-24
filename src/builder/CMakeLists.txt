@@ -12,6 +12,9 @@ set(SRCS
 	b-refproxy.c
 	b-load.c
 	b-metrics.c
+	b-suspender.c
+	b-deletion.c
+	b-power.c
 	../common/c-utils.c
 )
 

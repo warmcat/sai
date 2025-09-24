@@ -193,6 +193,10 @@ saip_sul_action_power_off(struct lws_sorted_usec_list *sul)
 		lwsl_notice("%s: no power_off_url for %s\n", __func__, sp->host);
 		return;
 	}
+	if (!sp->ss_tasmota_off) {
+		lwsl_notice("%s: no power_off ss for %s\n", __func__, sp->host);
+		return;
+	}
 
 	lwsl_warn("%s: powering off host %s\n", __func__, sp->host);
 	saip_notify_server_power_state(sp->host, 0, 1);
@@ -424,7 +428,8 @@ power_off:
 
 				if (needs[0] || sp->needed) {
 					g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-								"NAK: %s and/or dependencies still active: %s", pn, needs);
+								"NAK: %s needed: %d, deps needed: '%s'",
+								pn, sp->needed, needs);
 					goto bail;
 				}
 			}
