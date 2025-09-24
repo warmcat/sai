@@ -256,6 +256,8 @@ sais_list_builders(struct vhd *vhd)
 		live_builder = sais_builder_from_uuid(vhd, builder_from_db->name, __FILE__, __LINE__);
 
 		if (live_builder) {
+			lwsl_notice("%s: live_builder %s found, stay_on: %d, copying to db_builder (stay_on: %d)\n",
+				    __func__, live_builder->name, live_builder->stay_on, builder_from_db->stay_on);
 			builder_from_db->online = 1;
 			lws_strncpy(builder_from_db->peer_ip, live_builder->peer_ip,
 				    sizeof(builder_from_db->peer_ip));
@@ -305,6 +307,7 @@ sais_list_builders(struct vhd *vhd)
 
 	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
 
+	lwsl_notice("%s: Broadcasting builder list: %s\n", __func__, vhd->json_builders);
 	sais_websrv_broadcast(vhd->h_ss_websrv, vhd->json_builders,
 			      lws_ptr_diff_size_t(p, vhd->json_builders));
 

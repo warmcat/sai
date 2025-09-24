@@ -859,12 +859,17 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				sai_stay_state_update_t *ssu = (sai_stay_state_update_t *)a.dest;
 				sai_plat_t *cb;
 
+				lwsl_notice("%s: Received stay_state_update for %s, stay_on=%d\n",
+					    __func__, ssu->builder_name, ssu->stay_on);
+
 				lws_start_foreach_dll(struct lws_dll2 *, p,
 						vhd->server.builder_owner.head) {
 					cb = lws_container_of(p, sai_plat_t,
 							sai_plat_list);
 					const char *dot = strchr(cb->name, '.');
 					if (dot && !strncmp(cb->name, ssu->builder_name, dot - cb->name)) {
+						lwsl_notice("%s: Updating builder %s stay_on from %d to %d\n",
+							    __func__, cb->name, cb->stay_on, ssu->stay_on);
 						cb->stay_on = ssu->stay_on;
 						sais_list_builders(vhd);
 						break;

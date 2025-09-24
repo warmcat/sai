@@ -524,23 +524,39 @@ handle:
 			/*
 			 * Step 1: Update this platform in the persistent database.
 			 */
-			char q[512];
+			char q[1024];
 
 			lws_snprintf(q, sizeof(q),
-				     "UPDATE builders SET online=1, last_seen=%llu, "
-				     "peer_ip='%s', sai_hash='%s', lws_hash='%s' "
-				     "WHERE name='%s'",
-				     (unsigned long long)lws_now_secs(),
-				     pss->peer_ip, build->sai_hash, build->lws_hash,
-				     build->name);
-			if (sai_sqlite3_statement(vhd->server.pdb, q, "update builder"))
-				lwsl_err("%s: Failed to update builder %s\n",
-					 __func__, build->name);
+				     "INSERT INTO builders (name, platform, online, last_seen, peer_ip, sai_hash, lws_hash, windows) "
+				     "VALUES ('%s', '%s', 1, %llu, '%s', '%s', '%s', %d) "
+				     "ON CONFLICT(name) DO UPDATE SET online=1, last_seen=excluded.last_seen, "
+				     "peer_ip=excluded.peer_ip, sai_hash=excluded.sai_hash, lws_hash=excluded.lws_hash",
+				     build->name, build->platform, (unsigned long long)lws_now_secs(),
+				     pss->peer_ip, build->sai_hash, build->lws_hash, build->windows);
 
+			if (sai_sqlite3_statement(vhd->server.pdb, q, "upsert builder"))
+				lwsl_err("%s: Failed to upsert builder %s\n",
+					 __func__, build->name);
 
 			/*
 			 * Step 2: Update the long-lived, malloc'd in-memory list.
 			 */
+			sai_plat_t *live_cb;
+			char sel_q[256];
+			unsigned int pm = 0, so = 0;
+
+			lws_snprintf(sel_q, sizeof(sel_q),
+				     "SELECT power_managed, stay_on FROM builders WHERE name='%s'",
+				     build->name);
+
+			sqlite3_stmt *stmt;
+			if (sqlite3_prepare_v2(vhd->server.pdb, sel_q, -1, &stmt, NULL) == SQLITE_OK) {
+				if (sqlite3_step(stmt) == SQLITE_ROW) {
+					pm = sqlite3_column_int(stmt, 0);
+					so = sqlite3_column_int(stmt, 1);
+				}
+				sqlite3_finalize(stmt);
+			}
 			//cb = sais_builder_from_uuid(vhd, build->name);
 			//if (cb)
 			//	sais_builder_disconnected(vhd, cb->wsi);
