@@ -565,7 +565,7 @@ typedef struct sai_stay_state_update {
 
 
 extern const lws_struct_map_t
-	lsm_stay[3],
+	lsm_stay[2],
 	lsm_schema_stay[1],
 	lsm_power_managed_builder[1],
 	lsm_power_managed_builders_list[1],
