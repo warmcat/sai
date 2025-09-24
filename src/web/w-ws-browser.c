@@ -80,6 +80,8 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 					      "com.warmcat.sai.rebuild"),
 	LSM_SCHEMA	(sai_browse_rx_platreset_t, NULL, lsm_browser_platreset,
 					      "com.warmcat.sai.platreset"),
+	LSM_SCHEMA	(sai_stay_t,		 NULL, lsm_stay,
+					      "com.warmcat.sai.stay"),
 };
 
 enum {
@@ -93,6 +95,7 @@ enum {
 	SAIM_WS_BROWSER_RX_JS_HELLO,
 	SAIM_WS_BROWSER_RX_REBUILD,
 	SAIM_WS_BROWSER_RX_PLATRESET,
+	SAIM_WS_BROWSER_RX_STAY,
 };
 
 
@@ -506,6 +509,17 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		 */
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
+
+		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
+		break;
+
+	case SAIM_WS_BROWSER_RX_STAY:
+		if (!sais_conn_auth(pss))
+			goto auth_error;
+
+		/*
+		 * User is asking us to set or release a stay on a builder
+		 */
 
 		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 		break;

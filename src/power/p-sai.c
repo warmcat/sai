@@ -223,6 +223,34 @@ find_platform(struct sai_power *pwr, const char *host)
 	return NULL;
 }
 
+void
+saip_set_stay(const char *builder_name, int stay_on)
+{
+	saip_server_plat_t *sp = find_platform(&power, builder_name);
+
+	if (!sp)
+		return;
+
+	sp->stay = (char)stay_on;
+
+	if (stay_on) {
+		if (sp->power_on_mac) {
+			saip_notify_server_power_state(sp->host, 1, 0);
+			write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
+				      sp->power_on_mac, strlen(sp->power_on_mac));
+		}
+		if (sp->power_on_url) {
+			lws_ss_client_connect(sp->ss_tasmota_on);
+			saip_notify_server_power_state(sp->host, 1, 0);
+		}
+	} else {
+		/*
+		 * power-off is delayed, so we just set the stay flag...
+		 * but let's cancel any pending power-off
+		 */
+		lws_sul_cancel(&sp->sul_delay_off);
+	}
+}
 
 /*
  * local-side h1 server for builders to connect to

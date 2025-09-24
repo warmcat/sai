@@ -459,6 +459,7 @@ typedef struct sai_plat {
 	unsigned int		job_limit;
 
 	char			windows;
+	char			power_managed;
 
 	int			index; /* used to create unique build dir path */
 } sai_plat_t;
@@ -531,7 +532,21 @@ typedef struct sai_build_metric_db {
 	int		parallel;
 } sai_build_metric_db_t;
 
+/*
+ * Browser -> sai-web -> sai-server -> sai-power
+ *
+ * A browser user wants to set or release a "stay" on a builder, so it won't
+ * power down automatically when idle.
+ */
+typedef struct sai_stay {
+	lws_dll2_t	list;
+	char		builder_name[64];
+	char		stay_on; /* 0 = release, 1 = set */
+} sai_stay_t;
+
 extern const lws_struct_map_t
+	lsm_stay[3],
+	lsm_schema_stay[1],
 	lsm_schema_json_map_task[],
 	lsm_schema_sq3_map_task[],
 	lsm_schema_sq3_map_event[],

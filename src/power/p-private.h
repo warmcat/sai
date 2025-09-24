@@ -143,3 +143,5 @@ extern void saip_config_destroy(struct sai_power *power);
 extern void
 saip_notify_server_power_state(const char *plat_name, int up, int down);
 
+void
+saip_set_stay(const char *builder_name, int stay_on);

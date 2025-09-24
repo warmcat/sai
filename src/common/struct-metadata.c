@@ -107,6 +107,7 @@ const lws_struct_map_t lsm_plat_for_json[] = {
     LSM_CARRAY(sai_plat_t, sai_hash,    "sai_hash"),
     LSM_CARRAY(sai_plat_t, lws_hash,    "lws_hash"),
     LSM_UNSIGNED(sai_plat_t, windows,    "windows"),
+    LSM_CHAR(sai_plat_t, power_managed, "power_managed"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {
@@ -310,4 +311,13 @@ const lws_struct_map_t lsm_power_state[] = {
 
 const lws_struct_map_t lsm_schema_sq3_map_artifact[] = {
 	LSM_SCHEMA_DLL2	(sai_artifact_t, list, NULL, lsm_artifact, "artifacts"),
+};
+
+const lws_struct_map_t lsm_stay[] = {
+	LSM_CARRAY(sai_stay_t, builder_name, "builder_name"),
+	LSM_CHAR(sai_stay_t, stay_on, "stay_on"),
+};
+
+const lws_struct_map_t lsm_schema_stay[] = {
+	LSM_SCHEMA(sai_stay_t, NULL, lsm_stay, "com.warmcat.sai.stay"),
 };

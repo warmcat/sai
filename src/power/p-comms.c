@@ -95,6 +95,25 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	lwsl_info("%s: len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
 	lwsl_hexdump_info(buf, len);
 
+	if (len > 5 && !strncmp((const char *)buf, "stay:", 5)) {
+		char builder_name[64];
+		int stay_on;
+
+		p += 5;
+		n = 0;
+		while (p < end && *p && *p != ':' && n < sizeof(builder_name) - 1)
+			builder_name[n++] = *p++;
+		builder_name[n] = '\0';
+
+		if (*p == ':') {
+			p++;
+			stay_on = atoi(p);
+			saip_set_stay(builder_name, stay_on);
+		}
+
+		return 0;
+	}
+
 	lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
 		saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
 		sp->needed = 0;

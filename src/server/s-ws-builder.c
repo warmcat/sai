@@ -1097,6 +1097,24 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		goto send_json;
 	}
 
+	if (pss->stay_owner.head) {
+		/*
+		 * Pending stay message to send
+		 */
+		sai_stay_t *s = lws_container_of(pss->stay_owner.head,
+						   sai_stay_t, list);
+
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+				"stay:%s:%d", s->builder_name, s->stay_on);
+		w = lws_ptr_diff_size_t(p, start);
+		n = LSJS_RESULT_FINISH;
+
+		lws_dll2_remove(&s->list);
+		free(s);
+
+		goto send_json;
+	}
+
 	if (pss->rebuild_owner.head) {
 		/*
 		 * Pending rebuild message to send

@@ -252,10 +252,15 @@ sais_list_builders(struct vhd *vhd)
 		 */
 		live_builder = sais_builder_from_uuid(vhd, builder_from_db->name, __FILE__, __LINE__);
 
+		builder_from_db->power_managed = 0;
+
 		if (live_builder) {
 			builder_from_db->online = 1;
 			lws_strncpy(builder_from_db->peer_ip, live_builder->peer_ip,
 				    sizeof(builder_from_db->peer_ip));
+			if (lws_wsi_user(live_builder->wsi) &&
+			    ((struct pss *)lws_wsi_user(live_builder->wsi))->is_power)
+				builder_from_db->power_managed = 1;
 		} else
 			builder_from_db->online = 0;
 

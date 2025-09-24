@@ -1065,6 +1065,31 @@ function createBuilderDiv(plat) {
 		}
 	];
 
+	if (plat.power_managed) {
+		menuItems.push({
+			label: "Stay On",
+			callback: () => {
+				const stayMsg = {
+					schema: "com.warmcat.sai.stay",
+					builder_name: plat.name.split('.')[0],
+					stay_on: 1
+				};
+				sai.send(JSON.stringify(stayMsg));
+			}
+		});
+		menuItems.push({
+			label: "Release Stay",
+			callback: () => {
+				const stayMsg = {
+					schema: "com.warmcat.sai.stay",
+					builder_name: plat.name.split('.')[0],
+					stay_on: 0
+				};
+				sai.send(JSON.stringify(stayMsg));
+			}
+		});
+	}
+
 	platDiv.addEventListener("contextmenu", function(event) {
 		if (!authd)
 			return;

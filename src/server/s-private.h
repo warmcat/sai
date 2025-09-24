@@ -112,6 +112,7 @@ struct pss {
 	lws_dll2_owner_t	platform_owner; /* sai_platform_t builder offers */
 	lws_dll2_owner_t	task_cancel_owner; /* sai_platform_t builder offers */
 	lws_dll2_owner_t	rebuild_owner;
+	lws_dll2_owner_t	stay_owner;
 	lws_dll2_owner_t	aft_owner; /* for statefully spooling artifact info */
 	lws_dll2_owner_t	res_owner; /* sai_resource_requisition_t
 					    * owner of resource objects related
