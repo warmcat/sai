@@ -322,7 +322,7 @@ const lws_struct_map_t lsm_stay[] = {
 };
 
 const lws_struct_map_t lsm_schema_stay[] = {
-	LSM_SCHEMA(sai_stay_t, NULL, lsm_stay, "com.warmcat.sai.stay"),
+	LSM_SCHEMA(sai_stay_t, NULL, lsm_stay, "com.warmcat.sai.power.stay"),
 };
 
 const lws_struct_map_t lsm_power_managed_builder[] = {

@@ -819,7 +819,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				break; // Exit case
 			}
 
-			if (a.top_schema_index == 0) {
+			if (a.top_schema_index == 0) { /* powerstate */
 				ps = (sai_power_state_t *)a.dest;
 				if (ps->powering_up) {
 					lwsl_notice("sai-power is powering up: %s\n", ps->host);
@@ -828,7 +828,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 					lwsl_notice("sai-power is powering down: %s\n", ps->host);
 					sais_set_builder_power_state(vhd, ps->host, 0, 1);
 				}
-			} else {
+			} else if (a.top_schema_index == 1) { /* power_managed_builders */
 				sai_power_managed_builders_t *pmb = (sai_power_managed_builders_t *)a.dest;
 				lws_start_foreach_dll(struct lws_dll2 *, p, pmb->builders.head) {
 					sai_power_managed_builder_t *b = lws_container_of(p,
@@ -842,8 +842,20 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 					if (sai_sqlite3_statement(vhd->server.pdb, q, "set power_managed"))
 						lwsl_err("%s: Failed to mark builder %s as power-managed\n",
 							 __func__, b->name);
+
+					sai_plat_t *cb;
+					lws_start_foreach_dll(struct lws_dll2 *, p2,
+							vhd->server.builder_owner.head) {
+						cb = lws_container_of(p2, sai_plat_t,
+								sai_plat_list);
+						const char *dot = strchr(cb->name, '.');
+						if (dot && !strncmp(cb->name, b->name, dot - cb->name))
+							cb->stay_on = b->stay_on;
+					} lws_end_foreach_dll(p2);
+
 				} lws_end_foreach_dll(p);
-			} else if (a.top_schema_index == 2) {
+				sais_list_builders(vhd);
+			} else if (a.top_schema_index == 2) { /* stay_state_update */
 				sai_stay_state_update_t *ssu = (sai_stay_state_update_t *)a.dest;
 				sai_plat_t *cb;
 
@@ -854,6 +866,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 					const char *dot = strchr(cb->name, '.');
 					if (dot && !strncmp(cb->name, ssu->builder_name, dot - cb->name)) {
 						cb->stay_on = ssu->stay_on;
+						sais_list_builders(vhd);
 						break;
 					}
 				} lws_end_foreach_dll(p);
