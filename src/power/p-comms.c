@@ -98,8 +98,9 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	if (len > 5 && !strncmp((const char *)buf, "stay:", 5)) {
 		char builder_name[64];
 		int stay_on;
+		const char *p = (const char *)buf + 5;
+		const char *end = (const char *)buf + len;
 
-		p += 5;
 		n = 0;
 		while (p < end && *p && *p != ':' && n < sizeof(builder_name) - 1)
 			builder_name[n++] = *p++;

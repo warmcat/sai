@@ -90,6 +90,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.rebuild"),
 	LSM_SCHEMA	(sai_browse_rx_platreset_t, NULL, lsm_browser_platreset,
 					      "com.warmcat.sai.platreset"),
+	LSM_SCHEMA	(sai_stay_t,		 NULL, lsm_stay,
+					      "com.warmcat.sai.stay"),
 };
 
 enum {
@@ -101,6 +103,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_VIEWERCOUNT,
 	SAIS_WS_WEBSRV_RX_REBUILD,
 	SAIS_WS_WEBSRV_RX_PLATRESET,
+	SAIS_WS_WEBSRV_RX_STAY,
 };
 
 void
@@ -746,6 +749,36 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			} lws_end_foreach_dll(p);
 		}
 		break;
+
+	case SAIS_WS_WEBSRV_RX_STAY:
+	{
+		sai_stay_t *stay = (sai_stay_t *)a.dest;
+		struct pss *pss_power;
+		sai_plat_t *cb;
+
+		lws_start_foreach_dll(struct lws_dll2 *, p,
+				m->vhd->server.builder_owner.head) {
+			cb = lws_container_of(p, sai_plat_t,
+					sai_plat_list);
+
+			if (lws_wsi_user(cb->wsi) &&
+				((struct pss *)lws_wsi_user(cb->wsi))->is_power) {
+				const char *dot = strchr(cb->name, '.');
+				if (dot && !strncmp(cb->name, stay->builder_name, dot - cb->name)) {
+					pss_power = (struct pss *)lws_wsi_user(cb->wsi);
+					sai_stay_t *s = malloc(sizeof(*s));
+					if (s) {
+						*s = *stay;
+						lws_dll2_add_tail(&s->list, &pss_power->stay_owner);
+						lws_callback_on_writable(pss_power->wsi);
+					}
+					break;
+				}
+			}
+		} lws_end_foreach_dll(p);
+		lwsac_free(&a.ac);
+		break;
+	}
 	}
 
 	return 0;
