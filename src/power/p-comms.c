@@ -91,29 +91,25 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	const char *p = (const char *)buf, *end = (const char *)buf + len;
 	char plat[128], benched[4096];
 	size_t n, bp = 0;
+	lws_struct_args_t a;
+	struct lejp_ctx ctx;
 
 	lwsl_info("%s: len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
 	lwsl_hexdump_info(buf, len);
 
-	if (len > 5 && !strncmp((const char *)buf, "stay:", 5)) {
-		char builder_name[64];
-		int stay_on;
-		const char *p = (const char *)buf + 5;
-		const char *end = (const char *)buf + len;
+	memset(&a, 0, sizeof(a));
+	a.map_st[0] = lsm_schema_stay;
+	a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_stay);
+	a.ac_block_size = 512;
 
-		n = 0;
-		while (p < end && *p && *p != ':' && n < sizeof(builder_name) - 1)
-			builder_name[n++] = *p++;
-		builder_name[n] = '\0';
-
-		if (*p == ':') {
-			p++;
-			stay_on = atoi(p);
-			saip_set_stay(builder_name, stay_on);
-		}
-
+	lws_struct_json_init_parse(&ctx, NULL, &a);
+	if (lejp_parse(&ctx, (uint8_t *)buf, (int)len) >= 0 && a.dest) {
+		sai_stay_t *stay = (sai_stay_t *)a.dest;
+		saip_set_stay(stay->builder_name, stay->stay_on);
+		lwsac_free(&a.ac);
 		return 0;
 	}
+	lwsac_free(&a.ac);
 
 	lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
 		saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);

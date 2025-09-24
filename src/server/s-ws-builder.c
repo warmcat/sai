@@ -1104,10 +1104,13 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		sai_stay_t *s = lws_container_of(pss->stay_owner.head,
 						   sai_stay_t, list);
 
-		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
-				"stay:%s:%d", s->builder_name, s->stay_on);
-		w = lws_ptr_diff_size_t(p, start);
-		n = LSJS_RESULT_FINISH;
+		js = lws_struct_json_serialize_create(lsm_schema_stay,
+				LWS_ARRAY_SIZE(lsm_schema_stay), 0, s);
+		if (!js)
+			return 1;
+
+		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+		lws_struct_json_serialize_destroy(&js);
 
 		lws_dll2_remove(&s->list);
 		free(s);
