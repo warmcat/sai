@@ -799,6 +799,9 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				LSM_SCHEMA(sai_power_managed_builders_t, NULL,
 					   lsm_power_managed_builders_list,
 					   "com.warmcat.sai.power_managed_builders"),
+				LSM_SCHEMA(sai_stay_state_update_t, NULL,
+					   lsm_stay_state_update,
+					   "com.warmcat.sai.stay_state_update"),
 			};
 
 			/* This is a message from sai-power */
@@ -839,6 +842,20 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 					if (sai_sqlite3_statement(vhd->server.pdb, q, "set power_managed"))
 						lwsl_err("%s: Failed to mark builder %s as power-managed\n",
 							 __func__, b->name);
+				} lws_end_foreach_dll(p);
+			} else if (a.top_schema_index == 2) {
+				sai_stay_state_update_t *ssu = (sai_stay_state_update_t *)a.dest;
+				sai_plat_t *cb;
+
+				lws_start_foreach_dll(struct lws_dll2 *, p,
+						vhd->server.builder_owner.head) {
+					cb = lws_container_of(p, sai_plat_t,
+							sai_plat_list);
+					const char *dot = strchr(cb->name, '.');
+					if (dot && !strncmp(cb->name, ssu->builder_name, dot - cb->name)) {
+						cb->stay_on = ssu->stay_on;
+						break;
+					}
 				} lws_end_foreach_dll(p);
 			}
 

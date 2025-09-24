@@ -93,6 +93,7 @@ const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/includ
 	LSM_CARRAY	(sai_plat_t, lws_hash,		"lws_hash"),
 	LSM_UNSIGNED	(sai_plat_t, windows,		"windows"),
 	LSM_UNSIGNED	(sai_plat_t, power_managed,	"power_managed"),
+	LSM_UNSIGNED	(sai_plat_t, stay_on,		"stay_on"),
 };
 
 // This is the map for serializing to JSON
@@ -109,6 +110,7 @@ const lws_struct_map_t lsm_plat_for_json[] = {
     LSM_CARRAY(sai_plat_t, lws_hash,    "lws_hash"),
     LSM_UNSIGNED(sai_plat_t, windows,    "windows"),
     LSM_UNSIGNED(sai_plat_t, power_managed, "power_managed"),
+    LSM_UNSIGNED(sai_plat_t, stay_on, "stay_on"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {
@@ -325,6 +327,7 @@ const lws_struct_map_t lsm_schema_stay[] = {
 
 const lws_struct_map_t lsm_power_managed_builder[] = {
 	LSM_CARRAY(sai_power_managed_builder_t, name, "name"),
+	LSM_UNSIGNED(sai_power_managed_builder_t, stay_on, "stay_on"),
 };
 
 const lws_struct_map_t lsm_power_managed_builders_list[] = {
@@ -337,4 +340,14 @@ const lws_struct_map_t lsm_schema_power_managed_builders[] = {
 	LSM_SCHEMA(sai_power_managed_builders_t, NULL,
 		   lsm_power_managed_builders_list,
 		   "com.warmcat.sai.power_managed_builders"),
+};
+
+const lws_struct_map_t lsm_stay_state_update[] = {
+	LSM_CARRAY(sai_stay_state_update_t, builder_name, "builder_name"),
+	LSM_UNSIGNED(sai_stay_state_update_t, stay_on, "stay_on"),
+};
+
+const lws_struct_map_t lsm_schema_stay_state_update[] = {
+	LSM_SCHEMA(sai_stay_state_update_t, NULL, lsm_stay_state_update,
+		   "com.warmcat.sai.stay_state_update"),
 };

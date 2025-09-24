@@ -1066,28 +1066,31 @@ function createBuilderDiv(plat) {
 	];
 
 	if (plat.power_managed && authd) {
-		menuItems.push({
-			label: "Stay On",
-			callback: () => {
-				const stayMsg = {
-					schema: "com.warmcat.sai.stay",
-					builder_name: plat.name.split('.')[0],
-					stay_on: 1
-				};
-				sai.send(JSON.stringify(stayMsg));
-			}
-		});
-		menuItems.push({
-			label: "Release Stay",
-			callback: () => {
-				const stayMsg = {
-					schema: "com.warmcat.sai.stay",
-					builder_name: plat.name.split('.')[0],
-					stay_on: 0
-				};
-				sai.send(JSON.stringify(stayMsg));
-			}
-		});
+		if (plat.stay_on) {
+			menuItems.push({
+				label: "Release Stay",
+				callback: () => {
+					const stayMsg = {
+						schema: "com.warmcat.sai.stay",
+						builder_name: plat.name.split('.')[0],
+						stay_on: 0
+					};
+					sai.send(JSON.stringify(stayMsg));
+				}
+			});
+		} else {
+			menuItems.push({
+				label: "Stay On",
+				callback: () => {
+					const stayMsg = {
+						schema: "com.warmcat.sai.stay",
+						builder_name: plat.name.split('.')[0],
+						stay_on: 1
+					};
+					sai.send(JSON.stringify(stayMsg));
+				}
+			});
+		}
 	}
 
 	platDiv.addEventListener("contextmenu", function(event) {

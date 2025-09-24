@@ -224,6 +224,45 @@ find_platform(struct sai_power *pwr, const char *host)
 }
 
 void
+saip_notify_server_stay_state(const char *plat_name, int stay_on)
+{
+	saip_server_t *sps;
+	sai_stay_state_update_t *ssu;
+
+	/* Find the first (usually only) configured sai-server connection */
+	if (!power.sai_server_owner.head) {
+		lwsl_warn("%s: No sai-server configured to notify\n", __func__);
+		return;
+	}
+	sps = lws_container_of(power.sai_server_owner.head, saip_server_t, list);
+	if (!sps->ss) {
+		lwsl_warn("%s: Not connected to sai-server to notify\n", __func__);
+		return;
+	}
+
+	/* Allocate and queue the notification message */
+	ssu = malloc(sizeof(*ssu));
+	if (!ssu)
+		return;
+
+	memset(ssu, 0, sizeof(*ssu));
+	lws_strncpy(ssu->builder_name, plat_name, sizeof(ssu->builder_name));
+	ssu->stay_on = (char)stay_on;
+
+	/* The per-connection user object for the server link is a saip_server_link_t */
+	{
+		saip_server_link_t *pss = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
+		lws_dll2_add_tail(&ssu->list, &pss->stay_state_update_owner);
+	}
+
+	/* Request a writable callback to send the message */
+	if (lws_ss_request_tx(sps->ss))
+		lwsl_ss_warn(sps->ss, "Unable to request tx");
+
+	lwsl_notice("%s: Queued notification for %s\n", __func__, plat_name);
+}
+
+void
 saip_set_stay(const char *builder_name, int stay_on)
 {
 	saip_server_plat_t *sp = find_platform(&power, builder_name);
@@ -232,6 +271,7 @@ saip_set_stay(const char *builder_name, int stay_on)
 		return;
 
 	sp->stay = (char)stay_on;
+	saip_notify_server_stay_state(builder_name, stay_on);
 
 	if (stay_on) {
 		if (sp->power_on_mac) {

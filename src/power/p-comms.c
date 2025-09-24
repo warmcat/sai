@@ -42,6 +42,7 @@ LWS_SS_USER_TYPEDEF
 
 	lws_dll2_owner_t	ps_owner;
 	lws_dll2_owner_t	managed_builders_owner;
+	lws_dll2_owner_t	stay_state_update_owner;
 } saip_server_link_t;
 
 void
@@ -224,24 +225,40 @@ saip_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		lws_struct_json_serialize_destroy(&js);
 	} else {
 
-		if (!pss->ps_owner.head)
-			return LWSSSSRET_TX_DONT_SEND;
+		if (pss->stay_state_update_owner.head) {
+			sai_stay_state_update_t *ssu = lws_container_of(
+				pss->stay_state_update_owner.head,
+				sai_stay_state_update_t, list);
+			js = lws_struct_json_serialize_create(
+				lsm_schema_stay_state_update,
+				LWS_ARRAY_SIZE(lsm_schema_stay_state_update), 0, ssu);
+			if (js && lws_struct_json_serialize(js, buf, *len, len) == LSJS_RESULT_FINISH) {
+				*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+				lws_dll2_remove(&ssu->list);
+				free(ssu);
+			}
+			lws_struct_json_serialize_destroy(&js);
+		} else {
 
-		/* Dequeue the first pending notification */
-		sai_power_state_t *ps = lws_container_of(pss->ps_owner.head,
-							 sai_power_state_t, list);
+			if (!pss->ps_owner.head)
+				return LWSSSSRET_TX_DONT_SEND;
 
-		js = lws_struct_json_serialize_create(lsm_schema_power_state, 1, 0, ps);
-		if (js && lws_struct_json_serialize(js, buf, *len, len) == LSJS_RESULT_FINISH) {
-			*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
-			lws_dll2_remove(&ps->list);
-			free(ps);
+			/* Dequeue the first pending notification */
+			sai_power_state_t *ps = lws_container_of(pss->ps_owner.head,
+								 sai_power_state_t, list);
+
+			js = lws_struct_json_serialize_create(lsm_schema_power_state, 1, 0, ps);
+			if (js && lws_struct_json_serialize(js, buf, *len, len) == LSJS_RESULT_FINISH) {
+				*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+				lws_dll2_remove(&ps->list);
+				free(ps);
+			}
+			lws_struct_json_serialize_destroy(&js);
 		}
-		lws_struct_json_serialize_destroy(&js);
 	}
 
 	/* If there are more to send, request another writable callback */
-	if (pss->ps_owner.head || pss->managed_builders_owner.head)
+	if (pss->ps_owner.head || pss->managed_builders_owner.head || pss->stay_state_update_owner.head)
 		if (lws_ss_request_tx(lws_ss_from_user(pss)))
 			lwsl_ss_warn(lws_ss_from_user(pss), "tx request failed");
 
@@ -347,6 +364,7 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 			memset(b, 0, sizeof(*b));
 			lws_strncpy(b->name, sp->host, sizeof(b->name));
+			b->stay_on = sp->stay;
 
 			lws_dll2_add_tail(&b->list, &pmb->builders);
 		}

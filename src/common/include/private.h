@@ -460,6 +460,7 @@ typedef struct sai_plat {
 
 	char			windows;
 	char			power_managed;
+	char			stay_on;
 
 	int			index; /* used to create unique build dir path */
 } sai_plat_t;
@@ -548,12 +549,19 @@ typedef struct sai_stay {
 typedef struct sai_power_managed_builder {
 	lws_dll2_t	list;
 	char		name[64];
+	char		stay_on;
 } sai_power_managed_builder_t;
 
 typedef struct sai_power_managed_builders {
 	lws_dll2_t	list;
 	lws_dll2_owner_t builders;
 } sai_power_managed_builders_t;
+
+typedef struct sai_stay_state_update {
+	lws_dll2_t	list;
+	char		builder_name[64];
+	char		stay_on;
+} sai_stay_state_update_t;
 
 
 extern const lws_struct_map_t

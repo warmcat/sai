@@ -259,12 +259,14 @@ sais_list_builders(struct vhd *vhd)
 			builder_from_db->online = 1;
 			lws_strncpy(builder_from_db->peer_ip, live_builder->peer_ip,
 				    sizeof(builder_from_db->peer_ip));
+			builder_from_db->stay_on = live_builder->stay_on;
 		} else
 			builder_from_db->online = 0;
 
 		if (builder_from_db->power_managed)
-			lwsl_notice("%s: builder %s is power managed\n", __func__,
-				    builder_from_db->name);
+			lwsl_notice("%s: builder %s is power managed (stay: %d)\n",
+				    __func__, builder_from_db->name,
+				    builder_from_db->stay_on);
 
 		builder_from_db->powering_up = 0;
 		builder_from_db->powering_down = 0;
