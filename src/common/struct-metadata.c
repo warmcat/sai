@@ -92,6 +92,8 @@ const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/includ
 	LSM_CARRAY	(sai_plat_t, sai_hash,		"sai_hash"),
 	LSM_CARRAY	(sai_plat_t, lws_hash,		"lws_hash"),
 	LSM_UNSIGNED	(sai_plat_t, windows,		"windows"),
+	LSM_UNSIGNED	(sai_plat_t, power_managed,	"power_managed"),
+	LSM_UNSIGNED	(sai_plat_t, stay_on,		"stay_on"),
 };
 
 // This is the map for serializing to JSON

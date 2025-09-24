@@ -522,16 +522,20 @@ handle:
 			sai_plat_t *live_cb;
 
 			/*
-			 * Step 1: Upsert this platform into the persistent database.
+			 * Step 1: Update this platform in the persistent database.
 			 */
-			build->online = 1;
-			build->last_seen = (uint64_t)lws_now_secs();
-			lws_strncpy(build->peer_ip, pss->peer_ip, sizeof(build->peer_ip));
-			if (lws_struct_sq3_upsert(vhd->server.pdb, "builders", lsm_plat,
-						  LWS_ARRAY_SIZE(lsm_plat), build, "name")) {
-				lwsl_err("%s: Failed to upsert builder %s\n",
- 					 __func__, build->name);	
-			}
+			char q[512];
+
+			lws_snprintf(q, sizeof(q),
+				     "UPDATE builders SET online=1, last_seen=%llu, "
+				     "peer_ip='%s', sai_hash='%s', lws_hash='%s' "
+				     "WHERE name='%s'",
+				     (unsigned long long)lws_now_secs(),
+				     pss->peer_ip, build->sai_hash, build->lws_hash,
+				     build->name);
+			if (sai_sqlite3_statement(vhd->server.pdb, q, "update builder"))
+				lwsl_err("%s: Failed to update builder %s\n",
+					 __func__, build->name);
 
 
 			/*
