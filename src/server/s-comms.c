@@ -857,24 +857,15 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				sais_list_builders(vhd);
 			} else if (a.top_schema_index == 2) { /* stay_state_update */
 				sai_stay_state_update_t *ssu = (sai_stay_state_update_t *)a.dest;
-				sai_plat_t *cb;
+				char q[256];
 
-				lwsl_notice("%s: Received stay_state_update for %s, stay_on=%d\n",
-					    __func__, ssu->builder_name, ssu->stay_on);
-
-				lws_start_foreach_dll(struct lws_dll2 *, p,
-						vhd->server.builder_owner.head) {
-					cb = lws_container_of(p, sai_plat_t,
-							sai_plat_list);
-					const char *dot = strchr(cb->name, '.');
-					if (dot && !strncmp(cb->name, ssu->builder_name, dot - cb->name)) {
-						lwsl_notice("%s: Updating builder %s stay_on from %d to %d\n",
-							    __func__, cb->name, cb->stay_on, ssu->stay_on);
-						cb->stay_on = ssu->stay_on;
-						sais_list_builders(vhd);
-						break;
-					}
-				} lws_end_foreach_dll(p);
+				lws_snprintf(q, sizeof(q),
+					     "UPDATE builders SET stay_on=%d WHERE name = '%s' OR name LIKE '%s.%%'",
+					     ssu->stay_on, ssu->builder_name, ssu->builder_name);
+				if (sai_sqlite3_statement(vhd->server.pdb, q, "update stay_on"))
+					lwsl_err("%s: Failed to update stay_on for %s\n",
+						 __func__, ssu->builder_name);
+				sais_list_builders(vhd);
 			}
 
 			lwsac_free(&a.ac);
