@@ -533,15 +533,6 @@ handle:
  					 __func__, build->name);	
 			}
 
-			if (pss->is_power) {
-				char q[256];
-				lwsl_notice("%s: Marking builder %s as power-managed\n",
-					    __func__, build->name);
-				lws_snprintf(q, sizeof(q),
-					     "UPDATE builders SET power_managed=1 WHERE name='%s'",
-					     build->name);
-				sai_sqlite3_statement(vhd->server.pdb, q, "set power_managed");
-			}
 
 			/*
 			 * Step 2: Update the long-lived, malloc'd in-memory list.
