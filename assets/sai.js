@@ -1051,8 +1051,9 @@ function createBuilderDiv(plat) {
 	});
 
 	const menuItems = [
-		{ label: `<b>SAI Hash:</b> ${plat.sai_hash}` },
-		{ label: `<b>LWS Hash:</b> ${plat.lws_hash}` },
+		{ label: `<b>SAI:</b> ${plat.sai_hash}` },
+		{ label: `<b>LWS:</b> ${plat.lws_hash}` },
+		/*
 		{
 			label: "Update SAI",
 			callback: () => {
@@ -1063,7 +1064,36 @@ function createBuilderDiv(plat) {
 				sai.send(JSON.stringify(rebuildMsg));
 			}
 		}
+		*/
 	];
+
+	if (plat.power_managed && authd) {
+		if (plat.stay_on) {
+			menuItems.push({
+				label: "Release Stay",
+				callback: () => {
+					const stayMsg = {
+						schema: "com.warmcat.sai.stay",
+						builder_name: plat.name.split('.')[0],
+						stay_on: 0
+					};
+					sai.send(JSON.stringify(stayMsg));
+				}
+			});
+		} else {
+			menuItems.push({
+				label: "Stay On",
+				callback: () => {
+					const stayMsg = {
+						schema: "com.warmcat.sai.stay",
+						builder_name: plat.name.split('.')[0],
+						stay_on: 1
+					};
+					sai.send(JSON.stringify(stayMsg));
+				}
+			});
+		}
+	}
 
 	platDiv.addEventListener("contextmenu", function(event) {
 		if (!authd)

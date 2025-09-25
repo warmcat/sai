@@ -132,6 +132,18 @@ struct jpargs {
 	int			next_plat_index;
 };
 
+LWS_SS_USER_TYPEDEF
+        char                    payload[200];
+        size_t                  size;
+        size_t                  pos;
+
+	lws_dll2_owner_t	ps_owner;
+	lws_dll2_owner_t	managed_builders_owner;
+	lws_dll2_owner_t	stay_state_update_owner;
+} saip_server_link_t;
+
+
+
 extern struct sai_power power;
 extern const lws_ss_info_t ssi_saip_server_link_t, ssi_saip_smartplug_t;
 extern const struct lws_protocols protocol_com_warmcat_sai, protocol_ws_power;
@@ -143,3 +155,7 @@ extern void saip_config_destroy(struct sai_power *power);
 extern void
 saip_notify_server_power_state(const char *plat_name, int up, int down);
 
+void
+saip_set_stay(const char *builder_name, int stay_on);
+int
+saip_queue_stay_info(saip_server_t *sps, saip_server_plat_t *sp, saip_server_link_t *pss);

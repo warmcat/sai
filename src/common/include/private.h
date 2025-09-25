@@ -459,6 +459,8 @@ typedef struct sai_plat {
 	unsigned int		job_limit;
 
 	char			windows;
+	char			power_managed;
+	char			stay_on;
 
 	int			index; /* used to create unique build dir path */
 } sai_plat_t;
@@ -531,7 +533,44 @@ typedef struct sai_build_metric_db {
 	int		parallel;
 } sai_build_metric_db_t;
 
+/*
+ * Browser -> sai-web -> sai-server -> sai-power
+ *
+ * A browser user wants to set or release a "stay" on a builder, so it won't
+ * power down automatically when idle.
+ */
+typedef struct sai_stay {
+	lws_dll2_t		list;
+	char			builder_name[64];
+	char			stay_on; /* 0 = release, 1 = set */
+} sai_stay_t;
+
+/* sai-power -> sai-server, tells it the builders it can manage */
+typedef struct sai_power_managed_builder {
+	lws_dll2_t		list;
+	char			name[64];
+	char			stay_on;
+} sai_power_managed_builder_t;
+
+typedef struct sai_power_managed_builders {
+	lws_dll2_t		list;
+	lws_dll2_owner_t 	builders; /* sai_power_managed_builder_t */
+} sai_power_managed_builders_t;
+
+
+typedef struct sai_stay_state_update {
+	lws_dll2_t		list;
+	char			builder_name[64];
+	char			stay_on;
+} sai_stay_state_update_t;
+
+
 extern const lws_struct_map_t
+	lsm_stay[2],
+	lsm_schema_stay[1],
+	lsm_power_managed_builder[2],
+	lsm_power_managed_builders_list[1],
+	lsm_schema_power_managed_builders[1],
 	lsm_schema_json_map_task[],
 	lsm_schema_sq3_map_task[],
 	lsm_schema_sq3_map_event[],
@@ -561,8 +600,8 @@ extern const lws_struct_map_t
 	lsm_load_report_members[9]
 	;
 extern const lws_struct_map_t lsm_build_metric[12];
-extern const lws_struct_map_t lsm_plat[8];
-extern const lws_struct_map_t lsm_plat_for_json[11];
+extern const lws_struct_map_t lsm_plat[10];
+extern const lws_struct_map_t lsm_plat_for_json[13];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];

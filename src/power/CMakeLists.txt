@@ -6,6 +6,7 @@ set(SRCS
 	p-conf.c
 	p-comms.c
 	p-smartplug.c
+	p-api.c
 )
 
 set(requirements 1)

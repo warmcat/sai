@@ -522,16 +522,21 @@ handle:
 			sai_plat_t *live_cb;
 
 			/*
-			 * Step 1: Upsert this platform into the persistent database.
+			 * Step 1: Update this platform in the persistent database.
 			 */
-			build->online = 1;
-			build->last_seen = (uint64_t)lws_now_secs();
-			lws_strncpy(build->peer_ip, pss->peer_ip, sizeof(build->peer_ip));
-			if (lws_struct_sq3_upsert(vhd->server.pdb, "builders", lsm_plat,
-						  LWS_ARRAY_SIZE(lsm_plat), build, "name")) {
+			char q[1024];
+
+			lws_snprintf(q, sizeof(q),
+				     "INSERT INTO builders (name, platform, online, last_seen, peer_ip, sai_hash, lws_hash, windows) "
+				     "VALUES ('%s', '%s', 1, %llu, '%s', '%s', '%s', %d) "
+				     "ON CONFLICT(name) DO UPDATE SET online=1, last_seen=excluded.last_seen, "
+				     "peer_ip=excluded.peer_ip, sai_hash=excluded.sai_hash, lws_hash=excluded.lws_hash",
+				     build->name, build->platform, (unsigned long long)lws_now_secs(),
+				     pss->peer_ip, build->sai_hash, build->lws_hash, build->windows);
+
+			if (sai_sqlite3_statement(vhd->server.pdb, q, "upsert builder"))
 				lwsl_err("%s: Failed to upsert builder %s\n",
- 					 __func__, build->name);	
-			}
+					 __func__, build->name);
 
 			/*
 			 * Step 2: Update the long-lived, malloc'd in-memory list.
@@ -1093,6 +1098,27 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		 */
 		if (pss->viewer_state_owner.head)
 			lws_callback_on_writable(pss->wsi);
+
+		goto send_json;
+	}
+
+	if (pss->stay_owner.head) {
+		/*
+		 * Pending stay message to send
+		 */
+		sai_stay_t *s = lws_container_of(pss->stay_owner.head,
+						   sai_stay_t, list);
+
+		js = lws_struct_json_serialize_create(lsm_schema_stay,
+				LWS_ARRAY_SIZE(lsm_schema_stay), 0, s);
+		if (!js)
+			return 1;
+
+		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+		lws_struct_json_serialize_destroy(&js);
+
+		lws_dll2_remove(&s->list);
+		free(s);
 
 		goto send_json;
 	}

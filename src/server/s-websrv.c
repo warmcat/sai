@@ -90,6 +90,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.rebuild"),
 	LSM_SCHEMA	(sai_browse_rx_platreset_t, NULL, lsm_browser_platreset,
 					      "com.warmcat.sai.platreset"),
+	LSM_SCHEMA	(sai_stay_t,		 NULL, lsm_stay,
+					      "com.warmcat.sai.stay"),
 };
 
 enum {
@@ -101,6 +103,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_VIEWERCOUNT,
 	SAIS_WS_WEBSRV_RX_REBUILD,
 	SAIS_WS_WEBSRV_RX_PLATRESET,
+	SAIS_WS_WEBSRV_RX_STAY,
 };
 
 void
@@ -218,7 +221,6 @@ sais_websrv_broadcast(struct lws_ss_handle *hsrv, const char *str, size_t len)
 int
 sais_list_builders(struct vhd *vhd)
 {
-	lwsl_warn("%s: ENTRY\n", __func__);
 	lws_dll2_owner_t db_builders_owner;
 	struct lwsac *ac = NULL;
 	char *p = vhd->json_builders, *end = p + sizeof(vhd->json_builders),
@@ -253,11 +255,19 @@ sais_list_builders(struct vhd *vhd)
 		live_builder = sais_builder_from_uuid(vhd, builder_from_db->name, __FILE__, __LINE__);
 
 		if (live_builder) {
+			lwsl_notice("%s: live_builder %s found, stay_on: %d, copying to db_builder (stay_on: %d)\n",
+				    __func__, live_builder->name, live_builder->stay_on, builder_from_db->stay_on);
 			builder_from_db->online = 1;
 			lws_strncpy(builder_from_db->peer_ip, live_builder->peer_ip,
 				    sizeof(builder_from_db->peer_ip));
+			builder_from_db->stay_on = live_builder->stay_on;
 		} else
 			builder_from_db->online = 0;
+
+		if (builder_from_db->power_managed)
+			lwsl_notice("%s: builder %s is power managed (stay: %d)\n",
+				    __func__, builder_from_db->name,
+				    builder_from_db->stay_on);
 
 		builder_from_db->powering_up = 0;
 		builder_from_db->powering_down = 0;
@@ -296,6 +306,7 @@ sais_list_builders(struct vhd *vhd)
 
 	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
 
+	lwsl_notice("%s: Broadcasting builder list: %s\n", __func__, vhd->json_builders);
 	sais_websrv_broadcast(vhd->h_ss_websrv, vhd->json_builders,
 			      lws_ptr_diff_size_t(p, vhd->json_builders));
 
@@ -741,6 +752,25 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			} lws_end_foreach_dll(p);
 		}
 		break;
+
+	case SAIS_WS_WEBSRV_RX_STAY:
+	{
+		sai_stay_t *stay = (sai_stay_t *)a.dest;
+
+		lws_start_foreach_dll(struct lws_dll2 *, p,
+				m->vhd->sai_powers.head) {
+			struct pss *pss_power = lws_container_of(p, struct pss, same);
+			sai_stay_t *s = malloc(sizeof(*s));
+			if (s) {
+				*s = *stay;
+				lws_dll2_add_tail(&s->list, &pss_power->stay_owner);
+				lws_callback_on_writable(pss_power->wsi);
+			}
+		} lws_end_foreach_dll(p);
+
+		lwsac_free(&a.ac);
+		break;
+	}
 	}
 
 	return 0;
