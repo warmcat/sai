@@ -655,6 +655,41 @@ function sai_stateful_taskname(state, nm, sf)
 	return "<span id=\"taskstate\" class=\"ti2 " + tp + "\">" + san(nm) + "</span>";	 
 }
 
+function sai_sticky_task_summary_render(t, now_ut)
+{
+	var s = "";
+
+	s = "<div class=\"taskinfo\" id=\"taskinfo-" + san(t.t.uuid) + "\">" +
+		"<table><tr class=\"nomar\"><td class=\"ti\">" +
+		"<span class=\"ti1\">" + sai_plat_icon(t.t.platform, 2) +
+		san(t.t.platform) + "</span>&nbsp;";
+	if (authd && t.t.state != 0 && t.t.state != 3 && t.t.state != 4 && t.t.state != 5)
+		s += "<img class=\"rebuild\" alt=\"stop build\" src=\"stop.svg\" " +
+			"id=\"stop-" + san(t.t.uuid) + "\">&nbsp;";
+	if (authd)
+		s += "<img class=\"rebuild\" alt=\"rebuild\" src=\"rebuild.png\" " +
+			"id=\"rebuild-" + san(t.t.uuid) + "\">&nbsp;" +
+			sai_stateful_taskname(t.t.state, t.t.taskname, 1);
+
+	if (t.t.builder_name) {
+		var now_ut = Math.round((new Date().getTime() / 1000));
+
+		s += "&nbsp;&nbsp;<span class=\"ti5\"><img class=\"bico\" src=\"/sai/builder-instance.png\">&nbsp;" +
+			san(t.t.builder_name) + "</span>";
+		if (t.t.started)
+		/* started is a unix time, in seconds */
+		s += ", <span class=\"ti5\"> " +
+		     agify(now_ut, t.t.started) + " ago, Dur: " +
+		     (t.t.duration ? t.t.duration / 1000000 :
+			now_ut - t.t.started).toFixed(1) +
+			"s</span>";
+	}
+
+	s += "</td></tr></table>" + "</div>";
+
+	return s;
+}
+
 function sai_taskinfo_render(t, now_ut)
 {
 	var now_ut = Math.round((new Date().getTime() / 1000));
@@ -1222,6 +1257,11 @@ function ws_open_sai()
 					  "\"last_log_ts\":" + last_log_timestamp + "," +
 					  "\"task_hash\":" +
 				 	  JSON.stringify(tid) + "}");
+
+				 sai.send("{\"schema\":" +
+					  "\"com.warmcat.sai.gettaskmetrics\"," +
+					  "\"task_uuid\":" +
+					  JSON.stringify(tid) + "}");
 				 	  
 				 return;
 			}
@@ -1473,8 +1513,8 @@ function ws_open_sai()
 				
 						s = s + "</table>";
 					
-						if (document.getElementById("sai_sticky"))
-							document.getElementById("sai_sticky").innerHTML = s;
+						if (document.getElementById("sai_overview"))
+							document.getElementById("sai_overview").innerHTML = s;
 						
 						for (n = jso.overview.length - 1; n >= 0; n--) {
 							document.getElementById("esr-" + jso.overview[n].e.uuid).innerHTML =
@@ -1620,10 +1660,7 @@ function ws_open_sai()
 						if (url_task_uuid === jso.t.uuid &&
 						    document.getElementById("sai_task_summary"))
 							document.getElementById("sai_task_summary").innerHTML =
-								"<div class=\"taskinfo\" id=\"taskinfo-" +
-								san(jso.t.uuid) + "\">" +
-								sai_taskinfo_render(jso) +
-								"</div>";
+								sai_sticky_task_summary_render(jso, now_ut);
 					
 				
 						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
