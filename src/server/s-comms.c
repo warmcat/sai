@@ -833,11 +833,14 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 			case 1: {
 				sai_power_managed_builders_t *pmb = (sai_power_managed_builders_t *)a.dest;
-
+				uint64_t bf_set = 0;
+				
 				lws_start_foreach_dll(struct lws_dll2 *, p, pmb->builders.head) {
 					sai_power_managed_builder_t *b = lws_container_of(p,
 						sai_power_managed_builder_t, list);
 					char q[256];
+					int shi = 0;
+
 					lwsl_notice("%s: Marking builder %s as power-managed\n",
 						    __func__, b->name);
 					lws_snprintf(q, sizeof(q),
@@ -847,14 +850,23 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 						lwsl_err("%s: Failed to mark builder %s as power-managed\n",
 							 __func__, b->name);
 
-					sai_plat_t *cb;
 					lws_start_foreach_dll(struct lws_dll2 *, p2,
 							vhd->server.builder_owner.head) {
-						cb = lws_container_of(p2, sai_plat_t,
-								sai_plat_list);
+					
+						sai_plat_t *cb = lws_container_of(p2, sai_plat_t, sai_plat_list);
 						const char *dot = strchr(cb->name, '.');
-						if (dot && !strncmp(cb->name, b->name, (size_t)(dot - cb->name)))
+
+						lwsl_notice("%s: builder entry: %s\n", __func__, cb->name);
+
+						if (dot && !(bf_set & (1 << shi)) && strlen(b->name) <= (size_t)(dot - cb->name) &&
+						    !strncmp(cb->name + (dot - cb->name) - strlen(b->name), b->name, strlen(b->name))) {
+							lwsl_notice("%s: ++++++++++++ Setting %s .stay_on=%d\n", __func__, cb->name, b->stay_on);
 							cb->stay_on = b->stay_on;
+							bf_set |= (1 << shi);
+						} else
+							lwsl_notice("%s: ------------ Unmatched '%s' '%s'\n", __func__, cb->name + (dot - cb->name) - strlen(b->name), b->name);
+
+						shi++;
 					} lws_end_foreach_dll(p2);
 
 				} lws_end_foreach_dll(p);
