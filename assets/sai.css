@@ -1058,22 +1058,24 @@ body.overlay-active {
   margin-bottom: 1px;
 }
 
-#sai_task_metrics table {
+#sai_sticky #sai_task_metrics table {
+	font-family: 'OpenSans', Fallback, sans-serif;
 	font-size: 7pt !important;
 	border-collapse: collapse;
 	margin-top: 5px;
-	width: 100%;
+	width: auto;
+	border: 1px solid #ccc;
 }
 
-#sai_task_metrics table th, #sai_task_metrics table td {
+#sai_sticky #sai_task_metrics th, #sai_sticky #sai_task_metrics td {
 	border: 1px solid #ddd;
 	padding: 2px 4px !important;
 	text-align: left;
 	font-size: 7pt !important;
+	white-space: nowrap;
 }
 
-#sai_task_metrics table th {
+#sai_sticky #sai_task_metrics th {
 	background-color: #f2f2f2;
-	text-align: center;
 	font-weight: bold;
 }

@@ -718,7 +718,7 @@ function sai_taskinfo_render(t, now_ut)
 		     agify(now_ut, t.t.started) + " ago, Dur: " +
 		     (t.t.duration ? t.t.duration / 1000000 :
 		     	now_ut - t.t.started).toFixed(1) +
-			"s</span><div id=\"sai_arts\"></div><div id=\"metrics-summary-" + san(t.t.uuid) + "\"></div>";
+			"s</span><div id=\"sai_arts\"></div>";
 		sai_arts = "";
 	}
 
@@ -1612,75 +1612,29 @@ function ws_open_sai()
 					}
 				}
 				
-				/*
-				 * We get told about changes to any task state,
-				 * it's up to us to figure out if the page we
-				 * showed should display the update and in what
-				 * form.
-				 *
-				 * We make sure the div containing the task info
-				 * has a special ID depending on if it's shown
-				 * as a tuple or as extended info
-				 *
-				 * First see if it appears as a tuple, and if
-				 * so, let's just update that
-				 */
-				
-				if (document.getElementById("taskstate_" + jso.t.uuid)) {
-					console.log("found taskstate_" + jso.t.uuid);
-					refresh_state(jso.t.uuid, jso.t.state);
-					
-					update_summary_and_progress(jso.t.uuid.substring(0, 32));
+				const urlParams = new URLSearchParams(window.location.search);
+				const url_task_uuid = urlParams.get('task');
 
-				} else
-				
-					/* update task summary if shown anywhere */
-					
-					if (document.getElementById("taskinfo-" + jso.t.uuid)) {
-						console.log("FOUND taskinfo-" + jso.t.uuid);
-						document.getElementById("taskinfo-" + jso.t.uuid).innerHTML = sai_taskinfo_render(jso);
-						if (document.getElementById("esr-" + jso.e.uuid))
-							document.getElementById("esr-" + jso.e.uuid).innerHTML =
-								sai_event_summary_render(jso, now_ut, 1);
-					} else {
-						
-						console.log("NO taskinfo- or taskstate_" + jso.t.uuid);
-						
-						/* 
-						 * Last chance if we might be
-						 * on a task-specific page, and
-						 * want to show the task info
-						 * at the top
-						 */
-					
+				if (url_task_uuid && jso.t.uuid === url_task_uuid) {
+					// This is a task-specific page, update the summary and logs
 
-						const urlParams = new URLSearchParams(window.location.search);
-						const url_task_uuid = urlParams.get('task');
-						
-						if (url_task_uuid === jso.t.uuid &&
-						    document.getElementById("sai_task_summary"))
-							document.getElementById("sai_task_summary").innerHTML =
-								sai_sticky_task_summary_render(jso, now_ut);
-					
-				
-						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
+					const summaryDiv = document.getElementById("sai_task_summary");
+					if (summaryDiv) {
+						summaryDiv.innerHTML = sai_sticky_task_summary_render(jso, now_ut);
+					}
+
+					s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
 						"<td class=\"atop\">" +
 						"<div id=\"dlogsn\" class=\"dlogsn\">" + lines + "</div></td>" +
 						"<td class=\"atop\">" +
 						"<div id=\"dlogst\" class=\"dlogst\">" + times + "</div></td>" +
-					     "<td class=\"atop\"><div id=\"dlogs\" class=\"dlogs\">" +
-					     "<span id=\"logs\" class=\"nowrap\">" + logs +
-					     	"</span>"+
+						"<td class=\"atop\"><div id=\"dlogs\" class=\"dlogs\">" +
+						"<span id=\"logs\" class=\"nowrap\">" + logs +
+							"</span>"+
 						"</div></td></tr></table></pre>";
 					
-					if (document.getElementById("sai_overview")) {
-						document.getElementById("sai_overview").innerHTML = s;
-					
-						if (document.getElementById("esr-" + jso.e.uuid))
-							document.getElementById("esr-" + jso.e.uuid).innerHTML =
-								sai_event_summary_render(jso, now_ut, 1);
-								
-						update_summary_and_progress(jso.e.uuid);
+					if (document.getElementById("sai_task")) {
+						document.getElementById("sai_task").innerHTML = s;
 					}
 	
 					if (document.getElementById("rebuild-" + san(jso.t.uuid))) {
@@ -1694,10 +1648,6 @@ function ws_open_sai()
 						 	  	console.log(rs);
 						 	  	sai.send(rs);
 
-								/*
-								 * and immediately re-request the task info, so we can get
-								 * the new logs
-								 */
 								var tid = san(e.srcElement.id.substring(8));
 								var rq = "{\"schema\":" +
 									  "\"com.warmcat.sai.taskinfo\"," +
@@ -1734,6 +1684,13 @@ function ws_open_sai()
 					}
 									
 					aging();
+
+				} else if (document.getElementById("taskstate_" + jso.t.uuid)) {
+					// This is the overview page, just refresh the task state icon
+					refresh_state(jso.t.uuid, jso.t.state);
+					if (jso.e && jso.e.uuid) {
+						update_summary_and_progress(jso.e.uuid);
+					}
 				}
 				break;
 
