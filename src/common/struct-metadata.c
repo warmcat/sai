@@ -58,6 +58,7 @@ const lws_struct_map_t lsm_build_metric[] = {
 	LSM_UNSIGNED	(sai_build_metric_t, peak_mem_rss,	"peak_mem_rss"),
 	LSM_UNSIGNED	(sai_build_metric_t, stg_bytes,		"stg_bytes"),
 	LSM_SIGNED	(sai_build_metric_t, parallel,		"parallel"),
+	LSM_SIGNED	(sai_build_metric_t, step,		"step"),
 };
 
 const lws_struct_map_t lsm_schema_build_metric[] = {
@@ -77,10 +78,22 @@ const lws_struct_map_t lsm_sq3_build_metric[] = {
 	LSM_UNSIGNED	(sai_build_metric_db_t, peak_mem_rss,	"peak_mem_rss"),
 	LSM_UNSIGNED	(sai_build_metric_db_t, stg_bytes,	"stg_bytes"),
 	LSM_SIGNED	(sai_build_metric_db_t, parallel,	"parallel"),
+	LSM_SIGNED	(sai_build_metric_db_t, step,		"step"),
 };
 
 const lws_struct_map_t lsm_schema_sq3_map_build_metric[] = {
 	LSM_SCHEMA_DLL2	(sai_build_metric_db_t, list, NULL, lsm_sq3_build_metric, "build_metrics"),
+};
+
+const lws_struct_map_t lsm_task_metrics[] = {
+	LSM_CARRAY	(sai_task_metrics_t, task_uuid,	"task_uuid"),
+	LSM_LIST	(sai_task_metrics_t, metrics, sai_build_metric_db_t, list,
+			 NULL, lsm_sq3_build_metric, "metrics"),
+};
+
+const lws_struct_map_t lsm_schema_task_metrics[] = {
+	LSM_SCHEMA	(sai_task_metrics_t, NULL, lsm_task_metrics,
+			 "com.warmcat.sai.taskmetrics"),
 };
 
 const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/include/private.h in sync */

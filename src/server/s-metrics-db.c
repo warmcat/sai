@@ -141,6 +141,7 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 	lws_strncpy(dbm.project_name, m->project_name, sizeof(dbm.project_name));
 	lws_strncpy(dbm.ref, m->ref, sizeof(dbm.ref));
 	dbm.parallel = m->parallel;
+	dbm.step = m->step;
 	dbm.us_cpu_user = m->us_cpu_user;
 	dbm.us_cpu_sys = m->us_cpu_sys;
 	dbm.wallclock_us = m->wallclock_us;
@@ -159,6 +160,30 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 
 	if (sais_metrics_db_prune(vhd, dbm.key))
 		lwsl_warn("%s: pruning metrics failed\n", __func__);
+
+	sais_broadcast_task_metrics(vhd, m->task_uuid);
+
+	return 0;
+}
+
+int
+sais_metrics_db_get_by_task(struct vhd *vhd, const char *task_uuid,
+			    lws_dll2_owner_t *owner, struct lwsac **ac)
+{
+	char filter[128], purified[128];
+
+	if (!vhd->pdb_metrics)
+		return 1;
+
+	lws_sql_purify(purified, task_uuid, sizeof(purified));
+	lws_snprintf(filter, sizeof(filter), "AND task_uuid = '%s'", purified);
+
+	if (lws_struct_sq3_deserialize(vhd->pdb_metrics, filter, "step",
+				       lsm_schema_sq3_map_build_metric, owner,
+				       ac, 0, 100)) {
+		lwsl_err("%s: failed to get metrics\n", __func__);
+		return 1;
+	}
 
 	return 0;
 }
