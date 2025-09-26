@@ -608,7 +608,7 @@ extern const lws_struct_map_t
 	lsm_load_report_members[9],
 	lsm_schema_task_metrics[1]
 	;
-extern const lws_struct_map_t lsm_build_metric[12];
+extern const lws_struct_map_t lsm_build_metric[13];
 extern const lws_struct_map_t lsm_plat[10];
 extern const lws_struct_map_t lsm_plat_for_json[13];
 

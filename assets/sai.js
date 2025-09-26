@@ -1618,8 +1618,8 @@ function ws_open_sai()
 						const url_task_uuid = urlParams.get('task');
 						
 						if (url_task_uuid === jso.t.uuid &&
-						    document.getElementById("sai_sticky"))
-							document.getElementById("sai_sticky").innerHTML =
+						    document.getElementById("sai_task_summary"))
+							document.getElementById("sai_task_summary").innerHTML =
 								"<div class=\"taskinfo\" id=\"taskinfo-" +
 								san(jso.t.uuid) + "\">" +
 								sai_taskinfo_render(jso) +
