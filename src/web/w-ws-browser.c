@@ -358,6 +358,18 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 
 	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
 
+	{
+		uint8_t buf[LWS_PRE + 256];
+		int n;
+
+		n = lws_snprintf((char *)buf + LWS_PRE, sizeof(buf) - LWS_PRE,
+			"{\"schema\":\"com.warmcat.sai.gettaskmetrics\","
+			"\"task_uuid\":\"%s\"}", task_uuid);
+
+		saiw_websrv_queue_tx(pss->vhd->h_ss_websrv, buf + LWS_PRE, (size_t)n,
+				     LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+	}
+
 	return 0;
 
 bail:

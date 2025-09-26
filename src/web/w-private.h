@@ -88,6 +88,9 @@ typedef enum {
 
 	WSS_PREPARE_EVENTINFO,
 	WSS_SEND_EVENTINFO,
+
+	WSS_PREPARE_TASK_METRICS,
+	WSS_SEND_TASK_METRICS,
 } ws_state;
 
 typedef struct sai_builder {
@@ -328,3 +331,5 @@ saiw_browser_state_changed(struct pss *pss, int established);
 void
 saiw_update_viewer_count(struct vhd *vhd);
 
+int
+saiw_task_metrics_update(struct vhd *vhd, const char *task_uuid);

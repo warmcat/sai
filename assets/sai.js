@@ -1390,6 +1390,26 @@ function ws_open_sai()
 				}
 				break;
 
+			case "com.warmcat.sai.taskmetrics":
+				var metricsDiv = document.getElementById("sai_task_metrics");
+				if (metricsDiv) {
+					var s = "<table><tr><th>Step</th><th>Wallclock</th><th>CPU (u/s)</th><th>Peak Mem</th><th>Storage</th></tr>";
+
+					if (jso.metrics)
+						for (var i = 0; i < jso.metrics.length; i++) {
+							var m = jso.metrics[i];
+							s += "<tr><td>" + m.step + "</td>" +
+							     "<td>" + (m.wallclock_us / 1000000).toFixed(3) + "s</td>" +
+							     "<td>" + (m.us_cpu_user / 1000000).toFixed(3) + "s / " + (m.us_cpu_sys / 1000000).toFixed(3) + "s</td>" +
+							     "<td>" + humanize(m.peak_mem_rss) + "B</td>" +
+							     "<td>" + humanize(m.stg_bytes) + "B</td></tr>";
+						}
+
+					s += "</table>";
+					metricsDiv.innerHTML = s;
+				}
+				break;
+
 			case "sai.warmcat.com.overview":
 				/*
 				 * Sent with an array of e[] to start, but also
