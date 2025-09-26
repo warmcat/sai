@@ -1016,7 +1016,7 @@ function createBuilderDiv(plat) {
 	if (!plat.online)
 		platDiv.className += " offline";
 	else {
-		if (plat.power_managed === false)
+		if (!plat.power_managed)
 			platDiv.className += " power-unmanaged";
 		else
 			if (plat.stay_on)
