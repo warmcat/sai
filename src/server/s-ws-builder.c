@@ -28,7 +28,6 @@
 #include <time.h>
 
 #include "s-private.h"
-#include "s-metrics-db.h"
 
 const lws_struct_map_t lsm_schema_map_ta[] = {
 	LSM_SCHEMA (sai_task_t,	    NULL, lsm_task,    "com-warmcat-sai-ta"),

@@ -22,7 +22,6 @@
 #include <libwebsockets.h>
 
 #include "s-private.h"
-#include "s-metrics-db.h"
 
 static int
 sais_metrics_db_prune(struct vhd *vhd, const char *key)
