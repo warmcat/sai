@@ -645,14 +645,6 @@ div.ibuil {
        width: 80px;
 }
 
-div.ibuil.power-unmanaged {
-	border: 2px solid grey;
-}
-
-div.ibuil.power-stay {
-	border: 2px solid green;
-}
-
 div.ibuilctr {
 	font-weight: normal;
 	font-size: 9pt;

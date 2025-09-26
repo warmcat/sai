@@ -100,6 +100,7 @@ struct sai_builder {
 	struct lws_vhost	*vhost;
 
 	lws_sorted_usec_list_t	sul_idle;
+	lws_sorted_usec_list_t	sul_do_suspend;
 	lws_sorted_usec_list_t	sul_stay;
 	lws_sorted_usec_list_t	sul_cleanup_jobs;
 

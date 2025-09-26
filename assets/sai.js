@@ -1015,13 +1015,6 @@ function createBuilderDiv(plat) {
 	platDiv.className = "ibuil bdr";
 	if (!plat.online)
 		platDiv.className += " offline";
-	else {
-		if (!plat.power_managed)
-			platDiv.className += " power-unmanaged";
-		else
-			if (plat.stay_on)
-				platDiv.className += " power-stay";
-	}
 	if (plat.powering_up)
 		platDiv.className += " powering-up";
 	if (plat.powering_down)
