@@ -229,6 +229,34 @@ LWS_SS_INFO("sai_power", saib_power_link_t)
 };
 
 
+static void
+sul_do_suspend_cb(lws_sorted_usec_list_t *sul)
+{
+#if !defined(WIN32)
+	uint8_t te = 1;
+	ssize_t n;
+
+	lwsl_notice("%s: actioning suspend...\n", __func__);
+
+	n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
+	if (n == 1) {
+#if defined(WIN32)
+		Sleep(2000);
+#else
+		sleep(2);
+#endif
+		/*
+		 * There were 0 tasks ongoing for us to suspend, start off
+		 * with the same assumption and set the idle grace time
+		 */
+		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
+				 sul_idle_cb, SAI_IDLE_GRACE_US);
+		lwsl_notice("%s: resuming after suspend\n", __func__);
+	} else
+		lwsl_err("%s: failed to request suspend\n", __func__);
+#endif
+}
+
 /*
  * The grace time is up, ask for the suspend
  */
@@ -238,10 +266,8 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 {
 	lws_ss_state_return_t r;
 	char path[256];
-#if !defined(WIN32)
-	ssize_t n;
-	uint8_t te = 1;
 
+#if !defined(WIN32)
 	if (builder.stay)
 		return;
 
@@ -250,24 +276,35 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 	if (builder.power_off_type &&
 	    !strcmp(builder.power_off_type, "suspend")) {
 
-		lwsl_notice("%s: requesting suspend...\n", __func__);
+		lwsl_notice("%s: starting suspend...\n", __func__);
 
-		n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
-		if (n == 1) {
-#if defined(WIN32)
-			Sleep(2000);
-#else
-			sleep(2);
-#endif
-			/*
-			* There were 0 tasks ongoing for us to suspend, start off
-			* with the same assumption and set the idle grace time
-			*/
-			lws_sul_schedule(builder.context, 0, &builder.sul_idle,
-					sul_idle_cb, SAI_IDLE_GRACE_US);
-			lwsl_notice("%s: resuming after suspend\n", __func__);
-		} else
-			lwsl_err("%s: failed to request suspend\n", __func__);
+		/*
+		 * Let everybody know we are trying to power down
+		 */
+		lws_start_foreach_dll(struct lws_dll2 *, d,
+				      builder.sai_plat_owner.head) {
+			sai_plat_t *p = lws_container_of(d, sai_plat_t,
+							 sai_plat_list);
+			p->powering_down = 1;
+		} lws_end_foreach_dll(d);
+
+		lws_start_foreach_dll(struct lws_dll2 *, d,
+				      builder.sai_plat_server_owner.head) {
+			struct sai_plat_server *spm = lws_container_of(d,
+						struct sai_plat_server, list);
+
+			spm->phase = PHASE_START_ATTACH;
+			if (lws_ss_request_tx(spm->ss))
+				lwsl_ss_warn(spm->ss, "Unable to request tx");
+
+		} lws_end_foreach_dll(d);
+
+		/*
+		 * give the event loop a moment to send the notifications out
+		 * before we do the blocking suspend part
+		 */
+		lws_sul_schedule(builder.context, 0, &builder.sul_do_suspend,
+				 sul_do_suspend_cb, 2 * LWS_US_PER_SEC);
 
 		return;
 	}

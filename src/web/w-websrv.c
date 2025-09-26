@@ -297,7 +297,7 @@ saiw_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	*len = used;
 	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
 
-	lwsl_ss_notice(m->ss, "Sending %d ssflags %d", (int)*len, (int)*flags);
+	lwsl_ss_notice(m->ss, "Sending %d web->srv: ssflags %d", (int)*len, (int)*flags);
 	lwsl_hexdump_notice(buf, *len);
 
 	if (m->wbltx)

@@ -760,7 +760,9 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lws_start_foreach_dll(struct lws_dll2 *, p,
 				m->vhd->sai_powers.head) {
 			struct pss *pss_power = lws_container_of(p, struct pss, same);
-			sai_stay_t *s = malloc(sizeof(*s));
+			sai_stay_t *s;
+			
+			s = malloc(sizeof(*s));
 			if (s) {
 				*s = *stay;
 				lws_dll2_add_tail(&s->list, &pss_power->stay_owner);
