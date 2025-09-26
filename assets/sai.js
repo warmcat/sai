@@ -2026,14 +2026,14 @@ window.addEventListener("load", function() {
 
 	}, 500)
 
-	const stickyEl = document.getElementById("sai_sticky");
-	if (stickyEl) {
-		stickyEl.addEventListener("contextmenu", function(event) {
+	const rightPane = document.querySelector('.right-pane');
+	if (rightPane) {
+		rightPane.addEventListener("contextmenu", function(event) {
 			let target = event.target;
 			let taskDiv = null;
 
 			// find the taskstate div parent
-			while (target && target.id !== "sai_sticky") {
+			while (target && target !== rightPane) {
 				if (target.classList && target.classList.contains("taskstate")) {
 					taskDiv = target;
 					break;
