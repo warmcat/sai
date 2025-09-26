@@ -252,6 +252,27 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 
 		lwsl_notice("%s: requesting suspend...\n", __func__);
 
+		/*
+		 * Let everybody know we are trying to power down
+		 */
+		lws_start_foreach_dll(struct lws_dll2 *, d,
+				      builder.sai_plat_owner.head) {
+			sai_plat_t *p = lws_container_of(d, sai_plat_t,
+							 sai_plat_list);
+			p->powering_down = 1;
+		} lws_end_foreach_dll(d);
+
+		lws_start_foreach_dll(struct lws_dll2 *, d,
+				      builder.sai_plat_server_owner.head) {
+			struct sai_plat_server *spm = lws_container_of(d,
+						struct sai_plat_server, list);
+
+			spm->phase = PHASE_START_ATTACH;
+			if (lws_ss_request_tx(spm->ss))
+				lwsl_ss_warn(spm->ss, "Unable to request tx");
+
+		} lws_end_foreach_dll(d);
+
 		n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
 		if (n == 1) {
 #if defined(WIN32)
