@@ -217,9 +217,16 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	/* step succeeded */
 
 	lws_dir_du_t du;
+	uint64_t peak_mem_bytes;
 
 	memset(&du, 0, sizeof(du));
 	lws_dir(ns->inp, &du, lws_dir_du_cb);
+
+	peak_mem_bytes = res->peak_mem_rss;
+#if defined(__linux__)
+	/* on linux, getrusage reports in KiB, on OSX in bytes */
+	peak_mem_bytes *= 1024;
+#endif
 
 	{
 		// char h1[40], h2[40], h3[40], h4[40], h10[40];
@@ -231,8 +238,8 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 
 		if (du.size_in_bytes > ns->worst_stg)
 			ns->worst_stg = du.size_in_bytes;
-		if (res->peak_mem_rss > ns->worst_mem)
-			ns->worst_mem = res->peak_mem_rss;
+		if (peak_mem_bytes > ns->worst_mem)
+			ns->worst_mem = peak_mem_bytes;
 
 		// lws_humanize_pad(h1,  sizeof(h1),  ns->us_cpu_user,	humanize_schema_us);
 		// lws_humanize_pad(h2,  sizeof(h2),  ns->us_cpu_sys,	humanize_schema_us);
@@ -240,7 +247,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		// lws_humanize_pad(h4,  sizeof(h4),  ns->worst_stg,	humanize_schema_si);
 		lws_humanize_pad(h5,  sizeof(h5),  res->us_cpu_user,	humanize_schema_us);
 		lws_humanize_pad(h6,  sizeof(h6),  res->us_cpu_sys,	humanize_schema_us);
-		lws_humanize_pad(h7,  sizeof(h7),  res->peak_mem_rss,	humanize_schema_si);
+		lws_humanize_pad(h7,  sizeof(h7),  peak_mem_bytes,	humanize_schema_si);
 		lws_humanize_pad(h8,  sizeof(h8),  du.size_in_bytes,	humanize_schema_si);
 		lws_humanize_pad(h9,  sizeof(h9),  us_wallclock,	humanize_schema_us);
 		// lws_humanize_pad(h10, sizeof(h10), ns->us_wallclock,	humanize_schema_us);
@@ -296,7 +303,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 			m->us_cpu_user = res->us_cpu_user;
 			m->us_cpu_sys = res->us_cpu_sys;
 			m->wallclock_us = us_wallclock;
-			m->peak_mem_rss = res->peak_mem_rss;
+			m->peak_mem_rss = peak_mem_bytes;
 			m->stg_bytes = du.size_in_bytes;
 			m->parallel = ns->task->parallel;
 

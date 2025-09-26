@@ -93,22 +93,16 @@ saib_get_total_ram_kib(void)
 	fclose(f);
 	return total_kib;
 #elif defined(__APPLE__)
-	mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
-	vm_statistics64_data_t vm_stats;
-	vm_size_t page_size;
-	uint64_t total_pages;
+	int mib[2];
+	size_t len;
+	uint64_t total_mem;
 
-	if (host_statistics64(mach_host_self(), HOST_VM_INFO64,
-			      (host_info64_t)&vm_stats, &count) != KERN_SUCCESS)
-		return 0;
+	mib[0] = CTL_HW;
+	mib[1] = HW_MEMSIZE;
+	len = sizeof(total_mem);
+	sysctl(mib, 2, &total_mem, &len, NULL, 0);
 
-	host_page_size(mach_host_self(), &page_size);
-	total_pages = (uint64_t)vm_stats.wire_count +
-		      (uint64_t)vm_stats.active_count +
-		      (uint64_t)vm_stats.inactive_count +
-		      (uint64_t)vm_stats.free_count;
-
-	return (unsigned int)(total_pages * page_size / 1024);
+	return (unsigned int)(total_mem / 1024);
 #elif defined(_WIN32)
 	MEMORYSTATUSEX statex;
 	statex.dwLength = sizeof(statex);
