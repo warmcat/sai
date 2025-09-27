@@ -124,7 +124,7 @@ sais_metrics_db_close(void)
 }
 
 int
-sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
+sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m, int step)
 {
 	sai_build_metric_db_t dbm;
 	lws_dll2_owner_t owner;
@@ -146,6 +146,7 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 	dbm.wallclock_us = m->wallclock_us;
 	dbm.peak_mem_rss = m->peak_mem_rss;
 	dbm.stg_bytes = m->stg_bytes;
+	dbm.step = step;
 
 	lws_dll2_owner_clear(&owner);
 	lws_dll2_add_tail(&dbm.list, &owner);

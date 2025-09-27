@@ -493,6 +493,10 @@ typedef struct sai_browse_rx_taskinfo {
 	uint8_t		logs;
 } sai_browse_rx_taskinfo_t;
 
+typedef struct sai_req_task_metrics {
+	char		task_uuid[65];
+} sai_req_task_metrics_t;
+
 /* sai-power -> sai-server, tells it that a platform is being powered up */
 typedef struct sai_power_state {
 	lws_dll2_t	list; /* for parser */
@@ -515,6 +519,7 @@ typedef struct sai_build_metric {
 	uint64_t	peak_mem_rss;
 	uint64_t	stg_bytes;
 	int		parallel;
+	int		step;
 } sai_build_metric_t;
 
 typedef struct sai_build_metric_db {
@@ -531,6 +536,7 @@ typedef struct sai_build_metric_db {
 	uint64_t	peak_mem_rss;
 	uint64_t	stg_bytes;
 	int		parallel;
+	int		step;
 } sai_build_metric_db_t;
 
 /*
@@ -597,9 +603,11 @@ extern const lws_struct_map_t
 	lsm_schema_rebuild[1],
 	lsm_schema_build_metric[1],
 	lsm_schema_sq3_map_build_metric[1],
-	lsm_load_report_members[9]
+	lsm_load_report_members[9],
+	lsm_schema_req_task_metrics[1],
+	lsm_schema_json_build_metric_list[1]
 	;
-extern const lws_struct_map_t lsm_build_metric[12];
+extern const lws_struct_map_t lsm_build_metric[13];
 extern const lws_struct_map_t lsm_plat[10];
 extern const lws_struct_map_t lsm_plat_for_json[13];
 

@@ -1013,9 +1013,27 @@ bail:
 		sais_resource_check_if_can_accept_queued(wk);
 		break;
 
-	case SAIM_WSSCH_BUILDER_METRIC:
+	case SAIM_WSSCH_BUILDER_METRIC: {
+		char event_uuid[33];
+		sqlite3 *pdb = NULL;
+		int step = 0;
+
 		metric = (const sai_build_metric_t *)pss->a.dest;
-		sais_metrics_db_add(vhd, metric);
+
+		sai_task_uuid_to_event_uuid(event_uuid, metric->task_uuid);
+		if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+			char q[128], esc_uuid[129];
+			lws_sql_purify(esc_uuid, metric->task_uuid, sizeof(esc_uuid));
+			lws_snprintf(q, sizeof(q),
+				"SELECT build_step FROM tasks WHERE uuid = '%s'",
+				esc_uuid);
+			if (sqlite3_exec(pdb, q, sql3_get_integer_cb, &step, NULL) != SQLITE_OK)
+				lwsl_err("%s: Failed to get step for task %s\n",
+					 __func__, metric->task_uuid);
+			sais_event_db_close(vhd, &pdb);
+		}
+
+		sais_metrics_db_add(vhd, metric, step);
 
 		{
 			uint8_t buf[2048];

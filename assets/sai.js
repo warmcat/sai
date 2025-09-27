@@ -683,7 +683,7 @@ function sai_taskinfo_render(t, now_ut)
 		     agify(now_ut, t.t.started) + " ago, Dur: " +
 		     (t.t.duration ? t.t.duration / 1000000 :
 		     	now_ut - t.t.started).toFixed(1) +
-			"s</span><div id=\"sai_arts\"></div><div id=\"metrics-summary-" + san(t.t.uuid) + "\"></div>";
+			"s</span><div id=\"sai_arts\"></div><div id=\"metrics-table-container\"></div>";
 		sai_arts = "";
 	}
 
@@ -1147,6 +1147,35 @@ function createBuilderDiv(plat) {
 	return platDiv;
 }
 
+function render_metrics_table(metrics) {
+	if (!metrics || metrics.length === 0)
+		return "";
+
+	let html = '<table class="metrics-table"><thead>' +
+		   '<tr><th>Step</th><th>Wall</th><th>CPU u/s</th><th>Peak Mem</th><th>Storage</th></tr>' +
+		   '</thead><tbody>';
+
+	for (const metric of metrics) {
+		let wall_s = metric.wallclock_us / 1000000;
+		let wall_m = Math.floor(wall_s / 60);
+		let wall_rem_s = (wall_s % 60).toFixed(1);
+		let user_s = (metric.us_cpu_user / 1000000).toFixed(3);
+		let sys_s = (metric.us_cpu_sys / 1000000).toFixed(3);
+
+		html += '<tr>' +
+			`<td>${metric.step}</td>` +
+			`<td>${wall_m}m ${wall_rem_s}s</td>` +
+			`<td>${user_s} / ${sys_s}</td>` +
+			`<td>${humanize(metric.peak_mem_rss)}B</td>` +
+			`<td>${humanize(metric.stg_bytes)}B</td>` +
+			'</tr>';
+	}
+
+	html += '</tbody></table>';
+
+	return html;
+}
+
 function ws_open_sai()
 {	
 	var s = "", q, qa, qi, q5, q5s;
@@ -1374,22 +1403,6 @@ function ws_open_sai()
 				buildersContainer.appendChild(table);
  				break;
 
-			case "com.warmcat.sai.build-metric":
-				var summaryDiv = document.getElementById("metrics-summary-" + jso.task_uuid);
-				if (summaryDiv) {
-					var s = "<div class=\"metric-summary\">" +
-						"Step Metrics: " +
-						"CPU: " + (jso.us_cpu_user / 1000000).toFixed(2) + "s user, " +
-						(jso.us_cpu_sys / 1000000).toFixed(2) + "s sys; " +
-						"Wallclock: " + (jso.wallclock_us / 1000000).toFixed(2) + "s; " +
-						"Mem: " + humanize(jso.peak_mem_rss) + "B; " +
-						"Stg: " + humanize(jso.stg_bytes) + "B; " +
-						"Parallel: " + jso.parallel +
-						"</div>";
-					summaryDiv.innerHTML += s;
-				}
-				break;
-
 			case "sai.warmcat.com.overview":
 				/*
 				 * Sent with an array of e[] to start, but also
@@ -1579,6 +1592,12 @@ function ws_open_sai()
 					if (document.getElementById("taskinfo-" + jso.t.uuid)) {
 						console.log("FOUND taskinfo-" + jso.t.uuid);
 						document.getElementById("taskinfo-" + jso.t.uuid).innerHTML = sai_taskinfo_render(jso);
+						if (jso.m) {
+							const metricsContainer = document.getElementById("metrics-table-container");
+							if (metricsContainer) {
+								metricsContainer.innerHTML = render_metrics_table(jso.m);
+							}
+						}
 						if (document.getElementById("esr-" + jso.e.uuid))
 							document.getElementById("esr-" + jso.e.uuid).innerHTML =
 								sai_event_summary_render(jso, now_ut, 1);
@@ -1598,12 +1617,19 @@ function ws_open_sai()
 						const url_task_uuid = urlParams.get('task');
 						
 						if (url_task_uuid === jso.t.uuid &&
-						    document.getElementById("sai_sticky"))
+						    document.getElementById("sai_sticky")) {
 							document.getElementById("sai_sticky").innerHTML =
 								"<div class=\"taskinfo\" id=\"taskinfo-" +
 								san(jso.t.uuid) + "\">" +
 								sai_taskinfo_render(jso) +
 								"</div>";
+							if (jso.m) {
+								const metricsContainer = document.getElementById("metrics-table-container");
+								if (metricsContainer) {
+									metricsContainer.innerHTML = render_metrics_table(jso.m);
+								}
+							}
+						}
 					
 				
 						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +

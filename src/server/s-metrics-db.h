@@ -32,6 +32,6 @@ void
 sais_metrics_db_close(void);
 
 int
-sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m);
+sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m, int step);
 
 #endif

@@ -206,6 +206,13 @@ typedef struct sais_sqlite_cache {
 	int		refcount;
 } sais_sqlite_cache_t;
 
+typedef struct sai_task_metrics_cache {
+	lws_dll2_t		list;
+	char			task_uuid[65];
+	lws_dll2_owner_t	metrics;
+	struct lwsac		*ac;
+} sai_task_metrics_cache_t;
+
 struct vhd {
 	struct lws_context		*context;
 	struct lws_vhost		*vhost;
@@ -232,6 +239,7 @@ struct vhd {
 	const char *sqlite3_path_lhs;
 
 	lws_dll2_owner_t sqlite3_cache; /* sais_sqlite_cache_t */
+	lws_dll2_owner_t metrics_cache; /* sai_task_metrics_cache_t */
 	lws_dll2_owner_t tasklog_cache;
 	lws_sorted_usec_list_t sul_logcache;
 	lws_sorted_usec_list_t sul_central; /* background task allocation sul */

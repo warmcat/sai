@@ -92,6 +92,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.platreset"),
 	LSM_SCHEMA	(sai_stay_t,		 NULL, lsm_stay,
 					      "com.warmcat.sai.stay"),
+	LSM_SCHEMA	(sai_req_task_metrics_t, NULL, lsm_req_task_metrics,
+					      "com.warmcat.sai.req-task-metrics"),
 };
 
 enum {
@@ -104,6 +106,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_REBUILD,
 	SAIS_WS_WEBSRV_RX_PLATRESET,
 	SAIS_WS_WEBSRV_RX_STAY,
+	SAIS_WS_WEBSRV_RX_REQ_TASK_METRICS,
 };
 
 void
@@ -771,6 +774,77 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		} lws_end_foreach_dll(p);
 
 		lwsac_free(&a.ac);
+		break;
+	}
+	case SAIS_WS_WEBSRV_RX_REQ_TASK_METRICS:
+	{
+		sai_req_task_metrics_t *req = (sai_req_task_metrics_t *)a.dest;
+		lws_dll2_owner_t o;
+		struct lwsac *ac = NULL;
+		char filt[128], esc_uuid[129];
+		uint8_t *buf;
+		size_t w;
+		lws_struct_serialize_t *js;
+
+		if (sais_validate_id(req->task_uuid, SAI_TASKID_LEN))
+			goto soft_error;
+
+		if (!m->vhd->pdb_metrics)
+			break;
+
+		lws_sql_purify(esc_uuid, req->task_uuid, sizeof(esc_uuid));
+		lws_snprintf(filt, sizeof(filt), " and task_uuid='%s'", esc_uuid);
+
+		lws_dll2_owner_clear(&o);
+
+		if (lws_struct_sq3_deserialize(m->vhd->pdb_metrics, filt, "step asc",
+					   lsm_schema_sq3_map_build_metric,
+					   &o, &ac, 0, 100)) {
+			lwsl_err("%s: Failed to query metrics from DB\n", __func__);
+			lwsac_free(&ac);
+			break;
+		}
+
+		if (!o.count) {
+			lwsac_free(&ac);
+			break; /* no metrics for this task */
+		}
+
+		buf = malloc(4096);
+		if (!buf) {
+			lwsac_free(&ac);
+			break;
+		}
+
+		js = lws_struct_json_serialize_create(
+				lsm_schema_json_build_metric_list,
+				LWS_ARRAY_SIZE(lsm_schema_json_build_metric_list),
+				0, &o);
+		if (!js) {
+			free(buf);
+			lwsac_free(&ac);
+			break;
+		}
+
+		if (lws_struct_json_serialize(js, buf, 4096, &w) != LSJS_RESULT_FINISH) {
+			lws_struct_json_serialize_destroy(&js);
+			free(buf);
+			lwsac_free(&ac);
+			break;
+		}
+
+		lws_struct_json_serialize_destroy(&js);
+
+		if (lws_buflist_append_segment(&m->bltx, buf, w) < 0) {
+			lwsl_warn("%s: buflist append failed\n", __func__);
+		} else {
+			if (lws_ss_request_tx(m->ss))
+				lwsl_ss_warn(m->ss, "tx req fail");
+		}
+
+		free(buf);
+		lwsac_free(&ac);
+
 		break;
 	}
 	}

@@ -106,6 +106,7 @@ enum {
 typedef struct sai_browse_taskreply {
 	const sai_event_t	*event;
 	const sai_task_t	*task;
+	lws_dll2_owner_t	metrics;
 	char			auth_user[33];
 	int			authorized;
 	int			auth_secs;
@@ -116,6 +117,8 @@ static lws_struct_map_t lsm_taskreply[] = {
 			 lsm_event, "e"),
 	LSM_CHILD_PTR	(sai_browse_taskreply_t, task,	sai_task_t, NULL,
 			 lsm_task, "t"),
+	LSM_LIST	(sai_browse_taskreply_t, metrics, sai_build_metric_t, list,
+			 NULL, lsm_build_metric, "m"),
 	LSM_CARRAY	(sai_browse_taskreply_t, auth_user,	"auth_user"),
 	LSM_UNSIGNED	(sai_browse_taskreply_t, authorized,	"authorized"),
 	LSM_UNSIGNED	(sai_browse_taskreply_t, auth_secs,	"auth_secs"),
@@ -244,6 +247,32 @@ saiw_pss_schedule_eventinfo(struct pss *pss, const char *event_uuid)
 	sch->ov_db_done = 1;
 	// lwsl_warn("%s: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
 	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
+
+	/*
+	 * Also request the metrics for this task
+	 */
+	{
+		uint8_t buf[LWS_PRE + 256];
+		size_t len;
+		sai_req_task_metrics_t req;
+		lws_struct_serialize_t *js;
+
+		lws_strncpy(req.task_uuid, task_uuid, sizeof(req.task_uuid));
+
+		js = lws_struct_json_serialize_create(lsm_schema_req_task_metrics,
+				LWS_ARRAY_SIZE(lsm_schema_req_task_metrics),
+				0, &req);
+		if (js) {
+			len = 0;
+			lws_struct_json_serialize(js, buf + LWS_PRE,
+						sizeof(buf) - LWS_PRE, &len);
+			lws_struct_json_serialize_destroy(&js);
+
+			if (len > 0)
+				saiw_websrv_queue_tx(pss->vhd->h_ss_websrv, buf + LWS_PRE,
+						   len, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+		}
+	}
 
 	return 0;
 
@@ -1230,6 +1259,16 @@ b_finish:
 		task_reply.authorized = pss->authorized;
 		lws_strncpy(task_reply.auth_user, pss->auth_user,
 			    sizeof(task_reply.auth_user));
+
+		lws_dll2_owner_clear(&task_reply.metrics);
+		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->metrics_cache.head) {
+			sai_task_metrics_cache_t *tmc = lws_container_of(p,
+						sai_task_metrics_cache_t, list);
+			if (!strcmp(tmc->task_uuid, sch->one_task->uuid)) {
+				task_reply.metrics = tmc->metrics;
+				break;
+			}
+		}
 
 		js = lws_struct_json_serialize_create(lsm_schema_json_map_taskreply,
 				LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply),

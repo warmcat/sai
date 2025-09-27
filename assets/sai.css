@@ -1057,3 +1057,21 @@ body.overlay-active {
   width: 24px;
   margin-bottom: 1px;
 }
+
+.metrics-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: 7pt;
+	margin-top: 5px;
+}
+
+.metrics-table th, .metrics-table td {
+	border: 1px solid #ddd;
+	padding: 2px 4px;
+	text-align: left;
+}
+
+.metrics-table th {
+	background-color: #f2f2f2;
+	font-weight: bold;
+}

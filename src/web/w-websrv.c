@@ -48,6 +48,8 @@ enum {
 	SAIS_WS_WEBSRV_RX_TASKLOGS,	/* new logs for task (ratelimited) */
 	SAIS_WS_WEBSRV_RX_LOADREPORT,	/* builder's cpu load report */
 	SAIS_WS_WEBSRV_RX_TASKACTIVITY,
+	SAIS_WS_WEBSRV_RX_BUILD_METRIC,
+	SAIS_WS_WEBSRV_RX_TASK_METRICS,
 };
 
 /*
@@ -233,6 +235,47 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n, 0,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
+
+	case SAIS_WS_WEBSRV_RX_TASK_METRICS: {
+		lws_dll2_owner_t *o = (lws_dll2_owner_t *)m->a.dest;
+		sai_build_metric_t *bm;
+		sai_task_metrics_cache_t *tmc;
+
+		if (!o->head)
+			break;
+
+		bm = lws_container_of(o->head, sai_build_metric_t, list);
+
+		/* Do we have a cache for this task uuid? */
+		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->metrics_cache.head) {
+			tmc = lws_container_of(p, sai_task_metrics_cache_t, list);
+			if (!strcmp(tmc->task_uuid, bm->task_uuid)) {
+				/* yes, we are replacing it */
+				lws_dll2_owner_clear(&tmc->metrics);
+				lwsac_free(&tmc->ac);
+				goto found;
+			}
+		} lws_end_foreach_dll(p);
+
+		/* no, create a new one */
+		tmc = malloc(sizeof(*tmc));
+		if (!tmc)
+			break;
+		memset(tmc, 0, sizeof(*tmc));
+		lws_strncpy(tmc->task_uuid, bm->task_uuid, sizeof(tmc->task_uuid));
+		lws_dll2_add_tail(&tmc->list, &vhd->metrics_cache);
+
+found:
+		/* transfer the metrics from the parse ac to the cache ac */
+		tmc->ac = m->a.ac;
+		m->a.ac = NULL; /* so it doesn't get freed below */
+		lws_dll2_owner_clear(&tmc->metrics);
+		lws_dll2_add_head(&o->head->list, &tmc->metrics);
+
+		/* trigger browsers looking at the task to update */
+		saiw_browsers_task_state_change(vhd, bm->task_uuid);
+		break;
+	}
 	}
 
 cleanup_parse_allocs:
