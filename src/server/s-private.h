@@ -348,6 +348,3 @@ sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down
 
 void
 sais_mark_all_builders_offline(struct vhd *vhd);
-
-int
-sais_broadcast_task_metrics(struct vhd *vhd, const char *task_uuid);

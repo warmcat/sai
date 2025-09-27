@@ -150,6 +150,8 @@ typedef struct {
 	char			told_ongoing;
 
 	char			rebuildable;
+
+	lws_dll2_owner_t	metrics;
 } sai_task_t;
 
 typedef struct sai_plat sai_plat_t;
@@ -515,7 +517,6 @@ typedef struct sai_build_metric {
 	uint64_t	peak_mem_rss;
 	uint64_t	stg_bytes;
 	int		parallel;
-	int		step;
 } sai_build_metric_t;
 
 typedef struct sai_build_metric_db {
@@ -532,14 +533,7 @@ typedef struct sai_build_metric_db {
 	uint64_t	peak_mem_rss;
 	uint64_t	stg_bytes;
 	int		parallel;
-	int		step;
 } sai_build_metric_db_t;
-
-typedef struct sai_task_metrics {
-	lws_dll2_t		list;
-	char			task_uuid[65];
-	lws_dll2_owner_t	metrics;
-} sai_task_metrics_t;
 
 /*
  * Browser -> sai-web -> sai-server -> sai-power
@@ -605,8 +599,7 @@ extern const lws_struct_map_t
 	lsm_schema_rebuild[1],
 	lsm_schema_build_metric[1],
 	lsm_schema_sq3_map_build_metric[1],
-	lsm_load_report_members[9],
-	lsm_schema_task_metrics[1]
+	lsm_load_report_members[9]
 	;
 extern const lws_struct_map_t lsm_build_metric[12];
 extern const lws_struct_map_t lsm_plat[10];

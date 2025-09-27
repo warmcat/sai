@@ -307,6 +307,12 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 		goto bail;
 
 	pt = lws_container_of(o.head, sai_task_t, list);
+
+	/*
+	 * And now get any metrics associated with it
+	 */
+	sais_metrics_db_get_by_task(pss->vhd, pt->uuid, &pt->metrics, &sch->query_ac);
+
 	sch->one_task = pt;
 
 	lwsl_info("%s: browser ws asked for task hash: %s, plat %s\n",
@@ -357,18 +363,6 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	// lwsl_warn("%s: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
 
 	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
-
-	{
-		uint8_t buf[LWS_PRE + 256];
-		int n;
-
-		n = lws_snprintf((char *)buf + LWS_PRE, sizeof(buf) - LWS_PRE,
-			"{\"schema\":\"com.warmcat.sai.gettaskmetrics\","
-			"\"task_uuid\":\"%s\"}", task_uuid);
-
-		saiw_websrv_queue_tx(pss->vhd->h_ss_websrv, buf + LWS_PRE, (size_t)n,
-				     LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
-	}
 
 	return 0;
 
