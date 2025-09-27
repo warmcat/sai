@@ -176,7 +176,7 @@ sais_metrics_db_get_by_task(struct vhd *vhd, const char *task_uuid,
 		return 1;
 
 	lws_sql_purify(purified, task_uuid, sizeof(purified));
-	lws_snprintf(filter, sizeof(filter), "AND task_uuid = '%s'", purified);
+	lws_snprintf(filter, sizeof(filter), "task_uuid = '%s'", purified);
 
 	if (lws_struct_sq3_deserialize(vhd->pdb_metrics, filter, "step",
 				       lsm_schema_sq3_map_build_metric, owner,
