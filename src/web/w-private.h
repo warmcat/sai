@@ -327,4 +327,7 @@ saiw_browser_state_changed(struct pss *pss, int established);
 
 void
 saiw_update_viewer_count(struct vhd *vhd);
+int
+sais_metrics_db_get_by_task(struct vhd *vhd, const char *task_uuid,
+			    lws_dll2_owner_t *owner, struct lwsac **ac);
 

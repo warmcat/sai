@@ -22,7 +22,6 @@
 #include <libwebsockets.h>
 
 #include "s-private.h"
-#include "s-metrics-db.h"
 
 static int
 sais_metrics_db_prune(struct vhd *vhd, const char *key)
@@ -162,3 +161,4 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 
 	return 0;
 }
+

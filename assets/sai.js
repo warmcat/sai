@@ -655,6 +655,27 @@ function sai_stateful_taskname(state, nm, sf)
 	return "<span id=\"taskstate\" class=\"ti2 " + tp + "\">" + san(nm) + "</span>";	 
 }
 
+function render_metrics_table(metrics)
+{
+	let s = "<table class='metrics'><thead>" +
+		"<tr><th>Step</th><th>Wallclock</th><th>CPU (u/s)</th><th>Peak Mem</th><th>Storage</th></tr>" +
+		"</thead><tbody>";
+
+	for (const m of metrics) {
+		s += "<tr>" +
+			`<td>${m.step}</td>` +
+			`<td>${(m.wallclock_us / 1000000).toFixed(2)}s</td>` +
+			`<td>${(m.us_cpu_user / 1000000).toFixed(2)}s / ${(m.us_cpu_sys / 1000000).toFixed(2)}s</td>` +
+			`<td>${humanize(m.peak_mem_rss)}B</td>` +
+			`<td>${humanize(m.stg_bytes)}B</td>` +
+			"</tr>";
+	}
+
+	s += "</tbody></table>";
+
+	return s;
+}
+
 function sai_taskinfo_render(t, now_ut)
 {
 	var now_ut = Math.round((new Date().getTime() / 1000));
@@ -677,13 +698,19 @@ function sai_taskinfo_render(t, now_ut)
 
 		s += "&nbsp;&nbsp;<span class=\"ti5\"><img class=\"bico\" src=\"/sai/builder-instance.png\">&nbsp;" +
 			san(t.t.builder_name) + "</span>";
-		if (t.t.started)
-		/* started is a unix time, in seconds */
-		s += ", <span class=\"ti5\"> " +
-		     agify(now_ut, t.t.started) + " ago, Dur: " +
-		     (t.t.duration ? t.t.duration / 1000000 :
-		     	now_ut - t.t.started).toFixed(1) +
-			"s</span><div id=\"sai_arts\"></div><div id=\"metrics-summary-" + san(t.t.uuid) + "\"></div>";
+		if (t.t.started) {
+			/* started is a unix time, in seconds */
+			s += ", <span class=\"ti5\"> " +
+			     agify(now_ut, t.t.started) + " ago, Dur: " +
+			     (t.t.duration ? t.t.duration / 1000000 :
+				now_ut - t.t.started).toFixed(1) +
+				"s</span>";
+		}
+		s += "<div id=\"sai_arts\"></div>";
+		if (t.t.metrics && t.t.metrics.length > 0)
+			s += "<div id=\"metrics-summary-" + san(t.t.uuid) + "\">" +
+				render_metrics_table(t.t.metrics) +
+				"</div>";
 		sai_arts = "";
 	}
 
@@ -1374,22 +1401,6 @@ function ws_open_sai()
 				buildersContainer.appendChild(table);
  				break;
 
-			case "com.warmcat.sai.build-metric":
-				var summaryDiv = document.getElementById("metrics-summary-" + jso.task_uuid);
-				if (summaryDiv) {
-					var s = "<div class=\"metric-summary\">" +
-						"Step Metrics: " +
-						"CPU: " + (jso.us_cpu_user / 1000000).toFixed(2) + "s user, " +
-						(jso.us_cpu_sys / 1000000).toFixed(2) + "s sys; " +
-						"Wallclock: " + (jso.wallclock_us / 1000000).toFixed(2) + "s; " +
-						"Mem: " + humanize(jso.peak_mem_rss) + "B; " +
-						"Stg: " + humanize(jso.stg_bytes) + "B; " +
-						"Parallel: " + jso.parallel +
-						"</div>";
-					summaryDiv.innerHTML += s;
-				}
-				break;
-
 			case "sai.warmcat.com.overview":
 				/*
 				 * Sent with an array of e[] to start, but also
@@ -1453,8 +1464,8 @@ function ws_open_sai()
 				
 						s = s + "</table>";
 					
-						if (document.getElementById("sai_sticky"))
-							document.getElementById("sai_sticky").innerHTML = s;
+						if (document.getElementById("sai_overview"))
+							document.getElementById("sai_overview").innerHTML = s;
 						
 						for (n = jso.overview.length - 1; n >= 0; n--) {
 							document.getElementById("esr-" + jso.overview[n].e.uuid).innerHTML =
@@ -1565,17 +1576,15 @@ function ws_open_sai()
 				 * First see if it appears as a tuple, and if
 				 * so, let's just update that
 				 */
-				
+
 				if (document.getElementById("taskstate_" + jso.t.uuid)) {
 					console.log("found taskstate_" + jso.t.uuid);
 					refresh_state(jso.t.uuid, jso.t.state);
-					
-					update_summary_and_progress(jso.t.uuid.substring(0, 32));
 
 				} else
-				
+
 					/* update task summary if shown anywhere */
-					
+
 					if (document.getElementById("taskinfo-" + jso.t.uuid)) {
 						console.log("FOUND taskinfo-" + jso.t.uuid);
 						document.getElementById("taskinfo-" + jso.t.uuid).innerHTML = sai_taskinfo_render(jso);
@@ -1583,20 +1592,20 @@ function ws_open_sai()
 							document.getElementById("esr-" + jso.e.uuid).innerHTML =
 								sai_event_summary_render(jso, now_ut, 1);
 					} else {
-						
+
 						console.log("NO taskinfo- or taskstate_" + jso.t.uuid);
-						
-						/* 
+
+						/*
 						 * Last chance if we might be
 						 * on a task-specific page, and
 						 * want to show the task info
 						 * at the top
 						 */
-					
+
 
 						const urlParams = new URLSearchParams(window.location.search);
 						const url_task_uuid = urlParams.get('task');
-						
+
 						if (url_task_uuid === jso.t.uuid &&
 						    document.getElementById("sai_sticky"))
 							document.getElementById("sai_sticky").innerHTML =
@@ -1604,8 +1613,8 @@ function ws_open_sai()
 								san(jso.t.uuid) + "\">" +
 								sai_taskinfo_render(jso) +
 								"</div>";
-					
-				
+
+
 						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
 						"<td class=\"atop\">" +
 						"<div id=\"dlogsn\" class=\"dlogsn\">" + lines + "</div></td>" +
@@ -1613,16 +1622,16 @@ function ws_open_sai()
 						"<div id=\"dlogst\" class=\"dlogst\">" + times + "</div></td>" +
 					     "<td class=\"atop\"><div id=\"dlogs\" class=\"dlogs\">" +
 					     "<span id=\"logs\" class=\"nowrap\">" + logs +
-					     	"</span>"+
+						"</span>"+
 						"</div></td></tr></table></pre>";
 					
 					if (document.getElementById("sai_overview")) {
 						document.getElementById("sai_overview").innerHTML = s;
-					
+
 						if (document.getElementById("esr-" + jso.e.uuid))
 							document.getElementById("esr-" + jso.e.uuid).innerHTML =
 								sai_event_summary_render(jso, now_ut, 1);
-								
+
 						update_summary_and_progress(jso.e.uuid);
 					}
 	
@@ -1969,14 +1978,14 @@ window.addEventListener("load", function() {
 
 	}, 500)
 
-	const stickyEl = document.getElementById("sai_sticky");
-	if (stickyEl) {
-		stickyEl.addEventListener("contextmenu", function(event) {
+	const rightPane = document.querySelector('.right-pane');
+	if (rightPane) {
+		rightPane.addEventListener("contextmenu", function(event) {
 			let target = event.target;
 			let taskDiv = null;
 
 			// find the taskstate div parent
-			while (target && target.id !== "sai_sticky") {
+			while (target && target !== rightPane) {
 				if (target.classList && target.classList.contains("taskstate")) {
 					taskDiv = target;
 					break;
