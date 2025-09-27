@@ -235,11 +235,10 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n, 0,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
-
 	case SAIS_WS_WEBSRV_RX_TASK_METRICS: {
 		lws_dll2_owner_t *o = (lws_dll2_owner_t *)m->a.dest;
 		sai_build_metric_t *bm;
-		sai_task_metrics_cache_t *tmc;
+		sai_task_metrics_cache_t *tmc = NULL;
 
 		if (!o->head)
 			break;
@@ -255,6 +254,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				lwsac_free(&tmc->ac);
 				goto found;
 			}
+			tmc = NULL;
 		} lws_end_foreach_dll(p);
 
 		/* no, create a new one */
@@ -269,8 +269,9 @@ found:
 		/* transfer the metrics from the parse ac to the cache ac */
 		tmc->ac = m->a.ac;
 		m->a.ac = NULL; /* so it doesn't get freed below */
-		lws_dll2_owner_clear(&tmc->metrics);
-		lws_dll2_add_head(&o->head->list, &tmc->metrics);
+		tmc->metrics.head = o->head;
+		tmc->metrics.count = o->count;
+
 
 		/* trigger browsers looking at the task to update */
 		saiw_browsers_task_state_change(vhd, bm->task_uuid);

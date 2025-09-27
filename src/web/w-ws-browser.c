@@ -1261,8 +1261,8 @@ b_finish:
 			    sizeof(task_reply.auth_user));
 
 		lws_dll2_owner_clear(&task_reply.metrics);
-		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->metrics_cache.head) {
-			sai_task_metrics_cache_t *tmc = lws_container_of(p,
+		lws_start_foreach_dll(struct lws_dll2 *, p_loop, vhd->metrics_cache.head) {
+			sai_task_metrics_cache_t *tmc = lws_container_of(p_loop,
 						sai_task_metrics_cache_t, list);
 			if (!strcmp(tmc->task_uuid, sch->one_task->uuid)) {
 				task_reply.metrics = tmc->metrics;
