@@ -307,13 +307,11 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 		goto bail;
 
 	pt = lws_container_of(o.head, sai_task_t, list);
-
-	/*
-	 * And now get any metrics associated with it
-	 */
-	sais_metrics_db_get_by_task(pss->vhd, pt->uuid, &pt->metrics, &sch->query_ac);
-
 	sch->one_task = pt;
+
+	if (sais_metrics_db_get_by_task(pss->vhd, pt->uuid, &pt->metrics,
+					&sch->query_ac))
+		lwsl_warn("%s: failed to get metrics\n", __func__);
 
 	lwsl_info("%s: browser ws asked for task hash: %s, plat %s\n",
 		 __func__, task_uuid, sch->one_task->platform);

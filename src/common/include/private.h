@@ -150,8 +150,6 @@ typedef struct {
 	char			told_ongoing;
 
 	char			rebuildable;
-
-	lws_dll2_owner_t	metrics;
 } sai_task_t;
 
 typedef struct sai_plat sai_plat_t;

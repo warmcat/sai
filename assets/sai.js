@@ -655,37 +655,23 @@ function sai_stateful_taskname(state, nm, sf)
 	return "<span id=\"taskstate\" class=\"ti2 " + tp + "\">" + san(nm) + "</span>";	 
 }
 
-function sai_sticky_task_summary_render(t, now_ut)
+function render_metrics_table(metrics)
 {
-	var s = "";
+	let s = "<table class='metrics'><thead>" +
+		"<tr><th>Step</th><th>Wallclock</th><th>CPU (u/s)</th><th>Peak Mem</th><th>Storage</th></tr>" +
+		"</thead><tbody>";
 
-	s = "<div class=\"taskinfo\" id=\"taskinfo-" + san(t.t.uuid) + "\">" +
-		"<table><tr class=\"nomar\"><td class=\"ti\">" +
-		"<span class=\"ti1\">" + sai_plat_icon(t.t.platform, 2) +
-		san(t.t.platform) + "</span>&nbsp;";
-	if (authd && t.t.state != 0 && t.t.state != 3 && t.t.state != 4 && t.t.state != 5)
-		s += "<img class=\"rebuild\" alt=\"stop build\" src=\"stop.svg\" " +
-			"id=\"stop-" + san(t.t.uuid) + "\">&nbsp;";
-	if (authd)
-		s += "<img class=\"rebuild\" alt=\"rebuild\" src=\"rebuild.png\" " +
-			"id=\"rebuild-" + san(t.t.uuid) + "\">&nbsp;" +
-			sai_stateful_taskname(t.t.state, t.t.taskname, 1);
-
-	if (t.t.builder_name) {
-		var now_ut = Math.round((new Date().getTime() / 1000));
-
-		s += "&nbsp;&nbsp;<span class=\"ti5\"><img class=\"bico\" src=\"/sai/builder-instance.png\">&nbsp;" +
-			san(t.t.builder_name) + "</span>";
-		if (t.t.started)
-		/* started is a unix time, in seconds */
-		s += ", <span class=\"ti5\"> " +
-		     agify(now_ut, t.t.started) + " ago, Dur: " +
-		     (t.t.duration ? t.t.duration / 1000000 :
-			now_ut - t.t.started).toFixed(1) +
-			"s</span>";
+	for (const m of metrics) {
+		s += "<tr>" +
+			`<td>${m.step}</td>` +
+			`<td>${(m.wallclock_us / 1000000).toFixed(2)}s</td>` +
+			`<td>${(m.us_cpu_user / 1000000).toFixed(2)}s / ${(m.us_cpu_sys / 1000000).toFixed(2)}s</td>` +
+			`<td>${humanize(m.peak_mem_rss)}B</td>` +
+			`<td>${humanize(m.stg_bytes)}B</td>` +
+			"</tr>";
 	}
 
-	s += "</td></tr></table>" + "</div>";
+	s += "</tbody></table>";
 
 	return s;
 }
@@ -712,13 +698,19 @@ function sai_taskinfo_render(t, now_ut)
 
 		s += "&nbsp;&nbsp;<span class=\"ti5\"><img class=\"bico\" src=\"/sai/builder-instance.png\">&nbsp;" +
 			san(t.t.builder_name) + "</span>";
-		if (t.t.started)
-		/* started is a unix time, in seconds */
-		s += ", <span class=\"ti5\"> " +
-		     agify(now_ut, t.t.started) + " ago, Dur: " +
-		     (t.t.duration ? t.t.duration / 1000000 :
-		     	now_ut - t.t.started).toFixed(1) +
-			"s</span><div id=\"sai_arts\"></div>";
+		if (t.t.started) {
+			/* started is a unix time, in seconds */
+			s += ", <span class=\"ti5\"> " +
+			     agify(now_ut, t.t.started) + " ago, Dur: " +
+			     (t.t.duration ? t.t.duration / 1000000 :
+				now_ut - t.t.started).toFixed(1) +
+				"s</span>";
+		}
+		s += "<div id=\"sai_arts\"></div>";
+		if (t.t.metrics && t.t.metrics.length > 0)
+			s += "<div id=\"metrics-summary-" + san(t.t.uuid) + "\">" +
+				render_metrics_table(t.t.metrics) +
+				"</div>";
 		sai_arts = "";
 	}
 
@@ -1409,22 +1401,6 @@ function ws_open_sai()
 				buildersContainer.appendChild(table);
  				break;
 
-			case "com.warmcat.sai.build-metric":
-				var summaryDiv = document.getElementById("metrics-summary-" + jso.task_uuid);
-				if (summaryDiv) {
-					var s = "<div class=\"metric-summary\">" +
-						"Step Metrics: " +
-						"CPU: " + (jso.us_cpu_user / 1000000).toFixed(2) + "s user, " +
-						(jso.us_cpu_sys / 1000000).toFixed(2) + "s sys; " +
-						"Wallclock: " + (jso.wallclock_us / 1000000).toFixed(2) + "s; " +
-						"Mem: " + humanize(jso.peak_mem_rss) + "B; " +
-						"Stg: " + humanize(jso.stg_bytes) + "B; " +
-						"Parallel: " + jso.parallel +
-						"</div>";
-					summaryDiv.innerHTML += s;
-				}
-				break;
-
 			case "sai.warmcat.com.overview":
 				/*
 				 * Sent with an array of e[] to start, but also
@@ -1587,44 +1563,78 @@ function ws_open_sai()
 					}
 				}
 				
-				const urlParams = new URLSearchParams(window.location.search);
-				const url_task_uuid = urlParams.get('task');
+				/*
+				 * We get told about changes to any task state,
+				 * it's up to us to figure out if the page we
+				 * showed should display the update and in what
+				 * form.
+				 *
+				 * We make sure the div containing the task info
+				 * has a special ID depending on if it's shown
+				 * as a tuple or as extended info
+				 *
+				 * First see if it appears as a tuple, and if
+				 * so, let's just update that
+				 */
 
-				if (url_task_uuid && jso.t.uuid === url_task_uuid) {
-					// This is a task-specific page, update the summary and logs
+				if (document.getElementById("taskstate_" + jso.t.uuid)) {
+					console.log("found taskstate_" + jso.t.uuid);
+					refresh_state(jso.t.uuid, jso.t.state);
 
-					const summaryDiv = document.getElementById("sai_task_summary");
-					if (summaryDiv) {
-						summaryDiv.innerHTML = sai_sticky_task_summary_render(jso, now_ut);
-					}
+					update_summary_and_progress(jso.t.uuid.substring(0, 32));
 
-					const metricsDiv = document.getElementById("sai_task_metrics");
-					if (metricsDiv && jso.t.metrics) {
-						var s = "<table><tr><th>Step</th><th>Wallclock</th><th>CPU (u/s)</th><th>Peak Mem</th><th>Storage</th></tr>";
-						for (var i = 0; i < jso.t.metrics.length; i++) {
-							var m = jso.t.metrics[i];
-							s += "<tr><td>" + m.step + "</td>" +
-								 "<td>" + (m.wallclock_us / 1000000).toFixed(3) + "s</td>" +
-								 "<td>" + (m.us_cpu_user / 1000000).toFixed(3) + "s / " + (m.us_cpu_sys / 1000000).toFixed(3) + "s</td>" +
-								 "<td>" + humanize(m.peak_mem_rss) + "B</td>" +
-								 "<td>" + humanize(m.stg_bytes) + "B</td></tr>";
-						}
-						s += "</table>";
-						metricsDiv.innerHTML = s;
-					}
+				} else
 
-					s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
+					/* update task summary if shown anywhere */
+
+					if (document.getElementById("taskinfo-" + jso.t.uuid)) {
+						console.log("FOUND taskinfo-" + jso.t.uuid);
+						document.getElementById("taskinfo-" + jso.t.uuid).innerHTML = sai_taskinfo_render(jso);
+						if (document.getElementById("esr-" + jso.e.uuid))
+							document.getElementById("esr-" + jso.e.uuid).innerHTML =
+								sai_event_summary_render(jso, now_ut, 1);
+					} else {
+
+						console.log("NO taskinfo- or taskstate_" + jso.t.uuid);
+
+						/*
+						 * Last chance if we might be
+						 * on a task-specific page, and
+						 * want to show the task info
+						 * at the top
+						 */
+
+
+						const urlParams = new URLSearchParams(window.location.search);
+						const url_task_uuid = urlParams.get('task');
+
+						if (url_task_uuid === jso.t.uuid &&
+						    document.getElementById("sai_sticky"))
+							document.getElementById("sai_sticky").innerHTML =
+								"<div class=\"taskinfo\" id=\"taskinfo-" +
+								san(jso.t.uuid) + "\">" +
+								sai_taskinfo_render(jso) +
+								"</div>";
+
+
+						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
 						"<td class=\"atop\">" +
 						"<div id=\"dlogsn\" class=\"dlogsn\">" + lines + "</div></td>" +
 						"<td class=\"atop\">" +
 						"<div id=\"dlogst\" class=\"dlogst\">" + times + "</div></td>" +
-						"<td class=\"atop\"><div id=\"dlogs\" class=\"dlogs\">" +
-						"<span id=\"logs\" class=\"nowrap\">" + logs +
-							"</span>"+
+					     "<td class=\"atop\"><div id=\"dlogs\" class=\"dlogs\">" +
+					     "<span id=\"logs\" class=\"nowrap\">" + logs +
+						"</span>"+
 						"</div></td></tr></table></pre>";
 					
-					if (document.getElementById("sai_task")) {
-						document.getElementById("sai_task").innerHTML = s;
+					if (document.getElementById("sai_overview")) {
+						document.getElementById("sai_overview").innerHTML = s;
+
+						if (document.getElementById("esr-" + jso.e.uuid))
+							document.getElementById("esr-" + jso.e.uuid).innerHTML =
+								sai_event_summary_render(jso, now_ut, 1);
+
+						update_summary_and_progress(jso.e.uuid);
 					}
 	
 					if (document.getElementById("rebuild-" + san(jso.t.uuid))) {
@@ -1638,6 +1648,10 @@ function ws_open_sai()
 						 	  	console.log(rs);
 						 	  	sai.send(rs);
 
+								/*
+								 * and immediately re-request the task info, so we can get
+								 * the new logs
+								 */
 								var tid = san(e.srcElement.id.substring(8));
 								var rq = "{\"schema\":" +
 									  "\"com.warmcat.sai.taskinfo\"," +
@@ -1674,13 +1688,6 @@ function ws_open_sai()
 					}
 									
 					aging();
-
-				} else if (document.getElementById("taskstate_" + jso.t.uuid)) {
-					// This is the overview page, just refresh the task state icon
-					refresh_state(jso.t.uuid, jso.t.state);
-					if (jso.e && jso.e.uuid) {
-						update_summary_and_progress(jso.e.uuid);
-					}
 				}
 				break;
 
