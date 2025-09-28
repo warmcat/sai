@@ -60,6 +60,15 @@ const lws_struct_map_t lsm_build_metric[] = {
 	LSM_SIGNED	(sai_build_metric_t, parallel,		"parallel"),
 };
 
+const lws_struct_map_t lsm_step_metric[] = {
+	LSM_SIGNED	(sai_step_metric_t, step,		"step"),
+	LSM_UNSIGNED	(sai_step_metric_t, wallclock_us,	"wallclock_us"),
+	LSM_UNSIGNED	(sai_step_metric_t, us_cpu_user,	"us_cpu_user"),
+	LSM_UNSIGNED	(sai_step_metric_t, us_cpu_sys,		"us_cpu_sys"),
+	LSM_UNSIGNED	(sai_step_metric_t, peak_mem_rss,	"peak_mem_rss"),
+	LSM_UNSIGNED	(sai_step_metric_t, stg_bytes,		"stg_bytes"),
+};
+
 const lws_struct_map_t lsm_schema_build_metric[] = {
 	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric, "com.warmcat.sai.build-metric")
 };
@@ -191,6 +200,8 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_UNSIGNED	(sai_task_t, est_disk_kib,	"est_disk_kib"),
 	LSM_SIGNED	(sai_task_t, parallel,		"parallel"),
 	LSM_SIGNED	(sai_task_t, rebuildable,	"rebuildable"),
+	LSM_CHILD_DLL2_OWNER(sai_task_t, s, sai_step_metric_t, list,
+			     lsm_step_metric, "s"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {

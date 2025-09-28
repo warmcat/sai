@@ -69,6 +69,14 @@ static lws_struct_map_t lsm_browser_platreset[] = {
 	LSM_CARRAY	(sai_browse_rx_platreset_t, platform,   "platform"),
 };
 
+typedef struct sai_taskinfo_req {
+	char task_uuid[65];
+} sai_taskinfo_req_t;
+
+static lws_struct_map_t lsm_taskinfo_req[] = {
+	LSM_CARRAY(sai_taskinfo_req_t, task_uuid, "task_uuid"),
+};
+
 static const lws_struct_map_t lsm_viewercount_members[] = {
 	LSM_UNSIGNED(sai_viewer_state_t, viewers,	"count"),
 };
@@ -92,6 +100,7 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.platreset"),
 	LSM_SCHEMA	(sai_stay_t,		 NULL, lsm_stay,
 					      "com.warmcat.sai.stay"),
+	LSM_SCHEMA(sai_taskinfo_req_t, NULL, lsm_taskinfo_req, "com.warmcat.sai.taskinfo_req"),
 };
 
 enum {
@@ -104,7 +113,118 @@ enum {
 	SAIS_WS_WEBSRV_RX_REBUILD,
 	SAIS_WS_WEBSRV_RX_PLATRESET,
 	SAIS_WS_WEBSRV_RX_STAY,
+	SAIS_WS_WEBSRV_RX_TASKINFO_REQ,
 };
+
+typedef struct sai_browse_taskreply {
+	const sai_event_t	*event;
+	const sai_task_t	*task;
+} sai_browse_taskreply_t;
+
+static lws_struct_map_t lsm_taskreply[] = {
+	LSM_CHILD_PTR	(sai_browse_taskreply_t, event,	sai_event_t, NULL,
+			 lsm_event, "e"),
+	LSM_CHILD_PTR	(sai_browse_taskreply_t, task,	sai_task_t, NULL,
+			 lsm_task, "t"),
+};
+
+const lws_struct_map_t lsm_schema_json_map_taskreply[] = {
+	LSM_SCHEMA	(sai_browse_taskreply_t, NULL, lsm_taskreply,
+			 "com.warmcat.sai.taskinfo"),
+};
+
+
+static int
+sais_handle_taskinfo_req(websrvss_srv_t *m, const char *task_uuid)
+{
+	char qu[192], esc[130], event_uuid[33];
+	sqlite3 *pdb = NULL;
+	lws_dll2_owner_t o;
+	sai_task_t *pt;
+	sai_event_t *pe;
+	int n, ret = 1;
+	struct lwsac *ac = NULL;
+	sai_browse_taskreply_t task_reply;
+	lws_struct_serialize_t *js;
+	uint8_t *buf = NULL;
+	size_t len = 0;
+
+	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
+
+	if (sais_event_db_ensure_open(m->vhd, event_uuid, 0, &pdb))
+		return 0;
+
+	lws_sql_purify(esc, task_uuid, sizeof(esc));
+	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
+	n = lws_struct_sq3_deserialize(pdb, qu, NULL, lsm_schema_sq3_map_task,
+				       &o, &ac, 0, 1);
+	sais_event_db_close(m->vhd, &pdb);
+	if (n < 0 || !o.head)
+		goto bail;
+
+	pt = lws_container_of(o.head, sai_task_t, list);
+
+	lws_sql_purify(esc, event_uuid, sizeof(esc));
+	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
+	n = lws_struct_sq3_deserialize(m->vhd->server.pdb, qu, NULL,
+				       lsm_schema_sq3_map_event, &o,
+				       &ac, 0, 1);
+	if (n < 0 || !o.head)
+		goto bail;
+
+	pe = lws_container_of(o.head, sai_event_t, list);
+
+	if (sais_metrics_db_get_by_task(m->vhd, pt->uuid, &pt->s, &ac))
+		lwsl_warn("%s: failed to get metrics for %s\n", __func__, pt->uuid);
+
+	task_reply.event = pe;
+	task_reply.task = pt;
+	pt->rebuildable = (pt->state == SAIES_FAIL || pt->state == SAIES_CANCELLED) &&
+			(lws_now_secs() - (pt->started + (pt->duration / 1000000)) < 24 * 3600);
+
+	js = lws_struct_json_serialize_create(lsm_schema_json_map_taskreply,
+			LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply),
+			0, &task_reply);
+	if (!js)
+		goto bail;
+
+	len = lws_struct_json_serialize_get_length(js, NULL);
+	if (!len) {
+		lws_struct_json_serialize_destroy(&js);
+		goto bail;
+	}
+
+	buf = malloc(LWS_PRE + len);
+	if (!buf) {
+		lws_struct_json_serialize_destroy(&js);
+		goto bail;
+	}
+
+	n = (int)lws_struct_json_serialize(js, buf + LWS_PRE, len, (size_t *)&len);
+	lws_struct_json_serialize_destroy(&js);
+
+	if (n != LSJS_RESULT_FINISH)
+		goto bail;
+
+	if (lws_buflist_append_segment(&m->bltx, buf + LWS_PRE, len) < 0) {
+		lwsl_warn("%s: buflist append fail\n", __func__);
+		ret = 1;
+		goto bail;
+	}
+
+	if (lws_ss_request_tx(m->ss))
+		lwsl_ss_warn(m->ss, "tx req fail");
+
+	ret = 0;
+
+bail:
+	lwsac_free(&ac);
+	if (buf)
+		free(buf);
+	sais_event_db_close(m->vhd, &pdb);
+
+	return ret;
+}
 
 void
 sais_mark_all_builders_offline(struct vhd *vhd)
@@ -631,6 +751,19 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		r = sais_event_reset(m->vhd, ei->event_hash);
 		if (r)
 			lwsl_ss_err(m->ss, "eventreset failed");
+
+		lwsac_free(&a.ac);
+		break;
+	}
+	case SAIS_WS_WEBSRV_RX_TASKINFO_REQ:
+	{
+		sai_taskinfo_req_t *tir = (sai_taskinfo_req_t *)a.dest;
+
+		if (sais_validate_id(tir->task_uuid, SAI_TASKID_LEN))
+			goto soft_error;
+
+		if (sais_handle_taskinfo_req(m, tir->task_uuid))
+			lwsl_ss_err(m->ss, "taskinfo req failed");
 
 		lwsac_free(&a.ac);
 		break;

@@ -103,28 +103,6 @@ enum {
  * For issuing combined task and event data back to browser
  */
 
-typedef struct sai_browse_taskreply {
-	const sai_event_t	*event;
-	const sai_task_t	*task;
-	char			auth_user[33];
-	int			authorized;
-	int			auth_secs;
-} sai_browse_taskreply_t;
-
-static lws_struct_map_t lsm_taskreply[] = {
-	LSM_CHILD_PTR	(sai_browse_taskreply_t, event,	sai_event_t, NULL,
-			 lsm_event, "e"),
-	LSM_CHILD_PTR	(sai_browse_taskreply_t, task,	sai_task_t, NULL,
-			 lsm_task, "t"),
-	LSM_CARRAY	(sai_browse_taskreply_t, auth_user,	"auth_user"),
-	LSM_UNSIGNED	(sai_browse_taskreply_t, authorized,	"authorized"),
-	LSM_UNSIGNED	(sai_browse_taskreply_t, auth_secs,	"auth_secs"),
-};
-
-const lws_struct_map_t lsm_schema_json_map_taskreply[] = {
-	LSM_SCHEMA	(sai_browse_taskreply_t, NULL, lsm_taskreply,
-			 "com.warmcat.sai.taskinfo"),
-};
 
 enum sai_overview_state {
 	SOS_EVENT,
@@ -257,116 +235,33 @@ bail:
 static int
 saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 {
-	saiw_scheduled_t *sch = saiw_alloc_sched(pss, WSS_PREPARE_TASKINFO);
-	char qu[192], esc[66], event_uuid[33], esc2[96];
-	sqlite3 *pdb = NULL;
-	lws_dll2_owner_t o;
-	sai_task_t *pt;
-	int n, m;
-
-	if (!sch)
-		return -1;
-
-	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
+	char *p, buf[LWS_PRE + 256];
+	size_t len;
 
 	/*
-	 * This pss may be locked to a specific event and not want to hear
-	 * anything unrelated to that event... lock to task is same deal but
-	 * we will also send it non-log info about other tasks, so it can
-	 * keep its event summary alive
+	 * We are just a proxy for this information now, let's ask the server
+	 * to send us the unified taskinfo update for this task
 	 */
 
-	if (pss->specific_task[0] &&
-	    memcmp(pss->specific_task, event_uuid, 32)) {
-		lwsl_info("%s: specific_task '%s' vs event_uuid '%s\n",
-			    __func__, pss->specific_task, event_uuid);
-		goto bail;
+	p = buf + LWS_PRE;
+	len = (size_t)lws_snprintf(p, sizeof(buf) - LWS_PRE,
+		"{\"schema\":\"com.warmcat.sai.taskinfo_req\","
+		"\"task_uuid\":\"%s\"}", task_uuid);
+
+	if (saiw_websrv_queue_tx(pss->vhd->h_ss_websrv, (uint8_t *)p, len,
+				 LWSSS_FLAG_SOM | LWSSS_FLAG_EOM)) {
+		lwsl_warn("%s: unable to queue taskinfo req\n", __func__);
+		return 1;
 	}
 
-	/* open the event-specific database object */
-
-	if (sais_event_db_ensure_open(pss->vhd, event_uuid, 0, &pdb)) {
-		/* no longer exists, nothing to do */
-		saiw_dealloc_sched(sch);
-		return 0;
+	if (logsub) {
+		lws_strncpy(pss->sub_task_uuid, task_uuid,
+			    sizeof(pss->sub_task_uuid));
+		lws_dll2_add_head(&pss->subs_list, &pss->vhd->subs_owner);
+		pss->sub_timestamp = pss->initial_log_timestamp;
 	}
-
-	/*
-	 * get the related task object into its own ac... there might
-	 * be a lot of related data, so we hold the ac in the sch for
-	 * as long as needed to send it out
-	 */
-
-	lws_sql_purify(esc, task_uuid, sizeof(esc));
-	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
-	n = lws_struct_sq3_deserialize(pdb, qu, NULL, lsm_schema_sq3_map_task,
-				       &o, &sch->query_ac, 0, 1);
-	sais_event_db_close(pss->vhd, &pdb);
-	// lwsl_notice("%s: n %d, o.head %p\n", __func__, n, o.head);
-	if (n < 0 || !o.head)
-		goto bail;
-
-	pt = lws_container_of(o.head, sai_task_t, list);
-	sch->one_task = pt;
-
-	//if (sais_metrics_db_get_by_task(pss->vhd, pt->uuid, &pt->metrics,
-	//				&sch->query_ac))
-	//	lwsl_warn("%s: failed to get metrics\n", __func__);
-
-	lwsl_info("%s: browser ws asked for task hash: %s, plat %s\n",
-		 __func__, task_uuid, sch->one_task->platform);
-
-	/* let the pss take over the task info ac and schedule sending */
-
-	lws_dll2_remove((struct lws_dll2 *)&sch->one_task->list);
-
-	/*
-	 * let's also get the event object the task relates to into
-	 * its own event struct, additionally qualify this task against any
-	 * pss reponame-specific constraint and bail if doesn't match
-	 */
-
-	lws_sql_purify(esc, event_uuid, sizeof(esc));
-	m = lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
-	if (pss->specific_project[0]) {
-		lws_sql_purify(esc2, pss->specific_project, sizeof(esc2));
-		m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and repo_name='%s'", esc2);
-	}
-
-	if (pss->specific_ref[0] && pss->specificity != SAIM_SPECIFIC_TASK) {
-		lws_sql_purify(esc2, pss->specific_ref, sizeof(esc2));
-		if (pss->specific_ref[0] == 'r') {
-			/* check event ref against, eg, ref/heads/xxx */
-			if (!strcmp(pss->specific_ref, "refs/heads/master"))
-				m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m,
-					" and (ref='refs/heads/master' or ref='refs/heads/main')");
-			else
-				m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and ref='%s'", esc2);
-		} else
-			/* check event hash against, eg, 12341234abcd... */
-			m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and hash='%s'", esc2);
-	}
-
-	n = lws_struct_sq3_deserialize(pss->vhd->pdb, qu, NULL,
-				       lsm_schema_sq3_map_event, &o,
-				       &sch->query_ac, 0, 1);
-	if (n < 0 || !o.head) {
-		// lwsl_notice("%s: no result\n", __func__);
-		goto bail;
-	}
-
-	sch->logsub = !!logsub;
-	sch->one_event = lws_container_of(o.head, sai_event_t, list);
-
-	// lwsl_warn("%s: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
-
-	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
 
 	return 0;
-
-bail:
-	saiw_dealloc_sched(sch);
-	return 1;
 }
 
 /*
@@ -1208,139 +1103,6 @@ b_finish:
 		break;
 
 
-	case WSS_PREPARE_TASKINFO:
-
-		if (!sch) /* coverity */
-			goto no_sch;
-
-		/*
-		 * We're sending a browser the specific task info that he
-		 * asked for.
-		 *
-		 * We already got the task struct out of the db in .one_task
-		 * (all in .query_ac)... we're responsible for destroying it
-		 * when we go out of scope...
-		 */
-
-		lwsl_info("%s: PREPARE_TASKINFO: one_task %p\n", __func__, sch->one_task);
-
-		task_reply.event = sch->one_event;
-		task_reply.task = sch->one_task;
-		sch->one_task->rebuildable = (sch->one_task->state == SAIES_FAIL ||
-				sch->one_task->state == SAIES_CANCELLED) &&
-				(lws_now_secs() - (sch->one_task->started +
-						(sch->one_task->duration / 1000000)) < 24 * 3600);
-		task_reply.auth_secs = (int)(pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0);
-		task_reply.authorized = pss->authorized;
-		lws_strncpy(task_reply.auth_user, pss->auth_user,
-			    sizeof(task_reply.auth_user));
-
-		js = lws_struct_json_serialize_create(lsm_schema_json_map_taskreply,
-				LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply),
-				0, &task_reply);
-		if (!js) {
-			saiw_dealloc_sched(sch);
-			lwsl_warn("%s: couldn't create\n", __func__);
-			return 1;
-		}
-
-		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
-		lws_struct_json_serialize_destroy(&js);
-
-		/*
-		 * Let's also try to fetch any artifacts into pss->aft_owner...
-		 * no db or no artifacts can also be a normal situation...
-		 */
-
-		if (sch->one_task) {
-
-			sai_task_uuid_to_event_uuid(event_uuid,
-						    sch->one_task->uuid);
-
-			//lwsl_debug("%s: ---------------- event uuid '%s'\n",
-			//		__func__, event_uuid);
-
-			lws_dll2_owner_clear(&sch->owner);
-			if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
-
-				lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s')",
-					     sch->one_task->uuid);
-
-				// lwsl_debug("%s: ---------------- %s\n", __func__, filt);
-
-				if (lws_struct_sq3_deserialize(pdb, filt, NULL,
-							lsm_schema_sq3_map_artifact,
-							&sch->owner,
-							&sch->ac, 0, 10)) {
-					lwsl_err("%s: get afcts failed\n", __func__);
-				}
-				sais_event_db_close(vhd, &pdb);
-			}
-		}
-
-		first = 1;
-		sch->walk = NULL;
-		pss->send_state = WSS_SEND_ARTIFACT_INFO;
-		if (!sch->owner.head) {
-			// lwsl_debug("%s: ---------------- no artifacts\n", __func__);
-			/* there's no artifact stuff to do */
-			endo = 1;
-		} else
-			lwsl_debug("%s: WSS_PREPARE_TASKINFO: planning on artifacts\n", __func__);
-		// sch->one_task = NULL;
-		if (n == LSJS_RESULT_ERROR) {
-			saiw_dealloc_sched(sch);
-			lwsl_notice("%s: taskinfo: error generating json\n", __func__);
-			return 1;
-		}
-		p += w;
-		if (!lws_ptr_diff(p, start)) {
-			saiw_dealloc_sched(sch);
-			pss->send_state = WSS_IDLE1;
-			lwsl_notice("%s: taskinfo: empty json\n", __func__);
-			return 0;
-		}
-		break;
-
-	case WSS_SEND_ARTIFACT_INFO:
-
-		if (!sch) /* coverity */
-			goto no_sch;
-
-		if (sch->owner.head) {
-			sai_artifact_t *aft = (sai_artifact_t *)sch->owner.head;
-
-			lwsl_info("%s: WSS_SEND_ARTIFACT_INFO: consuming artifact\n", __func__);
-
-			lws_dll2_remove(&aft->list);
-
-			/* we don't want to disclose this to browsers */
-			aft->artifact_up_nonce[0] = '\0';
-
-			js = lws_struct_json_serialize_create(lsm_schema_json_map_artifact,
-					LWS_ARRAY_SIZE(lsm_schema_json_map_artifact),
-					0, aft);
-			if (!js) {
-				saiw_dealloc_sched(sch);
-				lwsl_err("%s ----------------- failed to render artifact json\n", __func__);
-				return 1;
-			}
-
-			n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
-			lws_struct_json_serialize_destroy(&js);
-			if (n == LSJS_RESULT_ERROR) {
-				saiw_dealloc_sched(sch);
-				lwsl_notice("%s: taskinfo: ---------- error generating json\n", __func__);
-				return 1;
-			}
-			first = 1;
-			p += w;
-			// lwsl_warn("%s: --------------------- %.*s\n", __func__, (int)w, start);
-		}
-
-		if (!sch->owner.head)
-			endo = 1;
-		break;
 
 	default:
 		lwsl_err("%s: pss state %d\n", __func__, pss->send_state);

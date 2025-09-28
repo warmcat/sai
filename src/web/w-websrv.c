@@ -48,6 +48,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_TASKLOGS,	/* new logs for task (ratelimited) */
 	SAIS_WS_WEBSRV_RX_LOADREPORT,	/* builder's cpu load report */
 	SAIS_WS_WEBSRV_RX_TASKACTIVITY,
+	SAIS_WS_WEBSRV_RX_TASKINFO,
 };
 
 /*
@@ -155,6 +156,10 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			saiw_ws_broadcast_raw(vhd, buf, len, 0,
 				lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, 0));
 			break;
+		case SAIS_WS_WEBSRV_RX_TASKINFO:
+			saiw_ws_broadcast_raw(vhd, buf, len, 0,
+				lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, 0));
+			break;
 		}
 
 		return 0;
@@ -164,7 +169,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	 * If we get here, the message is fully parsed (n >= 0).
 	 * Now we can safely process m->a.dest.
 	 */
-	if (!m->a.dest) {
+	if (!m->a.dest && m->a.top_schema_index != SAIS_WS_WEBSRV_RX_TASKINFO) {
 		lwsl_warn("%s: JSON parsed but produced no object\n", __func__);
 		goto cleanup_parse_allocs;
 	}
@@ -231,6 +236,10 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		break;
 	case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
 		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n, 0,
+			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
+		break;
+	case SAIS_WS_WEBSRV_RX_TASKINFO:
+		saiw_ws_broadcast_raw(vhd, buf, len, 0,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 	}

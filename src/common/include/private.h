@@ -150,6 +150,7 @@ typedef struct {
 	char			told_ongoing;
 
 	char			rebuildable;
+	lws_dll2_owner_t	s; /* step metrics */
 } sai_task_t;
 
 typedef struct sai_plat sai_plat_t;
@@ -532,6 +533,16 @@ typedef struct sai_build_metric_db {
 	uint64_t	stg_bytes;
 	int		parallel;
 } sai_build_metric_db_t;
+
+typedef struct sai_step_metric {
+	lws_dll2_t	list;
+	int		step;
+	uint64_t	wallclock_us;
+	uint64_t	us_cpu_user;
+	uint64_t	us_cpu_sys;
+	uint64_t	peak_mem_rss;
+	uint64_t	stg_bytes;
+} sai_step_metric_t;
 
 /*
  * Browser -> sai-web -> sai-server -> sai-power

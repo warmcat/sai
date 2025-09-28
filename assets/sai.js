@@ -707,9 +707,9 @@ function sai_taskinfo_render(t, now_ut)
 				"s</span>";
 		}
 		s += "<div id=\"sai_arts\"></div>";
-		if (t.t.metrics && t.t.metrics.length > 0)
+		if (t.t.s && t.t.s.length > 0)
 			s += "<div id=\"metrics-summary-" + san(t.t.uuid) + "\">" +
-				render_metrics_table(t.t.metrics) +
+				render_metrics_table(t.t.s) +
 				"</div>";
 		sai_arts = "";
 	}

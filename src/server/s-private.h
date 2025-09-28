@@ -360,4 +360,7 @@ sais_metrics_db_close(void);
 int
 sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m);
 
+int
+sais_metrics_db_get_by_task(struct vhd *vhd, const char *task_uuid,
+			    lws_dll2_owner_t *owner, struct lwsac **ac);
 

@@ -82,6 +82,57 @@ sais_metrics_db_prune(struct vhd *vhd, const char *key)
 }
 
 int
+sais_metrics_db_get_by_task(struct vhd *vhd, const char *task_uuid,
+			    lws_dll2_owner_t *owner, struct lwsac **ac)
+{
+	char filter[128], esc_task_uuid[65 * 2 + 1];
+	lws_dll2_owner_t build_metrics_owner;
+	struct lwsac *build_metrics_ac = NULL;
+	int n = 0, step = 1;
+
+	if (!vhd->pdb_metrics)
+		return 1;
+
+	lws_dll2_owner_clear(owner);
+	lws_dll2_owner_clear(&build_metrics_owner);
+
+	lws_sql_purify(esc_task_uuid, task_uuid, sizeof(esc_task_uuid));
+	lws_snprintf(filter, sizeof(filter), " and task_uuid = '%s'", esc_task_uuid);
+
+	n = lws_struct_sq3_deserialize(vhd->pdb_metrics, filter, "unixtime",
+				       lsm_schema_sq3_map_build_metric,
+				       &build_metrics_owner, &build_metrics_ac, 0, 256);
+	if (n < 0) {
+		lwsl_warn("%s: deserialize failed\n", __func__);
+		lwsac_free(&build_metrics_ac);
+		return 1;
+	}
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, build_metrics_owner.head) {
+		sai_build_metric_db_t *dbm = lws_container_of(p, sai_build_metric_db_t, list);
+		sai_step_metric_t *sm;
+
+		sm = lwsac_use_zero(ac, sizeof(*sm), sizeof(*sm));
+		if (!sm)
+			continue;
+
+		sm->step         = step++;
+		sm->wallclock_us = dbm->wallclock_us;
+		sm->us_cpu_user  = dbm->us_cpu_user;
+		sm->us_cpu_sys   = dbm->us_cpu_sys;
+		sm->peak_mem_rss = dbm->peak_mem_rss;
+		sm->stg_bytes    = dbm->stg_bytes;
+
+		lws_dll2_add_tail(&sm->list, owner);
+
+	} lws_end_foreach_dll(p);
+
+	lwsac_free(&build_metrics_ac);
+
+	return 0;
+}
+
+int
 sais_metrics_db_init(struct vhd *vhd)
 {
 	char db_path[PATH_MAX];

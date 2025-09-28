@@ -103,6 +103,7 @@ const lws_struct_map_t lsm_schema_json_map[] = {
 			 "com.warmcat.sai.taskactivity"),
 	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric,
 			 "com.warmcat.sai.build-metric"),
+	LSM_SCHEMA(char, NULL, NULL, "com.warmcat.sai.taskinfo"),
 };
 
 size_t lsm_schema_json_map_array_size = LWS_ARRAY_SIZE(lsm_schema_json_map);
