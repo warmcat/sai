@@ -187,19 +187,13 @@ sais_handle_taskinfo_req(websrvss_srv_t *m, const char *task_uuid)
 	if (!js)
 		goto bail;
 
-	len = lws_struct_json_serialize_get_length(js, NULL);
-	if (!len) {
-		lws_struct_json_serialize_destroy(&js);
-		goto bail;
-	}
-
-	buf = malloc(LWS_PRE + len);
+	buf = malloc(LWS_PRE + 8192);
 	if (!buf) {
 		lws_struct_json_serialize_destroy(&js);
 		goto bail;
 	}
 
-	n = (int)lws_struct_json_serialize(js, buf + LWS_PRE, len, (size_t *)&len);
+	n = (int)lws_struct_json_serialize(js, buf + LWS_PRE, 8192, &len);
 	lws_struct_json_serialize_destroy(&js);
 
 	if (n != LSJS_RESULT_FINISH)

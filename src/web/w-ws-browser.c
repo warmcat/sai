@@ -552,7 +552,6 @@ saiw_ws_json_tx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 	uint8_t *start = buf + LWS_PRE, *p = start, *end = p + bl - LWS_PRE - 1;
 	int n, flags = LWS_WRITE_TEXT, first = 0, iu, endo;
 	char esc[256], esc1[33], filt[128];
-	sai_browse_taskreply_t task_reply;
 	struct lwsac *task_ac = NULL;
 	lws_dll2_owner_t task_owner;
 	lws_struct_serialize_t *js;
