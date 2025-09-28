@@ -58,6 +58,10 @@ typedef struct websrvss_srv {
 	struct lejp_ctx			ctx;
 	struct lws_buflist		*bltx;
 	unsigned int			viewers;
+
+	/* for multi-fragment serialization to client */
+	lws_struct_serialize_t		*js_ctx;
+	struct lwsac			*js_ac;
 } websrvss_srv_t;
 
 static lws_struct_map_t lsm_browser_taskreset[] = {
@@ -134,7 +138,6 @@ const lws_struct_map_t lsm_schema_json_map_taskreply[] = {
 };
 
 
-static int
 sais_handle_taskinfo_req(websrvss_srv_t *m, const char *task_uuid)
 {
 	char qu[192], esc[130], event_uuid[33];
@@ -144,15 +147,15 @@ sais_handle_taskinfo_req(websrvss_srv_t *m, const char *task_uuid)
 	sai_event_t *pe;
 	int n, ret = 1;
 	struct lwsac *ac = NULL;
-	sai_browse_taskreply_t task_reply;
-	lws_struct_serialize_t *js;
-	uint8_t *buf = NULL;
-	size_t len = 0;
+	sai_browse_taskreply_t *task_reply;
+
+	if (m->js_ctx) /* already serializing something else */
+		return 1;
 
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
 	if (sais_event_db_ensure_open(m->vhd, event_uuid, 0, &pdb))
-		return 0;
+		return 1;
 
 	lws_sql_purify(esc, task_uuid, sizeof(esc));
 	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
@@ -176,38 +179,6 @@ sais_handle_taskinfo_req(websrvss_srv_t *m, const char *task_uuid)
 	if (sais_metrics_db_get_by_task(m->vhd, pt->uuid, &pt->s, &ac))
 		lwsl_warn("%s: failed to get metrics for %s\n", __func__, pt->uuid);
 
-	task_reply.event = pe;
-	task_reply.task = pt;
-	pt->rebuildable = (pt->state == SAIES_FAIL || pt->state == SAIES_CANCELLED) &&
-			(lws_now_secs() - (pt->started + (pt->duration / 1000000)) < 24 * 3600);
-
-	js = lws_struct_json_serialize_create(lsm_schema_json_map_taskreply,
-			LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply),
-			0, &task_reply);
-	if (!js)
-		goto bail;
-
-	buf = malloc(LWS_PRE + 8192);
-	if (!buf) {
-		lws_struct_json_serialize_destroy(&js);
-		goto bail;
-	}
-
-	n = (int)lws_struct_json_serialize(js, buf + LWS_PRE, 8192, &len);
-	lws_struct_json_serialize_destroy(&js);
-
-	if (n != LSJS_RESULT_FINISH)
-		goto bail;
-
-	if (lws_buflist_append_segment(&m->bltx, buf + LWS_PRE, len) < 0) {
-		lwsl_warn("%s: buflist append fail\n", __func__);
-		ret = 1;
-		goto bail;
-	}
-
-	if (lws_ss_request_tx(m->ss))
-		lwsl_ss_warn(m->ss, "tx req fail");
-
 	/*
 	 * Now also query for any artifacts and send them as their own messages
 	 */
@@ -218,51 +189,65 @@ sais_handle_taskinfo_req(websrvss_srv_t *m, const char *task_uuid)
 		if (lws_struct_sq3_deserialize(pdb, qu, NULL,
 					lsm_schema_sq3_map_artifact,
 					&artifacts_owner,
-					&ac, 0, 10))
+					&ac, 0, 10)) {
 			lwsl_err("%s: get artifacts failed\n", __func__);
+		} else {
+			lws_start_foreach_dll(struct lws_dll2 *, p, artifacts_owner.head) {
+				sai_artifact_t *aft = lws_container_of(p, sai_artifact_t, list);
+				uint8_t art_buf[LWS_PRE + 1024];
+				size_t art_len = sizeof(art_buf) - LWS_PRE;
+				lws_struct_serialize_t *art_js;
 
-		lws_start_foreach_dll(struct lws_dll2 *, p, artifacts_owner.head) {
-			sai_artifact_t *aft = lws_container_of(p, sai_artifact_t, list);
-			uint8_t *art_buf = NULL;
-			size_t art_len = 0;
+				aft->artifact_up_nonce[0] = '\0';
 
-			aft->artifact_up_nonce[0] = '\0';
-
-			js = lws_struct_json_serialize_create(
+				art_js = lws_struct_json_serialize_create(
 					lsm_schema_json_map_artifact,
 					LWS_ARRAY_SIZE(lsm_schema_json_map_artifact),
 					0, aft);
-			if (!js)
-				continue;
+				if (!art_js)
+					continue;
 
-			art_len = lws_struct_json_serialize_get_length(js, NULL);
-			if (art_len) {
-				art_buf = malloc(LWS_PRE + art_len);
-				if (art_buf) {
-					n = (int)lws_struct_json_serialize(js,
-							art_buf + LWS_PRE,
-							art_len, &art_len);
+				n = (int)lws_struct_json_serialize(art_js,
+						art_buf + LWS_PRE,
+						art_len, &art_len);
+				lws_struct_json_serialize_destroy(art_js);
 
-					if (n == LSJS_RESULT_FINISH &&
-					    lws_buflist_append_segment(&m->bltx,
-						    art_buf + LWS_PRE, art_len) < 0)
+				if (n == LSJS_RESULT_FINISH) {
+					if (lws_buflist_append_segment(&m->bltx,
+							art_buf + LWS_PRE, art_len) < 0)
 						lwsl_warn("%s: artifact append fail\n", __func__);
-					else
-						if (lws_ss_request_tx(m->ss))
-							lwsl_ss_warn(m->ss, "tx req fail");
-					free(art_buf);
-				}
-			}
-			lws_struct_json_serialize_destroy(&js);
-		} lws_end_foreach_dll(p);
+				} else
+					lwsl_warn("%s: artifact too large for buffer\n", __func__);
+
+			} lws_end_foreach_dll(p);
+		}
 	}
+
+	task_reply = lwsac_use_zero(&ac, sizeof(*task_reply), 1);
+	if (!task_reply)
+		goto bail;
+
+	task_reply->event = pe;
+	task_reply->task = pt;
+	pt->rebuildable = (pt->state == SAIES_FAIL || pt->state == SAIES_CANCELLED) &&
+			(lws_now_secs() - (pt->started + (pt->duration / 1000000)) < 24 * 3600);
+
+	m->js_ctx = lws_struct_json_serialize_create(lsm_schema_json_map_taskreply,
+			LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply),
+			0, task_reply);
+	if (!m->js_ctx)
+		goto bail;
+
+	m->js_ac = ac;
+	ac = NULL; /* m now owns it */
+
+	if (lws_ss_request_tx(m->ss))
+		lwsl_ss_warn(m->ss, "tx req fail");
 
 	ret = 0;
 
 bail:
 	lwsac_free(&ac);
-	if (buf)
-		free(buf);
 	sais_event_db_close(m->vhd, &pdb);
 
 	return ret;
@@ -963,11 +948,36 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	       size_t *len, int *flags)
 {
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
-	size_t fsl = lws_buflist_next_segment_len(&m->bltx, NULL); 
+	size_t fsl;
 	char som, eom;
-	int used;
+	int n, used;
 
-	if (!m->bltx)
+	if (m->js_ctx) {
+		*flags = LWSSS_FLAG_SOM;
+		if (!lws_ss_is_first_transaction(m->ss))
+			*flags = 0;
+
+		n = lws_struct_json_serialize(m->js_ctx, buf, *len, len);
+		switch (n) {
+		case LSJS_RESULT_FINISH:
+			*flags |= LWSSS_FLAG_EOM;
+			lws_struct_json_serialize_destroy(&m->js_ctx);
+			lwsac_free(&m->js_ac);
+			break;
+		case LSJS_RESULT_CONTINUE:
+			lws_ss_request_tx(m->ss);
+			break;
+		default: /* ERROR */
+			lws_struct_json_serialize_destroy(&m->js_ctx);
+			lwsac_free(&m->js_ac);
+			return LWSSSSRET_DISCONNECT_ME;
+		}
+
+		return LWSSSSRET_OK;
+	}
+
+	fsl = lws_buflist_next_segment_len(&m->bltx, NULL);
+	if (!fsl)
 		return LWSSSSRET_TX_DONT_SEND;
 
 	used = lws_buflist_fragment_use(&m->bltx, buf, *len, &som, &eom);
