@@ -200,8 +200,7 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_UNSIGNED	(sai_task_t, est_disk_kib,	"est_disk_kib"),
 	LSM_SIGNED	(sai_task_t, parallel,		"parallel"),
 	LSM_SIGNED	(sai_task_t, rebuildable,	"rebuildable"),
-	LSM_CHILD_DLL2_OWNER(sai_task_t, s, sai_step_metric_t, list,
-			     lsm_step_metric, "s"),
+	LSM_LIST(sai_task_t, s, sai_step_metric_t, list, NULL, lsm_step_metric, "s"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {

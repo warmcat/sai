@@ -158,7 +158,6 @@ sais_handle_taskinfo_req(websrvss_srv_t *m, const char *task_uuid)
 	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
 	n = lws_struct_sq3_deserialize(pdb, qu, NULL, lsm_schema_sq3_map_task,
 				       &o, &ac, 0, 1);
-	sais_event_db_close(m->vhd, &pdb);
 	if (n < 0 || !o.head)
 		goto bail;
 
@@ -214,6 +213,55 @@ sais_handle_taskinfo_req(websrvss_srv_t *m, const char *task_uuid)
 
 	if (lws_ss_request_tx(m->ss))
 		lwsl_ss_warn(m->ss, "tx req fail");
+
+	/*
+	 * Now also query for any artifacts and send them as their own messages
+	 */
+	{
+		lws_dll2_owner_t artifacts_owner;
+		lws_dll2_owner_clear(&artifacts_owner);
+		lws_snprintf(qu, sizeof(qu), " and (task_uuid == '%s')", pt->uuid);
+		if (lws_struct_sq3_deserialize(pdb, qu, NULL,
+					lsm_schema_sq3_map_artifact,
+					&artifacts_owner,
+					&ac, 0, 10))
+			lwsl_err("%s: get artifacts failed\n", __func__);
+
+		lws_start_foreach_dll(struct lws_dll2 *, p, artifacts_owner.head) {
+			sai_artifact_t *aft = lws_container_of(p, sai_artifact_t, list);
+			uint8_t *art_buf = NULL;
+			size_t art_len = 0;
+
+			aft->artifact_up_nonce[0] = '\0';
+
+			js = lws_struct_json_serialize_create(
+					lsm_schema_json_map_artifact,
+					LWS_ARRAY_SIZE(lsm_schema_json_map_artifact),
+					0, aft);
+			if (!js)
+				continue;
+
+			art_len = lws_struct_json_serialize_get_length(js, NULL);
+			if (art_len) {
+				art_buf = malloc(LWS_PRE + art_len);
+				if (art_buf) {
+					n = (int)lws_struct_json_serialize(js,
+							art_buf + LWS_PRE,
+							art_len, &art_len);
+
+					if (n == LSJS_RESULT_FINISH &&
+					    lws_buflist_append_segment(&m->bltx,
+						    art_buf + LWS_PRE, art_len) < 0)
+						lwsl_warn("%s: artifact append fail\n", __func__);
+					else
+						if (lws_ss_request_tx(m->ss))
+							lwsl_ss_warn(m->ss, "tx req fail");
+					free(art_buf);
+				}
+			}
+			lws_struct_json_serialize_destroy(&js);
+		} lws_end_foreach_dll(p);
+	}
 
 	ret = 0;
 
