@@ -1016,21 +1016,6 @@ bail:
 		metric = (const sai_build_metric_t *)pss->a.dest;
 		sais_metrics_db_add(vhd, metric);
 
-		{
-			uint8_t buf[2048];
-			size_t used = 0;
-			lws_struct_serialize_t *js = lws_struct_json_serialize_create(
-					lsm_schema_build_metric,
-					LWS_ARRAY_SIZE(lsm_schema_build_metric),
-					0, (void *)metric);
-			if (js) {
-				int n = lws_struct_json_serialize(js, buf, sizeof(buf), &used);
-				if (n >= 0)
-					sais_websrv_broadcast(vhd->h_ss_websrv, (const char *)buf, used);
-				lws_struct_json_serialize_destroy(&js);
-			}
-		}
-
 		lwsac_free(&pss->a.ac);
 		break;
 	}

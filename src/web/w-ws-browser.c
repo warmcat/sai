@@ -200,6 +200,7 @@ saiw_dealloc_sched(saiw_scheduled_t *sch)
 
 	lwsac_free(&sch->ac);
 	lwsac_free(&sch->query_ac);
+	lwsac_free(&sch->metrics_ac);
 
 	free(sch);
 }
@@ -357,18 +358,6 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	// lwsl_warn("%s: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
 
 	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
-
-	{
-		uint8_t buf[LWS_PRE + 256];
-		int n;
-
-		n = lws_snprintf((char *)buf + LWS_PRE, sizeof(buf) - LWS_PRE,
-			"{\"schema\":\"com.warmcat.sai.gettaskmetrics\","
-			"\"task_uuid\":\"%s\"}", task_uuid);
-
-		saiw_websrv_queue_tx(pss->vhd->h_ss_websrv, buf + LWS_PRE, (size_t)n,
-				     LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
-	}
 
 	return 0;
 
@@ -1242,6 +1231,13 @@ b_finish:
 		task_reply.authorized = pss->authorized;
 		lws_strncpy(task_reply.auth_user, pss->auth_user,
 			    sizeof(task_reply.auth_user));
+
+		/*
+		 * And also attach any metrics from the metrics db
+		 */
+		saiw_metrics_db_get_by_task(pss->vhd, sch->one_task->uuid,
+					    &sch->one_task->metrics,
+					    &sch->metrics_ac);
 
 		js = lws_struct_json_serialize_create(lsm_schema_json_map_taskreply,
 				LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply),

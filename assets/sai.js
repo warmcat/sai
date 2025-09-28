@@ -685,7 +685,7 @@ function sai_sticky_task_summary_render(t, now_ut)
 			"s</span>";
 	}
 
-	s += "</td></tr></table>" + "</div>";
+	s += "</td></tr></table>" + "<div id=\"sai_task_metrics\"></div></div>";
 
 	return s;
 }
@@ -718,7 +718,7 @@ function sai_taskinfo_render(t, now_ut)
 		     agify(now_ut, t.t.started) + " ago, Dur: " +
 		     (t.t.duration ? t.t.duration / 1000000 :
 		     	now_ut - t.t.started).toFixed(1) +
-			"s</span><div id=\"sai_arts\"></div><div id=\"metrics-summary-" + san(t.t.uuid) + "\"></div>";
+			"s</span><div id=\"sai_arts\"></div>";
 		sai_arts = "";
 	}
 
@@ -1258,11 +1258,6 @@ function ws_open_sai()
 					  "\"task_hash\":" +
 				 	  JSON.stringify(tid) + "}");
 
-				 sai.send("{\"schema\":" +
-					  "\"com.warmcat.sai.gettaskmetrics\"," +
-					  "\"task_uuid\":" +
-					  JSON.stringify(tid) + "}");
-				 	  
 				 return;
 			}
 			
@@ -1413,42 +1408,6 @@ function ws_open_sai()
 
 				buildersContainer.appendChild(table);
  				break;
-
-			case "com.warmcat.sai.build-metric":
-				var summaryDiv = document.getElementById("metrics-summary-" + jso.task_uuid);
-				if (summaryDiv) {
-					var s = "<div class=\"metric-summary\">" +
-						"Step Metrics: " +
-						"CPU: " + (jso.us_cpu_user / 1000000).toFixed(2) + "s user, " +
-						(jso.us_cpu_sys / 1000000).toFixed(2) + "s sys; " +
-						"Wallclock: " + (jso.wallclock_us / 1000000).toFixed(2) + "s; " +
-						"Mem: " + humanize(jso.peak_mem_rss) + "B; " +
-						"Stg: " + humanize(jso.stg_bytes) + "B; " +
-						"Parallel: " + jso.parallel +
-						"</div>";
-					summaryDiv.innerHTML += s;
-				}
-				break;
-
-			case "com.warmcat.sai.taskmetrics":
-				var metricsDiv = document.getElementById("sai_task_metrics");
-				if (metricsDiv) {
-					var s = "<table><tr><th>Step</th><th>Wallclock</th><th>CPU (u/s)</th><th>Peak Mem</th><th>Storage</th></tr>";
-
-					if (jso.metrics)
-						for (var i = 0; i < jso.metrics.length; i++) {
-							var m = jso.metrics[i];
-							s += "<tr><td>" + m.step + "</td>" +
-							     "<td>" + (m.wallclock_us / 1000000).toFixed(3) + "s</td>" +
-							     "<td>" + (m.us_cpu_user / 1000000).toFixed(3) + "s / " + (m.us_cpu_sys / 1000000).toFixed(3) + "s</td>" +
-							     "<td>" + humanize(m.peak_mem_rss) + "B</td>" +
-							     "<td>" + humanize(m.stg_bytes) + "B</td></tr>";
-						}
-
-					s += "</table>";
-					metricsDiv.innerHTML = s;
-				}
-				break;
 
 			case "sai.warmcat.com.overview":
 				/*
@@ -1658,9 +1617,27 @@ function ws_open_sai()
 						const url_task_uuid = urlParams.get('task');
 						
 						if (url_task_uuid === jso.t.uuid &&
-						    document.getElementById("sai_task_summary"))
+						    document.getElementById("sai_task_summary")) {
 							document.getElementById("sai_task_summary").innerHTML =
 								sai_sticky_task_summary_render(jso, now_ut);
+
+							var metricsDiv = document.getElementById("sai_task_metrics");
+							if (metricsDiv && jso.t && jso.t.metrics) {
+								var s1 = "<table><tr><th>Step</th><th>Wallclock</th><th>CPU (u/s)</th><th>Peak Mem</th><th>Storage</th></tr>";
+
+								for (var i = 0; i < jso.t.metrics.length; i++) {
+									var m = jso.t.metrics[i];
+									s1 += "<tr><td>" + m.step + "</td>" +
+										 "<td>" + (m.wallclock_us / 1000000).toFixed(3) + "s</td>" +
+										 "<td>" + (m.us_cpu_user / 1000000).toFixed(3) + "s / " + (m.us_cpu_sys / 1000000).toFixed(3) + "s</td>" +
+										 "<td>" + humanize(m.peak_mem_rss) + "B</td>" +
+										 "<td>" + humanize(m.stg_bytes) + "B</td></tr>";
+								}
+
+								s1 += "</table>";
+								metricsDiv.innerHTML = s1;
+							}
+						}
 					
 				
 						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +

@@ -120,6 +120,7 @@ typedef struct saiw_scheduled {
 
 	struct lwsac		*ac;
 	struct lwsac		*query_ac; /* taskinfo event only */
+	struct lwsac		*metrics_ac;
 
 	ws_state		action;
 	int			task_index;
@@ -229,6 +230,7 @@ struct vhd {
 	lws_dll2_owner_t		subs_owner;
 	sqlite3				*pdb;
 	sqlite3				*pdb_auth;
+	sqlite3				*pdb_metrics;
 
 	struct lws_ss_handle		*h_ss_websrv; /* client */
 
@@ -333,3 +335,7 @@ saiw_update_viewer_count(struct vhd *vhd);
 
 int
 saiw_task_metrics_update(struct vhd *vhd, const char *task_uuid);
+
+int
+saiw_metrics_db_get_by_task(struct vhd *vhd, const char *task_uuid,
+			    lws_dll2_owner_t *owner, struct lwsac **ac);

@@ -75,6 +75,25 @@ sai_lws_context_from_json(const char *config_dir,
 		return NULL;
 	}
 
+	struct lws_vhost *vhost = lws_get_vhost_list(context);
+	if (vhost) {
+		struct vhd *vhd = lws_get_vhost_user(vhost);
+		char path[256];
+
+		if (vhd && vhd->sqlite3_path_lhs) {
+			lws_snprintf(path, sizeof(path), "%s/metrics.db",
+				     vhd->sqlite3_path_lhs);
+
+			if (sqlite3_open_v2(path, &vhd->pdb_metrics,
+					    SQLITE_OPEN_READONLY, NULL)) {
+				lwsl_err("%s: Failed to open metrics db: %s\n",
+					 __func__,
+					 sqlite3_errmsg(vhd->pdb_metrics));
+				vhd->pdb_metrics = NULL;
+			}
+		}
+	}
+
 	return context;
 
 init_failed:

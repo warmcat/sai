@@ -8,6 +8,7 @@ set(SRCS
 	w-comms.c
 	w-central.c
 	w-artifact.c
+	w-metrics-db.c
 	w-ws-browser.c
 	w-websrv.c
 )

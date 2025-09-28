@@ -149,6 +149,8 @@ typedef struct {
 	int			parallel;
 	char			told_ongoing;
 
+	lws_dll2_owner_t	metrics;
+
 	char			rebuildable;
 } sai_task_t;
 
