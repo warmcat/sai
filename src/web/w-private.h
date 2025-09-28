@@ -46,28 +46,6 @@ typedef struct sai_platform {
 	/* build and name over-allocated here */
 } sai_platform_t;
 
-typedef struct sai_build_metric {
-	lws_dll2_t		list;
-
-	const char		*key;
-
-	uint64_t		us_cpu_user;
-	uint64_t		us_cpu_sys;
-	uint64_t		wallclock_us;
-	uint64_t		peak_mem_rss;
-	uint64_t		stg_bytes;
-} sai_build_metric_t;
-
-static const lws_struct_map_t lsm_schema_sq3_map_build_metric[] = {
-	LSM_DLL2,
-	LSM_CARRAY_AS_CHAR_STAR(sai_build_metric_t, key, "key"),
-	LSM_UNSIGNED_REQ(sai_build_metric_t, us_cpu_user, "us_cpu_user"),
-	LSM_UNSIGNED_REQ(sai_build_metric_t, us_cpu_sys, "us_cpu_sys"),
-	LSM_UNSIGNED_REQ(sai_build_metric_t, wallclock_us, "wallclock_us"),
-	LSM_UNSIGNED_REQ(sai_build_metric_t, peak_mem_rss, "peak_mem_rss"),
-	LSM_UNSIGNED_REQ(sai_build_metric_t, stg_bytes, "stg_bytes"),
-};
-
 typedef enum {
 	SAIN_ACTION_INVALID,
 	SAIN_ACTION_REPO_UPDATED
@@ -136,7 +114,6 @@ typedef struct saiw_scheduled {
 	lws_dll2_t		*walk;
 
 	lws_dll2_owner_t	owner;
-	lws_dll2_owner_t	metrics_owner;
 
 	struct lwsac		*ac;
 	struct lwsac		*query_ac; /* taskinfo event only */
@@ -150,7 +127,21 @@ typedef struct saiw_scheduled {
 	uint8_t			ov_db_done:1; /* for individual JSON */
 	uint8_t			logsub:1; /* for individual JSON */
 
+	lws_dll2_owner_t	metrics_owner;
 } saiw_scheduled_t;
+
+typedef struct saiw_pending_taskinfo {
+	lws_dll2_t		list;
+
+	struct pss		*pss;
+	char			task_uuid[65];
+
+	sai_task_t		*one_task;
+	const sai_event_t	*one_event;
+
+	struct lwsac		*ac;
+	char			logsub;
+} saiw_pending_taskinfo_t;
 
 struct pss {
 	struct vhd		*vhd;
@@ -247,9 +238,9 @@ struct vhd {
 
 	lws_dll2_owner_t		web_to_srv_owner;
 	lws_dll2_owner_t		subs_owner;
+	lws_dll2_owner_t		pending_taskinfo_owner;
 	sqlite3				*pdb;
 	sqlite3				*pdb_auth;
-	sqlite3				*pdb_metrics;
 
 	struct lws_ss_handle		*h_ss_websrv; /* client */
 

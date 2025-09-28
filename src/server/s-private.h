@@ -360,4 +360,13 @@ sais_metrics_db_close(void);
 int
 sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m);
 
+static const lws_struct_map_t lsm_schema_sq3_map_build_metric[] = {
+	LSM_DLL2,
+	LSM_CARRAY_AS_CHAR_STAR(sai_build_metric_t, key, "key"),
+	LSM_UNSIGNED_REQ(sai_build_metric_t, us_cpu_user, "us_cpu_user"),
+	LSM_UNSIGNED_REQ(sai_build_metric_t, us_cpu_sys, "us_cpu_sys"),
+	LSM_UNSIGNED_REQ(sai_build_metric_t, wallclock_us, "wallclock_us"),
+	LSM_UNSIGNED_REQ(sai_build_metric_t, peak_mem_rss, "peak_mem_rss"),
+	LSM_UNSIGNED_REQ(sai_build_metric_t, stg_bytes, "stg_bytes"),
+};
 

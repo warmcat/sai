@@ -103,6 +103,8 @@ const lws_struct_map_t lsm_schema_json_map[] = {
 			 "com.warmcat.sai.taskactivity"),
 	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric,
 			 "com.warmcat.sai.build-metric"),
+	LSM_SCHEMA	(sai_build_metric_resp_t, NULL, lsm_build_metric_resp,
+			 "com.warmcat.sai.metrics-resp"),
 };
 
 size_t lsm_schema_json_map_array_size = LWS_ARRAY_SIZE(lsm_schema_json_map);
@@ -501,18 +503,6 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 		}
 
-		/* metrics database */
-
-		lws_snprintf((char *)buf, sizeof(buf), "%s-metrics.sqlite3",
-			     vhd->sqlite3_path_lhs);
-
-		if (lws_struct_sq3_open(vhd->context, (char *)buf, 0,
-					&vhd->pdb_metrics)) {
-			lwsl_info("%s: metrics db not found (ok)\n", __func__);
-			/* this is not fatal... we just can't show metrics */
-		}
-
-
 		/*
 		 * jwt-iss
 		 */
@@ -602,8 +592,6 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		saiw_event_db_close_all_now(vhd);
 		lws_struct_sq3_close(&vhd->pdb);
 		lws_struct_sq3_close(&vhd->pdb_auth);
-		if (vhd->pdb_metrics)
-			lws_struct_sq3_close(&vhd->pdb_metrics);
 		lws_jwk_destroy(&vhd->jwt_jwk_auth);
 		goto passthru;
 

@@ -48,6 +48,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_TASKLOGS,	/* new logs for task (ratelimited) */
 	SAIS_WS_WEBSRV_RX_LOADREPORT,	/* builder's cpu load report */
 	SAIS_WS_WEBSRV_RX_TASKACTIVITY,
+	SAIS_WS_WEBSRV_RX_METRICS_RESP,
 };
 
 /*
@@ -232,6 +233,69 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
 		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n, 0,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
+		break;
+
+	case SAIS_WS_WEBSRV_RX_METRICS_RESP:
+		{
+			sai_build_metric_resp_t *resp =
+					(sai_build_metric_resp_t *)m->a.dest;
+			saiw_pending_taskinfo_t *pti = NULL;
+			saiw_scheduled_t *sch;
+
+			/* Find the pending task info request */
+			lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
+						   vhd->pending_taskinfo_owner.head) {
+				saiw_pending_taskinfo_t *p_pti = lws_container_of(p,
+							saiw_pending_taskinfo_t, list);
+
+				if (!strcmp(p_pti->task_uuid, resp->task_uuid)) {
+					pti = p_pti;
+					break;
+				}
+			} lws_end_foreach_dll_safe(p, p1);
+
+			if (!pti) {
+				lwsl_warn("%s: received metrics for unknown task %s\n",
+					  __func__, resp->task_uuid);
+				break; /* just drop it */
+			}
+
+			/*
+			 * We found the pending request... create a scheduled job to
+			 * send the complete taskinfo to the browser.
+			 */
+			sch = saiw_alloc_sched(pti->pss, WSS_PREPARE_TASKINFO);
+			if (!sch) {
+				/* unable to schedule, clean up pending */
+				saiw_pending_taskinfo_t_destroy(pti);
+				break;
+			}
+
+			/* Transfer ownership of the data to the scheduled job */
+			sch->one_task = pti->one_task;
+			sch->one_event = pti->one_event;
+			sch->query_ac = pti->ac;
+			sch->logsub = pti->logsub;
+
+			/*
+			 * The metrics from the response are in m->a.ac.
+			 * We need to move them to the scheduled job's ac.
+			 */
+			lws_dll2_owner_move(&sch->metrics_owner, &resp->metrics);
+			lwsac_adopt(&sch->query_ac, &m->a.ac);
+			m->a.ac = NULL; /* we took ownership */
+
+			/*
+			 * The pending task info is now fulfilled and can be destroyed.
+			 * We don't call the full destroy because we moved the pointers
+			 * out of it.
+			 */
+			lws_dll2_remove(&pti->list);
+			free(pti);
+
+			/* Also schedule the builder summary to go with it */
+			saiw_alloc_sched(sch->pss, WSS_PREPARE_BUILDER_SUMMARY);
+		}
 		break;
 	}
 

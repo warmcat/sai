@@ -502,20 +502,45 @@ typedef struct sai_power_state {
 } sai_power_state_t;
 
 typedef struct sai_build_metric {
-	lws_dll2_t	list;
-	char		key[65];
-	char		task_uuid[65];
-	char		builder_name[96];
-	char		project_name[96];
-	char		ref[96];
-	uint64_t	unixtime;
-	uint64_t	us_cpu_user;
-	uint64_t	us_cpu_sys;
-	uint64_t	wallclock_us;
-	uint64_t	peak_mem_rss;
-	uint64_t	stg_bytes;
-	int		parallel;
+	lws_dll2_t		list;
+
+	const char		*key;
+
+	uint64_t		us_cpu_user;
+	uint64_t		us_cpu_sys;
+	uint64_t		wallclock_us;
+	uint64_t		peak_mem_rss;
+	uint64_t		stg_bytes;
 } sai_build_metric_t;
+
+static const lws_struct_map_t lsm_build_metric[] = {
+	LSM_DLL2,
+	LSM_CARRAY_AS_CHAR_STAR(sai_build_metric_t, key, "k"),
+	LSM_UNSIGNED(sai_build_metric_t, us_cpu_user, "cu"),
+	LSM_UNSIGNED(sai_build_metric_t, us_cpu_sys, "cs"),
+	LSM_UNSIGNED(sai_build_metric_t, wallclock_us, "w"),
+	LSM_UNSIGNED(sai_build_metric_t, peak_mem_rss, "m"),
+	LSM_UNSIGNED(sai_build_metric_t, stg_bytes, "s"),
+};
+
+typedef struct sai_build_metric_req {
+	char			task_uuid[65];
+} sai_build_metric_req_t;
+
+static const lws_struct_map_t lsm_build_metric_req[] = {
+	LSM_CARRAY(sai_build_metric_req_t, task_uuid, "u"),
+};
+
+typedef struct sai_build_metric_resp {
+	lws_dll2_owner_t	metrics;
+	char			task_uuid[65];
+} sai_build_metric_resp_t;
+
+static const lws_struct_map_t lsm_build_metric_resp[] = {
+	LSM_CARRAY(sai_build_metric_resp_t, task_uuid, "u"),
+	LSM_CHILD_DLL2_OWNER(sai_build_metric_resp_t, metrics,
+			     sai_build_metric_t, list, lsm_build_metric, "m"),
+};
 
 typedef struct sai_build_metric_db {
 	lws_dll2_t	list; /* for lws_struct */

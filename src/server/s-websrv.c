@@ -92,6 +92,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.platreset"),
 	LSM_SCHEMA	(sai_stay_t,		 NULL, lsm_stay,
 					      "com.warmcat.sai.stay"),
+	LSM_SCHEMA	(sai_build_metric_req_t, NULL, lsm_build_metric_req,
+					      "com.warmcat.sai.get-metrics"),
 };
 
 enum {
@@ -104,6 +106,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_REBUILD,
 	SAIS_WS_WEBSRV_RX_PLATRESET,
 	SAIS_WS_WEBSRV_RX_STAY,
+	SAIS_WS_WEBSRV_RX_GET_METRICS,
 };
 
 void
@@ -771,6 +774,75 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		} lws_end_foreach_dll(p);
 
 		lwsac_free(&a.ac);
+		break;
+	}
+	case SAIS_WS_WEBSRV_RX_GET_METRICS:
+	{
+		sai_build_metric_req_t *req = (sai_build_metric_req_t *)a.dest;
+		sai_build_metric_resp_t resp;
+		struct lwsac *resp_ac = NULL;
+		lws_struct_serialize_t *js;
+		uint8_t *p, *start, *end;
+		size_t w;
+		char qu[128], esc[96];
+		static const lws_struct_map_t lsm_schema_build_metric_resp[] = {
+			LSM_SCHEMA(sai_build_metric_resp_t, NULL,
+				   lsm_build_metric_resp,
+				   "com.warmcat.sai.metrics-resp"),
+		};
+
+
+		if (sais_validate_id(req->task_uuid, SAI_TASKID_LEN))
+			goto soft_error;
+
+		memset(&resp, 0, sizeof(resp));
+		lws_strncpy(resp.task_uuid, req->task_uuid, sizeof(resp.task_uuid));
+
+		if (m->vhd->pdb_metrics) {
+			lws_sql_purify(esc, req->task_uuid, sizeof(esc));
+			lws_snprintf(qu, sizeof(qu), " and task_uuid='%s'", esc);
+			if (lws_struct_sq3_deserialize(m->vhd->pdb_metrics, qu, "unixtime",
+						   lsm_schema_sq3_map_build_metric,
+						   &resp.metrics, &resp_ac, 0, 100) < 0)
+				lwsl_warn("%s: metrics query failed\n", __func__);
+		}
+
+		/* Now serialize the response and send it back */
+		start = p = malloc(4096);
+		if (!p) {
+			lwsac_free(&resp_ac);
+			break;
+		}
+		end = start + 4096;
+
+		js = lws_struct_json_serialize_create(lsm_schema_build_metric_resp,
+						  LWS_ARRAY_SIZE(lsm_schema_build_metric_resp),
+						  0, &resp);
+		if (!js) {
+			lwsac_free(&resp_ac);
+			free(start);
+			break;
+		}
+
+		if (lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w) != LSJS_RESULT_FINISH) {
+			lwsl_warn("%s: failed to serialize metrics resp\n", __func__);
+			lws_struct_json_serialize_destroy(&js);
+			lwsac_free(&resp_ac);
+			free(start);
+			break;
+		}
+		p += w;
+		lws_struct_json_serialize_destroy(&js);
+
+		if (lws_buflist_append_segment(&m->bltx, start, lws_ptr_diff_size_t(p, start)) < 0)
+			lwsl_warn("%s: buflist append failed\n", __func__);
+		else
+			if (lws_ss_request_tx(m->ss))
+				lwsl_ss_warn(m->ss, "tx req fail");
+
+		lwsac_free(&resp_ac);
+		free(start);
+
 		break;
 	}
 	}

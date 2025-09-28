@@ -54,15 +54,6 @@ static lws_struct_map_t lsm_browser_taskinfo[] = {
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, last_log_ts,		"last_log_ts"),
 };
 
-static const lws_struct_map_t lsm_build_metric[] = {
-	LSM_CARRAY_AS_CHAR_STAR(sai_build_metric_t, key, "k"),
-	LSM_UNSIGNED(sai_build_metric_t, us_cpu_user, "cu"),
-	LSM_UNSIGNED(sai_build_metric_t, us_cpu_sys, "cs"),
-	LSM_UNSIGNED(sai_build_metric_t, wallclock_us, "w"),
-	LSM_UNSIGNED(sai_build_metric_t, peak_mem_rss, "m"),
-	LSM_UNSIGNED(sai_build_metric_t, stg_bytes, "s"),
-};
-
 /*
  * Schema list so lws_struct can pick the right object to create based on the
  * incoming schema name
@@ -264,20 +255,38 @@ bail:
 	return 1;
 }
 
+void
+saiw_pending_taskinfo_t_destroy(saiw_pending_taskinfo_t *pti)
+{
+	if (!pti)
+		return;
+
+	lws_dll2_remove(&pti->list);
+	lwsac_free(&pti->ac);
+	free(pti);
+}
+
 /* we leave an allocation in sch->query_ac ... */
 
 static int
 saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 {
-	saiw_scheduled_t *sch = saiw_alloc_sched(pss, WSS_PREPARE_TASKINFO);
 	char qu[192], esc[66], event_uuid[33], esc2[96];
+	sai_build_metric_req_t req;
+	lws_struct_serialize_t *js;
+	saiw_pending_taskinfo_t *pti;
+	uint8_t req_buf[LWS_PRE + 256], *p_req, *end_req;
 	sqlite3 *pdb = NULL;
 	lws_dll2_owner_t o;
+	struct lwsac *ac = NULL;
+	sai_event_t *et;
 	sai_task_t *pt;
 	int n, m;
-
-	if (!sch)
-		return -1;
+	size_t w;
+	static const lws_struct_map_t lsm_schema_build_metric_req[] = {
+		LSM_SCHEMA(sai_build_metric_req_t, NULL, lsm_build_metric_req,
+			   "com.warmcat.sai.get-metrics"),
+	};
 
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
@@ -292,16 +301,14 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	    memcmp(pss->specific_task, event_uuid, 32)) {
 		lwsl_info("%s: specific_task '%s' vs event_uuid '%s\n",
 			    __func__, pss->specific_task, event_uuid);
-		goto bail;
+		return 1;
 	}
 
 	/* open the event-specific database object */
 
-	if (sais_event_db_ensure_open(pss->vhd, event_uuid, 0, &pdb)) {
+	if (sais_event_db_ensure_open(pss->vhd, event_uuid, 0, &pdb))
 		/* no longer exists, nothing to do */
-		saiw_dealloc_sched(sch);
 		return 0;
-	}
 
 	/*
 	 * get the related task object into its own ac... there might
@@ -312,33 +319,18 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	lws_sql_purify(esc, task_uuid, sizeof(esc));
 	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
 	n = lws_struct_sq3_deserialize(pdb, qu, NULL, lsm_schema_sq3_map_task,
-				       &o, &sch->query_ac, 0, 1);
+				       &o, &ac, 0, 1);
 	sais_event_db_close(pss->vhd, &pdb);
-	// lwsl_notice("%s: n %d, o.head %p\n", __func__, n, o.head);
-	if (n < 0 || !o.head)
-		goto bail;
-
-	pt = lws_container_of(o.head, sai_task_t, list);
-	sch->one_task = pt;
-
-	if (pss->vhd->pdb_metrics) {
-		lws_sql_purify(esc, task_uuid, sizeof(esc));
-		lws_snprintf(qu, sizeof(qu), " and task_uuid='%s'", esc);
-		n = lws_struct_sq3_deserialize(pss->vhd->pdb_metrics, qu,
-					       "unixtime",
-					       lsm_schema_sq3_map_build_metric,
-					       &sch->metrics_owner,
-					       &sch->query_ac, 0, 100);
-		if (n < 0)
-			lwsl_warn("%s: metrics query failed %d\n", __func__, n);
+	if (n < 0 || !o.head) {
+		lwsac_free(&ac);
+		return 1;
 	}
 
+	pt = lws_container_of(o.head, sai_task_t, list);
+	lws_dll2_remove(&pt->list);
+
 	lwsl_info("%s: browser ws asked for task hash: %s, plat %s\n",
-		 __func__, task_uuid, sch->one_task->platform);
-
-	/* let the pss take over the task info ac and schedule sending */
-
-	lws_dll2_remove((struct lws_dll2 *)&sch->one_task->list);
+		 __func__, task_uuid, pt->platform);
 
 	/*
 	 * let's also get the event object the task relates to into
@@ -369,24 +361,53 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 
 	n = lws_struct_sq3_deserialize(pss->vhd->pdb, qu, NULL,
 				       lsm_schema_sq3_map_event, &o,
-				       &sch->query_ac, 0, 1);
+				       &ac, 0, 1);
 	if (n < 0 || !o.head) {
-		// lwsl_notice("%s: no result\n", __func__);
-		goto bail;
+		lwsac_free(&ac);
+		return 1;
 	}
 
-	sch->logsub = !!logsub;
-	sch->one_event = lws_container_of(o.head, sai_event_t, list);
+	et = lws_container_of(o.head, sai_event_t, list);
+	lws_dll2_remove(&et->list);
 
-	// lwsl_warn("%s: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
+	/*
+	 * Create a pending taskinfo object and send a request for the
+	 * metrics to the server
+	 */
 
-	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
+	pti = malloc(sizeof(*pti));
+	if (!pti) {
+		lwsac_free(&ac);
+		return -1;
+	}
+	memset(pti, 0, sizeof(*pti));
+
+	pti->pss = pss;
+	lws_strncpy(pti->task_uuid, task_uuid, sizeof(pti->task_uuid));
+	pti->one_task = pt;
+	pti->one_event = et;
+	pti->ac = ac; /* pti takes ownership of ac */
+	pti->logsub = !!logsub;
+
+	lws_dll2_add_tail(&pti->list, &pss->vhd->pending_taskinfo_owner);
+
+	/* Create and send the metrics request to sai-server */
+
+	lws_strncpy(req.task_uuid, task_uuid, sizeof(req.task_uuid));
+
+	p_req = req_buf + LWS_PRE;
+	end_req = p_req + sizeof(req_buf) - LWS_PRE;
+	js = lws_struct_json_serialize_create(lsm_schema_build_metric_req,
+					      LWS_ARRAY_SIZE(lsm_schema_build_metric_req),
+					      0, &req);
+	if (js && lws_struct_json_serialize(js, p_req,
+					    lws_ptr_diff_size_t(end_req, p_req),
+					    &w) == LSJS_RESULT_FINISH)
+		saiw_websrv_queue_tx(pss->vhd->h_ss_websrv, p_req, w, 0);
+
+	lws_struct_json_serialize_destroy(&js);
 
 	return 0;
-
-bail:
-	saiw_dealloc_sched(sch);
-	return 1;
 }
 
 /*
