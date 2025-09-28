@@ -46,6 +46,28 @@ typedef struct sai_platform {
 	/* build and name over-allocated here */
 } sai_platform_t;
 
+typedef struct sai_build_metric {
+	lws_dll2_t		list;
+
+	const char		*key;
+
+	uint64_t		us_cpu_user;
+	uint64_t		us_cpu_sys;
+	uint64_t		wallclock_us;
+	uint64_t		peak_mem_rss;
+	uint64_t		stg_bytes;
+} sai_build_metric_t;
+
+static const lws_struct_map_t lsm_schema_sq3_map_build_metric[] = {
+	LSM_DLL2,
+	LSM_CARRAY_AS_CHAR_STAR(sai_build_metric_t, key, "key"),
+	LSM_UNSIGNED_REQ(sai_build_metric_t, us_cpu_user, "us_cpu_user"),
+	LSM_UNSIGNED_REQ(sai_build_metric_t, us_cpu_sys, "us_cpu_sys"),
+	LSM_UNSIGNED_REQ(sai_build_metric_t, wallclock_us, "wallclock_us"),
+	LSM_UNSIGNED_REQ(sai_build_metric_t, peak_mem_rss, "peak_mem_rss"),
+	LSM_UNSIGNED_REQ(sai_build_metric_t, stg_bytes, "stg_bytes"),
+};
+
 typedef enum {
 	SAIN_ACTION_INVALID,
 	SAIN_ACTION_REPO_UPDATED
@@ -114,6 +136,7 @@ typedef struct saiw_scheduled {
 	lws_dll2_t		*walk;
 
 	lws_dll2_owner_t	owner;
+	lws_dll2_owner_t	metrics_owner;
 
 	struct lwsac		*ac;
 	struct lwsac		*query_ac; /* taskinfo event only */
@@ -226,6 +249,7 @@ struct vhd {
 	lws_dll2_owner_t		subs_owner;
 	sqlite3				*pdb;
 	sqlite3				*pdb_auth;
+	sqlite3				*pdb_metrics;
 
 	struct lws_ss_handle		*h_ss_websrv; /* client */
 

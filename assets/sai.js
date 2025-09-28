@@ -655,6 +655,30 @@ function sai_stateful_taskname(state, nm, sf)
 	return "<span id=\"taskstate\" class=\"ti2 " + tp + "\">" + san(nm) + "</span>";	 
 }
 
+function render_step_summary_table(steps) {
+	if (!steps || steps.length === 0) {
+		return '';
+	}
+
+	let html = '<div class="step-summary">';
+	steps.forEach((step, index) => {
+		const wallclock_s = step.w / 1000000;
+		const wallclock_min = Math.floor(wallclock_s / 60);
+		const wallclock_sec_rem = (wallclock_s % 60).toFixed(0);
+		const wallclock_str = `${wallclock_min}:${wallclock_sec_rem.toString().padStart(2, '0')}min`;
+
+		const user_cpu_s = (step.cu / 1000000).toFixed(3);
+		const sys_cpu_s = (step.cs / 1000000).toFixed(3);
+
+		const mem_str = humanize(step.m) + 'B';
+		const stg_str = humanize(step.s) + 'B';
+
+		html += `<div class="step-summary-item">Step ${index + 1}: [ ${wallclock_str} ( ${user_cpu_s}s u / ${sys_cpu_s}s s), Mem: ${mem_str}, Stg: ${stg_str} ]</div>`;
+	});
+	html += '</div>';
+	return html;
+}
+
 function render_metrics_table(metrics)
 {
 	let s = "<table class='metrics'><thead>" +
@@ -707,6 +731,8 @@ function sai_taskinfo_render(t, now_ut)
 				"s</span>";
 		}
 		s += "<div id=\"sai_arts\"></div>";
+		if (t.s && t.s.length > 0)
+			s += render_step_summary_table(t.s);
 		if (t.t.metrics && t.t.metrics.length > 0)
 			s += "<div id=\"metrics-summary-" + san(t.t.uuid) + "\">" +
 				render_metrics_table(t.t.metrics) +

@@ -54,6 +54,15 @@ static lws_struct_map_t lsm_browser_taskinfo[] = {
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, last_log_ts,		"last_log_ts"),
 };
 
+static const lws_struct_map_t lsm_build_metric[] = {
+	LSM_CARRAY_AS_CHAR_STAR(sai_build_metric_t, key, "k"),
+	LSM_UNSIGNED(sai_build_metric_t, us_cpu_user, "cu"),
+	LSM_UNSIGNED(sai_build_metric_t, us_cpu_sys, "cs"),
+	LSM_UNSIGNED(sai_build_metric_t, wallclock_us, "w"),
+	LSM_UNSIGNED(sai_build_metric_t, peak_mem_rss, "m"),
+	LSM_UNSIGNED(sai_build_metric_t, stg_bytes, "s"),
+};
+
 /*
  * Schema list so lws_struct can pick the right object to create based on the
  * incoming schema name
@@ -106,6 +115,7 @@ enum {
 typedef struct sai_browse_taskreply {
 	const sai_event_t	*event;
 	const sai_task_t	*task;
+	lws_dll2_owner_t	*steps;
 	char			auth_user[33];
 	int			authorized;
 	int			auth_secs;
@@ -116,6 +126,8 @@ static lws_struct_map_t lsm_taskreply[] = {
 			 lsm_event, "e"),
 	LSM_CHILD_PTR	(sai_browse_taskreply_t, task,	sai_task_t, NULL,
 			 lsm_task, "t"),
+	LSM_DT_CHILD_PTR_L_ORDER(sai_browse_taskreply_t, steps, lws_dll2_owner_t,
+			 sai_build_metric_t, list, lsm_build_metric, "s"),
 	LSM_CARRAY	(sai_browse_taskreply_t, auth_user,	"auth_user"),
 	LSM_UNSIGNED	(sai_browse_taskreply_t, authorized,	"authorized"),
 	LSM_UNSIGNED	(sai_browse_taskreply_t, auth_secs,	"auth_secs"),
@@ -309,9 +321,17 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	pt = lws_container_of(o.head, sai_task_t, list);
 	sch->one_task = pt;
 
-	//if (sais_metrics_db_get_by_task(pss->vhd, pt->uuid, &pt->metrics,
-	//				&sch->query_ac))
-	//	lwsl_warn("%s: failed to get metrics\n", __func__);
+	if (pss->vhd->pdb_metrics) {
+		lws_sql_purify(esc, task_uuid, sizeof(esc));
+		lws_snprintf(qu, sizeof(qu), " and task_uuid='%s'", esc);
+		n = lws_struct_sq3_deserialize(pss->vhd->pdb_metrics, qu,
+					       "unixtime",
+					       lsm_schema_sq3_map_build_metric,
+					       &sch->metrics_owner,
+					       &sch->query_ac, 0, 100);
+		if (n < 0)
+			lwsl_warn("%s: metrics query failed %d\n", __func__, n);
+	}
 
 	lwsl_info("%s: browser ws asked for task hash: %s, plat %s\n",
 		 __func__, task_uuid, sch->one_task->platform);
@@ -1226,6 +1246,7 @@ b_finish:
 
 		task_reply.event = sch->one_event;
 		task_reply.task = sch->one_task;
+		task_reply.steps = &sch->metrics_owner;
 		sch->one_task->rebuildable = (sch->one_task->state == SAIES_FAIL ||
 				sch->one_task->state == SAIES_CANCELLED) &&
 				(lws_now_secs() - (sch->one_task->started +
