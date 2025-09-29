@@ -65,8 +65,6 @@ static const lws_struct_map_t lsm_schema_map_ba[] = {
 						"com.warmcat.sai.loadreport"),
 	LSM_SCHEMA      (sai_resource_t,  NULL, lsm_resource,
 						"com-warmcat-sai-resource"),
-	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric,
-						"com.warmcat.sai.build-metric"),
 };
 
 enum {
@@ -76,7 +74,6 @@ enum {
 	SAIM_WSSCH_BUILDER_ARTIFACT,
 	SAIM_WSSCH_BUILDER_LOADREPORT,
 	SAIM_WSSCH_BUILDER_RESOURCE_REQ,
-	SAIM_WSSCH_BUILDER_METRIC,
 };
 
 static void
@@ -1010,28 +1007,6 @@ bail:
 		lws_dll2_add_tail(&rr->list_resource_queued_leased, &wk->owner_queued);
 
 		sais_resource_check_if_can_accept_queued(wk);
-		break;
-
-	case SAIM_WSSCH_BUILDER_METRIC:
-		metric = (const sai_build_metric_t *)pss->a.dest;
-		sais_metrics_db_add(vhd, metric);
-
-		{
-			uint8_t buf[2048];
-			size_t used = 0;
-			lws_struct_serialize_t *js = lws_struct_json_serialize_create(
-					lsm_schema_build_metric,
-					LWS_ARRAY_SIZE(lsm_schema_build_metric),
-					0, (void *)metric);
-			if (js) {
-				int n = lws_struct_json_serialize(js, buf, sizeof(buf), &used);
-				if (n >= 0)
-					sais_websrv_broadcast(vhd->h_ss_websrv, (const char *)buf, used);
-				lws_struct_json_serialize_destroy(&js);
-			}
-		}
-
-		lwsac_free(&pss->a.ac);
 		break;
 	}
 

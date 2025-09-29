@@ -93,7 +93,7 @@ sais_metrics_db_init(struct vhd *vhd)
 	if (!vhd->sqlite3_path_lhs)
 		return 0;
 
-	lws_snprintf(db_path, sizeof(db_path), "%s-build-metrics.sqlite3",
+	lws_snprintf(db_path, sizeof(db_path), "%s-metrics.sqlite3",
 		     vhd->sqlite3_path_lhs);
 
 	rc = sqlite3_open(db_path, &vhd->pdb_metrics);
