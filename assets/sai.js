@@ -657,9 +657,37 @@ function sai_stateful_taskname(state, nm, sf)
 
 function sai_sticky_task_summary_render(t, now_ut)
 {
-	return "<div class=\"taskinfo\" id=\"taskinfo-" + san(t.t.uuid) + "\">" +
-			sai_taskinfo_render(t, now_ut) +
-		"</div>";
+	var s = "";
+
+	s = "<div class=\"taskinfo\" id=\"taskinfo-" + san(t.t.uuid) + "\">" +
+		"<table><tr class=\"nomar\"><td class=\"ti\">" +
+		"<span class=\"ti1\">" + sai_plat_icon(t.t.platform, 2) +
+		san(t.t.platform) + "</span>&nbsp;";
+	if (authd && t.t.state != 0 && t.t.state != 3 && t.t.state != 4 && t.t.state != 5)
+		s += "<img class=\"rebuild\" alt=\"stop build\" src=\"stop.svg\" " +
+			"id=\"stop-" + san(t.t.uuid) + "\">&nbsp;";
+	if (authd)
+		s += "<img class=\"rebuild\" alt=\"rebuild\" src=\"rebuild.png\" " +
+			"id=\"rebuild-" + san(t.t.uuid) + "\">&nbsp;" +
+			sai_stateful_taskname(t.t.state, t.t.taskname, 1);
+
+	if (t.t.builder_name) {
+		var now_ut = Math.round((new Date().getTime() / 1000));
+
+		s += "&nbsp;&nbsp;<span class=\"ti5\"><img class=\"bico\" src=\"/sai/builder-instance.png\">&nbsp;" +
+			san(t.t.builder_name) + "</span>";
+		if (t.t.started)
+		/* started is a unix time, in seconds */
+		s += ", <span class=\"ti5\"> " +
+		     agify(now_ut, t.t.started) + " ago, Dur: " +
+		     (t.t.duration ? t.t.duration / 1000000 :
+			now_ut - t.t.started).toFixed(1) +
+			"s</span>";
+	}
+
+	s += "</td></tr></table>" + "</div>";
+
+	return s;
 }
 
 function sai_taskinfo_render(t, now_ut)
@@ -1230,11 +1258,6 @@ function ws_open_sai()
 					  "\"task_hash\":" +
 				 	  JSON.stringify(tid) + "}");
 
-				 sai.send("{\"schema\":" +
-					  "\"com.warmcat.sai.gettaskmetrics\"," +
-					  "\"task_uuid\":" +
-					  JSON.stringify(tid) + "}");
-				 	  
 				 return;
 			}
 			
@@ -1385,42 +1408,6 @@ function ws_open_sai()
 
 				buildersContainer.appendChild(table);
  				break;
-
-			case "com.warmcat.sai.build-metric":
-				var summaryDiv = document.getElementById("metrics-summary-" + jso.task_uuid);
-				if (summaryDiv) {
-					var s = "<div class=\"metric-summary\">" +
-						"Step Metrics: " +
-						"CPU: " + (jso.us_cpu_user / 1000000).toFixed(2) + "s user, " +
-						(jso.us_cpu_sys / 1000000).toFixed(2) + "s sys; " +
-						"Wallclock: " + (jso.wallclock_us / 1000000).toFixed(2) + "s; " +
-						"Mem: " + humanize(jso.peak_mem_rss) + "B; " +
-						"Stg: " + humanize(jso.stg_bytes) + "B; " +
-						"Parallel: " + jso.parallel +
-						"</div>";
-					summaryDiv.innerHTML += s;
-				}
-				break;
-
-			case "com.warmcat.sai.taskmetrics":
-				var metricsDiv = document.getElementById("sai_task_metrics");
-				if (metricsDiv) {
-					var s = "<table><tr><th>Step</th><th>Wallclock</th><th>CPU (u/s)</th><th>Peak Mem</th><th>Storage</th></tr>";
-
-					if (jso.metrics)
-						for (var i = 0; i < jso.metrics.length; i++) {
-							var m = jso.metrics[i];
-							s += "<tr><td>" + m.step + "</td>" +
-							     "<td>" + (m.wallclock_us / 1000000).toFixed(3) + "s</td>" +
-							     "<td>" + (m.us_cpu_user / 1000000).toFixed(3) + "s / " + (m.us_cpu_sys / 1000000).toFixed(3) + "s</td>" +
-							     "<td>" + humanize(m.peak_mem_rss) + "B</td>" +
-							     "<td>" + humanize(m.stg_bytes) + "B</td></tr>";
-						}
-
-					s += "</table>";
-					metricsDiv.innerHTML = s;
-				}
-				break;
 
 			case "sai.warmcat.com.overview":
 				/*
@@ -1630,9 +1617,28 @@ function ws_open_sai()
 						const url_task_uuid = urlParams.get('task');
 						
 						if (url_task_uuid === jso.t.uuid &&
-						    document.getElementById("sai_task_summary"))
+						    document.getElementById("sai_task_summary")) {
 							document.getElementById("sai_task_summary").innerHTML =
 								sai_sticky_task_summary_render(jso, now_ut);
+
+							var metricsDiv = document.getElementById("sai_task_metrics");
+							if (metricsDiv) {
+								var s = "<table><tr><th>Step</th><th>Wallclock</th><th>CPU (u/s)</th><th>Peak Mem</th><th>Storage</th></tr>";
+
+								if (jso.t.m)
+									for (var i = 0; i < jso.t.m.length; i++) {
+										var m = jso.t.m[i];
+										s += "<tr><td>" + m.step + "</td>" +
+										     "<td>" + (m.wallclock_us / 1000000).toFixed(3) + "s</td>" +
+										     "<td>" + (m.us_cpu_user / 1000000).toFixed(3) + "s / " + (m.us_cpu_sys / 1000000).toFixed(3) + "s</td>" +
+										     "<td>" + humanize(m.peak_mem_rss) + "B</td>" +
+										     "<td>" + humanize(m.stg_bytes) + "B</td></tr>";
+									}
+
+								s += "</table>";
+								metricsDiv.innerHTML = s;
+							}
+						}
 					
 				
 						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +

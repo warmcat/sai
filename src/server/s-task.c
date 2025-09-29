@@ -40,49 +40,6 @@ sql3_get_integer_cb(void *user, int cols, char **values, char **name)
 	return 0;
 }
 
-int
-sais_broadcast_task_metrics(struct vhd *vhd, const char *task_uuid)
-{
-	sai_task_metrics_t tm;
-	struct lwsac *ac = NULL;
-	uint8_t buf[4096];
-	lws_struct_serialize_t *js;
-	size_t len = 0;
-
-	memset(&tm, 0, sizeof(tm));
-	lws_strncpy(tm.task_uuid, task_uuid, sizeof(tm.task_uuid));
-	lws_dll2_owner_clear(&tm.metrics);
-
-	if (sais_metrics_db_get_by_task(vhd, task_uuid, &tm.metrics, &ac)) {
-		lwsl_warn("%s: failed to get metrics for task\n", __func__);
-		lwsac_free(&ac);
-		return 1;
-	}
-
-	js = lws_struct_json_serialize_create(lsm_schema_task_metrics,
-					      LWS_ARRAY_SIZE(lsm_schema_task_metrics),
-					      0, &tm);
-	if (!js) {
-		lwsl_warn("%s: failed to create task metrics serialization\n", __func__);
-		goto cleanup;
-	}
-
-	if (lws_struct_json_serialize(js, buf, sizeof(buf), &len) < 0) {
-		lwsl_warn("%s: failed to serialize task metrics\n", __func__);
-		lws_struct_json_serialize_destroy(&js);
-		goto cleanup;
-	}
-
-	lws_struct_json_serialize_destroy(&js);
-
-	if (len)
-		sais_websrv_broadcast(vhd->h_ss_websrv, (char *)buf, len);
-
-cleanup:
-	lwsac_free(&ac);
-
-	return 0;
-}
 
 int
 sql3_get_string_cb(void *user, int cols, char **values, char **name)
