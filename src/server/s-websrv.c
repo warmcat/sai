@@ -92,6 +92,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.platreset"),
 	LSM_SCHEMA	(sai_stay_t,		 NULL, lsm_stay,
 					      "com.warmcat.sai.stay"),
+	LSM_SCHEMA	(sai_cancel_t,		 NULL, lsm_task_cancel,
+					      "com.warmcat.sai.gettaskmetrics"),
 };
 
 enum {
@@ -104,6 +106,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_REBUILD,
 	SAIS_WS_WEBSRV_RX_PLATRESET,
 	SAIS_WS_WEBSRV_RX_STAY,
+	SAIS_WS_WEBSRV_RX_GETTASKMETRICS,
 };
 
 void
@@ -255,8 +258,8 @@ sais_list_builders(struct vhd *vhd)
 		live_builder = sais_builder_from_uuid(vhd, builder_from_db->name, __FILE__, __LINE__);
 
 		if (live_builder) {
-			lwsl_notice("%s: live_builder %s found, stay_on: %d, copying to db_builder (stay_on: %d)\n",
-				    __func__, live_builder->name, live_builder->stay_on, builder_from_db->stay_on);
+			lwsl_notice("%s: live_builder %s found, stay_on: %d\n",
+				    __func__, live_builder->name, live_builder->stay_on);
 			builder_from_db->online = 1;
 			lws_strncpy(builder_from_db->peer_ip, live_builder->peer_ip,
 				    sizeof(builder_from_db->peer_ip));
@@ -771,6 +774,14 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		} lws_end_foreach_dll(p);
 
 		lwsac_free(&a.ac);
+		break;
+	}
+	case SAIS_WS_WEBSRV_RX_GETTASKMETRICS:
+	{
+		sai_cancel_t *can = (sai_cancel_t *)a.dest;
+		if (sais_validate_id(can->task_uuid, SAI_TASKID_LEN))
+			goto soft_error;
+		sais_broadcast_task_metrics(m->vhd, can->task_uuid);
 		break;
 	}
 	}

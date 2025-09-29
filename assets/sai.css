@@ -231,7 +231,7 @@ div.nailed {
 div.undernailed {
         position:relative;
         top: 0px;
-        margin-left: 180px;
+        margin-left: 10px;
 }
 
 
@@ -1056,4 +1056,28 @@ body.overlay-active {
   height: 5px;
   width: 24px;
   margin-bottom: 1px;
+}
+
+.metric-summary {
+	font-size: 7pt
+}
+
+#sai_task_metrics table {
+	font-size: 7pt !important;
+	border-collapse: collapse;
+	margin-top: 5px;
+	width: 100%;
+}
+
+#sai_task_metrics table th, #sai_task_metrics table td {
+	border: 1px solid #ddd;
+	padding: 2px 4px !important;
+	text-align: left;
+	font-size: 7pt !important;
+}
+
+#sai_task_metrics table th {
+	background-color: #f2f2f2;
+	text-align: center;
+	font-weight: bold;
 }

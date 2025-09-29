@@ -655,6 +655,13 @@ function sai_stateful_taskname(state, nm, sf)
 	return "<span id=\"taskstate\" class=\"ti2 " + tp + "\">" + san(nm) + "</span>";	 
 }
 
+function sai_sticky_task_summary_render(t, now_ut)
+{
+	return "<div class=\"taskinfo\" id=\"taskinfo-" + san(t.t.uuid) + "\">" +
+			sai_taskinfo_render(t, now_ut) +
+		"</div>";
+}
+
 function sai_taskinfo_render(t, now_ut)
 {
 	var now_ut = Math.round((new Date().getTime() / 1000));
@@ -1222,6 +1229,11 @@ function ws_open_sai()
 					  "\"last_log_ts\":" + last_log_timestamp + "," +
 					  "\"task_hash\":" +
 				 	  JSON.stringify(tid) + "}");
+
+				 sai.send("{\"schema\":" +
+					  "\"com.warmcat.sai.gettaskmetrics\"," +
+					  "\"task_uuid\":" +
+					  JSON.stringify(tid) + "}");
 				 	  
 				 return;
 			}
@@ -1390,6 +1402,26 @@ function ws_open_sai()
 				}
 				break;
 
+			case "com.warmcat.sai.taskmetrics":
+				var metricsDiv = document.getElementById("sai_task_metrics");
+				if (metricsDiv) {
+					var s = "<table><tr><th>Step</th><th>Wallclock</th><th>CPU (u/s)</th><th>Peak Mem</th><th>Storage</th></tr>";
+
+					if (jso.metrics)
+						for (var i = 0; i < jso.metrics.length; i++) {
+							var m = jso.metrics[i];
+							s += "<tr><td>" + m.step + "</td>" +
+							     "<td>" + (m.wallclock_us / 1000000).toFixed(3) + "s</td>" +
+							     "<td>" + (m.us_cpu_user / 1000000).toFixed(3) + "s / " + (m.us_cpu_sys / 1000000).toFixed(3) + "s</td>" +
+							     "<td>" + humanize(m.peak_mem_rss) + "B</td>" +
+							     "<td>" + humanize(m.stg_bytes) + "B</td></tr>";
+						}
+
+					s += "</table>";
+					metricsDiv.innerHTML = s;
+				}
+				break;
+
 			case "sai.warmcat.com.overview":
 				/*
 				 * Sent with an array of e[] to start, but also
@@ -1453,8 +1485,8 @@ function ws_open_sai()
 				
 						s = s + "</table>";
 					
-						if (document.getElementById("sai_sticky"))
-							document.getElementById("sai_sticky").innerHTML = s;
+						if (document.getElementById("sai_overview"))
+							document.getElementById("sai_overview").innerHTML = s;
 						
 						for (n = jso.overview.length - 1; n >= 0; n--) {
 							document.getElementById("esr-" + jso.overview[n].e.uuid).innerHTML =
@@ -1598,12 +1630,9 @@ function ws_open_sai()
 						const url_task_uuid = urlParams.get('task');
 						
 						if (url_task_uuid === jso.t.uuid &&
-						    document.getElementById("sai_sticky"))
-							document.getElementById("sai_sticky").innerHTML =
-								"<div class=\"taskinfo\" id=\"taskinfo-" +
-								san(jso.t.uuid) + "\">" +
-								sai_taskinfo_render(jso) +
-								"</div>";
+						    document.getElementById("sai_task_summary"))
+							document.getElementById("sai_task_summary").innerHTML =
+								sai_sticky_task_summary_render(jso, now_ut);
 					
 				
 						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
@@ -1969,14 +1998,14 @@ window.addEventListener("load", function() {
 
 	}, 500)
 
-	const stickyEl = document.getElementById("sai_sticky");
-	if (stickyEl) {
-		stickyEl.addEventListener("contextmenu", function(event) {
+	const rightPane = document.querySelector('.right-pane');
+	if (rightPane) {
+		rightPane.addEventListener("contextmenu", function(event) {
 			let target = event.target;
 			let taskDiv = null;
 
 			// find the taskstate div parent
-			while (target && target.id !== "sai_sticky") {
+			while (target && target !== rightPane) {
 				if (target.classList && target.classList.contains("taskstate")) {
 					taskDiv = target;
 					break;
