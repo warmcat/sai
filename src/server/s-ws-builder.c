@@ -607,15 +607,6 @@ handle:
 			}
 		} lws_end_foreach_dll(p);
 
-		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.builder_owner.head) {
-			cb = lws_container_of(p, sai_plat_t, sai_plat_list);
-			if (cb->wsi == pss->wsi) {
-				/* This platform belongs to the connection that sent the message */
-				if (sais_allocate_task(vhd, pss, cb, cb->platform) < 0)
-					goto bail;
-			}
-		} lws_end_foreach_dll(p);
-
 		/*
 		 * If we did allocate a task in pss->a.ac, responsibility of
 		 * callback_on_writable handler to empty it
