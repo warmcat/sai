@@ -129,9 +129,7 @@ sais_prepare_taskinfo_json(struct websrvss_srv *m,
 	sai_task_t *task;
 	sai_event_t *event;
 	sqlite3 *pdb = NULL;
-	uint8_t *buf = NULL;
-	size_t len = 0;
-	int n, ret = 1;
+	int n = 0, ret = 1;
 
 	memset(&task_reply, 0, sizeof(task_reply));
 	sai_task_uuid_to_event_uuid(event_uuid, wst->ti.task_hash);
@@ -173,27 +171,22 @@ sais_prepare_taskinfo_json(struct websrvss_srv *m,
 	if (!js)
 		goto bail;
 
-	n = lws_struct_json_serialize(js, NULL, 0, &len);
-	if (n != LSJS_RESULT_CONTINUE)
-		goto ser_bail;
+	do {
+		uint8_t frag[4096];
+		size_t w = sizeof(frag);
 
-	buf = malloc(len);
-	if (!buf)
-		goto ser_bail;
+		n = lws_struct_json_serialize(js, frag, w, &w);
+		if (lws_buflist_append_segment(&m->bltx, frag, w) < 0) {
+			lws_struct_json_serialize_destroy(&js);
+			goto bail;
+		}
+	} while (n == LSJS_RESULT_CONTINUE);
 
-	n = lws_struct_json_serialize(js, buf, len, &len);
 	lws_struct_json_serialize_destroy(&js);
 
-	if (n < 0) {
-		free(buf);
+	if (n < 0)
 		goto bail;
-	}
 
-	if (lws_buflist_append_segment(&m->bltx, buf, len) < 0) {
-		free(buf);
-		goto bail;
-	}
-	free(buf);
 	if (lws_ss_request_tx(m->ss))
 		lwsl_warn("%s: failed to request tx\n", __func__);
 	ret = 0;
@@ -203,10 +196,6 @@ bail:
 	lwsac_free(&ac_event);
 	sais_event_db_close(m->vhd, &pdb);
 	return ret;
-
-ser_bail:
-	lws_struct_json_serialize_destroy(&js);
-	goto bail;
 }
 
 void

@@ -258,7 +258,7 @@ const lws_struct_map_t lsm_browse_rx_taskinfo[] = {
 };
 
 const lws_struct_map_t lsm_web_to_server_taskinfo[] = {
-	LSM_CHILD_JSO	(sai_web_to_server_taskinfo_t, ti, sai_browse_rx_taskinfo_t,
+	LSM_JO_CHILD_PTR(sai_web_to_server_taskinfo_t, ti, sai_browse_rx_taskinfo_t,
 			 lsm_browse_rx_taskinfo, "ti"),
 	LSM_CARRAY	(sai_web_to_server_taskinfo_t, auth_user, "auth_user"),
 	LSM_SIGNED	(sai_web_to_server_taskinfo_t, authorized, "authorized"),
