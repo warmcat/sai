@@ -214,6 +214,21 @@ const lws_struct_map_t lsm_schema_sq3_map_task[] = {
 	LSM_SCHEMA_DLL2	(sai_task_t, list, NULL, lsm_task,	"tasks"),
 };
 
+static const lws_struct_map_t lsm_taskreply[] = {
+	LSM_CHILD_PTR	(sai_browse_taskreply_t, event,	sai_event_t, NULL,
+			 lsm_event, "e"),
+	LSM_CHILD_PTR	(sai_browse_taskreply_t, task,	sai_task_t, NULL,
+			 lsm_task, "t"),
+	LSM_CARRAY	(sai_browse_taskreply_t, auth_user,	"auth_user"),
+	LSM_UNSIGNED	(sai_browse_taskreply_t, authorized,	"authorized"),
+	LSM_UNSIGNED	(sai_browse_taskreply_t, auth_secs,	"auth_secs"),
+};
+
+const lws_struct_map_t lsm_schema_json_map_taskreply[] = {
+	LSM_SCHEMA	(sai_browse_taskreply_t, NULL, lsm_taskreply,
+			 "com.warmcat.sai.taskinfo"),
+};
+
 /* builder -> server */
 
 const lws_struct_map_t lsm_task_rej[] = {

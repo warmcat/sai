@@ -507,20 +507,7 @@ typedef struct sai_browse_taskreply {
 	int			auth_secs;
 } sai_browse_taskreply_t;
 
-static lws_struct_map_t lsm_taskreply[] = {
-	LSM_CHILD_PTR	(sai_browse_taskreply_t, event,	sai_event_t, NULL,
-			 lsm_event, "e"),
-	LSM_CHILD_PTR	(sai_browse_taskreply_t, task,	sai_task_t, NULL,
-			 lsm_task, "t"),
-	LSM_CARRAY	(sai_browse_taskreply_t, auth_user,	"auth_user"),
-	LSM_UNSIGNED	(sai_browse_taskreply_t, authorized,	"authorized"),
-	LSM_UNSIGNED	(sai_browse_taskreply_t, auth_secs,	"auth_secs"),
-};
-
-static const lws_struct_map_t lsm_schema_json_map_taskreply[] = {
-	LSM_SCHEMA	(sai_browse_taskreply_t, NULL, lsm_taskreply,
-			 "com.warmcat.sai.taskinfo"),
-};
+extern const lws_struct_map_t lsm_schema_json_map_taskreply[];
 
 /* sai-power -> sai-server, tells it that a platform is being powered up */
 typedef struct sai_power_state {
