@@ -88,6 +88,7 @@ if (requirements)
 		      ../../assets/gs/lwsgs.js
 		      ../../assets/gs/lwsgs.css
 		      	../../assets/arch-aarch64-a72a55-rk3588.svg
+			../../assets/arch-aarch64-apple-m1.svg
 			../../assets/arch-aarch64-a72-bcm2711-rpi4.svg
 			../../assets/arch-aarch64.svg
 			../../assets/arch-arm32-m4-mt7697-usi.svg
@@ -142,6 +143,7 @@ if (requirements)
 			../../assets/virt-qemu.svg
 			../../assets/w10.svg
 			../../assets/w11.svg
+			../../assets/netbsd-OSX-tahoe.svg
 
 		DESTINATION "${DATA_DIR}/sai/assets"
 		COMPONENT web)

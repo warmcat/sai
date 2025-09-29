@@ -527,10 +527,10 @@ handle:
 			char q[1024];
 
 			lws_snprintf(q, sizeof(q),
-				     "INSERT INTO builders (name, platform, online, last_seen, peer_ip, sai_hash, lws_hash, windows) "
-				     "VALUES ('%s', '%s', 1, %llu, '%s', '%s', '%s', %d) "
-				     "ON CONFLICT(name) DO UPDATE SET online=1, last_seen=excluded.last_seen, "
-				     "peer_ip=excluded.peer_ip, sai_hash=excluded.sai_hash, lws_hash=excluded.lws_hash",
+				     "INSERT INTO builders (name, platform, last_seen, peer_ip, sai_hash, lws_hash, windows) "
+				     "VALUES ('%s', '%s', %llu, '%s', '%s', '%s', %d) "
+				     "ON CONFLICT(name) DO UPDATE SET platform=excluded.platform, last_seen=excluded.last_seen, "
+				     "peer_ip=excluded.peer_ip, sai_hash=excluded.sai_hash, lws_hash=excluded.lws_hash, windows=excluded.windows",
 				     build->name, build->platform, (unsigned long long)lws_now_secs(),
 				     pss->peer_ip, build->sai_hash, build->lws_hash, build->windows);
 
