@@ -528,8 +528,8 @@ handle:
 			lws_snprintf(q, sizeof(q),
 				     "INSERT INTO builders (name, platform, online, last_seen, peer_ip, sai_hash, lws_hash, windows) "
 				     "VALUES ('%s', '%s', 1, %llu, '%s', '%s', '%s', %d) "
-				     "ON CONFLICT(name) DO UPDATE SET online=1, last_seen=excluded.last_seen, "
-				     "peer_ip=excluded.peer_ip, sai_hash=excluded.sai_hash, lws_hash=excluded.lws_hash",
+				     "ON CONFLICT(name) DO UPDATE SET platform=excluded.platform, online=1, last_seen=excluded.last_seen, "
+				     "peer_ip=excluded.peer_ip, sai_hash=excluded.sai_hash, lws_hash=excluded.lws_hash, windows=excluded.windows",
 				     build->name, build->platform, (unsigned long long)lws_now_secs(),
 				     pss->peer_ip, build->sai_hash, build->lws_hash, build->windows);
 
@@ -598,6 +598,15 @@ handle:
 		 * try to allocate a task for each platform that belongs to the
 		 * builder that just connected.
  		 */
+		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.builder_owner.head) {
+			cb = lws_container_of(p, sai_plat_t, sai_plat_list);
+			if (cb->wsi == pss->wsi) {
+				/* This platform belongs to the connection that sent the message */
+				if (sais_allocate_task(vhd, pss, cb, cb->platform) < 0)
+					goto bail;
+			}
+		} lws_end_foreach_dll(p);
+
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.builder_owner.head) {
 			cb = lws_container_of(p, sai_plat_t, sai_plat_list);
 			if (cb->wsi == pss->wsi) {
