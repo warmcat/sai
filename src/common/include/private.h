@@ -150,8 +150,6 @@ typedef struct {
 	char			told_ongoing;
 
 	char			rebuildable;
-
-	lws_dll2_owner_t	m; /* sai_build_metric_t */
 } sai_task_t;
 
 typedef struct sai_plat sai_plat_t;
@@ -573,6 +571,22 @@ typedef struct sai_stay_state_update {
 	char			builder_name[64];
 	char			stay_on;
 } sai_stay_state_update_t;
+
+/*
+ * For issuing combined task and event data back to browser
+ */
+
+typedef struct sai_browse_taskreply {
+	const sai_event_t	*event;
+	const sai_task_t	*task;
+	lws_dll2_owner_t	m; /* sai_build_metric_t */
+	char			auth_user[33];
+	int			authorized;
+	int			auth_secs;
+} sai_browse_taskreply_t;
+
+extern const lws_struct_map_t lsm_taskreply[];
+extern const lws_struct_map_t lsm_schema_json_map_taskreply[];
 
 
 extern const lws_struct_map_t

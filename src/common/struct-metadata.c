@@ -61,6 +61,9 @@ const lws_struct_map_t lsm_build_metric[] = {
 	LSM_SIGNED	(sai_build_metric_t, step,		"step"),
 };
 
+const lws_struct_map_t lsm_schema_build_metric[] = {
+	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric, "com.warmcat.sai.build-metric")
+};
 
 const lws_struct_map_t lsm_sq3_build_metric[] = {
 	LSM_CARRAY	(sai_build_metric_db_t, key,		"key"),
@@ -201,8 +204,6 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_UNSIGNED	(sai_task_t, est_disk_kib,	"est_disk_kib"),
 	LSM_SIGNED	(sai_task_t, parallel,		"parallel"),
 	LSM_SIGNED	(sai_task_t, rebuildable,	"rebuildable"),
-	LSM_LIST	(sai_task_t, m, sai_build_metric_t, list, NULL,
-			 lsm_build_metric, "m"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {
@@ -362,4 +363,23 @@ const lws_struct_map_t lsm_stay_state_update[] = {
 const lws_struct_map_t lsm_schema_stay_state_update[] = {
 	LSM_SCHEMA(sai_stay_state_update_t, NULL, lsm_stay_state_update,
 		   "com.warmcat.sai.stay_state_update"),
+};
+
+const lws_struct_map_t lsm_taskreply[] = {
+	LSM_CHILD_PTR	(sai_browse_taskreply_t, event,	sai_event_t, NULL,
+			 lsm_event, "e"),
+	LSM_CHILD_PTR	(sai_browse_taskreply_t, task,	sai_task_t, NULL,
+			 lsm_task, "t"),
+	LSM_CHILD_DLL2_PTR_MOD_OPT(sai_browse_taskreply_t, m,
+			 sai_build_metric_t, list, lsm_build_metric, "m",
+			 LWS_LSM_MOD_SERIALIZE_AS_ARRAY),
+
+	LSM_CARRAY	(sai_browse_taskreply_t, auth_user,	"auth_user"),
+	LSM_UNSIGNED	(sai_browse_taskreply_t, authorized,	"authorized"),
+	LSM_UNSIGNED	(sai_browse_taskreply_t, auth_secs,	"auth_secs"),
+};
+
+const lws_struct_map_t lsm_schema_json_map_taskreply[] = {
+	LSM_SCHEMA	(sai_browse_taskreply_t, NULL, lsm_taskreply,
+			 "com.warmcat.sai.taskinfo"),
 };

@@ -93,7 +93,7 @@ sais_metrics_db_init(struct vhd *vhd)
 	if (!vhd->sqlite3_path_lhs)
 		return 0;
 
-	lws_snprintf(db_path, sizeof(db_path), "%s-metrics.sqlite3",
+	lws_snprintf(db_path, sizeof(db_path), "%s-build-metrics.sqlite3",
 		     vhd->sqlite3_path_lhs);
 
 	rc = sqlite3_open(db_path, &vhd->pdb_metrics);
@@ -159,6 +159,8 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 
 	if (sais_metrics_db_prune(vhd, dbm.key))
 		lwsl_warn("%s: pruning metrics failed\n", __func__);
+
+	sais_broadcast_task_metrics(vhd, m->task_uuid);
 
 	return 0;
 }
