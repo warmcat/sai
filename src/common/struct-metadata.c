@@ -61,9 +61,6 @@ const lws_struct_map_t lsm_build_metric[] = {
 	LSM_SIGNED	(sai_build_metric_t, step,		"step"),
 };
 
-const lws_struct_map_t lsm_schema_build_metric[] = {
-	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric, "com.warmcat.sai.build-metric")
-};
 
 const lws_struct_map_t lsm_sq3_build_metric[] = {
 	LSM_CARRAY	(sai_build_metric_db_t, key,		"key"),

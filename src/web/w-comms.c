@@ -101,8 +101,6 @@ const lws_struct_map_t lsm_schema_json_map[] = {
 			 "com.warmcat.sai.loadreport"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
 			 "com.warmcat.sai.taskactivity"),
-	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric,
-			 "com.warmcat.sai.build-metric"),
 	LSM_SCHEMA	(sai_task_metrics_t, NULL, lsm_task_metrics,
 			 "com.warmcat.sai.taskmetrics"),
 };
