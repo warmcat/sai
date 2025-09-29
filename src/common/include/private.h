@@ -592,7 +592,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[10],
-	lsm_task[29],
+	lsm_task[30],
 	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],

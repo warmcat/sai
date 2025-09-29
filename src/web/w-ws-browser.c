@@ -252,134 +252,6 @@ bail:
 	return 1;
 }
 
-/* we leave an allocation in sch->query_ac ... */
-
-static int
-saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
-{
-	saiw_scheduled_t *sch = saiw_alloc_sched(pss, WSS_PREPARE_TASKINFO);
-	char qu[192], esc[66], event_uuid[33], esc2[96];
-	sqlite3 *pdb = NULL;
-	lws_dll2_owner_t o;
-	sai_task_t *pt;
-	int n, m;
-
-	if (!sch)
-		return -1;
-
-	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
-
-	/*
-	 * This pss may be locked to a specific event and not want to hear
-	 * anything unrelated to that event... lock to task is same deal but
-	 * we will also send it non-log info about other tasks, so it can
-	 * keep its event summary alive
-	 */
-
-	if (pss->specific_task[0] &&
-	    memcmp(pss->specific_task, event_uuid, 32)) {
-		lwsl_info("%s: specific_task '%s' vs event_uuid '%s\n",
-			    __func__, pss->specific_task, event_uuid);
-		goto bail;
-	}
-
-	/* open the event-specific database object */
-
-	if (sais_event_db_ensure_open(pss->vhd, event_uuid, 0, &pdb)) {
-		/* no longer exists, nothing to do */
-		saiw_dealloc_sched(sch);
-		return 0;
-	}
-
-	/*
-	 * get the related task object into its own ac... there might
-	 * be a lot of related data, so we hold the ac in the sch for
-	 * as long as needed to send it out
-	 */
-
-	lws_sql_purify(esc, task_uuid, sizeof(esc));
-	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
-	n = lws_struct_sq3_deserialize(pdb, qu, NULL, lsm_schema_sq3_map_task,
-				       &o, &sch->query_ac, 0, 1);
-	sais_event_db_close(pss->vhd, &pdb);
-	// lwsl_notice("%s: n %d, o.head %p\n", __func__, n, o.head);
-	if (n < 0 || !o.head)
-		goto bail;
-
-	pt = lws_container_of(o.head, sai_task_t, list);
-	sch->one_task = pt;
-
-	sais_metrics_db_get_by_task(pss->vhd, task_uuid, &pt->m,
-				    &sch->query_ac);
-
-	lwsl_info("%s: browser ws asked for task hash: %s, plat %s\n",
-		 __func__, task_uuid, sch->one_task->platform);
-
-	/* let the pss take over the task info ac and schedule sending */
-
-	lws_dll2_remove((struct lws_dll2 *)&sch->one_task->list);
-
-	/*
-	 * let's also get the event object the task relates to into
-	 * its own event struct, additionally qualify this task against any
-	 * pss reponame-specific constraint and bail if doesn't match
-	 */
-
-	lws_sql_purify(esc, event_uuid, sizeof(esc));
-	m = lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
-	if (pss->specific_project[0]) {
-		lws_sql_purify(esc2, pss->specific_project, sizeof(esc2));
-		m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and repo_name='%s'", esc2);
-	}
-
-	if (pss->specific_ref[0] && pss->specificity != SAIM_SPECIFIC_TASK) {
-		lws_sql_purify(esc2, pss->specific_ref, sizeof(esc2));
-		if (pss->specific_ref[0] == 'r') {
-			/* check event ref against, eg, ref/heads/xxx */
-			if (!strcmp(pss->specific_ref, "refs/heads/master"))
-				m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m,
-					" and (ref='refs/heads/master' or ref='refs/heads/main')");
-			else
-				m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and ref='%s'", esc2);
-		} else
-			/* check event hash against, eg, 12341234abcd... */
-			m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and hash='%s'", esc2);
-	}
-
-	n = lws_struct_sq3_deserialize(pss->vhd->pdb, qu, NULL,
-				       lsm_schema_sq3_map_event, &o,
-				       &sch->query_ac, 0, 1);
-	if (n < 0 || !o.head) {
-		// lwsl_notice("%s: no result\n", __func__);
-		goto bail;
-	}
-
-	sch->logsub = !!logsub;
-	sch->one_event = lws_container_of(o.head, sai_event_t, list);
-
-	// lwsl_warn("%s: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
-
-	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
-
-	{
-		uint8_t buf[LWS_PRE + 256];
-		int n;
-
-		n = lws_snprintf((char *)buf + LWS_PRE, sizeof(buf) - LWS_PRE,
-			"{\"schema\":\"com.warmcat.sai.gettaskmetrics\","
-			"\"task_uuid\":\"%s\"}", task_uuid);
-
-		saiw_websrv_queue_tx(pss->vhd->h_ss_websrv, buf + LWS_PRE, (size_t)n,
-				     LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
-	}
-
-	return 0;
-
-bail:
-	saiw_dealloc_sched(sch);
-	return 1;
-}
-
 /*
  * We need to schedule re-sending out task and event state to anyone subscribed
  * to the task that changed or its associated event
@@ -393,7 +265,7 @@ saiw_subs_task_state_change(struct vhd *vhd, const char *task_uuid)
 		struct pss *pss = lws_container_of(p, struct pss, subs_list);
 
 		if (!strcmp(pss->sub_task_uuid, task_uuid))
-			saiw_pss_schedule_taskinfo(pss, task_uuid, 0);
+			lws_callback_on_writable(pss->wsi);
 
 	} lws_end_foreach_dll(p);
 
@@ -407,7 +279,7 @@ saiw_browsers_task_state_change(struct vhd *vhd, const char *task_uuid)
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 		struct pss *pss = lws_container_of(p, struct pss, same);
 
-		saiw_pss_schedule_taskinfo(pss, task_uuid, 0);
+		lws_callback_on_writable(pss->wsi);
 	} lws_end_foreach_dll(p);
 
 	return 0;
@@ -489,19 +361,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			break;
 		}
 
-		/*
-		 * get the related task object into its own ac... there might
-		 * be a lot of related data, so we hold the ac in the pss for
-		 * as long as needed to send it out
-		 */
-
-		if (ti->logs)
-			pss->initial_log_timestamp = ti->last_log_ts;
-		else
-			pss->initial_log_timestamp = 0;
-
-		if (saiw_pss_schedule_taskinfo(pss, ti->task_hash, !!ti->logs))
-			goto soft_error;
+		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 
 		break;
 

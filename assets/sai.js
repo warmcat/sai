@@ -1409,6 +1409,22 @@ function ws_open_sai()
 				buildersContainer.appendChild(table);
  				break;
 
+			case "com.warmcat.sai.build-metric":
+				var summaryDiv = document.getElementById("metrics-summary-" + jso.task_uuid);
+				if (summaryDiv) {
+					var s = "<div class=\"metric-summary\">" +
+						"Step Metrics: " +
+						"CPU: " + (jso.us_cpu_user / 1000000).toFixed(2) + "s user, " +
+						(jso.us_cpu_sys / 1000000).toFixed(2) + "s sys; " +
+						"Wallclock: " + (jso.wallclock_us / 1000000).toFixed(2) + "s; " +
+						"Mem: " + humanize(jso.peak_mem_rss) + "B; " +
+						"Stg: " + humanize(jso.stg_bytes) + "B; " +
+						"Parallel: " + jso.parallel +
+						"</div>";
+					summaryDiv.innerHTML += s;
+				}
+				break;
+
 			case "sai.warmcat.com.overview":
 				/*
 				 * Sent with an array of e[] to start, but also
