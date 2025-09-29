@@ -99,32 +99,6 @@ enum {
 };
 
 
-/*
- * For issuing combined task and event data back to browser
- */
-
-typedef struct sai_browse_taskreply {
-	const sai_event_t	*event;
-	const sai_task_t	*task;
-	char			auth_user[33];
-	int			authorized;
-	int			auth_secs;
-} sai_browse_taskreply_t;
-
-static lws_struct_map_t lsm_taskreply[] = {
-	LSM_CHILD_PTR	(sai_browse_taskreply_t, event,	sai_event_t, NULL,
-			 lsm_event, "e"),
-	LSM_CHILD_PTR	(sai_browse_taskreply_t, task,	sai_task_t, NULL,
-			 lsm_task, "t"),
-	LSM_CARRAY	(sai_browse_taskreply_t, auth_user,	"auth_user"),
-	LSM_UNSIGNED	(sai_browse_taskreply_t, authorized,	"authorized"),
-	LSM_UNSIGNED	(sai_browse_taskreply_t, auth_secs,	"auth_secs"),
-};
-
-const lws_struct_map_t lsm_schema_json_map_taskreply[] = {
-	LSM_SCHEMA	(sai_browse_taskreply_t, NULL, lsm_taskreply,
-			 "com.warmcat.sai.taskinfo"),
-};
 
 enum sai_overview_state {
 	SOS_EVENT,
