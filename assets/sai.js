@@ -396,8 +396,7 @@ var lang_zhs = "{" +
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
 	logAnsiState = {},
-	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {},
-	cached_task_info = {}, cached_build_metrics = {};
+	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {};
 
 function update_task_activities() {
 	for (const uuid in ongoing_task_activities) {
@@ -683,7 +682,7 @@ function sai_sticky_task_summary_render(t, now_ut)
 		     agify(now_ut, t.t.started) + " ago, Dur: " +
 		     (t.t.duration ? t.t.duration / 1000000 :
 			now_ut - t.t.started).toFixed(1) +
-			"s</span><div id=\"sai_arts\"></div><div id=\"metrics-summary-" + san(t.t.uuid) + "\"></div>";
+			"s</span>";
 	}
 
 	s += "</td></tr></table>" + "</div>";
@@ -850,8 +849,12 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 
 	s = "<table class=\"comp";
 
-	if (!o.e)
-		return;
+	if (!o.e) {
+		if (o.t && o.t.uuid)
+			e = { uuid: o.t.uuid.substring(0, 32), state: o.t.state };
+		else
+			return "";
+	}
 
 	if (e.state == 3)
 		s += " comp_pass";
@@ -1418,7 +1421,6 @@ function ws_open_sai()
 			case "com.warmcat.sai.build-metric":
 				var summaryDiv = document.getElementById("metrics-summary-" + jso.task_uuid);
 				if (summaryDiv) {
-					// Summary is there, just append the metric
 					var s = "<div class=\"metric-summary\">" +
 						"Step Metrics: " +
 						"CPU: " + (jso.us_cpu_user / 1000000).toFixed(2) + "s user, " +
@@ -1429,12 +1431,6 @@ function ws_open_sai()
 						"Parallel: " + jso.parallel +
 						"</div>";
 					summaryDiv.innerHTML += s;
-				} else {
-					// Summary is not there, cache the metric
-					if (!cached_build_metrics[jso.task_uuid]) {
-						cached_build_metrics[jso.task_uuid] = [];
-					}
-					cached_build_metrics[jso.task_uuid].push(jso);
 				}
 				break;
 
@@ -1596,8 +1592,6 @@ function ws_open_sai()
 				if (!jso.t)
 					break;
 
-				cached_task_info[jso.t.uuid] = jso;
-
 				authd = jso.authorized;
 				if (jso.authorized === 0) {
 					if (document.getElementById("creds"))
@@ -1668,30 +1662,9 @@ function ws_open_sai()
 						const url_task_uuid = urlParams.get('task');
 						
 						if (url_task_uuid === jso.t.uuid &&
-						    document.getElementById("sai_task_summary")) {
+						    document.getElementById("sai_task_summary"))
 							document.getElementById("sai_task_summary").innerHTML =
 								sai_sticky_task_summary_render(jso, now_ut);
-
-							// now we have rendered the summary, check for cached metrics
-							if (cached_build_metrics[jso.t.uuid]) {
-								var summaryDiv = document.getElementById("metrics-summary-" + jso.t.uuid);
-								if (summaryDiv) {
-									cached_build_metrics[jso.t.uuid].forEach(function(metric) {
-										var s = "<div class=\"metric-summary\">" +
-											"Step Metrics: " +
-											"CPU: " + (metric.us_cpu_user / 1000000).toFixed(2) + "s user, " +
-											(metric.us_cpu_sys / 1000000).toFixed(2) + "s sys; " +
-											"Wallclock: " + (metric.wallclock_us / 1000000).toFixed(2) + "s; " +
-											"Mem: " + humanize(metric.peak_mem_rss) + "B; " +
-											"Stg: " + humanize(metric.stg_bytes) + "B; " +
-											"Parallel: " + metric.parallel +
-											"</div>";
-										summaryDiv.innerHTML += s;
-									});
-								}
-								delete cached_build_metrics[jso.t.uuid]; // clear cache
-							}
-						    }
 					
 				
 						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
@@ -1851,6 +1824,22 @@ function ws_open_sai()
 					}
 				} else
 						console.log("no spreadsheetContainer");
+				break;
+
+			case "sai-taskchange":
+				const urlParams = new URLSearchParams(window.location.search);
+				const url_task_uuid = urlParams.get('task');
+
+				if (url_task_uuid === jso.event_hash) {
+					// it's our task, re-request the info
+					 sai.send("{\"schema\":" +
+						  "\"com.warmcat.sai.taskinfo\"," +
+						  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
+						  "\"logs\": 0," + // no need for logs again
+						  "\"last_log_ts\":" + last_log_timestamp + "," +
+						  "\"task_hash\":" +
+						  JSON.stringify(url_task_uuid) + "}");
+				}
 				break;
 
 			case "com.warmcat.sai.unauthorized":
