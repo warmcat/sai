@@ -396,7 +396,8 @@ var lang_zhs = "{" +
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
 	logAnsiState = {},
-	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {};
+	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {},
+	cached_task_info = {}, cached_build_metrics = {};
 
 function update_task_activities() {
 	for (const uuid in ongoing_task_activities) {
@@ -682,7 +683,7 @@ function sai_sticky_task_summary_render(t, now_ut)
 		     agify(now_ut, t.t.started) + " ago, Dur: " +
 		     (t.t.duration ? t.t.duration / 1000000 :
 			now_ut - t.t.started).toFixed(1) +
-			"s</span>";
+			"s</span><div id=\"sai_arts\"></div><div id=\"metrics-summary-" + san(t.t.uuid) + "\"></div>";
 	}
 
 	s += "</td></tr></table>" + "</div>";
@@ -1417,6 +1418,7 @@ function ws_open_sai()
 			case "com.warmcat.sai.build-metric":
 				var summaryDiv = document.getElementById("metrics-summary-" + jso.task_uuid);
 				if (summaryDiv) {
+					// Summary is there, just append the metric
 					var s = "<div class=\"metric-summary\">" +
 						"Step Metrics: " +
 						"CPU: " + (jso.us_cpu_user / 1000000).toFixed(2) + "s user, " +
@@ -1427,6 +1429,12 @@ function ws_open_sai()
 						"Parallel: " + jso.parallel +
 						"</div>";
 					summaryDiv.innerHTML += s;
+				} else {
+					// Summary is not there, cache the metric
+					if (!cached_build_metrics[jso.task_uuid]) {
+						cached_build_metrics[jso.task_uuid] = [];
+					}
+					cached_build_metrics[jso.task_uuid].push(jso);
 				}
 				break;
 
@@ -1588,6 +1596,8 @@ function ws_open_sai()
 				if (!jso.t)
 					break;
 
+				cached_task_info[jso.t.uuid] = jso;
+
 				authd = jso.authorized;
 				if (jso.authorized === 0) {
 					if (document.getElementById("creds"))
@@ -1658,9 +1668,30 @@ function ws_open_sai()
 						const url_task_uuid = urlParams.get('task');
 						
 						if (url_task_uuid === jso.t.uuid &&
-						    document.getElementById("sai_task_summary"))
+						    document.getElementById("sai_task_summary")) {
 							document.getElementById("sai_task_summary").innerHTML =
 								sai_sticky_task_summary_render(jso, now_ut);
+
+							// now we have rendered the summary, check for cached metrics
+							if (cached_build_metrics[jso.t.uuid]) {
+								var summaryDiv = document.getElementById("metrics-summary-" + jso.t.uuid);
+								if (summaryDiv) {
+									cached_build_metrics[jso.t.uuid].forEach(function(metric) {
+										var s = "<div class=\"metric-summary\">" +
+											"Step Metrics: " +
+											"CPU: " + (metric.us_cpu_user / 1000000).toFixed(2) + "s user, " +
+											(metric.us_cpu_sys / 1000000).toFixed(2) + "s sys; " +
+											"Wallclock: " + (metric.wallclock_us / 1000000).toFixed(2) + "s; " +
+											"Mem: " + humanize(metric.peak_mem_rss) + "B; " +
+											"Stg: " + humanize(metric.stg_bytes) + "B; " +
+											"Parallel: " + metric.parallel +
+											"</div>";
+										summaryDiv.innerHTML += s;
+									});
+								}
+								delete cached_build_metrics[jso.t.uuid]; // clear cache
+							}
+						    }
 					
 				
 						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
