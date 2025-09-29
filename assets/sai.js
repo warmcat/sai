@@ -657,37 +657,7 @@ function sai_stateful_taskname(state, nm, sf)
 
 function sai_sticky_task_summary_render(t, now_ut)
 {
-	var s = "";
-
-	s = "<div class=\"taskinfo\" id=\"taskinfo-" + san(t.t.uuid) + "\">" +
-		"<table><tr class=\"nomar\"><td class=\"ti\">" +
-		"<span class=\"ti1\">" + sai_plat_icon(t.t.platform, 2) +
-		san(t.t.platform) + "</span>&nbsp;";
-	if (authd && t.t.state != 0 && t.t.state != 3 && t.t.state != 4 && t.t.state != 5)
-		s += "<img class=\"rebuild\" alt=\"stop build\" src=\"stop.svg\" " +
-			"id=\"stop-" + san(t.t.uuid) + "\">&nbsp;";
-	if (authd)
-		s += "<img class=\"rebuild\" alt=\"rebuild\" src=\"rebuild.png\" " +
-			"id=\"rebuild-" + san(t.t.uuid) + "\">&nbsp;" +
-			sai_stateful_taskname(t.t.state, t.t.taskname, 1);
-
-	if (t.t.builder_name) {
-		var now_ut = Math.round((new Date().getTime() / 1000));
-
-		s += "&nbsp;&nbsp;<span class=\"ti5\"><img class=\"bico\" src=\"/sai/builder-instance.png\">&nbsp;" +
-			san(t.t.builder_name) + "</span>";
-		if (t.t.started)
-		/* started is a unix time, in seconds */
-		s += ", <span class=\"ti5\"> " +
-		     agify(now_ut, t.t.started) + " ago, Dur: " +
-		     (t.t.duration ? t.t.duration / 1000000 :
-			now_ut - t.t.started).toFixed(1) +
-			"s</span>";
-	}
-
-	s += "</td></tr></table>" + "</div>";
-
-	return s;
+	return sai_taskinfo_render(t, now_ut);
 }
 
 function sai_taskinfo_render(t, now_ut)
@@ -849,12 +819,8 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 
 	s = "<table class=\"comp";
 
-	if (!o.e) {
-		if (o.t && o.t.uuid)
-			e = { uuid: o.t.uuid.substring(0, 32), state: o.t.state };
-		else
-			return "";
-	}
+	if (!o.e)
+		return;
 
 	if (e.state == 3)
 		s += " comp_pass";
@@ -1824,22 +1790,6 @@ function ws_open_sai()
 					}
 				} else
 						console.log("no spreadsheetContainer");
-				break;
-
-			case "sai-taskchange":
-				const urlParams = new URLSearchParams(window.location.search);
-				const url_task_uuid = urlParams.get('task');
-
-				if (url_task_uuid === jso.event_hash) {
-					// it's our task, re-request the info
-					 sai.send("{\"schema\":" +
-						  "\"com.warmcat.sai.taskinfo\"," +
-						  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
-						  "\"logs\": 0," + // no need for logs again
-						  "\"last_log_ts\":" + last_log_timestamp + "," +
-						  "\"task_hash\":" +
-						  JSON.stringify(url_task_uuid) + "}");
-				}
 				break;
 
 			case "com.warmcat.sai.unauthorized":
