@@ -92,8 +92,6 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.platreset"),
 	LSM_SCHEMA	(sai_stay_t,		 NULL, lsm_stay,
 					      "com.warmcat.sai.stay"),
-	LSM_SCHEMA	(sai_cancel_t,		 NULL, lsm_task_cancel,
-					      "com.warmcat.sai.gettaskmetrics"),
 };
 
 enum {
@@ -106,7 +104,6 @@ enum {
 	SAIS_WS_WEBSRV_RX_REBUILD,
 	SAIS_WS_WEBSRV_RX_PLATRESET,
 	SAIS_WS_WEBSRV_RX_STAY,
-	SAIS_WS_WEBSRV_RX_GETTASKMETRICS,
 };
 
 void
@@ -774,14 +771,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		} lws_end_foreach_dll(p);
 
 		lwsac_free(&a.ac);
-		break;
-	}
-	case SAIS_WS_WEBSRV_RX_GETTASKMETRICS:
-	{
-		sai_cancel_t *can = (sai_cancel_t *)a.dest;
-		if (sais_validate_id(can->task_uuid, SAI_TASKID_LEN))
-			goto soft_error;
-		sais_broadcast_task_metrics(m->vhd, can->task_uuid);
 		break;
 	}
 	}

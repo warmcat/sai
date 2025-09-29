@@ -160,8 +160,6 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m)
 	if (sais_metrics_db_prune(vhd, dbm.key))
 		lwsl_warn("%s: pruning metrics failed\n", __func__);
 
-	sais_broadcast_task_metrics(vhd, m->task_uuid);
-
 	return 0;
 }
 
