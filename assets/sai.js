@@ -657,7 +657,9 @@ function sai_stateful_taskname(state, nm, sf)
 
 function sai_sticky_task_summary_render(t, now_ut)
 {
-	return sai_taskinfo_render(t, now_ut);
+	return "<div class=\"taskinfo\" id=\"taskinfo-" + san(t.t.uuid) + "\">" +
+			sai_taskinfo_render(t, now_ut) +
+		"</div>";
 }
 
 function sai_taskinfo_render(t, now_ut)
