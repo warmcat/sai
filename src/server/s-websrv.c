@@ -99,8 +99,9 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.platreset"),
 	LSM_SCHEMA	(sai_stay_t,		 NULL, lsm_stay,
 					      "com.warmcat.sai.stay"),
-	LSM_SCHEMA	(sai_browse_rx_taskinfo_t, NULL, lsm_browser_taskinfo,
-					      "com.warmcat.sai.taskinfo"),
+	LSM_SCHEMA	(sai_web_to_server_taskinfo_t, NULL,
+			 lsm_web_to_server_taskinfo,
+			 "com.warmcat.sai.internal.taskinfo_auth"),
 };
 
 enum {
@@ -118,7 +119,7 @@ enum {
 
 static int
 sais_prepare_taskinfo_json(struct websrvss_srv *m,
-			   const sai_browse_rx_taskinfo_t *ti)
+			   const sai_web_to_server_taskinfo_t *wst)
 {
 	char event_uuid[33], qu[192], esc[128];
 	sai_browse_taskreply_t task_reply;
@@ -133,14 +134,14 @@ sais_prepare_taskinfo_json(struct websrvss_srv *m,
 	int n, ret = 1;
 
 	memset(&task_reply, 0, sizeof(task_reply));
-	sai_task_uuid_to_event_uuid(event_uuid, ti->task_hash);
+	sai_task_uuid_to_event_uuid(event_uuid, wst->ti.task_hash);
 
 	/* open the event-specific database object */
 	if (sais_event_db_ensure_open(m->vhd, event_uuid, 0, &pdb))
 		return 1;
 
 	/* get the related task object */
-	lws_sql_purify(esc, ti->task_hash, sizeof(esc));
+	lws_sql_purify(esc, wst->ti.task_hash, sizeof(esc));
 	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
 	if (lws_struct_sq3_deserialize(pdb, qu, NULL, lsm_schema_sq3_map_task,
 				       &o_task, &ac_task, 0, 1) < 0 || !o_task.head)
@@ -149,7 +150,7 @@ sais_prepare_taskinfo_json(struct websrvss_srv *m,
 	task = lws_container_of(o_task.head, sai_task_t, list);
 
 	/* get the metrics for it into the task's ac */
-	sais_metrics_db_get_by_task(m->vhd, ti->task_hash, &task->m, &ac_task);
+	sais_metrics_db_get_by_task(m->vhd, wst->ti.task_hash, &task->m, &ac_task);
 
 	/* get the related event object into its own ac */
 	lws_sql_purify(esc, event_uuid, sizeof(esc));
@@ -162,7 +163,10 @@ sais_prepare_taskinfo_json(struct websrvss_srv *m,
 
 	task_reply.event = event;
 	task_reply.task = task;
-	task_reply.authorized = 1; /* TODO */
+	task_reply.authorized = wst->authorized;
+	task_reply.auth_secs = wst->auth_secs;
+	lws_strncpy(task_reply.auth_user, wst->auth_user,
+		    sizeof(task_reply.auth_user));
 
 	js = lws_struct_json_serialize_create(lsm_schema_json_map_taskreply,
 			LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply), 0, &task_reply);
@@ -872,13 +876,14 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lwsac_free(&a.ac);
 		break;
 	}
-	case SAIS_WS_WEBSRV_RX_TASKINFO:
+	case SAIS_WS_WEBSRV_RX_TASKINFO_AUTH:
 	{
-		sai_browse_rx_taskinfo_t *ti = (sai_browse_rx_taskinfo_t *)a.dest;
+		sai_web_to_server_taskinfo_t *wst =
+				(sai_web_to_server_taskinfo_t *)a.dest;
 
-		if (sais_validate_id(ti->task_hash, SAI_TASKID_LEN))
+		if (sais_validate_id(wst->ti.task_hash, SAI_TASKID_LEN))
 			goto soft_error;
-		if (sais_prepare_taskinfo_json(m, ti))
+		if (sais_prepare_taskinfo_json(m, wst))
 			lwsl_warn("%s: failed to prepare taskinfo\n", __func__);
 		break;
 	}

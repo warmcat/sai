@@ -496,6 +496,17 @@ typedef struct sai_browse_rx_taskinfo {
 } sai_browse_rx_taskinfo_t;
 
 /*
+ * Internal message from sai-web -> sai-server, carrying browser auth
+ * context along with the original request from the browser.
+ */
+typedef struct sai_web_to_server_taskinfo {
+	sai_browse_rx_taskinfo_t	ti;
+	char				auth_user[33];
+	int				authorized;
+	int				auth_secs;
+} sai_web_to_server_taskinfo_t;
+
+/*
  * For issuing combined task and event data back to browser
  */
 
@@ -508,6 +519,7 @@ typedef struct sai_browse_taskreply {
 } sai_browse_taskreply_t;
 
 extern const lws_struct_map_t lsm_schema_json_map_taskreply[1];
+extern const lws_struct_map_t lsm_schema_web_to_server_taskinfo[1];
 
 /* sai-power -> sai-server, tells it that a platform is being powered up */
 typedef struct sai_power_state {

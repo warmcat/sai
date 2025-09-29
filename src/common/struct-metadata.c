@@ -250,6 +250,27 @@ const lws_struct_map_t lsm_schema_sq3_map_task[] = {
 	LSM_SCHEMA_DLL2	(sai_task_t, list, NULL, lsm_task,	"tasks"),
 };
 
+const lws_struct_map_t lsm_browse_rx_taskinfo[] = {
+	LSM_CARRAY	(sai_browse_rx_taskinfo_t, task_hash,		"task_hash"),
+	LSM_UNSIGNED	(sai_browse_rx_taskinfo_t, logs,		"logs"),
+	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, js_api_version,	"js_api_version"),
+	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, last_log_ts,		"last_log_ts"),
+};
+
+const lws_struct_map_t lsm_web_to_server_taskinfo[] = {
+	LSM_CHILD_JSO	(sai_web_to_server_taskinfo_t, ti, sai_browse_rx_taskinfo_t,
+			 lsm_browse_rx_taskinfo, "ti"),
+	LSM_CARRAY	(sai_web_to_server_taskinfo_t, auth_user, "auth_user"),
+	LSM_SIGNED	(sai_web_to_server_taskinfo_t, authorized, "authorized"),
+	LSM_SIGNED	(sai_web_to_server_taskinfo_t, auth_secs, "auth_secs"),
+};
+
+const lws_struct_map_t lsm_schema_web_to_server_taskinfo[] = {
+	LSM_SCHEMA	(sai_web_to_server_taskinfo_t, NULL,
+			 lsm_web_to_server_taskinfo,
+			 "com.warmcat.sai.internal.taskinfo_auth"),
+};
+
 static const lws_struct_map_t lsm_taskreply[] = {
 	LSM_CHILD_PTR	(sai_browse_taskreply_t, event,	sai_event_t, NULL,
 			 lsm_event, "e"),

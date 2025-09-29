@@ -335,7 +335,54 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			break;
 		}
 
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
+		{
+			sai_web_to_server_taskinfo_t wst;
+			lws_struct_serialize_t *js;
+			uint8_t *new_buf;
+			size_t len = 0;
+			int n;
+
+			memset(&wst, 0, sizeof(wst));
+
+			wst.ti = *ti;
+			wst.authorized = sais_conn_auth(pss);
+			lws_strncpy(wst.auth_user, pss->auth_user,
+				    sizeof(wst.auth_user));
+			if (pss->authorized)
+				wst.auth_secs = (int)(pss->expiry_unix_time -
+						    lws_now_secs());
+
+			js = lws_struct_json_serialize_create(
+					lsm_schema_web_to_server_taskinfo,
+					LWS_ARRAY_SIZE(lsm_schema_web_to_server_taskinfo),
+					0, &wst);
+			if (!js)
+				goto bail;
+
+			n = lws_struct_json_serialize(js, NULL, 0, &len);
+			if (n != LSJS_RESULT_CONTINUE) {
+				lws_struct_json_serialize_destroy(&js);
+				goto bail;
+			}
+
+			new_buf = malloc(len);
+			if (!new_buf) {
+				lws_struct_json_serialize_destroy(&js);
+				goto bail;
+			}
+
+			n = lws_struct_json_serialize(js, new_buf, len, &len);
+			lws_struct_json_serialize_destroy(&js);
+
+			if (n < 0) {
+				free(new_buf);
+				goto bail;
+			}
+
+			saiw_websrv_queue_tx(vhd->h_ss_websrv, new_buf, len,
+					     ss_flags);
+			free(new_buf);
+		}
 
 		break;
 
