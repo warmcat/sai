@@ -507,7 +507,7 @@ typedef struct sai_browse_taskreply {
 	int			auth_secs;
 } sai_browse_taskreply_t;
 
-extern const lws_struct_map_t lsm_schema_json_map_taskreply[];
+extern const lws_struct_map_t lsm_schema_json_map_taskreply[1];
 
 /* sai-power -> sai-server, tells it that a platform is being powered up */
 typedef struct sai_power_state {
