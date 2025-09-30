@@ -420,7 +420,7 @@ _sais_taskchange(struct lws_ss_handle *h, void *_arg)
 {
 	websrvss_srv_t *m = (websrvss_srv_t *)lws_ss_to_user_object(h);
 	struct sais_arg *arg = (struct sais_arg *)_arg;
-	char tc[128];
+	char tc[256];
 	int n;
 
 	n = lws_snprintf(tc, sizeof(tc), "{\"schema\":\"sai-taskchange\", "
@@ -450,7 +450,7 @@ _sais_eventchange(struct lws_ss_handle *h, void *_arg)
 {
 	websrvss_srv_t *m = (websrvss_srv_t *)lws_ss_to_user_object(h);
 	struct sais_arg *arg = (struct sais_arg *)_arg;
-	char tc[128];
+	char tc[256];
 	int n;
 
 	n = lws_snprintf(tc, sizeof(tc), "{\"schema\":\"sai-eventchange\", "
