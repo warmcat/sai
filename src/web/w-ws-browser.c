@@ -47,20 +47,13 @@ static lws_struct_map_t lsm_browser_platreset[] = {
 	LSM_CARRAY	(sai_browse_rx_platreset_t, platform,   "platform"),
 };
 
-static lws_struct_map_t lsm_browser_taskinfo[] = {
-	LSM_CARRAY	(sai_browse_rx_taskinfo_t, task_hash,		"task_hash"),
-	LSM_UNSIGNED	(sai_browse_rx_taskinfo_t, logs,		"logs"),
-	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, js_api_version,	"js_api_version"),
-	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, last_log_ts,		"last_log_ts"),
-};
-
 /*
  * Schema list so lws_struct can pick the right object to create based on the
  * incoming schema name
  */
 
 static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
-	LSM_SCHEMA	(sai_browse_rx_taskinfo_t, NULL, lsm_browser_taskinfo,
+	LSM_SCHEMA	(sai_browse_rx_taskinfo_t, NULL, lsm_browse_rx_taskinfo,
 					      "com.warmcat.sai.taskinfo"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_evinfo,
 					      "com.warmcat.sai.eventinfo"),
@@ -338,8 +331,9 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		{
 			sai_web_to_server_taskinfo_t wst;
 			lws_struct_serialize_t *js;
-			uint8_t *new_buf;
-			size_t len = 0;
+			struct lws_buflist *bl = NULL;
+			uint8_t *flat;
+			size_t flat_len;
 			int n;
 
 			memset(&wst, 0, sizeof(wst));
@@ -359,29 +353,38 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			if (!js)
 				goto bail;
 
-			n = lws_struct_json_serialize(js, NULL, 0, &len);
-			if (n != LSJS_RESULT_CONTINUE) {
-				lws_struct_json_serialize_destroy(&js);
-				goto bail;
-			}
+			do {
+				uint8_t frag[4096];
+				size_t w = sizeof(frag);
 
-			new_buf = malloc(len);
-			if (!new_buf) {
-				lws_struct_json_serialize_destroy(&js);
-				goto bail;
-			}
+				n = lws_struct_json_serialize(js, frag, w, &w);
+				if (lws_buflist_append_segment(&bl, frag, w) < 0) {
+					lws_struct_json_serialize_destroy(&js);
+					lws_buflist_destroy_all_segments(&bl);
+					goto bail;
+				}
+			} while (n == LSJS_RESULT_CONTINUE);
 
-			n = lws_struct_json_serialize(js, new_buf, len, &len);
 			lws_struct_json_serialize_destroy(&js);
 
 			if (n < 0) {
-				free(new_buf);
+				lws_buflist_destroy_all_segments(&bl);
 				goto bail;
 			}
 
-			saiw_websrv_queue_tx(vhd->h_ss_websrv, new_buf, len,
+			flat_len = lws_buflist_total_len(&bl);
+			flat = malloc(flat_len);
+			if (!flat) {
+				lws_buflist_destroy_all_segments(&bl);
+				goto bail;
+			}
+
+			lws_buflist_flatten(&bl, flat, flat_len);
+
+			saiw_websrv_queue_tx(vhd->h_ss_websrv, flat, flat_len,
 					     ss_flags);
-			free(new_buf);
+			free(flat);
+			lws_buflist_destroy_all_segments(&bl);
 		}
 
 		break;
