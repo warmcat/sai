@@ -85,6 +85,7 @@ const lws_struct_map_t lsm_schema_sq3_map_auth[] = {
 
 static lws_struct_map_t lsm_websrv_evinfo[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"event_hash"),
+	LSM_SIGNED	(sai_browse_rx_evinfo_t, state,		"state"),
 };
 
 const lws_struct_map_t lsm_schema_json_map[] = {
