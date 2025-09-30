@@ -518,6 +518,7 @@ typedef struct sai_browse_taskreply {
 	int			auth_secs;
 } sai_browse_taskreply_t;
 
+extern const lws_struct_map_t lsm_taskreply[];
 extern const lws_struct_map_t lsm_schema_json_map_taskreply[1];
 extern const lws_struct_map_t lsm_schema_web_to_server_taskinfo[1];
 

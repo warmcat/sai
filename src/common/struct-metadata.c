@@ -271,7 +271,7 @@ const lws_struct_map_t lsm_schema_web_to_server_taskinfo[] = {
 			 "com.warmcat.sai.internal.taskinfo_auth"),
 };
 
-static const lws_struct_map_t lsm_taskreply[] = {
+const lws_struct_map_t lsm_taskreply[] = {
 	LSM_CHILD_PTR	(sai_browse_taskreply_t, event,	sai_event_t, NULL,
 			 lsm_event, "e"),
 	LSM_CHILD_PTR	(sai_browse_taskreply_t, task,	sai_task_t, NULL,

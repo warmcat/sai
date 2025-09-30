@@ -88,6 +88,8 @@ static lws_struct_map_t lsm_websrv_evinfo[] = {
 };
 
 const lws_struct_map_t lsm_schema_json_map[] = {
+	LSM_SCHEMA	(sai_browse_taskreply_t, NULL, lsm_taskreply,
+			 "com.warmcat.sai.taskinfo"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
 			/* shares struct */   "sai-taskchange"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
