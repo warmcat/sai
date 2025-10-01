@@ -125,6 +125,7 @@ typedef struct {
 	char			builder_name[96];
 	char			cpack[128];
 	char			script[4096];
+	char			branches[256];
 
 	struct lwsac		*ac_task_container;
 

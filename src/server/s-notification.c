@@ -72,6 +72,7 @@ static const char * const saifile_paths[] = {
 	"configurations.*.platforms",
 	"configurations.*.artifacts",
 	"configurations.*.cpack",
+	"configurations.*.branches",
 	"configurations.*",
 };
 
@@ -88,6 +89,7 @@ enum enum_saifile_paths {
 	LEJPNSAIF_CONFIGURATIONS_PLATFORMS,
 	LEJPNSAIF_CONFIGURATIONS_ARTIFACTS,
 	LEJPNSAIF_CONFIGURATIONS_CPACK,
+	LEJPNSAIF_CONFIGURATIONS_BRANCHES,
 	LEJPNSAIF_CONFIGURATIONS_NAME,
 };
 
@@ -269,6 +271,7 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 		sn->t.cmake[0] = '\0';
 		sn->t.cpack[0] = '\0';
 		sn->t.artifacts[0] = '\0';
+		sn->t.branches[0] = '\0';
 		sn->explicit_platforms[0] = '\0';
 		return 0;
 	}
@@ -311,6 +314,23 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 				 * by default
 				 */
 				match = 1;
+
+			/*
+			 * The configuration restricts itself to only
+			 * existing on certain branches?
+			 */
+
+			if (sn->t.branches[0]) {
+				char ref[256];
+
+				lws_snprintf(ref, sizeof(ref), "refs/heads/%s", sn->t.branches);
+
+				if (strcmp(ref, sn->e.ref)) {
+					lwsl_notice("%s: config %s skipped as only applies to %s not %s\n",
+							__func__, sn->t.taskname, ref, sn->e.ref);
+					goto next_plat;
+				}
+			}
 
 			if (sn->explicit_platforms[0]) {
 				char not = 0;
@@ -394,6 +414,9 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 					return -1;
 				}
 			}
+
+next_plat: ;
+
 		} lws_end_foreach_dll(p);
 
 		/*
@@ -717,6 +740,10 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 		lws_strncpy(sn->t.cpack, ctx->buf, sizeof(sn->t.cpack));
 		break;
 
+	case LEJPNSAIF_CONFIGURATIONS_BRANCHES:
+		lws_strncpy(sn->t.branches, ctx->buf, sizeof(sn->t.branches));
+		break;
+
 	case LEJPNSAIF_PLAT_BUILD:
 	case LEJPNSAIF_PLAT_BUILD_STAGE:
 		/*
@@ -1032,7 +1059,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		 * The tasks are all in there but set to state
 		 * NOT_READY_FOR_BUILD, the periodic central scan
 		 * switch them over to WAITING when they have been like that
-		 * for 2s
+		 * for a short grace time (eg, 10s)
 		 */
 
 		lws_sul_schedule(pss->vhd->context, 0, &pss->vhd->sul_central,
