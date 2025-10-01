@@ -123,7 +123,7 @@ typedef struct {
 	char			art_down_nonce[33];
 	char			uuid[65];
 	char			builder_name[96];
-	char			cpack[128];
+	char			cpack[512];
 	char			script[4096];
 	char			branches[256];
 
@@ -281,6 +281,7 @@ typedef struct sai_event {
 	uint64_t			last_updated;
 	sai_event_state_t		state;
 	int				uid;
+	int				sec;
 } sai_event_t;
 
 typedef struct {
@@ -582,7 +583,7 @@ extern const lws_struct_map_t
 	lsm_schema_sq3_map_artifact[1],
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
-	lsm_event[10],
+	lsm_event[11],
 	lsm_task[29],
 	lsm_log[7],
 	lsm_artifact[8],

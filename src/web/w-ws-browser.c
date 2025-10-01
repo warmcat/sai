@@ -208,7 +208,7 @@ static int
 saiw_pss_schedule_eventinfo(struct pss *pss, const char *event_uuid)
 {
 	saiw_scheduled_t *sch = saiw_alloc_sched(pss, WSS_PREPARE_OVERVIEW);
-	char qu[80], esc[66], esc2[96];
+	char qu[180], esc[66], esc2[96];
 	int n;
 
 	if (!sch)
@@ -328,6 +328,8 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 		lws_sql_purify(esc2, pss->specific_project, sizeof(esc2));
 		m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and repo_name='%s'", esc2);
 	}
+	if (!pss->authorized)
+		m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and sec=0");
 
 	if (pss->specific_ref[0] && pss->specificity != SAIM_SPECIFIC_TASK) {
 		lws_sql_purify(esc2, pss->specific_ref, sizeof(esc2));
@@ -875,6 +877,9 @@ again:
 			lws_sql_purify(esc, pss->specific_project, sizeof(esc) - 1);
 			lws_snprintf(filt, sizeof(filt), " and repo_name=\"%s\"", esc);
 		}
+		if (!pss->authorized)
+			lws_snprintf(filt + strlen(filt), sizeof(filt) - strlen(filt), " and sec=0");
+
 		pss->wants_event_updates = 1;
 		if (!sch->ov_db_done && lws_struct_sq3_deserialize(vhd->pdb,
 				    filt[0] ? filt : NULL, "created ",
@@ -915,6 +920,9 @@ again:
 		 * additional controls clientside.  The events the controls
 		 * cause if used are separately checked for coming from an
 		 * authorized pss when they are received.
+		 *
+		 * If you're not authorized, you're only going to see events
+		 * that have sec=0.  Otherwise you can see all events.
 		 */
 
 		if (pss->specificity)
@@ -1261,6 +1269,9 @@ b_finish:
 
 				lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s')",
 					     sch->one_task->uuid);
+
+			//	if (!pss->authorized)
+			//		lws_snprintf(filt + strlen(filt), sizeof(filt) - strlen(filt), " and sec=0");
 
 				// lwsl_debug("%s: ---------------- %s\n", __func__, filt);
 

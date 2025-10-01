@@ -41,6 +41,7 @@ static const char * const paths[] = {
 	"nonce",
 	"saifile_len",
 	"saifile",
+	"sec",
 };
 
 enum enum_paths {
@@ -53,6 +54,7 @@ enum enum_paths {
 	LEJPN_NONCE,
 	LEJPN_SAIFILE_LEN,
 	LEJPN_SAIFILE,
+	LEJPN_SEC,
 };
 
 /*
@@ -687,10 +689,10 @@ next_plat: ;
 	if (!(reason & LEJP_FLAG_CB_IS_VALUE) || !ctx->path_match)
 		return 0;
 
-//	if (reason != LEJPCB_VAL_STR_END)
-//		return 0;
-
-	/* only the end part of the string, where we know the length */
+	/*
+	 * Some of these will be long strings, accept all the string parts
+	 * and accumilate them
+	 */
 
 	switch (ctx->path_match - 1) {
 	case LEJPNSAIF_SCHEMA:
@@ -737,7 +739,10 @@ next_plat: ;
 		break;
 
 	case LEJPNSAIF_CONFIGURATIONS_CPACK:
-		lws_strncpy(sn->t.cpack, ctx->buf, sizeof(sn->t.cpack));
+		n = strlen(sn->t.cpack);
+		if (n < sizeof(sn->t.cpack) - 2)
+			lws_strnncpy(sn->t.cpack + n, ctx->buf, ctx->npos,
+				     sizeof(sn->t.cpack) - n);
 		break;
 
 	case LEJPNSAIF_CONFIGURATIONS_BRANCHES:
@@ -828,6 +833,10 @@ sai_notification_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 	case LEJPN_REF:
 		lws_strncpy(sn->e.ref, ctx->buf, sizeof(sn->e.ref));
+		break;
+
+	case LEJPN_SEC:
+		sn->e.sec = 1;
 		break;
 
 	case LEJPN_HASH:

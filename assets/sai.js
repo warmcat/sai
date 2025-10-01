@@ -850,8 +850,10 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		s +=
 		"<td><table class=\"nomar\">" +
 		"<tr><td class=\"nomar\" colspan=2>" +
-		"<span class=\"e1\">" + san(e.repo_name) +
-		"</span></td></tr><tr><td class=\"nomar\" colspan=2><span class=\"e2\">";
+		"<span class=\"e1\">" + san(e.repo_name);
+		if (e.sec)
+			s += " <img class=\"bico\" src=\"/sai/locked.svg\">";
+		s += "</span></td></tr><tr><td class=\"nomar\" colspan=2><span class=\"e2\">";
 	
 		if (e.ref.substr(0, 11) === "refs/heads/") {
 			s += "<img class=\"branch\">" +

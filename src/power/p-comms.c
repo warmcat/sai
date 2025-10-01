@@ -163,7 +163,9 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
 		sp->needed = 0;
 	} lws_end_foreach_dll(px);
-	
+
+	fprintf(stderr, "|||||||||||||||||||||||||||||||| Server says needed: '%.*s'\n", (int)len, buf);
+
 	while (p < end) {
 		n = 0;
 		while (p < end && *p != ',')

@@ -75,6 +75,8 @@ if (requirements)
 		      ../../assets/delete.png
 		      ../../assets/passed.svg
 		      ../../assets/failed.svg
+		      ../../assets/locked.svg
+		      ../../assets/coverity.svg
 		      ../../assets/sai.css
 		      ../../assets/sai.js
 		      ../../assets/sai.svg
@@ -98,6 +100,7 @@ if (requirements)
 			../../assets/arch-riscv64.svg
 			../../assets/arch-risc-v.svg
 			../../assets/arch-x86_64-amd.svg
+			../../assets/x86_64.svg
 			../../assets/arch-x86_64-intel-i3.svg
 			../../assets/arch-x86_64-intel.svg
 			../../assets/arch-xl6-esp32.svg

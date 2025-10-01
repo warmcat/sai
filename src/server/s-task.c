@@ -567,6 +567,8 @@ sais_find_or_add_pending_plat(struct vhd *vhd, const char *name)
 
 	} lws_end_foreach_dll(p);
 
+	// lwsl_notice("%s: ->->->->-> adding %s\n", __func__, name);
+
 	/* platform name is new, make an entry in the ac */
 
 	sp = lwsac_use_zero(&vhd->ac_plats, sizeof(sais_plat_t) + strlen(name) + 1, 512);

@@ -143,6 +143,7 @@ const lws_struct_map_t lsm_event[] = {
 	LSM_UNSIGNED	(sai_event_t, created,		"created"),
 	LSM_UNSIGNED	(sai_event_t, state,		"state"),
 	LSM_UNSIGNED	(sai_event_t, last_updated,	"last_updated"),
+	LSM_UNSIGNED	(sai_event_t, sec,		"sec"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_event[] = {
