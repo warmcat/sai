@@ -955,15 +955,16 @@ body.overlay-active {
 }
 
 .spreadsheet {
-  margin-top: 5px;
+  margin-top: 2px;
+  font-size: 7pt;
 }
 .spreadsheet table {
   width: 100%;
   border-collapse: collapse;
 }
 .spreadsheet th, .spreadsheet td {
-  border: 1px solid #ddd;
-  padding: 4px;
+  border: 0px solid #ddd;
+  padding: 2px;
   font-size: 7pt;
   text-align: left;
 }

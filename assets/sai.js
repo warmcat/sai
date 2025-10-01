@@ -518,16 +518,25 @@ function renderSpreadsheet(tasks) {
 	var now_ut = Math.round((new Date().getTime() / 1000));
 	let html = '<table class="spreadsheet">' +
 			   '<thead><tr>' +
-			   '<th>Task</th>' +
 			   '<th>Build Step</th>' +
-			   '<th>Started</th>' +
+			   '<th>Since</th>' +
+			   '<th>Task</th>' +
 			   '</tr></thead><tbody>';
 
 	for (const task of tasks) {
+		var s1 = "", qc;
+
+		for (qc = 0; qc < task.build_step; qc++)
+			s1 += "&#9635";
+
+		while (qc < task.total_steps) {
+			s1 += "&#9633";
+			qc++;
+		}
 		html += '<tr>' +
-			`<td><a href="?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>` +
-			`<td>${hsanitize(task.build_step)} / ${hsanitize(task.total_steps)}</td>` +
+			`<td>` + s1 + `</td>` +
 			`<td>${agify(now_ut, task.started)} ago</td>` +
+			`<td><a href="?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>` +
 			'</tr>';
 	}
 

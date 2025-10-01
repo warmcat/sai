@@ -223,10 +223,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	lws_dir(ns->inp, &du, lws_dir_du_cb);
 
 	peak_mem_bytes = res->peak_mem_rss;
-#if defined(__linux__)
-	/* on linux, getrusage reports in KiB, on OSX in bytes */
-	peak_mem_bytes *= 1024;
-#elif defined(__APPLE__)
+#if defined(__APPLE__)
 	/*
 	 * lws seems to be multiplying OSX ru_maxrss by 1024 when it's already
 	 * in bytes. Let's divide it back to bytes.
