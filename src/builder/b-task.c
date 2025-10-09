@@ -313,6 +313,11 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 	lws_snprintf(rej->host_platform, sizeof(rej->host_platform), "%s",
 		     sp->name);
 
+	rej->avail_slots = (int)(sp->job_limit ? sp->job_limit : 6u) -
+					(int)sp->nspawn_owner.count;
+	rej->avail_mem_kib = saib_get_free_ram_kib();
+	rej->avail_sto_kib = saib_get_free_disk_kib(builder.home);
+
 	lws_dll2_add_tail(&rej->list, &spm->rejection_list);
 
 	return lws_ss_request_tx(spm->ss) ? -1 : 0;

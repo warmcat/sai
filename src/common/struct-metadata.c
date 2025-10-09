@@ -111,6 +111,9 @@ const lws_struct_map_t lsm_plat_for_json[] = {
     LSM_UNSIGNED(sai_plat_t, windows,    "windows"),
     LSM_UNSIGNED(sai_plat_t, power_managed, "power_managed"),
     LSM_UNSIGNED(sai_plat_t, stay_on, "stay_on"),
+    LSM_SIGNED(sai_plat_t, s_avail_slots, "s_avail_slots"),
+    LSM_SIGNED(sai_plat_t, s_inflight_count, "s_inflight_count"),
+    LSM_CARRAY(sai_plat_t, s_last_rej_task_uuid, "s_last_rej_task_uuid"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {
@@ -208,6 +211,9 @@ const lws_struct_map_t lsm_schema_sq3_map_task[] = {
 const lws_struct_map_t lsm_task_rej[] = {
 	LSM_CARRAY	(sai_rejection_t, host_platform, "host_platform"),
 	LSM_CARRAY	(sai_rejection_t, task_uuid,	 "task_uuid"),
+	LSM_JO_SIGNED	(sai_rejection_t, avail_slots,	 "avail_slots"),
+	LSM_JO_UNSIGNED	(sai_rejection_t, avail_mem_kib, "avail_mem_kib"),
+	LSM_JO_UNSIGNED	(sai_rejection_t, avail_sto_kib, "avail_sto_kib"),
 };
 
 const lws_struct_map_t lsm_schema_json_task_rej[] = {
@@ -253,6 +259,9 @@ const lws_struct_map_t lsm_log[] = {
 	LSM_UNSIGNED	(sai_log_t, finished,		"finished"),
 	LSM_CARRAY	(sai_log_t, task_uuid,		"task_uuid"),
 	LSM_STRING_PTR	(sai_log_t, log,		"log"),
+	LSM_JO_SIGNED	(sai_log_t, avail_slots,	"avail_slots"),
+	LSM_JO_UNSIGNED	(sai_log_t, avail_mem_kib,	"avail_mem_kib"),
+	LSM_JO_UNSIGNED	(sai_log_t, avail_sto_kib,	"avail_sto_kib"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_log[] = {

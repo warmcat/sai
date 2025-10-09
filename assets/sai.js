@@ -1055,7 +1055,10 @@ function createBuilderDiv(plat) {
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-ram w-0"></div></div>` +
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-disk w-0"></div></div>` +
 		     `</div>`;
-	innerHTML += `<br>${plat.peer_ip}</td></tr></tbody></table>`;
+	innerHTML += `<br>${plat.peer_ip}<div class="server-state">` +
+		     `Slots: ${plat.s_avail_slots}, In-flight: ${plat.s_inflight_count}<br>` +
+		     `Last Reject: ${plat.s_last_rej_task_uuid ? plat.s_last_rej_task_uuid.substring(0, 8) : 'none'}` +
+		     `</div></td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;
 

@@ -348,3 +348,7 @@ sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down
 
 void
 sais_mark_all_builders_offline(struct vhd *vhd);
+
+int
+sql3_get_string_cb(void *user, int cols, char **values, char **name);
+

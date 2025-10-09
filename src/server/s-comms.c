@@ -755,7 +755,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	case LWS_CALLBACK_CLOSED:
 		lwsac_free(&pss->query_ac);
 
-		lwsl_wsi_user(wsi, "sai-server: CLOSED sai-web conn");
+		lwsl_wsi_user(wsi, "############################### sai-server: CLOSED sai-web conn ###############");
 		/* remove pss from vhd->builders (active connection list) */
 		lws_dll2_remove(&pss->same);
 
