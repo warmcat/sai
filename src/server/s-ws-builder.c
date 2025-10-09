@@ -670,7 +670,7 @@ bail:
 						lwsl_notice("%s: builder %s reports step done, slots %d, mem %d, sto %d\n",
 							    __func__, cb->name,
 							    log->avail_slots, log->avail_mem_kib, log->avail_sto_kib);
-						cb->avail_slots = log->avail_slots;
+						cb->avail_slots++;
 						cb->avail_mem_kib = log->avail_mem_kib;
 						cb->avail_sto_kib = log->avail_sto_kib;
 						cb->last_rej_task_uuid[0] = '\0';
