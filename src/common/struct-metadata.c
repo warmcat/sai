@@ -219,6 +219,9 @@ const lws_struct_map_t lsm_schema_sq3_map_task[] = {
 const lws_struct_map_t lsm_task_rej[] = {
 	LSM_CARRAY	(sai_rejection_t, host_platform, "host_platform"),
 	LSM_CARRAY	(sai_rejection_t, task_uuid,	 "task_uuid"),
+	LSM_SIGNED	(sai_rejection_t, avail_slots,	 "avail_slots"),
+	LSM_UNSIGNED	(sai_rejection_t, avail_mem_kib, "avail_mem_kib"),
+	LSM_UNSIGNED	(sai_rejection_t, avail_sto_kib, "avail_sto_kib"),
 };
 
 const lws_struct_map_t lsm_schema_json_task_rej[] = {
@@ -264,6 +267,9 @@ const lws_struct_map_t lsm_log[] = {
 	LSM_UNSIGNED	(sai_log_t, finished,		"finished"),
 	LSM_CARRAY	(sai_log_t, task_uuid,		"task_uuid"),
 	LSM_STRING_PTR	(sai_log_t, log,		"log"),
+	LSM_SIGNED	(sai_log_t, avail_slots,	 "avail_slots"),
+	LSM_UNSIGNED	(sai_log_t, avail_mem_kib, "avail_mem_kib"),
+	LSM_UNSIGNED	(sai_log_t, avail_sto_kib, "avail_sto_kib"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_log[] = {

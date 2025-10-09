@@ -239,6 +239,9 @@ typedef struct sai_rejection {
 	struct lws_dll2 list;
 	char		host_platform[65];
 	char		task_uuid[65];
+	int		avail_slots;
+	unsigned int	avail_mem_kib;
+	unsigned int	avail_sto_kib;
 } sai_rejection_t;
 
 /*
@@ -293,6 +296,11 @@ typedef struct {
 	int				finished;
 	int				channel;
 	int				uid;
+
+	/* builder can report this along with step completion */
+	int				avail_slots;
+	unsigned int			avail_mem_kib;
+	unsigned int			avail_sto_kib;
 } sai_log_t;
 
 typedef struct {
@@ -422,6 +430,12 @@ typedef struct sai_plat_server_ref {
 	char			was_active;
 } sai_plat_server_ref_t;
 
+/* common struct for lists of task uuids on a builder */
+typedef struct sai_uuid_list {
+	lws_dll2_t list;
+	char uuid[65];
+} sai_uuid_list_t;
+
 /*
  * One of these instantiated per platform instance
  *
@@ -459,6 +473,13 @@ typedef struct sai_plat {
 	int			powering_up; /* 1 = sai-power is booting it */
 	int			powering_down;
 	unsigned int		job_limit;
+
+	/* server side only: builder resource tracking */
+	lws_dll2_owner_t	inflight_owner; /* sai_uuid_list_t */
+	char			last_rej_task_uuid[65];
+	int			avail_slots;
+	unsigned int		avail_mem_kib;
+	unsigned int		avail_sto_kib;
 
 	char			windows;
 	char			power_managed;
@@ -593,10 +614,10 @@ extern const lws_struct_map_t
 	lsm_schema_map_plat_simple[1],
 	lsm_event[10],
 	lsm_task[30],
-	lsm_log[7],
+	lsm_log[10],
 	lsm_artifact[8],
 	lsm_plat_list[1],
-	lsm_task_rej[2],
+	lsm_task_rej[5],
 	lsm_task_cancel[1],
 	lsm_schema_json_map_can[1],
 	lsm_schema_json_map_task[1],

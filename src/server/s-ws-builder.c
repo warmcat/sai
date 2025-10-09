@@ -571,6 +571,9 @@ handle:
 					lws_strncpy(live_cb->lws_hash, build->lws_hash,
 						    sizeof(live_cb->lws_hash));
 					live_cb->windows = build->windows;
+				live_cb->avail_slots = 1; /* default */
+				live_cb->avail_mem_kib = (unsigned int)-1;
+				live_cb->avail_sto_kib = (unsigned int)-1;
 					live_cb->wsi = pss->wsi;
 					live_cb->online = 1;
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
@@ -642,6 +645,48 @@ bail:
 		}
 
 		if (log->finished) {
+			sai_plat_t *cb;
+			char builder_name[128], esc_uuid[129], q[128],
+			     event_uuid[33];
+			sqlite3 *pdb = NULL;
+
+			/*
+			 * This step is finished, find the builder and update our
+			 * tracking of its state
+			 */
+			sai_task_uuid_to_event_uuid(event_uuid, log->task_uuid);
+			if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+				builder_name[0] = '\0';
+				lws_sql_purify(esc_uuid, log->task_uuid, sizeof(esc_uuid));
+				lws_snprintf(q, sizeof(q),
+					     "select builder_name from tasks where uuid='%s'",
+					     esc_uuid);
+				if (sqlite3_exec(pdb, q, sql3_get_string_cb, builder_name,
+						 NULL) == SQLITE_OK && builder_name[0]) {
+					cb = sais_builder_from_uuid(vhd, builder_name, __FILE__, __LINE__);
+					if (cb) {
+						sai_uuid_list_t *sul;
+
+						lwsl_notice("%s: builder %s reports step done, slots %d, mem %d, sto %d\n",
+							    __func__, cb->name,
+							    log->avail_slots, log->avail_mem_kib, log->avail_sto_kib);
+						cb->avail_slots = log->avail_slots;
+						cb->avail_mem_kib = log->avail_mem_kib;
+						cb->avail_sto_kib = log->avail_sto_kib;
+						cb->last_rej_task_uuid[0] = '\0';
+
+						lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, cb->inflight_owner.head) {
+							sul = lws_container_of(d, sai_uuid_list_t, list);
+							if (!strcmp(sul->uuid, log->task_uuid)) {
+								lws_dll2_remove(&sul->list);
+								free(sul);
+								break;
+							}
+						} lws_end_foreach_dll_safe(d, d1);
+					}
+				}
+				sais_event_db_close(vhd, &pdb);
+			}
 			/*
 			 * We have reached the end of the logs for this task
 			 */
@@ -690,12 +735,32 @@ bail:
 			break;
 		}
 
-		lwsl_notice("%s: builder %s reports rejection (rej %s)\n",
-			    __func__, cb->name,
-			    rej->task_uuid[0] ? rej->task_uuid : "none");
+		cb->avail_slots = rej->avail_slots;
+		cb->avail_mem_kib = rej->avail_mem_kib;
+		cb->avail_sto_kib = rej->avail_sto_kib;
 
-		if (rej->task_uuid[0])
+		lwsl_notice("%s: builder %s reports rejection (rej %s), slots %d, mem %d, sto %d\n",
+			    __func__, cb->name,
+			    rej->task_uuid[0] ? rej->task_uuid : "none",
+			    cb->avail_slots, cb->avail_mem_kib, cb->avail_sto_kib);
+
+		if (rej->task_uuid[0]) {
+			sai_uuid_list_t *sul;
+
+			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+						   cb->inflight_owner.head) {
+				sul = lws_container_of(d, sai_uuid_list_t, list);
+				if (!strcmp(sul->uuid, rej->task_uuid)) {
+					lws_dll2_remove(&sul->list);
+					free(sul);
+					break;
+				}
+			} lws_end_foreach_dll_safe(d, d1);
+
+			lws_strncpy(cb->last_rej_task_uuid, rej->task_uuid,
+				    sizeof(cb->last_rej_task_uuid));
 			sais_task_reset(vhd, rej->task_uuid, 1);
+		}
 
 		lwsac_free(&pss->a.ac);
 		break;
