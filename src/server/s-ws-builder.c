@@ -551,6 +551,9 @@ handle:
 					    sizeof(live_cb->lws_hash));
 				live_cb->windows = build->windows;
 				live_cb->online = 1;
+				live_cb->avail_slots = 1; /* default */
+				live_cb->avail_mem_kib = (unsigned int)-1;
+				live_cb->avail_sto_kib = (unsigned int)-1;
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
 				size_t nlen = strlen(build->name) + 1;
@@ -571,9 +574,9 @@ handle:
 					lws_strncpy(live_cb->lws_hash, build->lws_hash,
 						    sizeof(live_cb->lws_hash));
 					live_cb->windows = build->windows;
-				live_cb->avail_slots = 1; /* default */
-				live_cb->avail_mem_kib = (unsigned int)-1;
-				live_cb->avail_sto_kib = (unsigned int)-1;
+					live_cb->avail_slots = 1; /* default */
+					live_cb->avail_mem_kib = (unsigned int)-1;
+					live_cb->avail_sto_kib = (unsigned int)-1;
 					live_cb->wsi = pss->wsi;
 					live_cb->online = 1;
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
@@ -670,7 +673,7 @@ bail:
 						lwsl_notice("%s: builder %s reports step done, slots %d, mem %d, sto %d\n",
 							    __func__, cb->name,
 							    log->avail_slots, log->avail_mem_kib, log->avail_sto_kib);
-						cb->avail_slots++;
+						cb->avail_slots = log->avail_slots;
 						cb->avail_mem_kib = log->avail_mem_kib;
 						cb->avail_sto_kib = log->avail_sto_kib;
 						cb->last_rej_task_uuid[0] = '\0';

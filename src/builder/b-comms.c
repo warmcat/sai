@@ -375,9 +375,17 @@ send_logs:
 				 ns->task->uuid, (unsigned long long)lws_now_usecs(),
 				 chunk->stdfd, (int)chunk->len);
 
-			if (ns->finished_when_logs_drained && !ns->chunk_cache.count)
+			if (ns->finished_when_logs_drained && !ns->chunk_cache.count) {
 				n += lws_snprintf((char *)p + n, lws_ptr_diff_size_t(end, p) - (unsigned int)n,
 					"\"finished\":%d,", ns->retcode);
+				sp = ns->sp;
+				n += lws_snprintf((char *)p + n, lws_ptr_diff_size_t(end, p) - (unsigned int)n,
+					"\"avail_slots\":%d,\"avail_mem_kib\":%u,\"avail_sto_kib\":%u,",
+					(int)(sp->job_limit ? sp->job_limit : 6u) -
+						(int)sp->nspawn_owner.count,
+					saib_get_free_ram_kib(),
+					saib_get_free_disk_kib(builder.home));
+			}
 
 			n += lws_snprintf((char *)p + n, lws_ptr_diff_size_t(end, p) - (unsigned int)n,
 					  "\"log\":\"");

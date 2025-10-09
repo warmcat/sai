@@ -1079,6 +1079,8 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		memset(sul, 0, sizeof(*sul));
 		lws_strncpy(sul->uuid, task_template->uuid, sizeof(sul->uuid));
 		lws_dll2_add_tail(&sul->list, &cb->inflight_owner);
+
+		/* provisionally decrement until we hear from builder */
 		if (cb->avail_slots > 0)
 			cb->avail_slots--;
 
