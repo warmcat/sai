@@ -121,6 +121,9 @@ const lws_struct_map_t lsm_plat_for_json[] = {
     LSM_UNSIGNED(sai_plat_t, windows,    "windows"),
     LSM_UNSIGNED(sai_plat_t, power_managed, "power_managed"),
     LSM_UNSIGNED(sai_plat_t, stay_on, "stay_on"),
+    LSM_SIGNED(sai_plat_t, s_avail_slots, "s_avail_slots"),
+    LSM_SIGNED(sai_plat_t, s_inflight_count, "s_inflight_count"),
+    LSM_CARRAY(sai_plat_t, s_last_rej_task_uuid, "s_last_rej_task_uuid"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {

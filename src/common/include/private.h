@@ -481,6 +481,11 @@ typedef struct sai_plat {
 	unsigned int		avail_mem_kib;
 	unsigned int		avail_sto_kib;
 
+	/* server side only: for UI visibility */
+	int			s_avail_slots;
+	int			s_inflight_count;
+	char			s_last_rej_task_uuid[65];
+
 	char			windows;
 	char			power_managed;
 	char			stay_on;

@@ -382,7 +382,7 @@ send_logs:
 				n += lws_snprintf((char *)p + n, lws_ptr_diff_size_t(end, p) - (unsigned int)n,
 					"\"avail_slots\":%d,\"avail_mem_kib\":%u,\"avail_sto_kib\":%u,",
 					(int)(sp->job_limit ? sp->job_limit : 6u) -
-						(int)sp->nspawn_owner.count,
+						((int)sp->nspawn_owner.count - 1),
 					saib_get_free_ram_kib(),
 					saib_get_free_disk_kib(builder.home));
 			}

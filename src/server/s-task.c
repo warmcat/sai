@@ -1084,6 +1084,12 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		if (cb->avail_slots > 0)
 			cb->avail_slots--;
 
+		cb->s_avail_slots = cb->avail_slots;
+		cb->s_inflight_count = (int)cb->inflight_owner.count;
+		lws_strncpy(cb->s_last_rej_task_uuid, cb->last_rej_task_uuid,
+			    sizeof(cb->s_last_rej_task_uuid));
+		sais_list_builders(vhd);
+
 		/* advance the task state first time we get logs */
 		pss->mark_started = 1;
 

@@ -554,6 +554,9 @@ handle:
 				live_cb->avail_slots = 1; /* default */
 				live_cb->avail_mem_kib = (unsigned int)-1;
 				live_cb->avail_sto_kib = (unsigned int)-1;
+				live_cb->s_avail_slots = live_cb->avail_slots;
+				live_cb->s_inflight_count = (int)live_cb->inflight_owner.count;
+				live_cb->s_last_rej_task_uuid[0] = '\0';
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
 				size_t nlen = strlen(build->name) + 1;
@@ -577,6 +580,7 @@ handle:
 					live_cb->avail_slots = 1; /* default */
 					live_cb->avail_mem_kib = (unsigned int)-1;
 					live_cb->avail_sto_kib = (unsigned int)-1;
+					live_cb->s_avail_slots = live_cb->avail_slots;
 					live_cb->wsi = pss->wsi;
 					live_cb->online = 1;
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
@@ -686,6 +690,12 @@ bail:
 								break;
 							}
 						} lws_end_foreach_dll_safe(d, d1);
+
+						cb->s_avail_slots = cb->avail_slots;
+						cb->s_inflight_count = (int)cb->inflight_owner.count;
+						lws_strncpy(cb->s_last_rej_task_uuid, cb->last_rej_task_uuid,
+							    sizeof(cb->s_last_rej_task_uuid));
+						sais_list_builders(vhd);
 					}
 				}
 				sais_event_db_close(vhd, &pdb);
@@ -764,6 +774,12 @@ bail:
 				    sizeof(cb->last_rej_task_uuid));
 			sais_task_reset(vhd, rej->task_uuid, 1);
 		}
+
+		cb->s_avail_slots = cb->avail_slots;
+		cb->s_inflight_count = (int)cb->inflight_owner.count;
+		lws_strncpy(cb->s_last_rej_task_uuid, cb->last_rej_task_uuid,
+			    sizeof(cb->s_last_rej_task_uuid));
+		sais_list_builders(vhd);
 
 		lwsac_free(&pss->a.ac);
 		break;
