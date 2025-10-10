@@ -293,9 +293,11 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 			struct sai_plat_server *spm = lws_container_of(d,
 						struct sai_plat_server, list);
 
-			spm->phase = PHASE_START_ATTACH;
-			if (lws_ss_request_tx(spm->ss))
-				lwsl_ss_warn(spm->ss, "Unable to request tx");
+			if (saib_srv_queue_json_fragments_helper(spm->ss,
+					lsm_schema_map_plat,
+					LWS_ARRAY_SIZE(lsm_schema_map_plat),
+					&builder.sai_plat_owner))
+				return;
 
 		} lws_end_foreach_dll(d);
 

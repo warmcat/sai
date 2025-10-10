@@ -74,26 +74,17 @@ resproxy_find_by_cookie(struct sai_plat_server *spm, const char *c, size_t clen)
 static int
 saib_queue_yield_message(struct sai_plat_server *spm, const char *c, size_t len)
 {
-	sai_resource_msg_t *m =
-			malloc(sizeof(sai_resource_msg_t) + LWS_PRE + 196);
+	char msg[256];
+	size_t jl;
 
-	if (!m)
-		return -1;
-
-	memset(m, 0, sizeof(*m));
-	m->msg = ((char *)&m[1]) + LWS_PRE;
 	/*
 	 * We just send the cookie to relinquish the leased resources
 	 */
-	m->len = (size_t)lws_snprintf((char *)m->msg, 196,
+	jl = (size_t)lws_snprintf(msg, sizeof(msg),
 			      "{\"schema\":\"com-warmcat-sai-resource\","
 			      "\"cookie\":\"%.*s\"}", (int)len, c);
 
-	lwsl_notice("%s: %s\n", __func__, m->msg);
-
-	lws_dll2_add_tail(&m->list, &spm->resource_req_list);
-
-	return lws_ss_request_tx(spm->ss) ? -1 : 0;
+	return saib_srv_queue_tx(spm->ss, msg, jl, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
 }
 
 int
@@ -157,7 +148,6 @@ callback_resproxy(struct lws *wsi, enum lws_callback_reasons reason,
 {
 	struct sai_plat_server *spm = lws_vhost_user(lws_get_vhost(wsi));
 	struct rppss *pss = (struct rppss *)user;
-	sai_resource_msg_t *m;
 	const char *p;
 	size_t al;
 
@@ -213,19 +203,9 @@ callback_resproxy(struct lws *wsi, enum lws_callback_reasons reason,
 			return -1;
 
 		lws_strnncpy(pss->cookie, p, al, sizeof(pss->cookie));
-
-		m = malloc(sizeof(*m) + LWS_PRE + len);
-		memset(m, 0, sizeof(*m));
-		m->msg = ((const char *)&m[1] + LWS_PRE);
-		memcpy((char *)m->msg, in, len);
-		m->len = len;
-
-		lws_dll2_add_tail(&m->list, &spm->resource_req_list);
-
 		lws_dll2_add_tail(&pss->list, &spm->resource_pss_list);
 
-		/* try to schedule a write */
-		return lws_ss_request_tx(spm->ss) ? -1 : 0;
+		return saib_srv_queue_tx(spm->ss, in, len, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
 
 	case LWS_CALLBACK_RAW_WRITEABLE:
 		if (pss->response) {

@@ -46,31 +46,50 @@ static char csep = '\\';
 
 extern struct lws_vhost *builder_vhost;
 
-struct ws_capture_chunk *
+int
 saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 {
-	struct ws_capture_chunk *chunk;
+	char lj[1600];
+	int n = 0;
 
 	if (!ns || !ns->spm)
-		return NULL;
+		return 1;
 
-	chunk = malloc(sizeof(*chunk) + len);
+	if (!ns->task)
+		return 0;
 
-	if (!chunk)
-		return NULL;
+	n = lws_snprintf(lj, sizeof(lj),
+		"{\"schema\":\"com-warmcat-sai-logs\","
+		 "\"task_uuid\":\"%s\", \"timestamp\": %llu,"
+		 "\"channel\": %d, \"len\": %d, ",
+		 ns->task->uuid, (unsigned long long)lws_now_usecs(),
+		 channel, (int)len);
 
-	memset(chunk, 0, sizeof(*chunk));
-	chunk->us = lws_now_usecs();
-	chunk->len = len;
-	chunk->stdfd = (uint8_t)channel;
-	if (len)
-		memcpy(&chunk[1], buf, len);
+	if (ns->retcode_set) {
+		n += lws_snprintf(lj + n, sizeof(lj) - (unsigned int)n,
+			"\"finished\":%d,", ns->retcode);
+		n += lws_snprintf(lj + n, sizeof(lj) - (unsigned int)n,
+			"\"avail_slots\":%d,\"avail_mem_kib\":%u,\"avail_sto_kib\":%u,",
+			(int)(ns->sp->job_limit ? ns->sp->job_limit : 6u) -
+				((int)ns->sp->nspawn_owner.count - 1),
+			saib_get_free_ram_kib(),
+			saib_get_free_disk_kib(builder.home));
+	}
 
-	ns->chunk_cache_size += sizeof(*chunk) + len;
+	n += lws_snprintf(lj + n, sizeof(lj) - (unsigned int)n,
+			  "\"log\":\"");
 
-	lws_dll2_add_head(&chunk->list, &ns->chunk_cache);
+	// puts((const char *)&chunk[1]);
+	// puts((const char *)start);
 
-	return chunk;
+	n += lws_b64_encode_string(buf, (int)len, (char *)&lj[n],
+				   (int)sizeof(lj) - n - 5);
+
+	lj[n++] = '\"';
+	lj[n++] = '}';
+	lj[n] = '\0';
+
+	return saib_srv_queue_tx(ns->spm->ss, lj, (size_t)n, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
 }
 
 static int
@@ -137,7 +156,7 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 			return -1;
 		}
 
-		if (!saib_log_chunk_create(op->ns, buf, len, lws_spawn_get_stdfd(wsi)))
+		if (saib_log_chunk_create(op->ns, buf, len, lws_spawn_get_stdfd(wsi)))
 			return -1;
 
 		return lws_ss_request_tx(op->ns->spm->ss) ? -1 : 0;
@@ -177,6 +196,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		lwsl_notice("%s: Process TIMED OUT by Sai\n", __func__);
 		exit_code = -1;
 		ns->retcode = SAISPRF_TIMEDOUT;
+		ns->retcode_set = 1;
 		goto fail;
 	}
 
@@ -184,6 +204,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		lwsl_notice("%s: Process killed by Sai due to spew\n", __func__);
 		exit_code = -1;
 		ns->retcode = SAISPRF_TERMINATED;
+		ns->retcode_set = 1;
 		goto fail;
 	}
 
@@ -192,6 +213,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		lwsl_notice("%s: Process Exited with exit code %d\n",
 			    __func__, si->si_status);
 		exit_code = si->si_status;
+		ns->retcode_set = 1;
 		ns->retcode = SAISPRF_EXIT | si->si_status;
 		if (ns->user_cancel)
 			ns->retcode = SAISPRF_TERMINATED;
@@ -201,6 +223,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		lwsl_notice("%s: Process Terminated by signal %d / %d\n",
 			    __func__, si->si_status, si->si_signo);
 		ns->retcode = SAISPRF_SIGNALLED | si->si_signo;
+		ns->retcode_set = 1;
 		break;
 	default:
 		lwsl_notice("%s: SI code %d\n", __func__, si->si_code);
@@ -209,6 +232,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 #else
 	exit_code = si->retcode & 0xff;
 	ns->retcode = SAISPRF_EXIT | exit_code;
+	ns->retcode_set = 1;
 #endif
 
 	if (exit_code)
@@ -267,53 +291,49 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	}
 
 	if (op->spawn) {
-		sai_build_metric_t *m;
+		sai_build_metric_t m;
+		char hash_input[8192];
+		unsigned char hash[32];
+		struct lws_genhash_ctx ctx;
+		int n;
 
 		if (!ns->spm) {
 			lwsl_err("%s: NULL ns->spm", __func__);
 			goto skip;
 		}
 
-		m = malloc(sizeof(*m));
+		memset(&m, 0, sizeof(m));
 
-		if (m) {
-			char hash_input[8192];
-			unsigned char hash[32];
-			struct lws_genhash_ctx ctx;
-			int n;
+		lws_snprintf(hash_input, sizeof(hash_input), "%s%s%s%s",
+			     ns->sp->name, op->spawn,
+			     ns->project_name, ns->ref);
 
-			memset(m, 0, sizeof(*m));
+		if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256) ||
+		    lws_genhash_update(&ctx, hash_input,
+				       strlen(hash_input)) ||
+		    lws_genhash_destroy(&ctx, hash))
+			lwsl_warn("%s: sha256 failed\n", __func__);
+		else
+			for (n = 0; n < 32; n++)
+				lws_snprintf(m.key + (n * 2), 3,
+					     "%02x", hash[n]);
 
-			lws_snprintf(hash_input, sizeof(hash_input), "%s%s%s%s",
-				     ns->sp->name, op->spawn,
-				     ns->project_name, ns->ref);
+		lws_strncpy(m.builder_name, ns->sp->name, sizeof(m.builder_name));
+		lws_strncpy(m.project_name, ns->project_name, sizeof(m.project_name));
+		lws_strncpy(m.ref, ns->ref, sizeof(m.ref));
+		lws_strncpy(m.task_uuid, ns->task->uuid, sizeof(m.task_uuid));
+		m.unixtime	= (uint64_t)time(NULL);
+		m.us_cpu_user	= res->us_cpu_user;
+		m.us_cpu_sys	= res->us_cpu_sys;
+		m.wallclock_us	= us_wallclock;
+		m.peak_mem_rss	= peak_mem_bytes;
+		m.stg_bytes	= du.size_in_bytes;
+		m.parallel	= ns->task->parallel;
 
-			if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256) ||
-			    lws_genhash_update(&ctx, hash_input,
-					       strlen(hash_input)) ||
-			    lws_genhash_destroy(&ctx, hash))
-				lwsl_warn("%s: sha256 failed\n", __func__);
-			else
-				for (n = 0; n < 32; n++)
-					lws_snprintf(m->key + (n * 2), 3,
-						     "%02x", hash[n]);
-
-			lws_strncpy(m->builder_name, ns->sp->name, sizeof(m->builder_name));
-			lws_strncpy(m->project_name, ns->project_name, sizeof(m->project_name));
-			lws_strncpy(m->ref, ns->ref, sizeof(m->ref));
-			lws_strncpy(m->task_uuid, ns->task->uuid, sizeof(m->task_uuid));
-			m->unixtime = (uint64_t)time(NULL);
-			m->us_cpu_user = res->us_cpu_user;
-			m->us_cpu_sys = res->us_cpu_sys;
-			m->wallclock_us = us_wallclock;
-			m->peak_mem_rss = peak_mem_bytes;
-			m->stg_bytes = du.size_in_bytes;
-			m->parallel = ns->task->parallel;
-
-			lws_dll2_add_tail(&m->list, &ns->spm->build_metric_list);
-			if (lws_ss_request_tx(ns->spm->ss))
-				lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
-		}
+		if (saib_srv_queue_json_fragments_helper(ns->spm->ss,
+				lsm_schema_build_metric,
+				LWS_ARRAY_SIZE(lsm_schema_build_metric), &m))
+			return;
 	}
 
 skip:
@@ -327,12 +347,6 @@ skip:
 		op->spawn = NULL;
 	}
 
-//	if (ns->spm) {
-//		ns->spm->phase = PHASE_START_ATTACH;
-//		if (lws_ss_request_tx(ns->spm->ss))
-//			lwsl_warn("%s: lws_ss_request_tx failed\n", __func__);
-//	}
-
 	/*
 	 * add a final zero-length log with the retcode to the list of pending
 	 * logs
@@ -340,15 +354,12 @@ skip:
 
 	saib_log_chunk_create(ns, NULL, 0, 2);
 
-	lwsl_notice("%s: ns finished, waiting to drain %d logs\n",
-			__func__, ns->chunk_cache.count);
-
-	/*
-	 * saib_task_grace(ns) sets ns->finished_when_logs_drained 
-	 */
+	lwsl_notice("%s: ns finished\n", __func__);
 
 	saib_task_grace(ns);
 	saib_set_ns_state(ns, NSSTATE_DONE);
+	if (ns->state != NSSTATE_FAILED)
+		saib_set_ns_state(ns, NSSTATE_UPLOADING_ARTIFACTS);
 
 	ns->reap_cb_called = 1;
 
@@ -366,9 +377,6 @@ fail:
 	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED\n", ns->current_step + 1);
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
-	/*
-	 * saib_task_grace(ns) sets ns->finished_when_logs_drained 
-	 */
 	saib_task_grace(ns);
 	saib_set_ns_state(ns, NSSTATE_FAILED);
 

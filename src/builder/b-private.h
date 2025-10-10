@@ -214,7 +214,7 @@ saib_task_destroy(struct sai_nspawn *ns);
 void
 saib_task_grace(struct sai_nspawn *ns);
 
-struct ws_capture_chunk *
+int
 saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel);
 
 int
@@ -262,4 +262,12 @@ saib_get_total_disk_kib(const char *path);
 
 int
 saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp, struct lws_vhost **);
+
+int
+saib_srv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned int ss_flags);
+
+int
+saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
+				     const lws_struct_map_t *map,
+                                     size_t map_entries, void *object);
 

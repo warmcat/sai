@@ -167,8 +167,6 @@ struct saib_resproxy {
 };
 
 struct sai_nspawn {
-	lws_dll2_owner_t		chunk_cache;
-
 	char				inp[512];
 	char				inp_vn[16];
 	char				path[384];
@@ -204,8 +202,6 @@ struct sai_nspawn {
 	uint64_t			worst_mem;
 	uint64_t			worst_stg;
 
-	size_t				chunk_cache_size;
-
 	const char			*server_name;	/* sai-server name who triggered this, eg, 'warmcat' */
 	const char			*project_name;	/* name of the git project, eg, 'libwebsockets' */
 	const char			*ref;		/* remote refname, eg 'server' */
@@ -223,7 +219,7 @@ struct sai_nspawn {
 	uint8_t				stdcount;
 	uint8_t				term_budget;
 
-	uint8_t				finished_when_logs_drained:1;
+	uint8_t				retcode_set:1;
 	uint8_t				state_changed:1;
 	uint8_t				user_cancel:1;
 	uint8_t				reap_cb_called:1;
@@ -388,16 +384,14 @@ struct sai_plat;
 typedef struct sai_plat_server {
 	lws_dll2_t		list;
 
-	lws_dll2_owner_t	rejection_list;
-	lws_dll2_owner_t	build_metric_list;
-	lws_dll2_owner_t	resource_req_list; /* sai_resource_msg_t */
 	lws_dll2_owner_t	resource_pss_list; /* so we can find the cookie */
+
+	struct lws_buflist	*bl_to_srv;
 
 	char			resproxy_path[128];
 
 	/* for load reporting */
 	lws_sorted_usec_list_t	sul_load_report;
-	lws_dll2_owner_t	load_report_owner; /* sai_load_report_t */
 	unsigned int		viewer_count;
 
 	const char		*url;
@@ -409,7 +403,6 @@ typedef struct sai_plat_server {
 	lws_dll2_t		*last_logging_nspawn;
 	struct sai_plat		*last_logging_platform;
 
-	int			phase;
 	int			refcount;
 
 	int			index;  /* used to create unique build dir path */
@@ -614,6 +607,7 @@ extern const lws_struct_map_t
 	lsm_log[10],
 	lsm_artifact[8],
 	lsm_plat_list[1],
+	lsm_schema_map_plat[1],
 	lsm_task_rej[5],
 	lsm_task_cancel[1],
 	lsm_schema_json_map_can[1],
@@ -625,7 +619,8 @@ extern const lws_struct_map_t
 	lsm_schema_rebuild[1],
 	lsm_schema_build_metric[1],
 	lsm_schema_sq3_map_build_metric[1],
-	lsm_load_report_members[9]
+	lsm_load_report_members[9],
+	lsm_schema_json_task_rej[5]
 	;
 extern const lws_struct_map_t lsm_build_metric[12];
 extern const lws_struct_map_t lsm_plat[10];

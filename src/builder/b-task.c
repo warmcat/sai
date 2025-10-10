@@ -283,7 +283,7 @@ int
 saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 				const char *rej_task_uuid)
 {
-	struct sai_rejection *rej;
+	struct sai_rejection rej;
 
 	if (!spm)
 		return -1;
@@ -291,11 +291,7 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 	if (!spm->ss)
 		return 0;
 
-	rej = malloc(sizeof(*rej));
-	if (!rej)
-		return -1;
-
-	memset(rej, 0, sizeof(*rej));
+	memset(&rej, 0, sizeof(rej));
 
 	/*
 	 * Queue a builder status update /
@@ -306,21 +302,25 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 		lwsl_notice("%s: builder %s occupied reject\n",
 			__func__, sp->name);
 
-		lws_strncpy(rej->task_uuid, rej_task_uuid,
-				sizeof(rej->task_uuid));
-	}
+		lws_strncpy(rej.task_uuid, rej_task_uuid,
+				sizeof(rej.task_uuid));
+	} else
+		lwsl_notice("%s: issuing load update\n", __func__);
 
-	lws_snprintf(rej->host_platform, sizeof(rej->host_platform), "%s",
+	lws_snprintf(rej.host_platform, sizeof(rej.host_platform), "%s",
 		     sp->name);
 
-	rej->avail_slots = (int)(sp->job_limit ? sp->job_limit : 6u) -
+	rej.avail_slots = (int)(sp->job_limit ? sp->job_limit : 6u) -
 					(int)sp->nspawn_owner.count;
-	rej->avail_mem_kib = saib_get_free_ram_kib();
-	rej->avail_sto_kib = saib_get_free_disk_kib(builder.home);
+	rej.avail_mem_kib = saib_get_free_ram_kib();
+	rej.avail_sto_kib = saib_get_free_disk_kib(builder.home);
 
-	lws_dll2_add_tail(&rej->list, &spm->rejection_list);
+	if (saib_srv_queue_json_fragments_helper(spm->ss,
+				lsm_schema_json_task_rej,
+				LWS_ARRAY_SIZE(lsm_schema_json_task_rej), &rej))
+		return -1;
 
-	return lws_ss_request_tx(spm->ss) ? -1 : 0;
+	return 0;
 }
 
 void
@@ -330,7 +330,6 @@ saib_task_destroy(struct sai_nspawn *ns)
 
 	lwsl_notice("%s: destroying task %s\n", __func__, ns->task ? ns->task->uuid : "null");
 
-	ns->finished_when_logs_drained = 0;
 	lws_sul_cancel(&ns->sul_cleaner);
 	lws_sul_cancel(&ns->sul_task_cancel);
 
@@ -340,8 +339,11 @@ saib_task_destroy(struct sai_nspawn *ns)
 	 */
 
 	if (ns->spm) {
-		ns->spm->phase = PHASE_START_ATTACH;
-		if (lws_ss_request_tx(ns->spm->ss))
+
+		if (saib_srv_queue_json_fragments_helper(ns->spm->ss,
+				lsm_schema_map_plat,
+				LWS_ARRAY_SIZE(lsm_schema_map_plat),
+				&builder.sai_plat_owner))
 			return;
 
                /*
@@ -465,7 +467,6 @@ void
 saib_task_grace(struct sai_nspawn *ns)
 {
 	lwsl_err("%s: +++++ starting task %s grace wait\n", __func__, ns->task ? ns->task->uuid : "null");
-	ns->finished_when_logs_drained = 1; /* destroy ns if logs are gone + spawn reaped */
 	lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
 			 saib_sub_cleaner_cb, 20 * LWS_USEC_PER_SEC);
 }

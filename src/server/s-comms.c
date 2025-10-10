@@ -909,6 +909,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		/*
 		 * This is a message from a builder
 		 */
+		lwsl_notice("%s: rx from builder, len %d, final: %d\n", __func__, (int)len, lws_is_final_fragment(wsi));
 		pss->wsi = wsi;
 		if (sais_ws_json_rx_builder(vhd, pss, in, len))
 			return -1;

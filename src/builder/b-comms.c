@@ -35,6 +35,82 @@ static const lws_struct_map_t lsm_schema_json_loadreport[] = {
 	LSM_SCHEMA	(sai_load_report_t, NULL, lsm_load_report_members, "com.warmcat.sai.loadreport"),
 };
 
+/*
+ * This is the only path to send things from builder->server.
+ *
+ * It will copy the incoming buffer fragment into a buflist in order.  So you
+ * should dump all your fragments for a message in here one after the other
+ * and the message will go out uninterrupted.  Having this as the only tx path
+ * allows us to guarantee we won't interrupt the fragment sequencing.
+ *
+ * The fragment sizing does not have to be related to ss usage sizing, it can
+ * be larger and it will be used from the buflist according to what SS wants.
+ */
+
+int
+saib_srv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned int ss_flags)
+{
+	struct sai_plat_server *spm = (struct sai_plat_server *)lws_ss_to_user_object(h);
+	unsigned int *pi = (unsigned int *)((const char *)buf - sizeof(int));
+
+	*pi = ss_flags;
+	
+	// lwsl_ss_notice(h, "Queuing builder -> sai-server");
+	// lwsl_hexdump_notice(buf, len);
+
+	if (lws_buflist_append_segment(&spm->bl_to_srv, buf - sizeof(int), len + sizeof(int)) < 0)
+		lwsl_ss_err(h, "failed to append"); /* still ask to drain */
+
+	if (lws_ss_request_tx(h))
+		lwsl_ss_err(h, "failed to request tx");
+
+	return 0;
+}
+
+int
+saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
+				     const lws_struct_map_t *map,
+                                     size_t map_entries, void *object)
+{
+	lws_struct_serialize_t *js;
+	unsigned int ssf = LWSSS_FLAG_SOM;
+	uint8_t buf[4096];
+	size_t w = 0;
+
+	js = lws_struct_json_serialize_create(map, map_entries, 0, object);
+	if (!js) {
+		lwsl_warn("%s: failed to serialize\n", __func__);
+		return -1;
+	}
+
+	do {
+		switch (lws_struct_json_serialize(js, buf, sizeof(buf), &w)) {
+		case LSJS_RESULT_CONTINUE:
+			lwsl_notice("%s: LSJS_RESULT_CONTINUE\n", __func__);
+			break;
+		case LSJS_RESULT_FINISH:
+			lwsl_notice("%s: LSJS_RESULT_FINISH\n", __func__);
+			ssf |= LWSSS_FLAG_EOM;
+			break;
+		case LSJS_RESULT_ERROR:
+			lwsl_warn("%s: serialization failed\n", __func__);
+			return -1;
+		}
+
+		lwsl_notice("%s: queueing %d bytes, ss_flags %d\n", __func__, (int)w, ssf);
+		lwsl_hexdump_notice(buf, w);
+
+		if (saib_srv_queue_tx(h, buf, w, ssf))
+			return -1;
+
+		ssf &= ~((unsigned int)LWSSS_FLAG_SOM);
+	} while (!(ssf & LWSSS_FLAG_EOM));
+
+	lws_struct_json_serialize_destroy(&js);
+
+	return 0;
+}
+
 static lws_ss_state_return_t
 saib_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
@@ -50,27 +126,6 @@ saib_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	return 0;
 }
 
-unsigned int
-saib_get_spm_log_count(struct sai_plat_server *spm)
-{
-	unsigned int spm_logs = 0;
-
-	lws_start_foreach_dll(struct lws_dll2 *, d, builder.sai_plat_owner.head) {
-		sai_plat_t *p = lws_container_of(d, sai_plat_t, sai_plat_list);
-
-		lws_start_foreach_dll(struct lws_dll2 *, d1, p->nspawn_owner.head) {
-			struct sai_nspawn *ns = lws_container_of(d1, struct sai_nspawn, list);
-
-			if (ns->spm == spm && ns->chunk_cache.count)
-				spm_logs += ns->chunk_cache.count;
-
-		} lws_end_foreach_dll(d1);
-	} lws_end_foreach_dll(d);
-
-	return spm_logs;
-}
-
-
 /*
  * We cover requested tx for any instance of a platform that can takes tasks
  * from the same server... it means just by coming here, no particular
@@ -82,369 +137,54 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	  int *flags)
 {
 	struct sai_plat_server *spm = (struct sai_plat_server *)userobj;
-	uint8_t *start = buf, *end = buf + (*len) - 1, *p = start;
-	struct ws_capture_chunk *chunk;
-	struct sai_plat *sp = NULL;
-	lws_struct_serialize_t *js;
-	lws_dll2_t *star, *walk;
-	lws_ss_state_return_t r;
-	struct sai_nspawn *ns;
-	size_t w = 0;
-	int n = 0;
+	int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&spm->bl_to_srv), depi;
+	char som, som1, eom, final = 1;
+	size_t fsl, used;
 
-	/*
-	 * Are there some logs to dump?
-	 */
-
-	if (saib_get_spm_log_count(spm))
-		goto send_logs;
-
-	/*
-	 * Any build metrics to process?
-	 */
-
-	if (spm->build_metric_list.count) {
-		struct lws_dll2 *d = lws_dll2_get_head(&spm->build_metric_list);
-		sai_build_metric_t *m =
-				lws_container_of(d, sai_build_metric_t, list);
-
-		lwsl_notice("%s: issuing build metric\n", __func__);
-
-		js = lws_struct_json_serialize_create(lsm_schema_build_metric,
-			      LWS_ARRAY_SIZE(lsm_schema_build_metric), 0, m);
-		if (!js)
-			return -1;
-
-		n = (int)lws_struct_json_serialize(js, start,
-					      lws_ptr_diff_size_t(end, start), &w);
-		lws_struct_json_serialize_destroy(&js);
-
-		lwsl_hexdump_notice(start, w);
-
-		n = (int)w;
-
-		lws_dll2_remove(&m->list);
-		free(m);
-
-		r = lws_ss_request_tx(spm->ss);
-		if (r)
-			return r;
-		goto sendify;
+	if (!spm->bl_to_srv) {
+		lwsl_notice("%s: nothing to send from builder -> srv\n", __func__);
+		return LWSSSSRET_TX_DONT_SEND;
 	}
 
-	/*
-	 * Any builder state updates / rejections to process?
-	 */
-
-	if (spm->rejection_list.count) {
-		struct lws_dll2 *d = lws_dll2_get_head(&spm->rejection_list);
-		struct sai_rejection *rej =
-				lws_container_of(d, struct sai_rejection, list);
-
-		lwsl_notice("%s: issuing %s\n", __func__,
-			    rej->task_uuid[0] ? "task rejection" : "load update");
-
-		js = lws_struct_json_serialize_create(lsm_schema_json_task_rej,
-			      LWS_ARRAY_SIZE(lsm_schema_json_task_rej), 0, rej);
-		if (!js)
-			return -1;
-
-		n = (int)lws_struct_json_serialize(js, start,
-					      lws_ptr_diff_size_t(end, start), &w);
-		lws_struct_json_serialize_destroy(&js);
-
-		lwsl_hexdump_notice(start, w);
-
-		n = (int)w;
-
-		lws_dll2_remove(&rej->list);
-		free(rej);
-
-		r = lws_ss_request_tx(spm->ss);
-		if (r)
-			return r;
-		goto sendify;
-	}
+	depi = *pi;
 
 	/*
-	 * Any load reports to send?
-	 */
-	if (spm->load_report_owner.count) {
-		struct lws_dll2 *d = lws_dll2_get_head(&spm->load_report_owner);
-		sai_load_report_t *lr =
-				lws_container_of(d, sai_load_report_t, list);
-
-		// lwsl_notice("%s: issuing load report for %s\n", __func__,
-		//	    lr->builder_name);
-
-		js = lws_struct_json_serialize_create(lsm_schema_json_loadreport,
-			      LWS_ARRAY_SIZE(lsm_schema_json_loadreport), 0, lr);
-		if (!js)
-			return -1;
-
-		n = (int)lws_struct_json_serialize(js, start,
-					      lws_ptr_diff_size_t(end, start), &w);
-		lws_struct_json_serialize_destroy(&js);
-
-		// lwsl_hexdump_notice(start, w);
-
-		n = (int)w;
-
-		lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
-					   lr->active_tasks.head) {
-			sai_active_task_info_t *ati = lws_container_of(p,
-						sai_active_task_info_t, list);
-			lws_dll2_remove(&ati->list);
-			free(ati);
-		} lws_end_foreach_dll_safe(p, p1);
-
-		lws_dll2_remove(&lr->list);
-		free(lr);
-
-		r = lws_ss_request_tx(spm->ss);
-		if (r)
-			return r;
-		goto sendify;
-	}
-
-	/*
-	 * Any resource requests / relinquishments to process?
-	 */
-
-	if (spm->resource_req_list.count) {
-		struct lws_dll2 *d = lws_dll2_get_head(&spm->resource_req_list);
-		sai_resource_msg_t *resm;
-
-		resm = lws_container_of(d, sai_resource_msg_t, list);
-
-		n = (int)resm->len;
-		if (*len > resm->len)
-			*len = resm->len;
-		memcpy(buf, resm->msg, *len);
-
-		lws_dll2_remove(&resm->list);
-		free(resm);
-
-		lwsl_notice("%s: forwarding to server %.*s\n", __func__,
-				(int)(*len), (const char *)buf);
-
-		r = lws_ss_request_tx(spm->ss);
-		if (r)
-			return r;
-		goto sendify;
-	}
-
-	switch (spm->phase) {
-	case PHASE_IDLE:
-		break;
-
-	default:
-
-		// lwsl_notice("%s: ++++++++++++++++ updating with platform status\n", __func__);
-
-		/*
-		 * Update server with platform status
-		 */
-
-		lws_start_foreach_dll(struct lws_dll2 *, d,
-				      builder.sai_plat_owner.head) {
-			sai_plat_t *p = lws_container_of(d, sai_plat_t, sai_plat_list);
-
-			lwsl_notice("%s: &&&&&&&&&&&&&&&&&&&& platform %s, windows %d\n", __func__,
-				    p->name, p->windows);
-
-		} lws_end_foreach_dll(d);
-
-		js = lws_struct_json_serialize_create(lsm_schema_map_plat,
-			      LWS_ARRAY_SIZE(lsm_schema_map_plat), 0,
-			      &builder.sai_plat_owner);
-		if (!js) {
-			lwsl_err("%s: ++++++++++++++++++ FAILED to serialize plat\n", __func__);
-			return -1;
-		}
-
-		n = (int)lws_struct_json_serialize(js, start,
-					      lws_ptr_diff_size_t(end, start), &w);
-		lws_struct_json_serialize_destroy(&js);
-
-		sp = (sai_plat_t *)builder.sai_plat_owner.head;
-		lwsl_hexdump_notice(start, w);
-
-		*len = w;
-		spm->phase = PHASE_IDLE;
-		*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
-
-		if (saib_get_spm_log_count(spm))
-			return lws_ss_request_tx(spm->ss);
-
-		return LWSSSSRET_OK;
-	}
-
-	return 1;
-
-send_logs:
-
-	/*
-	 * Yes somebody has some logs... since we handle all logs on any
-	 * platform doing tasks for the same server, we have to take care not
-	 * to favour draining logs for any busy tasks over letting others
-	 * getting a chance at the mic.  If we just scan for guys with logs
-	 * from the start of the list each time, we will never deal with guys
-	 * far from the list head while anybody closer has logs.
+	 * We can only issue *len at a time.
 	 *
-	 * For that reason we remember the last dll2 who wrote logs, and start
-	 * looking for the next nspawn with pending logs after him next time.
-	 * (The remembered dll2 is set to NULL when the ns it is inside is
-	 * destroyed).
+	 * Notice we are getting the stored flags from the START of the fragment each time.
+	 * that means we can still see the right flags stored with the fragment, even if we
+	 * have partially used the buflist frag and are partway through it.
 	 *
-	 * That requires statefully rotating through...
-	 *
-	 *    platform in platform list : nspawn in platform's nspawn list
-	 *                 =                          =
-	 *    spm->last_logging_platform : spm->last_logging_nspawn
-	 *
-	 * ... filtered for nspawns associated with our spm / server SS link.
-	 *
-	 * The platforms and nspawns are allocated at conf-time statically.
+	 * Ergo, only something to skip if we are at som=1.  And also notice that although
+	 * *pi will be right, after the lws_buflist..._use() api, what it points to has been
+	 * destroyed.  So we also dereference *pi into depi for use below.
 	 */
 
-	star = NULL;
-	do {
-		uint32_t tries = builder.sai_plat_owner.count;
+	fsl = lws_buflist_next_segment_len(&spm->bl_to_srv, NULL);
 
-		if (!spm->last_logging_nspawn) {
-			/* start at the start */
-			sp = spm->last_logging_platform = lws_container_of(
-						builder.sai_plat_owner.head,
-						sai_plat_t, sai_plat_list);
-			walk = spm->last_logging_nspawn = sp->nspawn_owner.head;
-		} else {
-			/* if we can move on, move on */
-			sp = spm->last_logging_platform;
-			walk = spm->last_logging_nspawn->next;
-		}
-
-		/* if no more nspawns, try moving to next platform */
-		while (!walk && tries--) {
-			if (!sp->sai_plat_list.next)
-				/* if no more platforms, wrap around to first */
-				sp = spm->last_logging_platform =
-					lws_container_of(
-					     builder.sai_plat_owner.head,
-					     sai_plat_t, sai_plat_list);
-			else
-				sp = spm->last_logging_platform =
-					lws_container_of(
-					     sp->sai_plat_list.next,
-					     sai_plat_t, sai_plat_list);
-
-			/* use the first nspawn in our new platform */
-			walk = sp->nspawn_owner.head;
-		}
-
-		spm->last_logging_nspawn = walk;
-
-		if (walk == star)
-			return 1; /* nothing to do */
-
-		if (!star) /* take first usable one as the starting point */
-			star = walk;
-
-		ns = lws_container_of(walk, struct sai_nspawn, list);
-		if (spm != ns->spm)
-			continue;
-
-		if (!ns->chunk_cache.count || !ns->chunk_cache.tail)
-			continue;
-
-		/*
-		 * We're going to process a chunk
-		 */
-
-		chunk = lws_container_of(ns->chunk_cache.tail,
-					 struct ws_capture_chunk, list);
-
-		lws_dll2_remove(&chunk->list);
-
-		if (ns->task) {
-
-			n = lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
-				"{\"schema\":\"com-warmcat-sai-logs\","
-				 "\"task_uuid\":\"%s\", \"timestamp\": %llu,"
-				 "\"channel\": %d, \"len\": %d, ",
-				 ns->task->uuid, (unsigned long long)lws_now_usecs(),
-				 chunk->stdfd, (int)chunk->len);
-
-			if (ns->finished_when_logs_drained && !ns->chunk_cache.count) {
-				n += lws_snprintf((char *)p + n, lws_ptr_diff_size_t(end, p) - (unsigned int)n,
-					"\"finished\":%d,", ns->retcode);
-				sp = ns->sp;
-				n += lws_snprintf((char *)p + n, lws_ptr_diff_size_t(end, p) - (unsigned int)n,
-					"\"avail_slots\":%d,\"avail_mem_kib\":%u,\"avail_sto_kib\":%u,",
-					(int)(sp->job_limit ? sp->job_limit : 6u) -
-						((int)sp->nspawn_owner.count - 1),
-					saib_get_free_ram_kib(),
-					saib_get_free_disk_kib(builder.home));
-			}
-
-			n += lws_snprintf((char *)p + n, lws_ptr_diff_size_t(end, p) - (unsigned int)n,
-					  "\"log\":\"");
-
-			// puts((const char *)&chunk[1]);
-			// puts((const char *)start);
-
-			n += lws_b64_encode_string((const char *)&chunk[1],
-					(int)chunk->len, (char *)&start[n],
-					(int)lws_ptr_diff(end, p) - n - 5);
-
-			p[n++] = '\"';
-			p[n++] = '}';
-			p[n] = '\0';
-			// puts((const char *)start);
-		}
-
-		ns->chunk_cache_size -= sizeof(*chunk) + chunk->len;
-		free(chunk);
-
-		/*
-		 * Here we're just looking at the log situation specifically with THIS ns,
-		 * not for any ns that drains to this server
-		 */
-
-		if (ns->finished_when_logs_drained && !ns->chunk_cache.count) {
-			/*
-			 * He's in DONE state, and the draining he was waiting
-			 * for has now happened.
-			 *
-			 * Let's move on to UPLOADING_ARTIFACTS if any, this only
-			 * happens after we sent all the related logs.
-			 */
-			lwsl_notice("%s: logs cache drained and empty\n", __func__);
-			ns->finished_when_logs_drained = 0;
-			if (ns->state != NSSTATE_FAILED)
-				saib_set_ns_state(ns, NSSTATE_UPLOADING_ARTIFACTS);
-		}
-
-		break;
-
-	} while (walk != star);
-
-
-sendify:
-
-	*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
-	*len = (unsigned int)n;
-
-	if (spm->phase != PHASE_IDLE || saib_get_spm_log_count(spm)) {
-		r = lws_ss_request_tx(spm->ss);
-		if (r)
-			return r;
+	lws_buflist_fragment_use(&spm->bl_to_srv, NULL, 0, &som, &eom);
+	if (som) {
+		fsl -= sizeof(int);
+		lws_buflist_fragment_use(&spm->bl_to_srv, buf, sizeof(int), &som1, &eom);
 	}
 
-	if (!n)
-		return 1;
+	used = (size_t)lws_buflist_fragment_use(&spm->bl_to_srv, (uint8_t *)buf, *len, &som1, &eom);
+	if (!used)
+		return LWSSSSRET_TX_DONT_SEND;
 
-	return LWSSSSRET_OK;
+	if (used < fsl || (depi & LWS_WRITE_NO_FIN))
+		final = 0;
+
+	*len = used;
+	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
+
+	lwsl_ss_notice(spm->ss, "Sending %d web->srv: ssflags %d", (int)*len, (int)*flags);
+	lwsl_hexdump_notice(buf, *len);
+
+	if (spm->bl_to_srv)
+		return lws_ss_request_tx(spm->ss);
+
+	return 0;
 }
 
 static int
@@ -476,7 +216,6 @@ cleanup_on_ss_disconnect(struct lws_dll2 *d, void *user)
 {
 	struct sai_plat_server *spm = (struct sai_plat_server *)user;
 	sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);
-	struct ws_capture_chunk *cc;
 
 	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
 				   sp->nspawn_owner.head) {
@@ -494,17 +233,6 @@ cleanup_on_ss_disconnect(struct lws_dll2 *d, void *user)
 
 			if (ns->op && ns->op->lsp)
 				lws_spawn_piped_kill_child_process(ns->op->lsp);
-
-			/* clean up any capture chunks */
-
-			lws_start_foreach_dll_safe(struct lws_dll2 *, e, e1,
-						   ns->chunk_cache.head) {
-				cc = lws_container_of(e,
-					struct ws_capture_chunk, list);
-				lws_dll2_remove(&cc->list);
-				free(cc);
-			} lws_end_foreach_dll_safe(e, e1);
-
 		}
 	} lws_end_foreach_dll_safe(d, d1);
 
@@ -517,6 +245,7 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
 	struct sai_plat_server *spm = lws_container_of(sul,
 				       struct sai_plat_server, sul_load_report);
 	char any_platform_on_this_spm_active = 0;
+	int n;
 
 	/*
 	 * This builder process may have multiple platforms, each with
@@ -535,7 +264,8 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
 	lws_start_foreach_dll(struct lws_dll2 *, p, builder.sai_plat_owner.head) {
 		struct sai_plat *sp = lws_container_of(p, sai_plat_t, sai_plat_list);
 		sai_plat_server_ref_t *ref = NULL;
-		sai_load_report_t *lr;
+		struct lwsac *ac = NULL;
+		sai_load_report_t lr;
 		char is_active = 0;
 
 		/*
@@ -575,19 +305,17 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
 
 		/* This platform is active for this spm, or just became idle */
 
-		lr = calloc(1, sizeof(*lr));
-		if (!lr)
-			goto around;
+		memset(&lr, 0, sizeof(lr));
 
-		lws_strncpy(lr->builder_name, sp->name, sizeof(lr->builder_name));
-		lr->core_count = saib_get_cpu_count();
-		lr->initial_free_ram_kib = saib_get_total_ram_kib();
-		lr->initial_free_disk_kib = saib_get_total_disk_kib(builder.home);
-		lr->reserved_ram_kib = 0;
-		lr->reserved_disk_kib = 0;
-		lr->cpu_percent = (unsigned int)saib_get_system_cpu(&builder);
-		lr->active_steps = 0;
-		lws_dll2_owner_clear(&lr->active_tasks);
+		lws_strncpy(lr.builder_name, sp->name, sizeof(lr.builder_name));
+		lr.core_count			= saib_get_cpu_count();
+		lr.initial_free_ram_kib		= saib_get_total_ram_kib();
+		lr.initial_free_disk_kib	= saib_get_total_disk_kib(builder.home);
+		lr.reserved_ram_kib		= 0;
+		lr.reserved_disk_kib		= 0;
+		lr.cpu_percent			= (unsigned int)saib_get_system_cpu(&builder);
+		lr.active_steps			= 0;
+		lws_dll2_owner_clear(&lr.active_tasks);
 
 		if (is_active) {
 			lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
@@ -595,30 +323,34 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
 								struct sai_nspawn, list);
 				if (ns->spm == spm &&
 				    ns->state == NSSTATE_EXECUTING_STEPS && ns->task) {
-					sai_active_task_info_t *ati = malloc(sizeof(*ati));
+					sai_active_task_info_t *ati = lwsac_use_zero(&ac, sizeof(*ati), 512);
 					if (ati) {
-						memset(ati, 0, sizeof(*ati));
 						lws_strncpy(ati->task_uuid, ns->task->uuid, sizeof(ati->task_uuid));
 						lws_strncpy(ati->task_name, ns->task->taskname, sizeof(ati->task_name));
-						ati->build_step = ns->current_step;
-						ati->total_steps = ns->build_step_count;
-						ati->est_peak_mem_kib = ns->task->est_peak_mem_kib;
-						ati->est_cpu_load_pct = ns->task->est_cpu_load_pct;
-						ati->est_disk_kib = ns->task->est_disk_kib;
-						ati->started = ns->task->started;
-						lws_dll2_add_tail(&ati->list, &lr->active_tasks);
-						lr->active_steps++;
+						ati->build_step		= ns->current_step;
+						ati->total_steps	= ns->build_step_count;
+						ati->est_peak_mem_kib	= ns->task->est_peak_mem_kib;
+						ati->est_cpu_load_pct	= ns->task->est_cpu_load_pct;
+						ati->est_disk_kib	= ns->task->est_disk_kib;
+						ati->started		= ns->task->started;
+						lws_dll2_add_tail(&ati->list, &lr.active_tasks);
+						lr.active_steps++;
 
-						lr->reserved_ram_kib += ns->task->est_peak_mem_kib;
-						lr->reserved_disk_kib += ns->task->est_disk_kib;
+						lr.reserved_ram_kib	+= ns->task->est_peak_mem_kib;
+						lr.reserved_disk_kib	+= ns->task->est_disk_kib;
 					}
 				}
 			} lws_end_foreach_dll(d);
 		}
 
-		lws_dll2_add_tail(&lr->list, &spm->load_report_owner);
-		if (lws_ss_request_tx(spm->ss))
-			lwsl_debug("%s: request tx failed\n", __func__);
+		n = saib_srv_queue_json_fragments_helper(spm->ss,
+				lsm_schema_json_loadreport,
+				LWS_ARRAY_SIZE(lsm_schema_json_loadreport), &lr);
+
+		lwsac_free(&ac);
+
+		if (n)
+			lwsl_warn("%s: failed to queue fragments\n", __func__);
 
 		ref->was_active = is_active;
 
@@ -717,12 +449,17 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 	case LWSSSCS_CONNECTED:
 		lwsl_ss_user(spm->ss, "CONNECTED");
-		spm->phase = PHASE_START_ATTACH;
 		/* Initialize the load report SUL timer for this server connection */
 		lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
 				 saib_sul_load_report_cb, 1);
 
-		return lws_ss_request_tx(spm->ss);
+		if (saib_srv_queue_json_fragments_helper(spm->ss,
+				lsm_schema_map_plat,
+				LWS_ARRAY_SIZE(lsm_schema_map_plat),
+				&builder.sai_plat_owner))
+			return -1;
+
+		return 0;
 
 	case LWSSSCS_DISCONNECTED:
 		/*

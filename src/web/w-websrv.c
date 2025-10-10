@@ -115,7 +115,8 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	sai_browse_rx_evinfo_t *ei;
 	int n;
 
-	// lwsl_warn("%s: len %d, flags %d\n", __func__, (int)len, flags);
+	lwsl_warn("%s: len %d, flags %d\n", __func__, (int)len, flags);
+	lwsl_hexdump_notice(buf, len);
 
 	if (flags & LWSSS_FLAG_SOM) {
 		/* First fragment of a new message. Clear old parse results and init. */
