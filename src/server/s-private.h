@@ -170,6 +170,13 @@ struct pss {
 	unsigned int		bulk_binary_data:1;
 	unsigned int		is_power:1;
 
+	/* server side only: builder resource tracking */
+	lws_dll2_owner_t	inflight_owner; /* sai_uuid_list_t */
+	char			last_rej_task_uuid[65];
+	int			avail_slots;
+	unsigned int		avail_mem_kib;
+	unsigned int		avail_sto_kib;
+
 	uint8_t			ovstate; /* SOS_ substate when doing overview */
 };
 
@@ -364,5 +371,3 @@ sais_metrics_db_add(struct vhd *vhd, const struct sai_build_metric *m);
 int
 sais_metrics_db_get_by_task(struct vhd *vhd, const char *task_uuid,
 			    lws_dll2_owner_t *owner, struct lwsac **ac);
-
-

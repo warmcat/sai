@@ -408,6 +408,7 @@ typedef struct sai_plat_server {
 
 	lws_dll2_t		*last_logging_nspawn;
 	struct sai_plat		*last_logging_platform;
+	lws_struct_serialize_t *js;
 
 	int			phase;
 	int			refcount;
@@ -473,13 +474,6 @@ typedef struct sai_plat {
 	int			powering_up; /* 1 = sai-power is booting it */
 	int			powering_down;
 	unsigned int		job_limit;
-
-	/* server side only: builder resource tracking */
-	lws_dll2_owner_t	inflight_owner; /* sai_uuid_list_t */
-	char			last_rej_task_uuid[65];
-	int			avail_slots;
-	unsigned int		avail_mem_kib;
-	unsigned int		avail_sto_kib;
 
 	/* server side only: for UI visibility */
 	int			s_avail_slots;
@@ -638,7 +632,7 @@ extern const lws_struct_map_t
 	;
 extern const lws_struct_map_t lsm_build_metric[13];
 extern const lws_struct_map_t lsm_plat[10];
-extern const lws_struct_map_t lsm_plat_for_json[13];
+extern const lws_struct_map_t lsm_plat_for_json[16];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];

@@ -333,8 +333,7 @@ sais_event_ran_platform(struct vhd *vhd, const char *event_uuid,
  * Find the most recent task that still needs doing for platform, on any event
  */
 static const sai_task_t *
-sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
-		  const char *platform)
+sais_task_pending(struct vhd *vhd, struct pss *pss, const char *platform)
 {
 	struct lwsac *ac = NULL, *failed_ac = NULL;
 	char esc_plat[96], pf[2048], query[384];
@@ -490,14 +489,6 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 					lws_sql_purify(esc_taskname, fti->taskname, sizeof(esc_taskname));
 					lws_snprintf(pf, sizeof(pf), " and (state == 0) and (platform == '%s') and (taskname == '%s')",
 						     esc_plat, esc_taskname);
-					if (cb->last_rej_task_uuid[0]) {
-						char esc_uuid[130];
-
-						lws_sql_purify(esc_uuid, cb->last_rej_task_uuid,
-							     sizeof(esc_uuid));
-						lws_snprintf(pf + strlen(pf), sizeof(pf) - strlen(pf),
-							     " and (uuid != '%s')", esc_uuid);
-					}
 
 					lwsac_free(&pss->ac_alloc_task);
 					lws_dll2_owner_clear(&owner);
@@ -524,14 +515,6 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 				/* We have fallen back to doing tasks earliest-first */
 
 				lws_snprintf(pf, sizeof(pf), " and (state = 0) and (platform = '%s')", esc_plat);
-				if (cb->last_rej_task_uuid[0]) {
-					char esc_uuid[130];
-
-					lws_sql_purify(esc_uuid, cb->last_rej_task_uuid,
-						     sizeof(esc_uuid));
-					lws_snprintf(pf + strlen(pf), sizeof(pf) - strlen(pf),
-						     " and (uuid != '%s')", esc_uuid);
-				}
 				lwsac_free(&pss->ac_alloc_task);
 				lws_dll2_owner_t owner;
 				lws_dll2_owner_clear(&owner);
@@ -1014,103 +997,40 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		   const char *platform_name)
 {
 	const sai_task_t *task_template;
-	char original_rejected_uuid[65];
-	sai_task_t temp_task;
-	sai_uuid_list_t *sul;
-	int attempts = 0;
+	sai_task_t *task = NULL;
 
-	if (cb->avail_slots <= 0) {
-		lwsl_info("%s: builder %s has no available slots\n", __func__,
-			  cb->name);
+	/*
+	 * Look for a task for this platform, on any event that needs building
+	 */
+
+	task_template = sais_task_pending(vhd, pss, platform_name);
+	if (!task_template)
 		return 1;
-	}
 
-	lws_strncpy(original_rejected_uuid, cb->last_rej_task_uuid,
-		    sizeof(original_rejected_uuid));
+	lwsl_notice("%s: %s: task found %s\n", __func__, platform_name, cb->name);
 
-	while (attempts++ < 10) {
+	/* yes, we will offer it to him */
 
-		/*
-		 * Look for a task for this platform, on any event that needs building
-		 */
+	if (sais_set_task_state(vhd, cb->name, cb->name, task_template->uuid,
+				SAIES_PASSED_TO_BUILDER, lws_now_secs(), 0))
+		goto bail;
 
-		task_template = sais_task_pending(vhd, pss, cb, platform_name);
-		if (!task_template) {
-			lws_strncpy(cb->last_rej_task_uuid, original_rejected_uuid,
-				    sizeof(cb->last_rej_task_uuid));
-			return 1;
-		}
+	/* advance the task state first time we get logs */
+	pss->mark_started = 1;
 
-		/*
-		 * We have a candidate task, check if the builder has enough
-		 * resources for it
-		 */
-		memcpy(&temp_task, task_template, sizeof(temp_task));
-		sais_get_task_metrics_estimates(vhd, &temp_task);
+	sais_continue_task(vhd, task_template->uuid);
 
-		if (temp_task.est_peak_mem_kib > cb->avail_mem_kib ||
-		    temp_task.est_disk_kib > cb->avail_sto_kib) {
-			lwsl_notice("%s: builder %s lacks resources for task %s "
-				    "(mem %uk/%uk, sto %uk/%uk), trying another\n",
-				    __func__, cb->name, temp_task.uuid,
-				    temp_task.est_peak_mem_kib, cb->avail_mem_kib,
-				    temp_task.est_disk_kib, cb->avail_sto_kib);
+	/*
+	 * We are going to leave here with a live pss->a.ac (pointed into by
+	 * task->one_event) that the caller has to take responsibility to
+	 * clean up pss->a.ac
+	 */
 
-			/* mark it rejected for this builder and try again */
-			lws_strncpy(cb->last_rej_task_uuid, temp_task.uuid,
-				    sizeof(cb->last_rej_task_uuid));
-			continue;
-		}
-
-		lwsl_notice("%s: %s: task %s found for %s\n", __func__,
-			    platform_name, task_template->uuid, cb->name);
-
-		/* yes, we will offer it to him */
-
-		if (sais_set_task_state(vhd, cb->name, cb->name, task_template->uuid,
-					SAIES_PASSED_TO_BUILDER, lws_now_secs(), 0))
-			goto bail;
-
-		sul = malloc(sizeof(*sul));
-		if (!sul) {
-			sais_task_reset(vhd, task_template->uuid, 1);
-			goto bail;
-		}
-		memset(sul, 0, sizeof(*sul));
-		lws_strncpy(sul->uuid, task_template->uuid, sizeof(sul->uuid));
-		lws_dll2_add_tail(&sul->list, &cb->inflight_owner);
-
-		/* provisionally decrement until we hear from builder */
-		if (cb->avail_slots > 0)
-			cb->avail_slots--;
-
-		cb->s_avail_slots = cb->avail_slots;
-		cb->s_inflight_count = (int)cb->inflight_owner.count;
-		lws_strncpy(cb->s_last_rej_task_uuid, cb->last_rej_task_uuid,
-			    sizeof(cb->s_last_rej_task_uuid));
-		sais_list_builders(vhd);
-
-		/* advance the task state first time we get logs */
-		pss->mark_started = 1;
-
-		sais_continue_task(vhd, task_template->uuid);
-
-		lws_strncpy(cb->last_rej_task_uuid, original_rejected_uuid,
-			    sizeof(cb->last_rej_task_uuid));
-
-		return 0;
-	}
-
-	lwsl_warn("%s: exceeded max attempts to find suitable task for %s\n",
-		  __func__, cb->name);
-	lws_strncpy(cb->last_rej_task_uuid, original_rejected_uuid,
-		    sizeof(cb->last_rej_task_uuid));
-
-	return 1;
+	return 0;
 
 bail:
-	lws_strncpy(cb->last_rej_task_uuid, original_rejected_uuid,
-		    sizeof(cb->last_rej_task_uuid));
+	if (task)
+		free(task);
 	lwsac_free(&pss->a.ac);
 	lwsac_free(&pss->ac_alloc_task);
 
