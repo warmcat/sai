@@ -218,10 +218,6 @@ int
 saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel);
 
 int
-saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
-				const char *rej_task_uuid);
-
-int
 rm_rf_cb(const char *dirpath, void *user, struct lws_dir_entry *lde);
 
 extern const struct lws_protocols protocol_logproxy, protocol_resproxy;

@@ -100,6 +100,7 @@ if (requirements)
 			../../assets/arch-riscv64.svg
 			../../assets/arch-risc-v.svg
 			../../assets/arch-x86_64-amd.svg
+			../../assets/arch-x86_64.svg
 			../../assets/x86_64.svg
 			../../assets/arch-x86_64-intel-i3.svg
 			../../assets/arch-x86_64-intel.svg

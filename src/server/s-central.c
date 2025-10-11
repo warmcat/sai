@@ -165,8 +165,7 @@ sais_central_cb(lws_sorted_usec_list_t *sul)
 			 * try to bind outstanding task to specific builder
 			 * instance
 			 */
-			sais_allocate_task(vhd,
-					   (struct pss *)lws_wsi_user(cb->wsi),
+			sais_allocate_task(vhd, (struct pss *)lws_wsi_user(cb->wsi),
 					   cb, cb->platform);
 
 	} lws_end_foreach_dll(p);

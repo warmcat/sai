@@ -433,14 +433,16 @@ sai_sql3_get_uint64_cb(void *user, int cols, char **values, char **name)
 int
 sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 {
-	char event_uuid[33], s[128], esc[96];
+	char event_uuid[33], s[128], esc[96], do_remove_uuid;
 	const sai_build_metric_t *metric;
 	sai_resource_requisition_t *rr;
 	sai_resource_wellknown_t *wk;
+	sai_plat_owner_t *bp_owner;
 	struct lwsac *ac = NULL;
 	sai_plat_t *build, *cb;
 	sai_rejection_t *rej;
 	sai_resource_t *res;
+	sai_uuid_list_t *ul;
 	lws_dll2_owner_t o;
 	sai_artifact_t *ap;
 	sai_task_t *task;
@@ -495,7 +497,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 		return 1;
 	}
 
-	lwsl_hexdump_notice(buf, bl);
+	// lwsl_hexdump_notice(buf, bl);
 
 	if (m == LEJP_CONTINUE) {
 		pss->frag = 1;
@@ -516,10 +518,10 @@ handle:
 		 * builder is sending us an array of platforms it provides us
 		 */
 
-		pss->u.o = (sai_plat_owner_t *)pss->a.dest;
+		bp_owner = (sai_plat_owner_t *)pss->a.dest;
 
 		lws_start_foreach_dll(struct lws_dll2 *, pb,
-				      pss->u.o->plat_owner.head) {
+				      bp_owner->plat_owner.head) {
 			build = lws_container_of(pb, sai_plat_t, sai_plat_list);
 			sai_plat_t *live_cb;
 
@@ -529,9 +531,9 @@ handle:
 			char q[1024];
 
 			lws_snprintf(q, sizeof(q),
-				     "INSERT INTO builders (name, platform, online, last_seen, peer_ip, sai_hash, lws_hash, windows) "
-				     "VALUES ('%s', '%s', 1, %llu, '%s', '%s', '%s', %d) "
-				     "ON CONFLICT(name) DO UPDATE SET online=1, last_seen=excluded.last_seen, "
+				     "INSERT INTO builders (name, platform, last_seen, peer_ip, sai_hash, lws_hash, windows) "
+				     "VALUES ('%s', '%s', %llu, '%s', '%s', '%s', %d) "
+				     "ON CONFLICT(name) DO UPDATE SET last_seen=excluded.last_seen, "
 				     "peer_ip=excluded.peer_ip, sai_hash=excluded.sai_hash, lws_hash=excluded.lws_hash",
 				     build->name, build->platform, (unsigned long long)lws_now_secs(),
 				     pss->peer_ip, build->sai_hash, build->lws_hash, build->windows);
@@ -550,20 +552,20 @@ handle:
 			if (live_cb) {
 				/* Already exists (reconnect), just update dynamic info */
 				lwsl_err("%s: found live builder for %s\n", __func__, build->name);
-				live_cb->wsi = pss->wsi;
+				live_cb->wsi			= pss->wsi;
 				lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 				lws_strncpy(live_cb->sai_hash, build->sai_hash,
 					    sizeof(live_cb->sai_hash));
 				lws_strncpy(live_cb->lws_hash, build->lws_hash,
 					    sizeof(live_cb->lws_hash));
-				live_cb->windows = build->windows;
-				live_cb->online = 1;
-				live_cb->avail_slots = 1; /* default */
-				live_cb->avail_mem_kib = (unsigned int)-1;
-				live_cb->avail_sto_kib = (unsigned int)-1;
-				live_cb->s_avail_slots = live_cb->avail_slots;
-				live_cb->s_inflight_count = (int)live_cb->inflight_owner.count;
-				live_cb->s_last_rej_task_uuid[0] = '\0';
+				live_cb->windows			= build->windows;
+				live_cb->online				= 1;
+				live_cb->avail_slots			= -1; /* ie, unknown */
+				live_cb->avail_mem_kib			= (unsigned int)-1;
+				live_cb->avail_sto_kib			= (unsigned int)-1;
+				live_cb->s_avail_slots			= live_cb->avail_slots;
+				live_cb->s_inflight_count		= (int)live_cb->inflight_owner.count;
+				live_cb->s_last_rej_task_uuid[0]	= '\0';
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
 				size_t nlen = strlen(build->name) + 1;
@@ -574,22 +576,23 @@ handle:
 				live_cb = malloc(sizeof(*live_cb) + nlen + plen);
 				if (live_cb) {
 					char *p_str = (char *)(live_cb + 1);
+
 					memset(live_cb, 0, sizeof(*live_cb));
-					live_cb->name = p_str;
+					live_cb->name			= p_str;
 					memcpy(p_str, build->name, nlen);
-					live_cb->platform = p_str + nlen;
+					live_cb->platform		= p_str + nlen;
 					memcpy(p_str + nlen, build->platform, plen);
 					lws_strncpy(live_cb->sai_hash, build->sai_hash,
 						    sizeof(live_cb->sai_hash));
 					lws_strncpy(live_cb->lws_hash, build->lws_hash,
 						    sizeof(live_cb->lws_hash));
-					live_cb->windows = build->windows;
-					live_cb->avail_slots = 1; /* default */
-					live_cb->avail_mem_kib = (unsigned int)-1;
-					live_cb->avail_sto_kib = (unsigned int)-1;
-					live_cb->s_avail_slots = live_cb->avail_slots;
-					live_cb->wsi = pss->wsi;
-					live_cb->online = 1;
+					live_cb->windows		= build->windows;
+					live_cb->avail_slots		= 1; /* default */
+					live_cb->avail_mem_kib		= (unsigned int)-1;
+					live_cb->avail_sto_kib		= (unsigned int)-1;
+					live_cb->s_avail_slots		= live_cb->avail_slots;
+					live_cb->wsi			= pss->wsi;
+					live_cb->online			= 1;
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 					lws_dll2_add_tail(&live_cb->sai_plat_list, &vhd->server.builder_owner);
 				}
@@ -619,7 +622,7 @@ handle:
 					goto bail;
 			}
 		} lws_end_foreach_dll(p);
-
+#if 0
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.builder_owner.head) {
 			cb = lws_container_of(p, sai_plat_t, sai_plat_list);
 			if (cb->wsi == pss->wsi) {
@@ -628,6 +631,7 @@ handle:
 					goto bail;
 			}
 		} lws_end_foreach_dll(p);
+#endif
 
 		/*
 		 * If we did allocate a task in pss->a.ac, responsibility of
@@ -650,6 +654,7 @@ bail:
 		log = (sai_log_t *)pss->a.dest;
 		sais_log_to_db(vhd, log);
 
+#if 0
 		if (pss->mark_started) {
 			pss->mark_started = 0;
 			pss->first_log_timestamp = log->timestamp;
@@ -657,6 +662,7 @@ bail:
 						SAIES_BEING_BUILT, 0, 0))
 				goto bail;
 		}
+#endif
 
 		if (log->finished) {
 			sai_plat_t *cb;
@@ -692,8 +698,7 @@ bail:
 						lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, cb->inflight_owner.head) {
 							sul = lws_container_of(d, sai_uuid_list_t, list);
 							if (!strcmp(sul->uuid, log->task_uuid)) {
-								lws_dll2_remove(&sul->list);
-								free(sul);
+								sais_inflight_entry_destroy(sul);
 								break;
 							}
 						} lws_end_foreach_dll_safe(d, d1);
@@ -740,11 +745,13 @@ bail:
 	case SAIM_WSSCH_BUILDER_TASKREJ:
 
 		/*
-		 * builder is updating us about his status, and may be
-		 * rejecting a task we tried to give him
+		 * builder is updating us about a task status
 		 */
 
 		rej = (sai_rejection_t *)pss->a.dest;
+
+		if (!rej->task_uuid[0])
+			break;
 
 		rej->host_platform[sizeof(rej->host_platform) - 1] = '\0';
 		cb = sais_builder_from_uuid(vhd, rej->host_platform, __FILE__, __LINE__);
@@ -755,15 +762,47 @@ bail:
 			break;
 		}
 
-		cb->avail_slots = rej->avail_slots;
-		cb->avail_mem_kib = rej->avail_mem_kib;
-		cb->avail_sto_kib = rej->avail_sto_kib;
+		cb->avail_slots		= rej->avail_slots;
+		cb->avail_mem_kib	= rej->avail_mem_kib;
+		cb->avail_sto_kib	= rej->avail_sto_kib;
 
-		lwsl_notice("%s: builder %s reports rejection (rej %s), slots %d, mem %d, sto %d\n",
-			    __func__, cb->name,
-			    rej->task_uuid[0] ? rej->task_uuid : "none",
+		lwsl_notice("%s: builder %s reports task status update, reason: %d, %s, slots %d, mem %d, sto %d\n",
+			    __func__, cb->name, rej->reason, rej->task_uuid,
 			    cb->avail_slots, cb->avail_mem_kib, cb->avail_sto_kib);
 
+		do_remove_uuid = 0;
+
+		switch (rej->reason) {
+		case SAI_TASK_REASON_ACCEPTED:
+			lwsl_notice("%s: SAI_TASK_REASON_ACCEPTED\n", __func__);
+			pss->first_log_timestamp = lws_now_secs();
+			if (sais_set_task_state(vhd, NULL, NULL, rej->task_uuid,
+						SAIES_BEING_BUILT, 0, 0))
+				break;
+			/* leave the uuid listed until step completed */
+			break;
+		case SAI_TASK_REASON_DUPE:
+			lwsl_notice("%s: SAI_TASK_REASON_DUPE\n", __func__);
+			do_remove_uuid = 1;
+			break;
+		case SAI_TASK_REASON_BUSY:
+			lwsl_notice("%s: SAI_TASK_REASON_BUSY\n", __func__);
+			do_remove_uuid = 1;
+			break;
+		case SAI_TASK_REASON_DESTROYED:
+			lwsl_notice("%s: SAI_TASK_REASON_DESTROYED\n", __func__);
+			do_remove_uuid = 1;
+			break;
+		}
+
+		if (do_remove_uuid && sais_is_task_inflight(vhd, rej->task_uuid, &ul)) {
+			lwsl_notice("%s: ### Removing %s from inflight\n", __func__, rej->task_uuid);
+			lws_dll2_remove(&ul->list);
+			free(ul);
+		}
+
+
+#if 0
 		if (rej->task_uuid[0]) {
 			sai_uuid_list_t *sul;
 
@@ -781,11 +820,13 @@ bail:
 				    sizeof(cb->last_rej_task_uuid));
 			sais_task_reset(vhd, rej->task_uuid, 1);
 		}
+#endif
 
 		cb->s_avail_slots = cb->avail_slots;
 		cb->s_inflight_count = (int)cb->inflight_owner.count;
 		lws_strncpy(cb->s_last_rej_task_uuid, cb->last_rej_task_uuid,
 			    sizeof(cb->s_last_rej_task_uuid));
+
 		sais_list_builders(vhd);
 
 		lwsac_free(&pss->a.ac);
@@ -1329,24 +1370,22 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	 * (all in .ac)
 	 */
 
-	task = lws_container_of(pss->issue_task_owner.head, sai_task_t,
-				pending_assign_list);
+	task = lws_container_of(pss->issue_task_owner.head, sai_task_t, pending_assign_list);
 	lws_dll2_remove(&task->pending_assign_list);
 
 	js = lws_struct_json_serialize_create(lsm_schema_map_ta,
 					      LWS_ARRAY_SIZE(lsm_schema_map_ta),
 					      0, task);
-	if (!js) {
-		lwsac_free(&task->ac_task_container);
-		free(task);
-		return 1;
-	}
+	if (!js)
+		goto bail;
 
 	n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 	lws_struct_json_serialize_destroy(&js);
 	pss->one_event = NULL;
 	lwsac_free(&task->ac_task_container);
 	free(task);
+
+	lwsl_err("%s: ########## ATTACH TASK: %.*s\n", __func__, (int)w, start);
 
 	first = 1;
 
@@ -1376,4 +1415,11 @@ send_json:
 		lws_callback_on_writable(pss->wsi);
 
 	return 0;
+
+bail:
+	lwsac_free(&task->ac_task_container);
+	free(task);
+
+	return 1;
+
 }

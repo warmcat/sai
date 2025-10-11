@@ -151,8 +151,6 @@ struct pss {
 	sqlite3			*pdb_artifact;
 	sqlite3_blob		*blob_artifact;
 
-	lws_dll2_owner_t	platform_owner; /* sai_platform_t builder offers */
-	lws_dll2_owner_t	task_cancel_owner; /* sai_platform_t builder offers */
 	lws_dll2_owner_t	logs_owner;
 	lws_struct_args_t	a;
 

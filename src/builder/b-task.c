@@ -279,9 +279,9 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
  * update all servers we're connected to about builder status / optional reject
  */
 
-int
+static int
 saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
-				const char *rej_task_uuid)
+				const char *rej_task_uuid, unsigned int reason)
 {
 	struct sai_rejection rej;
 
@@ -294,29 +294,23 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 	memset(&rej, 0, sizeof(rej));
 
 	/*
-	 * Queue a builder status update /
-	 * optional task rejection
+	 * Queue a builder task status update
 	 */
 
-	if (rej_task_uuid) {
-		lwsl_notice("%s: builder %s occupied reject\n",
-			__func__, sp->name);
-
+	if (rej_task_uuid)
 		lws_strncpy(rej.task_uuid, rej_task_uuid,
 				sizeof(rej.task_uuid));
-	} else
-		lwsl_notice("%s: issuing load update\n", __func__);
 
-	lws_snprintf(rej.host_platform, sizeof(rej.host_platform), "%s",
-		     sp->name);
+	lws_snprintf(rej.host_platform, sizeof(rej.host_platform), "%s", sp->name);
 
-	rej.avail_slots = (int)(sp->job_limit ? sp->job_limit : 6u) -
+	rej.avail_slots		= (int)(sp->job_limit ? sp->job_limit : 6u) -
 					(int)sp->nspawn_owner.count;
-	rej.avail_mem_kib = saib_get_free_ram_kib();
-	rej.avail_sto_kib = saib_get_free_disk_kib(builder.home);
+	rej.avail_mem_kib	= saib_get_free_ram_kib();
+	rej.avail_sto_kib	= saib_get_free_disk_kib(builder.home);
 
-	if (saib_srv_queue_json_fragments_helper(spm->ss,
-				lsm_schema_json_task_rej,
+	rej.reason		= (uint8_t)reason;
+
+	if (saib_srv_queue_json_fragments_helper(spm->ss, lsm_schema_json_task_rej,
 				LWS_ARRAY_SIZE(lsm_schema_json_task_rej), &rej))
 		return -1;
 
@@ -381,7 +375,9 @@ saib_task_destroy(struct sai_nspawn *ns)
 		 * Schedule informing all the servers we're connected to
 		 */
 
-		saib_queue_task_status_update(ns->sp, ns->spm, NULL);
+		if (ns->task)
+			saib_queue_task_status_update(ns->sp, ns->spm, ns->task->uuid,
+					      SAI_TASK_REASON_DESTROYED);
 	}
 
 	if (ns->task && ns->task->ac_task_container) {
@@ -736,12 +732,13 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 	}
 
 	switch (a.top_schema_index) {
+
 	case SAIB_RX_TASK_ALLOCATION:
 		task = (sai_task_t *)a.dest;
 		task->ac_task_container = a.ac; /* bequeath lwsac responsibility */
 
 		/*
-		 * Master is requesting that a platform adopt a task...
+		 * Server is requesting that a platform adopt a task...
 		 *
 		 * Multiple platforms may be using this connection to a given
 		 * server so we have to disambiguate which platform he's
@@ -764,20 +761,11 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 			return 1;
 		}
 
-		/*
-		 * There's not already an existing step we accepted,
-		 * using the same uuid?
-		 */
-
 		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
 			struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
 
 			lwsl_notice("%s: nspawn_census: %s\n", __func__, xns->task->uuid);
 
-//			if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
-//				lwsl_err("%s: server offered task %s that already has an extant nspawn\n", __func__, task->uuid);
-			//	return 0;
-//			}
 		} lws_end_foreach_dll_safe(d, d1);
 
 
@@ -790,7 +778,7 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		sp->deserialization_ac = a.ac;
 
 		/*
-		 * Look for a spare nspawn...
+		 * Are we willing to take this task step on?
 		 *
 		 * We may connect to multiple servers and it's asynchronous
 		 * which server may have tasked us first, so it's not that
@@ -804,15 +792,17 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		       struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
 		       if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
 				lwsl_warn("%s: server offered task that's already running\n", __func__);
-				saib_queue_task_status_update(sp, spm, task->uuid);
+				saib_queue_task_status_update(sp, spm, task->uuid, SAI_TASK_REASON_DUPE);
 			       return 0;
 		       }
 		       if (!xns->task && !ns)
 			       ns = xns;
 		} lws_end_foreach_dll_safe(d, d1);
 
-               if (saib_can_accept_task(task, sp)) { /* not accepted */
-			if (saib_queue_task_status_update(sp, spm, task->uuid))
+
+               if (saib_can_accept_task(task, sp)) {
+			lwsl_warn("%s: builder rejects offered task\n", __func__);
+			if (saib_queue_task_status_update(sp, spm, task->uuid, SAI_TASK_REASON_BUSY))
 				return -1;
 			return 0;
 		}
@@ -1061,17 +1051,15 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		}
 
 		/* we're busy, we're not in the mood for suspending */
+
 		lwsl_notice("%s: cancelling suspend grace time\n", __func__);
 		lws_sul_cancel(&ns->builder->sul_idle);
 
 		/*
-		 * Let the mirror thread get on with things...
-		 *
-		 * When we took on a task, we should inform any servers we're
-		 * connected to about our change in task load status
+		 * We accepted the task
 		 */
 
-		if (saib_queue_task_status_update(sp, spm, NULL))
+		if (saib_queue_task_status_update(sp, spm, task->uuid, SAI_TASK_REASON_ACCEPTED))
 			goto bail;
 
 		break;

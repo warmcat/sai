@@ -74,6 +74,7 @@ saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 				((int)ns->sp->nspawn_owner.count - 1),
 			saib_get_free_ram_kib(),
 			saib_get_free_disk_kib(builder.home));
+		ns->retcode_set = 0;
 	}
 
 	n += lws_snprintf(lj + n, sizeof(lj) - (unsigned int)n,
@@ -110,7 +111,7 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		lwsl_info("%s: stdwsi CLOSE, ns %p, lsp: %p, wsi: %p, fd: %d, stdfd: %d\n",
 			  __func__, op ? op->ns : NULL, op ? op->lsp : NULL,
 			  wsi, lws_get_socket_fd(wsi), lws_spawn_get_stdfd(wsi));
-
+/*
 		ilen = lws_snprintf((char *)buf, sizeof(buf), "Stdwsi %d close\n", lws_spawn_get_stdfd(wsi));
 		if (ns) {
 			saib_log_chunk_create(ns, buf, (size_t)ilen, 3);
@@ -119,7 +120,7 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 					lwsl_warn("%s: lws_ss_request_tx failed\n",
 						  __func__);
 		}
-
+*/
 		if (op && op->lsp) {
 			if (lws_spawn_stdwsi_closed(op->lsp, wsi) &&
 			    ns->reap_cb_called) {
@@ -400,7 +401,7 @@ static const char * const runscript_win_first =
 	"set SAI_LOGPROXY_TTY0=%s\n"
 	"set SAI_LOGPROXY_TTY1=%s\n"
 	"set HOME=%s\n"
-       "cd %s%s &&"
+	"cd %s%s &&"
 	" rmdir /s /q src & "
 	"%s < NUL"
 ;
@@ -413,14 +414,14 @@ static const char * const runscript_win_next =
 	"set SAI_LOGPROXY_TTY0=%s\n"
 	"set SAI_LOGPROXY_TTY1=%s\n"
 	"set HOME=%s\n"
-       "cd %s%s &&"
+	"cd %s%s &&"
 	"%s < NUL"
 ;
 
 #else
 
 static const char * const runscript_first =
-	"#!/bin/bash -x\n"
+	"#!/bin/bash\n" /* use -x to see what it does for these */
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
 #else
@@ -445,7 +446,7 @@ static const char * const runscript_first =
 ;
 
 static const char * const runscript_next =
-	"#!/bin/bash -x\n"
+	"#!/bin/bash\n" /* use -x to see what it does for these */
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
 #else
@@ -469,7 +470,7 @@ static const char * const runscript_next =
 ;
 
 static const char * const runscript_build =
-	"#!/bin/bash -x\n"
+	"#!/bin/bash\n" /* use -x to see what it does for these */
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
 #else

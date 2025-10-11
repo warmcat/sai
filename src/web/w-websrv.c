@@ -115,8 +115,8 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	sai_browse_rx_evinfo_t *ei;
 	int n;
 
-	lwsl_warn("%s: len %d, flags %d\n", __func__, (int)len, flags);
-	lwsl_hexdump_notice(buf, len);
+	// lwsl_warn("%s: len %d, flags %d\n", __func__, (int)len, flags);
+	// lwsl_hexdump_notice(buf, len);
 
 	if (flags & LWSSS_FLAG_SOM) {
 		/* First fragment of a new message. Clear old parse results and init. */
@@ -298,8 +298,8 @@ saiw_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	*len = used;
 	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
 
-	lwsl_ss_notice(m->ss, "Sending %d web->srv: ssflags %d", (int)*len, (int)*flags);
-	lwsl_hexdump_notice(buf, *len);
+	// lwsl_ss_notice(m->ss, "Sending %d web->srv: ssflags %d", (int)*len, (int)*flags);
+	// lwsl_hexdump_notice(buf, *len);
 
 	if (m->wbltx)
 		return lws_ss_request_tx(m->ss);

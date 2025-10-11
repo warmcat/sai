@@ -214,6 +214,7 @@ const lws_struct_map_t lsm_task_rej[] = {
 	LSM_JO_SIGNED	(sai_rejection_t, avail_slots,	 "avail_slots"),
 	LSM_JO_UNSIGNED	(sai_rejection_t, avail_mem_kib, "avail_mem_kib"),
 	LSM_JO_UNSIGNED	(sai_rejection_t, avail_sto_kib, "avail_sto_kib"),
+	LSM_JO_UNSIGNED (sai_rejection_t, reason,	 "reason"),
 };
 
 const lws_struct_map_t lsm_schema_json_task_rej[] = {

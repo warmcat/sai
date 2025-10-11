@@ -123,10 +123,6 @@ struct pss {
 	lws_dll2_owner_t	viewer_state_owner;
 	lws_struct_args_t	a;
 
-	union {
-		sai_plat_t	*b;
-		sai_plat_owner_t *o;
-	} u;
 	const char		*server_name;
 
 	struct lwsac		*query_ac;
@@ -351,4 +347,13 @@ sais_mark_all_builders_offline(struct vhd *vhd);
 
 int
 sql3_get_string_cb(void *user, int cols, char **values, char **name);
+
+int
+sais_is_task_inflight(struct vhd *vhd, const char *uuid, sai_uuid_list_t **hit);
+
+int
+sais_add_to_inflight_list_if_absent(struct vhd *vhd, sai_plat_t *sp, const char *uuid);
+
+void
+sais_inflight_entry_destroy(sai_uuid_list_t *ul);
 

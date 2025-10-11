@@ -755,7 +755,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	case LWS_CALLBACK_CLOSED:
 		lwsac_free(&pss->query_ac);
 
-		lwsl_wsi_user(wsi, "############################### sai-server: CLOSED sai-web conn ###############");
+		lwsl_wsi_user(wsi, "############################### sai-server: CLOSED builder conn ###############");
 		/* remove pss from vhd->builders (active connection list) */
 		lws_dll2_remove(&pss->same);
 
@@ -772,6 +772,21 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			sais_event_db_close(pss->vhd, &pss->pdb_artifact);
 			pss->pdb_artifact = NULL;
 		}
+
+		/* drop any inflight task information for this builder */
+
+		lws_start_foreach_dll(struct lws_dll2 *, pb,
+					vhd->server.builder_owner.head) {
+			sai_plat_t *build = lws_container_of(pb, sai_plat_t, sai_plat_list);
+
+			lws_start_foreach_dll_safe(struct lws_dll2 *, pif, pif1,
+					      build->inflight_owner.head) {
+				sai_uuid_list_t *ul = lws_container_of(pif, sai_uuid_list_t, list);
+
+				sais_inflight_entry_destroy(ul);
+
+			} lws_end_foreach_dll_safe(pif, pif1);
+		} lws_end_foreach_dll(pb);
 
 		/*
 		 * Update the sai-webs about the builder removal, so they
@@ -856,15 +871,15 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 						sai_plat_t *cb = lws_container_of(p2, sai_plat_t, sai_plat_list);
 						const char *dot = strchr(cb->name, '.');
 
-						lwsl_notice("%s: builder entry: %s\n", __func__, cb->name);
+						// lwsl_notice("%s: builder entry: %s\n", __func__, cb->name);
 
 						if (dot && !(bf_set & (1 << shi)) && strlen(b->name) <= (size_t)(dot - cb->name) &&
 						    !strncmp(cb->name + (dot - cb->name) - strlen(b->name), b->name, strlen(b->name))) {
 							lwsl_notice("%s: ++++++++++++ Setting %s .stay_on=%d\n", __func__, cb->name, b->stay_on);
 							cb->stay_on = b->stay_on;
 							bf_set |= (1 << shi);
-						} else
-							lwsl_notice("%s: ------------ Unmatched '%s' '%s'\n", __func__, cb->name + (dot - cb->name) - strlen(b->name), b->name);
+						} // else
+						  	// lwsl_notice("%s: ------------ Unmatched '%s' '%s'\n", __func__, cb->name + (dot - cb->name) - strlen(b->name), b->name);
 
 						shi++;
 					} lws_end_foreach_dll(p2);
@@ -909,7 +924,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		/*
 		 * This is a message from a builder
 		 */
-		lwsl_notice("%s: rx from builder, len %d, final: %d\n", __func__, (int)len, lws_is_final_fragment(wsi));
+		// lwsl_notice("%s: rx from builder, len %d, final: %d\n", __func__, (int)len, lws_is_final_fragment(wsi));
 		pss->wsi = wsi;
 		if (sais_ws_json_rx_builder(vhd, pss, in, len))
 			return -1;

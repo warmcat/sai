@@ -329,6 +329,77 @@ sais_event_ran_platform(struct vhd *vhd, const char *event_uuid,
 }
 
 /*
+ * On the server's builder-platform, we keep a list of tasks we have offered it.
+ *
+ * If the builder accepted the task, then we change the task's state in sqlite and
+ * remove it from this list.
+ *
+ * Inbetweentimes, we know to avoid re-offering or cancelling the task by seeing
+ * if the task is already listed as "inflight".
+ */
+
+int
+sais_is_task_inflight(struct vhd *vhd, const char *uuid, sai_uuid_list_t **hit)
+{
+
+	/*
+	 * lookup a uuid across all builder / plats
+	 * to see if it is inflight
+	 */
+
+	lws_start_foreach_dll(struct lws_dll2 *, pb,
+			      vhd->server.builder_owner.head) {
+		sai_plat_t *build = lws_container_of(pb, sai_plat_t, sai_plat_list);
+
+		lws_start_foreach_dll(struct lws_dll2 *, pif,
+				      build->inflight_owner.head) {
+			sai_uuid_list_t *ul = lws_container_of(pif, sai_uuid_list_t, list);
+
+			lwsl_notice("%s: '%s' vs '%s'\n", __func__, uuid, ul->uuid);
+			if (!strcmp(uuid, ul->uuid)) {
+				if (hit)
+					*hit = ul;
+				return 1;
+			}
+
+		} lws_end_foreach_dll(pif);
+	} lws_end_foreach_dll(pb);
+
+	return 0;
+}
+
+int
+sais_add_to_inflight_list_if_absent(struct vhd *vhd, sai_plat_t *sp, const char *uuid)
+{
+	sai_uuid_list_t *uuid_list;
+
+	if (sais_is_task_inflight(vhd, uuid, NULL))
+		return 0;
+
+	uuid_list = malloc(sizeof(*uuid_list));
+	if (!uuid_list)
+		return 1;
+
+	memset(uuid_list, 0, sizeof(*uuid_list));
+	lws_strncpy(uuid_list->uuid, uuid, sizeof(uuid_list->uuid));
+
+	lws_dll2_add_tail(&uuid_list->list, &sp->inflight_owner);
+
+	lwsl_notice("%s: ### created uuid_list entry for %s\n", __func__, uuid_list->uuid);
+	assert(sais_is_task_inflight(vhd, uuid, NULL));
+	return 0;
+}
+
+void
+sais_inflight_entry_destroy(sai_uuid_list_t *ul)
+{
+	lwsl_notice("%s: ### REMOVING uuid_list entry for %s\n", __func__, ul->uuid);
+
+	lws_dll2_remove(&ul->list);
+	free(ul);
+}
+
+/*
  * Find the most recent task that still needs doing for platform, on any event
  */
 static const sai_task_t *
@@ -383,6 +454,11 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 
 		if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
 
+			/*
+			 * Find out how many tasks in startable state for this platform,
+			 * on this event
+			 */
+
 			lws_snprintf(query, sizeof(query), "select count(state) from tasks where "
 							   "state = 0 and platform = '%s'", esc_plat);
 			m = sqlite3_exec(pdb, query, sql3_get_integer_cb, &pending_count, NULL);
@@ -392,7 +468,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 				lwsl_err("%s: query failed: %d\n", __func__, m);
 			}
 
-			if (pending_count > 0) {
+			if (pending_count > 0) { /* there are some startable tasks on this event */
 
 				lws_sql_purify(esc_repo, e->repo_name, sizeof(esc_repo));
 				lws_sql_purify(esc_ref, e->ref, sizeof(esc_ref));
@@ -410,16 +486,24 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 					if (sqlite3_prepare_v2(vhd->server.pdb, query, -1, &sm, NULL) != SQLITE_OK)
 						break;
 					if (sqlite3_step(sm) == SQLITE_ROW) {
-						const unsigned char *u = sqlite3_column_text(sm, 0);
-						if (u)
+						const char *u = (const char *)sqlite3_column_text(sm, 0);
+						if (u) {
+							if (sais_is_task_inflight(vhd, u, NULL)) { /* we have it in hand */
+								lwsl_notice("%s: skipping pending task %s due to being inflight\n", __func__, u);
+								sqlite3_finalize(sm);
+								break;
+							}
 							lws_strncpy(prev_event_uuid, (const char *)u, sizeof(prev_event_uuid));
+						}
 						last_created = (uint64_t)sqlite3_column_int64(sm, 1);
 					}
 					sqlite3_finalize(sm);
+
 					if (!prev_event_uuid[0])
 						break;
 					if (!sais_event_ran_platform(vhd, prev_event_uuid, esc_plat))
 						continue;
+
 					lws_strncpy(checked_uuid, prev_event_uuid, sizeof(checked_uuid));
 					break;
 				} while (1);
@@ -504,7 +588,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 								       lsm_schema_sq3_map_task,
 								       &owner, &pss->ac_alloc_task, 0, 1);
 					if (owner.count) {
-						lwsl_notice("%s: MATCH! Prioritizing failed task for %s ('%s')\n",
+						lwsl_notice("%s: Prioritizing failed task for %s ('%s')\n",
 							    __func__, platform, fti->taskname);
 						sais_event_db_close(vhd, &pdb);
 						lwsac_free(&ac);
@@ -1017,19 +1101,19 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	const sai_task_t *task_template;
 	char original_rejected_uuid[65];
 	sai_task_t temp_task;
-	sai_uuid_list_t *sul;
 	int attempts = 0;
 
+#if 0
 	if (cb->avail_slots <= 0) {
-		lwsl_info("%s: builder %s has no available slots\n", __func__,
+		lwsl_warn("%s: builder %s has no available slots\n", __func__,
 			  cb->name);
 		return 1;
 	}
-
+#endif
 	lws_strncpy(original_rejected_uuid, cb->last_rej_task_uuid,
 		    sizeof(original_rejected_uuid));
 
-	while (attempts++ < 10) {
+	while (attempts++ < 4) {
 
 		/*
 		 * Look for a task for this platform, on any event that needs building
@@ -1063,6 +1147,11 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 			continue;
 		}
 
+		if (sais_is_task_inflight(vhd, task_template->uuid, NULL)) {
+			lwsl_notice("%s: skipping %s as listed on inflight\n", __func__, task_template->uuid);
+			continue;
+		}
+
 		lwsl_notice("%s: %s: task %s found for %s\n", __func__,
 			    platform_name, task_template->uuid, cb->name);
 
@@ -1072,14 +1161,10 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 					SAIES_PASSED_TO_BUILDER, lws_now_secs(), 0))
 			goto bail;
 
-		sul = malloc(sizeof(*sul));
-		if (!sul) {
+		if (sais_add_to_inflight_list_if_absent(vhd, cb, task_template->uuid)) {
 			sais_task_reset(vhd, task_template->uuid, 1);
 			goto bail;
 		}
-		memset(sul, 0, sizeof(*sul));
-		lws_strncpy(sul->uuid, task_template->uuid, sizeof(sul->uuid));
-		lws_dll2_add_tail(&sul->list, &cb->inflight_owner);
 
 		/* provisionally decrement until we hear from builder */
 		if (cb->avail_slots > 0)
@@ -1089,6 +1174,7 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		cb->s_inflight_count = (int)cb->inflight_owner.count;
 		lws_strncpy(cb->s_last_rej_task_uuid, cb->last_rej_task_uuid,
 			    sizeof(cb->s_last_rej_task_uuid));
+
 		sais_list_builders(vhd);
 
 		/* advance the task state first time we get logs */
@@ -1197,25 +1283,27 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 int
 sais_continue_task(struct vhd *vhd, const char *task_uuid)
 {
-	char event_uuid[33], esc_uuid[129], *p, *start, url[128], mirror_path[256],
-		update[128];
-	lws_dll2_owner_t o, o_event;
+	char event_uuid[33], esc_uuid[129], *p, *start, url[128], mirror_path[256], update[128];
 	sai_task_t *task = NULL, *task_template;
-	sai_event_t *event;
-	sai_plat_t *cb;
-	struct pss *pss;
-	sqlite3 *pdb = NULL;
-	int n, build_step;
+	lws_dll2_owner_t o, o_event;
 	struct lwsac *ac = NULL;
+	sai_uuid_list_t *ul;
+	sqlite3 *pdb = NULL;
+	sai_event_t *event;
+	int n, build_step;
+	struct pss *pss;
+	sai_plat_t *cb;
+
+	if (sais_is_task_inflight(vhd, task_uuid, &ul) && ul->started) {
+		lwsl_notice("%s: not continuing %s as listed on inflight\n", __func__, task_uuid);
+		return 1;
+	}
 
 	memset(event_uuid, 0, sizeof(event_uuid));
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
 	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) || !pdb)
 		return -1;
-
-	sqlite3_exec(pdb, "ALTER TABLE tasks ADD COLUMN build_step INTEGER;",
-		     NULL, NULL, NULL);
 
 	lwsl_notice("%s: task_uuid %s, pdb %p\n", __func__, task_uuid, pdb);
 
@@ -1350,6 +1438,14 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 	}
 
 	task->server_name = pss->server_name;
+
+	if (sais_add_to_inflight_list_if_absent(vhd, cb, task->uuid)) {
+		sais_task_reset(vhd, task->uuid, 1);
+		sais_event_db_close(vhd, &pdb);
+		lwsac_free(&task->ac_task_container);
+		free(task);
+		return -1;
+	}
 
 	lws_dll2_add_tail(&task->pending_assign_list, &pss->issue_task_owner);
 	lws_callback_on_writable(pss->wsi);

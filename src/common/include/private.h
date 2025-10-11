@@ -106,10 +106,14 @@ typedef struct sai_platform_load {
 
 struct sai_nspawn;
 
+typedef struct sai_plat sai_plat_t;
+
 typedef struct {
-	lws_dll2_t		list;
+	lws_dll2_t		list; /* managed by an owner via LSM_SCHEMA_DLL2 / lsm_task */
 	lws_dll2_t		pending_assign_list;
+
 	const struct sai_event	*one_event; /* event we are associated with */
+
 	char			platform[96];
 	char			build[4096]; /* strsubst and serialized */
 	char			taskname[96];
@@ -129,11 +133,11 @@ typedef struct {
 
 	struct lwsac		*ac_task_container;
 
-	const char		*server_name; /* used in offer */
-	const char		*repo_name; /* used in offer */
-	const char		*git_ref; /* used in offer */
-	const char		*git_hash; /* used in offer */
-	const char		*git_repo_url; /* used in offer */
+	const char		*server_name;		/* used in offer */
+	const char		*repo_name;		/* used in offer */
+	const char		*git_ref;		/* used in offer */
+	const char		*git_hash;		/* used in offer */
+	const char		*git_repo_url;		/* used in offer */
 	uint64_t		last_updated;
 	uint64_t		started;
 	uint64_t		duration;
@@ -152,8 +156,6 @@ typedef struct {
 
 	char			rebuildable;
 } sai_task_t;
-
-typedef struct sai_plat sai_plat_t;
 
 struct saib_logproxy {
 	char			sockpath[128];
@@ -228,15 +230,25 @@ struct sai_nspawn {
 /*
  * Builder is indicating he can't take the task and server should free it up
  * and try another builder.
+ *
  */
+
+enum {
+	SAI_TASK_REASON_ACCEPTED  = 0,
+ 	SAI_TASK_REASON_DUPE	  = 1,
+	SAI_TASK_REASON_BUSY	  = 2,
+	SAI_TASK_REASON_DESTROYED = 3,
+};
 
 typedef struct sai_rejection {
 	struct lws_dll2 list;
+
 	char		host_platform[65];
 	char		task_uuid[65];
 	int		avail_slots;
 	unsigned int	avail_mem_kib;
 	unsigned int	avail_sto_kib;
+	unsigned char	reason;
 } sai_rejection_t;
 
 /*
@@ -268,7 +280,6 @@ struct sai_event;
 
 typedef struct sai_event {
 	struct lws_dll2			list;
-	lws_dll2_owner_t		task_owner;
 	char				repo_name[65];
 	char				repo_fetchurl[96];
 	char				ref[65];
@@ -425,8 +436,9 @@ typedef struct sai_plat_server_ref {
 
 /* common struct for lists of task uuids on a builder */
 typedef struct sai_uuid_list {
-	lws_dll2_t list;
-	char uuid[65];
+	lws_dll2_t		list;
+	char			uuid[65];
+	char			started;
 } sai_uuid_list_t;
 
 /*
@@ -608,7 +620,7 @@ extern const lws_struct_map_t
 	lsm_artifact[8],
 	lsm_plat_list[1],
 	lsm_schema_map_plat[1],
-	lsm_task_rej[5],
+	lsm_task_rej[6],
 	lsm_task_cancel[1],
 	lsm_schema_json_map_can[1],
 	lsm_schema_json_map_task[1],
