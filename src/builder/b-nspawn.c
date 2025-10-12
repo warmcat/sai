@@ -189,7 +189,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	char s[256];
 	int n;
 
-	saib_log_chunk_create(ns, ">saib> Reaping build process\n", 29, 3);
+	saib_log_chunk_create(ns, ">saib> <=== Reaping build process\n", 34, 3);
 
 #if !defined(WIN32)
 

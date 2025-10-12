@@ -231,7 +231,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
         case LWSSSCS_SERVER_TXN:
 
 		lws_ss_get_metadata(lws_ss_from_user(g), "path", (const void **)&path, &len);
-		lwsl_ss_user(lws_ss_from_user(g), "LWSSSCS_SERVER_TXN path '%.*s' (%d)", (int)len, path, (int)len);
+		// lwsl_ss_user(lws_ss_from_user(g), "LWSSSCS_SERVER_TXN path '%.*s' (%d)", (int)len, path, (int)len);
 
 		/*
 		 * path is containing a string like "/power-off/b32"

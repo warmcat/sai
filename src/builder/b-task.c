@@ -226,6 +226,7 @@ enum {
 	SAIB_RX_REBUILD
 };
 
+#if 0
 static const char * const nsstates[] = {
 	"NSSTATE_INIT",
 	"NSSTATE_MOUNTING",
@@ -234,26 +235,27 @@ static const char * const nsstates[] = {
 	"NSSTATE_UPLOADING_ARTIFACTS",
 	"NSSTATE_FAILED",
 };
+#endif
 
 static void saib_start_artifact_upload(struct sai_nspawn *ns);
 
 int
 saib_set_ns_state(struct sai_nspawn *ns, int state)
 {
-	char log[100];
-	int n;
+//	char log[100];
+//	int n;
 
 	ns->state = (uint8_t)state;
 	ns->state_changed = 1;
 
-	if (state >= 0 && state < (int)LWS_ARRAY_SIZE(nsstates))
-		n = lws_snprintf(log, sizeof(log), ">saib> %s\n", nsstates[state]);
-	else
-		n = lws_snprintf(log, sizeof(log), ">saib> ILLEGAL_STATE %d\n", (int)state);
+//	if (state >= 0 && state < (int)LWS_ARRAY_SIZE(nsstates))
+//		n = lws_snprintf(log, sizeof(log), ">saib> %s\n", nsstates[state]);
+//	else
+//		n = lws_snprintf(log, sizeof(log), ">saib> ILLEGAL_STATE %d\n", (int)state);
 
-	lwsl_user("%s: task %s: %s\n", __func__, ns->task ? ns->task->uuid : "null", log);
+//	lwsl_user("%s: task %s: %s\n", __func__, ns->task ? ns->task->uuid : "null", log);
 
-	saib_log_chunk_create(ns, log, (unsigned int)n, 3);
+//	saib_log_chunk_create(ns, log, (unsigned int)n, 3);
 
 	if (state == NSSTATE_EXECUTING_STEPS && ns->spm &&
 	    !ns->spm->sul_load_report.list.owner)
@@ -703,7 +705,9 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 	sai_rebuild_t *reb;
 	sai_task_t *task;
 	int n, m, en;
+	char mb[96];
 	char *p;
+	int ml;
 
 	/*
 	 * use the schema name on the incoming JSON to decide what kind of
@@ -920,24 +924,33 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		ns->current_step = task->build_step;
 		ns->build_step_count = task->build_step_count;
 		if (!ns->current_step) {
-			ns->spins = 0;
+			ns->spins	= 0;
 			ns->user_cancel = 0;
 			ns->us_cpu_user = 0;
-			ns->us_cpu_sys = 0;
-			ns->worst_mem = 0;
-			ns->worst_stg = 0;
+			ns->us_cpu_sys	= 0;
+			ns->worst_mem	= 0;
+			ns->worst_stg	= 0;
 		}
 		ns->spm = spm; /* bind this task to the spm the req came in on */
 
-		{
-			int ml;
-			char mb[96];
+		if (!ns->current_step) {
+			saib_log_chunk_create(ns, ">saib>\n", 7, 3);
+			saib_log_chunk_create(ns, ">saib>\n", 7, 3);
+			saib_log_chunk_create(ns, ">saib>\n", 7, 3);
 
 			ml = lws_snprintf(mb, sizeof(mb),
 					  ">saib> Sai Builder Version: %s, lws: %s\n",
 					  BUILD_INFO, LWS_BUILD_HASH);
 			saib_log_chunk_create(ns, mb, (unsigned int)ml, 3);
 		}
+
+		saib_log_chunk_create(ns, ">saib>\n", 7, 3);
+		ml = lws_snprintf(mb, sizeof(mb),
+				  ">saib> Starting task step %d ===>\n",
+				  ns->current_step + 1);
+
+		saib_log_chunk_create(ns, mb, (unsigned int)ml, 3);
+
 		saib_set_ns_state(ns, NSSTATE_INIT);
 
 #if defined(__linux__)
@@ -945,17 +958,16 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 		ns->fsm.layers[1] = "env";
 #endif
 
-		lws_snprintf(ns->fsm.ovname, sizeof(ns->fsm.ovname), "%s",
-			     task->uuid);
+		lws_snprintf(ns->fsm.ovname, sizeof(ns->fsm.ovname), "%s", task->uuid);
 
-		lwsl_notice("%s: server %s\n", __func__, ns->server_name);
-		lwsl_notice("%s: project %s\n", __func__, ns->project_name);
-		lwsl_notice("%s: ref %s\n", __func__, ns->ref);
-		lwsl_notice("%s: hash %s\n", __func__, ns->hash);
-		lwsl_notice("%s: distro %s\n", __func__, ns->fsm.distro);
-		lwsl_notice("%s: ovname %s\n", __func__, ns->fsm.ovname);
-		lwsl_notice("%s: git_repo_url %s\n", __func__, ns->git_repo_url);
-		lwsl_notice("%s: mountpoint %s\n", __func__, ns->fsm.mp);
+//		lwsl_notice("%s: server %s\n", __func__, ns->server_name);
+//		lwsl_notice("%s: project %s\n", __func__, ns->project_name);
+//		lwsl_notice("%s: ref %s\n", __func__, ns->ref);
+//		lwsl_notice("%s: hash %s\n", __func__, ns->hash);
+//		lwsl_notice("%s: distro %s\n", __func__, ns->fsm.distro);
+//		lwsl_notice("%s: ovname %s\n", __func__, ns->fsm.ovname);
+//		lwsl_notice("%s: git_repo_url %s\n", __func__, ns->git_repo_url);
+//		lwsl_notice("%s: mountpoint %s\n", __func__, ns->fsm.mp);
 
 		n = lws_snprintf(ns->inp, sizeof(ns->inp), "%s%c",
 				 builder.home, csep);
@@ -1052,7 +1064,6 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		/* we're busy, we're not in the mood for suspending */
 
-		lwsl_notice("%s: cancelling suspend grace time\n", __func__);
 		lws_sul_cancel(&ns->builder->sul_idle);
 
 		/*

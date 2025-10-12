@@ -800,10 +800,10 @@ function summarize_build_situation(event_uuid)
 		text = total + " pending";
 	else {
 		var parts = [];
-		if (good) parts.push(good + " passed");
-		if (bad) parts.push(bad + " failed");
-		if (ongoing) parts.push(ongoing + " ongoing");
-		if (pending) parts.push(pending + " pending");
+		if (good) parts.push(good + " OK");
+		if (bad) parts.push(bad + " bad");
+		if (ongoing) parts.push(ongoing + " building");
+		if (pending) parts.push(pending + " wait");
 		text = parts.join(", ");
 	}
 
@@ -1055,10 +1055,11 @@ function createBuilderDiv(plat) {
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-ram w-0"></div></div>` +
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-disk w-0"></div></div>` +
 		     `</div>`;
-	innerHTML += `<br>${plat.peer_ip}<div class="server-state">` +
-		     `Slots: ${plat.s_avail_slots}, In-flight: ${plat.s_inflight_count}<br>` +
-		     `Last Reject: ${plat.s_last_rej_task_uuid ? plat.s_last_rej_task_uuid.substring(0, 8) : 'none'}` +
-		     `</div></td></tr></tbody></table>`;
+	innerHTML += `${plat.peer_ip}`;
+//	`<div class="server-state">` +
+//		     `Slots: ${plat.s_avail_slots}, In-flight: ${plat.s_inflight_count}<br>` +
+//		     `Last Reject: ${plat.s_last_rej_task_uuid ? plat.s_last_rej_task_uuid.substring(0, 8) : 'none'}` + "</div>" +
+	innerHTML +=  `</td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;
 
@@ -1320,6 +1321,8 @@ function ws_open_sai()
 				return; // Stop processing this old message
 			}
 
+			console.log(jso.schema);
+
 			switch (jso.schema) {                 
 
  			case "com.warmcat.sai.builders":
@@ -1447,7 +1450,7 @@ function ws_open_sai()
 					/* this is just the summary box, not the tasks */
 					document.getElementById("esr-" + jso.overview[0].e.uuid).innerHTML =
 						sai_event_summary_render(jso.overview[0], now_ut, 1);
-						
+
 					/* if the task status icons exist, update their state */
 						
 					for (n = jso.overview[0].t.length - 1; n >= 0; n--)
@@ -1596,6 +1599,8 @@ function ws_open_sai()
 						if (document.getElementById("esr-" + jso.e.uuid))
 							document.getElementById("esr-" + jso.e.uuid).innerHTML =
 								sai_event_summary_render(jso, now_ut, 1);
+						update_summary_and_progress(jso.e.uuid);
+
 					} else {
 						
 						console.log("NO taskinfo- or taskstate_" + jso.t.uuid);
@@ -1637,9 +1642,9 @@ function ws_open_sai()
 							document.getElementById("esr-" + jso.e.uuid).innerHTML =
 								sai_event_summary_render(jso, now_ut, 1);
 								
-						update_summary_and_progress(jso.e.uuid);
 					}
-	
+					update_summary_and_progress(jso.e.uuid);
+
 					if (document.getElementById("rebuild-" + san(jso.t.uuid))) {
 						document.getElementById("rebuild-" + san(jso.t.uuid)).
 							addEventListener("click", function(e) {
