@@ -481,7 +481,6 @@ typedef struct sai_plat {
 
 	/* server side only: builder resource tracking */
 	lws_dll2_owner_t	inflight_owner; /* sai_uuid_list_t */
-	char			last_rej_task_uuid[65];
 	int			avail_slots;
 	unsigned int		avail_mem_kib;
 	unsigned int		avail_sto_kib;
@@ -489,7 +488,6 @@ typedef struct sai_plat {
 	/* server side only: for UI visibility */
 	int			s_avail_slots;
 	int			s_inflight_count;
-	char			s_last_rej_task_uuid[65];
 
 	char			busy;
 	char			windows;

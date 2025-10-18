@@ -573,14 +573,6 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 					lws_sql_purify(esc_taskname, fti->taskname, sizeof(esc_taskname));
 					lws_snprintf(pf, sizeof(pf), " and (state == 0) and (platform == '%s') and (taskname == '%s')",
 						     esc_plat, esc_taskname);
-					if (cb->last_rej_task_uuid[0]) {
-						char esc_uuid[130];
-
-						lws_sql_purify(esc_uuid, cb->last_rej_task_uuid,
-							     sizeof(esc_uuid));
-						lws_snprintf(pf + strlen(pf), sizeof(pf) - strlen(pf),
-							     " and (uuid != '%s')", esc_uuid);
-					}
 
 					lwsac_free(&pss->ac_alloc_task);
 					lws_dll2_owner_clear(&owner);
@@ -607,14 +599,6 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 				/* We have fallen back to doing tasks earliest-first */
 
 				lws_snprintf(pf, sizeof(pf), " and (state = 0) and (platform = '%s')", esc_plat);
-				if (cb->last_rej_task_uuid[0]) {
-					char esc_uuid[130];
-
-					lws_sql_purify(esc_uuid, cb->last_rej_task_uuid,
-						     sizeof(esc_uuid));
-					lws_snprintf(pf + strlen(pf), sizeof(pf) - strlen(pf),
-						     " and (uuid != '%s')", esc_uuid);
-				}
 				lwsac_free(&pss->ac_alloc_task);
 				lws_dll2_owner_t owner;
 				lws_dll2_owner_clear(&owner);
@@ -1099,7 +1083,6 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		   const char *platform_name)
 {
 	const sai_task_t *task_template;
-	char original_rejected_uuid[65];
 	sai_task_t temp_task;
 	int attempts = 0;
 
@@ -1113,8 +1096,6 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		return 1;
 	}
 #endif
-	lws_strncpy(original_rejected_uuid, cb->last_rej_task_uuid,
-		    sizeof(original_rejected_uuid));
 
 	while (attempts++ < 4) {
 
@@ -1123,11 +1104,8 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		 */
 
 		task_template = sais_task_pending(vhd, pss, cb, platform_name);
-		if (!task_template) {
-			lws_strncpy(cb->last_rej_task_uuid, original_rejected_uuid,
-				    sizeof(cb->last_rej_task_uuid));
+		if (!task_template)
 			return 1;
-		}
 
 		/*
 		 * We have a candidate task, check if the builder has enough
@@ -1143,10 +1121,6 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 				    __func__, cb->name, temp_task.uuid,
 				    temp_task.est_peak_mem_kib, cb->avail_mem_kib,
 				    temp_task.est_disk_kib, cb->avail_sto_kib);
-
-			/* mark it rejected for this builder and try again */
-			lws_strncpy(cb->last_rej_task_uuid, temp_task.uuid,
-				    sizeof(cb->last_rej_task_uuid));
 			continue;
 		}
 
@@ -1171,8 +1145,6 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 
 		cb->s_avail_slots = cb->avail_slots;
 		cb->s_inflight_count = (int)cb->inflight_owner.count;
-		lws_strncpy(cb->s_last_rej_task_uuid, cb->last_rej_task_uuid,
-			    sizeof(cb->s_last_rej_task_uuid));
 
 		sais_list_builders(vhd);
 
@@ -1181,22 +1153,15 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 
 		sais_continue_task(vhd, task_template->uuid);
 
-		lws_strncpy(cb->last_rej_task_uuid, original_rejected_uuid,
-			    sizeof(cb->last_rej_task_uuid));
-
 		return 0;
 	}
 
 	lwsl_warn("%s: exceeded max attempts to find suitable task for %s\n",
 		  __func__, cb->name);
-	lws_strncpy(cb->last_rej_task_uuid, original_rejected_uuid,
-		    sizeof(cb->last_rej_task_uuid));
 
 	return 1;
 
 bail:
-	lws_strncpy(cb->last_rej_task_uuid, original_rejected_uuid,
-		    sizeof(cb->last_rej_task_uuid));
 	lwsac_free(&pss->a.ac);
 	lwsac_free(&pss->ac_alloc_task);
 

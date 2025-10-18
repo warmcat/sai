@@ -565,7 +565,6 @@ handle:
 				live_cb->avail_sto_kib			= (unsigned int)-1;
 				live_cb->s_avail_slots			= live_cb->avail_slots;
 				live_cb->s_inflight_count		= (int)live_cb->inflight_owner.count;
-				live_cb->s_last_rej_task_uuid[0]	= '\0';
 			} else {
 				/* New builder, create a deep-copied, malloc'd object */
 				size_t nlen = strlen(build->name) + 1;
@@ -693,7 +692,6 @@ bail:
 						cb->avail_slots = log->avail_slots;
 						cb->avail_mem_kib = log->avail_mem_kib;
 						cb->avail_sto_kib = log->avail_sto_kib;
-						cb->last_rej_task_uuid[0] = '\0';
 						cb->busy = 0;
 
 						lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, cb->inflight_owner.head) {
@@ -706,8 +704,6 @@ bail:
 
 						cb->s_avail_slots = cb->avail_slots;
 						cb->s_inflight_count = (int)cb->inflight_owner.count;
-						lws_strncpy(cb->s_last_rej_task_uuid, cb->last_rej_task_uuid,
-							    sizeof(cb->s_last_rej_task_uuid));
 						sais_list_builders(vhd);
 					}
 				}
@@ -792,8 +788,6 @@ bail:
 			lwsl_notice("%s: SAI_TASK_REASON_BUSY\n", __func__);
 			do_remove_uuid = 1;
 			cb->busy = 1;
-			lws_strncpy(cb->last_rej_task_uuid, rej->task_uuid,
-				    sizeof(cb->last_rej_task_uuid));
 			break;
 		case SAI_TASK_REASON_DESTROYED:
 			lwsl_notice("%s: SAI_TASK_REASON_DESTROYED\n", __func__);
@@ -822,16 +816,12 @@ bail:
 				}
 			} lws_end_foreach_dll_safe(d, d1);
 
-			lws_strncpy(cb->last_rej_task_uuid, rej->task_uuid,
-				    sizeof(cb->last_rej_task_uuid));
 			sais_task_reset(vhd, rej->task_uuid, 1);
 		}
 #endif
 
 		cb->s_avail_slots = cb->avail_slots;
 		cb->s_inflight_count = (int)cb->inflight_owner.count;
-		lws_strncpy(cb->s_last_rej_task_uuid, cb->last_rej_task_uuid,
-			    sizeof(cb->s_last_rej_task_uuid));
 
 		sais_list_builders(vhd);
 
