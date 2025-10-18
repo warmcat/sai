@@ -132,7 +132,7 @@ sais_central_clean_abandoned(struct vhd *vhd)
 					if (task_uuid) {
 						lwsl_notice("%s: resetting abandoned task %s\n",
 								__func__, (const char *)task_uuid);
-						sais_task_reset(vhd, (const char *)task_uuid, 0);
+						sais_task_clear_build_and_logs(vhd, (const char *)task_uuid, 0);
 					}
 				}
 				sqlite3_finalize(sm);

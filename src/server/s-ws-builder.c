@@ -381,7 +381,7 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 								if (task_uuid) {
 									lwsl_notice("%s: resetting task %s from disconnected builder %s\n",
 											__func__, (const char *)task_uuid, cb->name);
-									sais_task_reset(vhd, (const char *)task_uuid, 0);
+									sais_task_clear_build_and_logs(vhd, (const char *)task_uuid, 0);
 								}
 							}
 							sqlite3_finalize(sm);
@@ -654,15 +654,15 @@ bail:
 		log = (sai_log_t *)pss->a.dest;
 		sais_log_to_db(vhd, log);
 
-#if 0
 		if (pss->mark_started) {
 			pss->mark_started = 0;
 			pss->first_log_timestamp = log->timestamp;
-			if (sais_set_task_state(vhd, NULL, NULL, log->task_uuid,
-						SAIES_BEING_BUILT, 0, 0))
-				goto bail;
+//			if (sais_set_task_state(vhd, NULL, NULL, log->task_uuid,
+//						SAIES_BEING_BUILT, 0, 0))
+//				goto bail;
+//			sais_create_and_offer_task_step(vhd, log->task_uuid, 11);
 		}
-#endif
+
 
 		if (log->finished) {
 			sai_plat_t *cb;
@@ -694,6 +694,7 @@ bail:
 						cb->avail_mem_kib = log->avail_mem_kib;
 						cb->avail_sto_kib = log->avail_sto_kib;
 						cb->last_rej_task_uuid[0] = '\0';
+						cb->busy = 0;
 
 						lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, cb->inflight_owner.head) {
 							sul = lws_container_of(d, sai_uuid_list_t, list);
@@ -718,23 +719,29 @@ bail:
 
 			sais_dump_logs_to_db(&vhd->sul_logcache);
 
-			lwsl_info("%s: log->finished says 0x%x, dur %lluus\n",
+			lwsl_notice("%s: \\\\\\\\\\\\\\\\\\ log->finished says 0x%x, dur %lluus\n",
 				 __func__, log->finished, (unsigned long long)(
 				 log->timestamp - pss->first_log_timestamp));
 			if (log->finished & SAISPRF_EXIT) {
-				if ((log->finished & 0xff) == 0)
+				if ((log->finished & 0xff) == 0) {
 					n = SAIES_STEP_SUCCESS;
-				else
+					lwsl_notice("%s: |||||||||||||||||||| SAIES_STEP_SUCCESS\n", __func__);
+				} else {
 					n = SAIES_FAIL;
+					lwsl_notice("%s: |||||||||||||||||||| SAIES_FAIL\n", __func__);
+				}
 			} else
-				if (log->finished & 8192)
+				if (log->finished & 0x2000) {
 					n = SAIES_CANCELLED;
-				else
-					n = SAIES_FAIL;
+					lwsl_notice("%s: |||||||||||||||||||| SAIES_CANCELLED\n", __func__);
 
-			if (sais_set_task_state(vhd, NULL, NULL, log->task_uuid,
-						n, 0, log->timestamp -
-						      pss->first_log_timestamp))
+				} else {
+					n = SAIES_FAIL;
+					lwsl_notice("%s: |||||||||||||||||||| SAIES_STEP_FAIL\n", __func__);
+				}
+
+			if (sais_set_task_state(vhd, NULL, NULL, log->task_uuid, n, 0,
+						log->timestamp - pss->first_log_timestamp))
 				goto bail;
 		}
 
@@ -783,11 +790,12 @@ bail:
 			break;
 		case SAI_TASK_REASON_DUPE:
 			lwsl_notice("%s: SAI_TASK_REASON_DUPE\n", __func__);
-			do_remove_uuid = 1;
+			// do_remove_uuid = 1;
 			break;
 		case SAI_TASK_REASON_BUSY:
 			lwsl_notice("%s: SAI_TASK_REASON_BUSY\n", __func__);
 			do_remove_uuid = 1;
+			cb->busy = 1;
 			break;
 		case SAI_TASK_REASON_DESTROYED:
 			lwsl_notice("%s: SAI_TASK_REASON_DESTROYED\n", __func__);
@@ -799,29 +807,14 @@ bail:
 		    sais_is_task_inflight(vhd, cb, rej->task_uuid, &ul)) {
 			lwsl_notice("%s: ### Removing %s from inflight\n", __func__, rej->task_uuid);
 			sais_inflight_entry_destroy(ul);
-			sais_task_reset(vhd, rej->task_uuid, 1);
+			// sais_task_clear_build_and_logs(vhd, rej->task_uuid, 1);
 		}
 
+		if (rej->reason == SAI_TASK_REASON_DESTROYED)
+			/* uuid will not be found listed as inflight for this */
+			sais_create_and_offer_task_step(vhd, rej->task_uuid, 10);
 
-#if 0
-		if (rej->task_uuid[0]) {
-			sai_uuid_list_t *sul;
-
-			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
-						   cb->inflight_owner.head) {
-				sul = lws_container_of(d, sai_uuid_list_t, list);
-				if (!strcmp(sul->uuid, rej->task_uuid)) {
-					lws_dll2_remove(&sul->list);
-					free(sul);
-					break;
-				}
-			} lws_end_foreach_dll_safe(d, d1);
-
-			lws_strncpy(cb->last_rej_task_uuid, rej->task_uuid,
-				    sizeof(cb->last_rej_task_uuid));
-			sais_task_reset(vhd, rej->task_uuid, 1);
-		}
-#endif
+		// sais_task_clear_build_and_logs(vhd, rej->task_uuid, 31);
 
 		cb->s_avail_slots = cb->avail_slots;
 		cb->s_inflight_count = (int)cb->inflight_owner.count;
@@ -1386,7 +1379,12 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	lwsac_free(&task->ac_task_container);
 	free(task);
 
-	lwsl_err("%s: ########## ATTACH TASK: %.*s\n", __func__, (int)w, start);
+	if ((ssize_t)write(2, start, w) != (ssize_t)w)
+		lwsl_err("%s: failed to log JSON\n", __func__);
+	if ((ssize_t)write(2, "\n", 1) != (ssize_t)1)
+		lwsl_err("%s: failed to log JSON\n", __func__);
+
+	lwsl_err("%s: ########## ATTACH TASK --^\n", __func__);
 
 	first = 1;
 

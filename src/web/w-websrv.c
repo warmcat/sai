@@ -135,8 +135,8 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 	/* Check for fatal error OR completion without an object */
 	if (n < 0 && n != LEJP_CONTINUE) {
-		lwsl_notice("%s: srv->web JSON decode failed '%s'\n",
-				__func__, lejp_error_to_string(n));
+               lwsl_notice("%s: srv->web JSON decode failed '%s' (ssflags %d)\n",
+                               __func__, lejp_error_to_string(n), flags);
 		lwsl_hexdump_notice(buf, len);
 		goto cleanup_and_disconnect;
 	}

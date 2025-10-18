@@ -526,10 +526,10 @@ function renderSpreadsheet(tasks) {
 	for (const task of tasks) {
 		var s1 = "", qc;
 
-		for (qc = 0; qc < task.build_step; qc++)
+		for (qc = 0; qc <= task.build_step; qc++)
 			s1 += "&#9635";
 
-		while (qc < task.total_steps) {
+		while (qc <= task.total_steps) {
 			s1 += "&#9633";
 			qc++;
 		}

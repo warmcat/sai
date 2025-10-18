@@ -494,6 +494,7 @@ typedef struct sai_plat {
 	char			windows;
 	char			power_managed;
 	char			stay_on;
+	char			busy;
 
 	int			index; /* used to create unique build dir path */
 } sai_plat_t;

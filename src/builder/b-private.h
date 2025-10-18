@@ -68,7 +68,7 @@ typedef enum {
 
 struct saib_ws_pss;
 
-enum {
+enum nsstate {
 	NSSTATE_INIT,
 	NSSTATE_MOUNTING,
 	NSSTATE_EXECUTING_STEPS,

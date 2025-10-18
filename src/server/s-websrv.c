@@ -417,7 +417,7 @@ sais_event_reset(struct vhd *vhd, const char *event_uuid)
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
 			sai_task_t *t = lws_container_of(p, sai_task_t, list);
-			if (sais_task_reset(vhd, t->uuid, 0) == SAI_DB_RESULT_BUSY) {
+			if (sais_task_clear_build_and_logs(vhd, t->uuid, 0) == SAI_DB_RESULT_BUSY) {
 				sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
 				sais_event_db_close(vhd, &pdb);
 				lwsac_free(&ac);
@@ -540,7 +540,7 @@ sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
 			sai_task_t *t = lws_container_of(p, sai_task_t, list);
-			if (sais_task_reset(vhd, t->uuid, 0) == SAI_DB_RESULT_BUSY) {
+			if (sais_task_clear_build_and_logs(vhd, t->uuid, 0) == SAI_DB_RESULT_BUSY) {
 				sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
 				sais_event_db_close(vhd, &pdb);
 				lwsac_free(&ac);
@@ -602,7 +602,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			goto soft_error;
 
 		lwsl_ss_warn(m->ss, "SAIS_WS_WEBSRV_RX_TASKRESET: %s: received", ei->event_hash);
-		if (sais_task_reset(m->vhd, ei->event_hash, 0))
+		if (sais_task_clear_build_and_logs(m->vhd, ei->event_hash, 0))
 			lwsl_ss_err(m->ss, "taskreset failed");
 		break;
 	}

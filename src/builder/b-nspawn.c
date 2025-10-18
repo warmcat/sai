@@ -375,7 +375,7 @@ skip:
 	return;
 
 fail:
-	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED\n", ns->current_step + 1);
+	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED, exit code: %d\n", ns->current_step + 1, exit_code);
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	saib_task_grace(ns);
@@ -519,12 +519,12 @@ saib_spawn_script(struct sai_nspawn *ns)
 
 #if defined(WIN32)
 	lws_snprintf(ns->script_path, sizeof(ns->script_path),
-		     "%s\\sai-build-script-%s.bat",
-		     builder.home, ns->task->uuid);
+		     "%s\\sai-build-script.bat",
+		     ns->inp);
 #else
 	lws_snprintf(ns->script_path, sizeof(ns->script_path),
-		     "%s/sai-build-script-%s.sh",
-		     builder.home, ns->task->uuid);
+		     "%s/sai-build-script.sh",
+		     ns->inp);
 #endif
 
 	char one_step[4096];
@@ -553,7 +553,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 #if defined(WIN32)
 	n = lws_snprintf(st, sizeof(st),
 			 ns->current_step ? runscript_win_next : runscript_win_first,
-			 ns->instance_ordinal,
+			 ns->instance_ordinal + 1,
 			 ns->task->parallel ? ns->task->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
@@ -572,7 +572,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 	n = lws_snprintf(st, sizeof(st),
 			 script_template,
 			 builder.home, ns->fsm.ovname, ns->inp_vn,
-			 ns->project_name, ns->ref, ns->instance_ordinal,
+			 ns->project_name, ns->ref, ns->instance_ordinal + 1,
 			 ns->task->parallel ? ns->task->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,

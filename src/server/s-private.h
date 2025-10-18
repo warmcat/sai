@@ -180,6 +180,7 @@ typedef struct sais_sqlite_cache {
 typedef struct sais_plat {
 	lws_dll2_t	list;
 	const char	*plat;
+	char		busy;
 } sais_plat_t;
 
 struct vhd {
@@ -285,7 +286,7 @@ void
 sais_activity_cb(lws_sorted_usec_list_t *sul);
 
 sai_db_result_t
-sais_task_reset(struct vhd *vhd, const char *task_uuid, int from_rejection);
+sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_rejection);
 sai_db_result_t
 sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid);
 
@@ -297,11 +298,11 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		   const char *cns_name);
 
 int
-sais_continue_task(struct vhd *vhd, const char *task_uuid);
+sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid, char force);
 
 int
 sais_set_task_state(struct vhd *vhd, const char *builder_name,
-		    const char *builder_uuid, const char *task_uuid, int state,
+		    const char *builder_uuid, const char *task_uuid, sai_event_state_t state,
 		    uint64_t started, uint64_t duration);
 
 void
