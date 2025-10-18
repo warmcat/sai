@@ -795,10 +795,11 @@ bail:
 			break;
 		}
 
-		if (do_remove_uuid && sais_is_task_inflight(vhd, rej->task_uuid, &ul)) {
+		if (do_remove_uuid &&
+		    sais_is_task_inflight(vhd, cb, rej->task_uuid, &ul)) {
 			lwsl_notice("%s: ### Removing %s from inflight\n", __func__, rej->task_uuid);
-			lws_dll2_remove(&ul->list);
-			free(ul);
+			sais_inflight_entry_destroy(ul);
+			sais_task_reset(vhd, rej->task_uuid, 1);
 		}
 
 

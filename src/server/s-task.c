@@ -339,8 +339,30 @@ sais_event_ran_platform(struct vhd *vhd, const char *event_uuid,
  */
 
 int
-sais_is_task_inflight(struct vhd *vhd, const char *uuid, sai_uuid_list_t **hit)
+sais_is_task_inflight(struct vhd *vhd, sai_plat_t *build, const char *uuid,
+		      sai_uuid_list_t **hit)
 {
+	assert(strlen(uuid) == 64);
+
+	if (build) {
+		lws_start_foreach_dll(struct lws_dll2 *, pif,
+				      build->inflight_owner.head) {
+			sai_uuid_list_t *ul = lws_container_of(pif, sai_uuid_list_t, list);
+
+			if (!strcmp(uuid, ul->uuid)) {
+				if (hit)
+					*hit = ul;
+
+				lwsl_notice("%s: %s is inflight on %s (of %d)\n", __func__,
+						uuid, build->name, build->inflight_owner.count);
+
+				return 1;
+			}
+
+		} lws_end_foreach_dll(pif);
+
+		return 0;
+	}
 
 	/*
 	 * lookup a uuid across all builder / plats
@@ -349,20 +371,11 @@ sais_is_task_inflight(struct vhd *vhd, const char *uuid, sai_uuid_list_t **hit)
 
 	lws_start_foreach_dll(struct lws_dll2 *, pb,
 			      vhd->server.builder_owner.head) {
-		sai_plat_t *build = lws_container_of(pb, sai_plat_t, sai_plat_list);
+		build = lws_container_of(pb, sai_plat_t, sai_plat_list);
 
-		lws_start_foreach_dll(struct lws_dll2 *, pif,
-				      build->inflight_owner.head) {
-			sai_uuid_list_t *ul = lws_container_of(pif, sai_uuid_list_t, list);
+		if (sais_is_task_inflight(vhd, build, uuid, hit))
+			return 1;
 
-			lwsl_notice("%s: '%s' vs '%s'\n", __func__, uuid, ul->uuid);
-			if (!strcmp(uuid, ul->uuid)) {
-				if (hit)
-					*hit = ul;
-				return 1;
-			}
-
-		} lws_end_foreach_dll(pif);
 	} lws_end_foreach_dll(pb);
 
 	return 0;
@@ -373,7 +386,7 @@ sais_add_to_inflight_list_if_absent(struct vhd *vhd, sai_plat_t *sp, const char 
 {
 	sai_uuid_list_t *uuid_list;
 
-	if (sais_is_task_inflight(vhd, uuid, NULL))
+	if (sais_is_task_inflight(vhd, NULL, uuid, NULL))
 		return 0;
 
 	uuid_list = malloc(sizeof(*uuid_list));
@@ -386,7 +399,7 @@ sais_add_to_inflight_list_if_absent(struct vhd *vhd, sai_plat_t *sp, const char 
 	lws_dll2_add_tail(&uuid_list->list, &sp->inflight_owner);
 
 	lwsl_notice("%s: ### created uuid_list entry for %s\n", __func__, uuid_list->uuid);
-	assert(sais_is_task_inflight(vhd, uuid, NULL));
+	assert(sais_is_task_inflight(vhd, NULL, uuid, NULL));
 	return 0;
 }
 
@@ -483,16 +496,20 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 						 "order by created desc limit 1",
 						 esc_repo, esc_ref, (unsigned long long)last_created);
 
+					/* this is the 32-char EVENT uuid coming, not a compound (64 char) task one */
+
 					if (sqlite3_prepare_v2(vhd->server.pdb, query, -1, &sm, NULL) != SQLITE_OK)
 						break;
 					if (sqlite3_step(sm) == SQLITE_ROW) {
 						const char *u = (const char *)sqlite3_column_text(sm, 0);
 						if (u) {
-							if (sais_is_task_inflight(vhd, u, NULL)) { /* we have it in hand */
+#if 0
+							if (sais_is_task_inflight(vhd, NULL, u, NULL)) { /* we have it in hand */
 								lwsl_notice("%s: skipping pending task %s due to being inflight\n", __func__, u);
 								sqlite3_finalize(sm);
 								break;
 							}
+#endif
 							lws_strncpy(prev_event_uuid, (const char *)u, sizeof(prev_event_uuid));
 						}
 						last_created = (uint64_t)sqlite3_column_int64(sm, 1);
@@ -1147,7 +1164,7 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 			continue;
 		}
 
-		if (sais_is_task_inflight(vhd, task_template->uuid, NULL)) {
+		if (sais_is_task_inflight(vhd, NULL, task_template->uuid, NULL)) {
 			lwsl_notice("%s: skipping %s as listed on inflight\n", __func__, task_template->uuid);
 			continue;
 		}
@@ -1294,7 +1311,7 @@ sais_continue_task(struct vhd *vhd, const char *task_uuid)
 	struct pss *pss;
 	sai_plat_t *cb;
 
-	if (sais_is_task_inflight(vhd, task_uuid, &ul) && ul->started) {
+	if (sais_is_task_inflight(vhd, NULL, task_uuid, &ul) && ul->started) {
 		lwsl_notice("%s: not continuing %s as listed on inflight\n", __func__, task_uuid);
 		return 1;
 	}
