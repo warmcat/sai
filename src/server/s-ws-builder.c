@@ -777,8 +777,10 @@ bail:
 		case SAI_TASK_REASON_ACCEPTED:
 			lwsl_notice("%s: SAI_TASK_REASON_ACCEPTED\n", __func__);
 			pss->first_log_timestamp = lws_now_secs();
-			if (sais_set_task_state(vhd, NULL, NULL, rej->task_uuid,
-						SAIES_BEING_BUILT, 0, 0))
+			if (sais_set_task_state(vhd, cb->name, cb->name,
+						rej->task_uuid,
+						SAIES_PASSED_TO_BUILDER,
+						pss->first_log_timestamp, 0))
 				break;
 			/* leave the uuid listed until step completed */
 			break;
@@ -790,6 +792,8 @@ bail:
 			lwsl_notice("%s: SAI_TASK_REASON_BUSY\n", __func__);
 			do_remove_uuid = 1;
 			cb->busy = 1;
+			lws_strncpy(cb->last_rej_task_uuid, rej->task_uuid,
+				    sizeof(cb->last_rej_task_uuid));
 			break;
 		case SAI_TASK_REASON_DESTROYED:
 			lwsl_notice("%s: SAI_TASK_REASON_DESTROYED\n", __func__);
@@ -797,10 +801,10 @@ bail:
 			break;
 		}
 
-		if (do_remove_uuid &&
-		    sais_is_task_inflight(vhd, cb, rej->task_uuid, &ul)) {
-			sais_inflight_entry_destroy(ul);
-			sais_task_reset(vhd, rej->task_uuid, 1);
+		if (do_remove_uuid && sais_is_task_inflight(vhd, rej->task_uuid, &ul)) {
+			lwsl_notice("%s: ### Removing %s from inflight\n", __func__, rej->task_uuid);
+			lws_dll2_remove(&ul->list);
+			free(ul);
 		}
 
 

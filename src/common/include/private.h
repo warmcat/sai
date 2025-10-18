@@ -491,6 +491,7 @@ typedef struct sai_plat {
 	int			s_inflight_count;
 	char			s_last_rej_task_uuid[65];
 
+	char			busy;
 	char			windows;
 	char			power_managed;
 	char			stay_on;
