@@ -694,6 +694,7 @@ bail:
 						cb->avail_mem_kib = log->avail_mem_kib;
 						cb->avail_sto_kib = log->avail_sto_kib;
 						cb->last_rej_task_uuid[0] = '\0';
+						cb->busy = 0;
 
 						lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, cb->inflight_owner.head) {
 							sul = lws_container_of(d, sai_uuid_list_t, list);
@@ -788,6 +789,7 @@ bail:
 		case SAI_TASK_REASON_BUSY:
 			lwsl_notice("%s: SAI_TASK_REASON_BUSY\n", __func__);
 			do_remove_uuid = 1;
+			cb->busy = 1;
 			break;
 		case SAI_TASK_REASON_DESTROYED:
 			lwsl_notice("%s: SAI_TASK_REASON_DESTROYED\n", __func__);
@@ -795,10 +797,16 @@ bail:
 			break;
 		}
 
-		if (do_remove_uuid && sais_is_task_inflight(vhd, rej->task_uuid, &ul)) {
-			lwsl_notice("%s: ### Removing %s from inflight\n", __func__, rej->task_uuid);
-			lws_dll2_remove(&ul->list);
-			free(ul);
+		if (do_remove_uuid) {
+			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+						   cb->inflight_owner.head) {
+				ul = lws_container_of(d, sai_uuid_list_t, list);
+				if (!strcmp(ul->uuid, rej->task_uuid)) {
+					sais_inflight_entry_destroy(ul);
+					break;
+				}
+			} lws_end_foreach_dll_safe(d, d1);
+			sais_task_reset(vhd, rej->task_uuid, 1);
 		}
 
 

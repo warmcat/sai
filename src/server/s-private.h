@@ -180,6 +180,7 @@ typedef struct sais_sqlite_cache {
 typedef struct sais_plat {
 	lws_dll2_t	list;
 	const char	*plat;
+	char		busy;
 } sais_plat_t;
 
 struct vhd {

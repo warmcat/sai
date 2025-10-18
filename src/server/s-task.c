@@ -1103,6 +1103,9 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	sai_task_t temp_task;
 	int attempts = 0;
 
+	if (cb->busy)
+		return 1;
+
 #if 0
 	if (cb->avail_slots <= 0) {
 		lwsl_warn("%s: builder %s has no available slots\n", __func__,
