@@ -797,15 +797,9 @@ bail:
 			break;
 		}
 
-		if (do_remove_uuid) {
-			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
-						   cb->inflight_owner.head) {
-				ul = lws_container_of(d, sai_uuid_list_t, list);
-				if (!strcmp(ul->uuid, rej->task_uuid)) {
-					sais_inflight_entry_destroy(ul);
-					break;
-				}
-			} lws_end_foreach_dll_safe(d, d1);
+		if (do_remove_uuid &&
+		    sais_is_task_inflight(vhd, cb, rej->task_uuid, &ul)) {
+			sais_inflight_entry_destroy(ul);
 			sais_task_reset(vhd, rej->task_uuid, 1);
 		}
 

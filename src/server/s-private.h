@@ -350,7 +350,8 @@ int
 sql3_get_string_cb(void *user, int cols, char **values, char **name);
 
 int
-sais_is_task_inflight(struct vhd *vhd, const char *uuid, sai_uuid_list_t **hit);
+sais_is_task_inflight(struct vhd *vhd, sai_plat_t *build, const char *uuid,
+		      sai_uuid_list_t **hit);
 
 int
 sais_add_to_inflight_list_if_absent(struct vhd *vhd, sai_plat_t *sp, const char *uuid);
