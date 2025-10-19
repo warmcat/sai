@@ -519,12 +519,12 @@ saib_spawn_script(struct sai_nspawn *ns)
 
 #if defined(WIN32)
 	lws_snprintf(ns->script_path, sizeof(ns->script_path),
-		     "%s\\sai-build-script-%s.bat",
-		     builder.home, ns->task->uuid);
+		     "%s\\sai-build-script.bat",
+		     ns->inp);
 #else
 	lws_snprintf(ns->script_path, sizeof(ns->script_path),
-		     "%s/sai-build-script-%s.sh",
-		     builder.home, ns->task->uuid);
+		     "%s/sai-build-script.sh",
+		     ns->inp);
 #endif
 
 	char one_step[4096];
