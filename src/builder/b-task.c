@@ -281,7 +281,7 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
  * update all servers we're connected to about builder status / optional reject
  */
 
-static int
+int
 saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 				const char *rej_task_uuid, unsigned int reason)
 {
@@ -368,18 +368,14 @@ saib_task_destroy(struct sai_nspawn *ns)
 				m++;
 		} lws_end_foreach_dll_safe(d, d1);
 
-		if (!m)
-			lws_sul_schedule(builder.context, 0,
-					 &builder.sul_idle, sul_idle_cb,
-					SAI_IDLE_GRACE_US);
-
 		/*
 		 * Schedule informing all the servers we're connected to
 		 */
 
-		if (ns->task)
-			saib_queue_task_status_update(ns->sp, ns->spm, ns->task->uuid,
-					      SAI_TASK_REASON_DESTROYED);
+		if (!m)
+			lws_sul_schedule(builder.context, 0,
+					 &builder.sul_idle, sul_idle_cb,
+					SAI_IDLE_GRACE_US);
 	}
 
 	if (ns->task && ns->task->ac_task_container) {

@@ -1,7 +1,7 @@
 /*
  * Sai server - ./src/server/s-ws-builder.c
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -25,6 +25,7 @@
 #include <libwebsockets.h>
 #include <string.h>
 #include <signal.h>
+#include <assert.h>
 #include <time.h>
 
 #include "s-private.h"
@@ -85,7 +86,7 @@ sais_dump_logs_to_db(lws_sorted_usec_list_t *sul)
 {
 	struct vhd *vhd = lws_container_of(sul, struct vhd, sul_logcache);
 	sais_logcache_pertask_t *lcpt;
-	char event_uuid[33], sw[192];
+	char event_uuid[33], sw[192 + LWS_PRE];
 	sqlite3 *pdb = NULL;
 	sai_log_t *hlog;
 	char *err;
@@ -101,6 +102,7 @@ sais_dump_logs_to_db(lws_sorted_usec_list_t *sul)
 
 		sai_task_uuid_to_event_uuid(event_uuid, lcpt->uuid);
 
+		pdb = NULL;
 		if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
 
 			/*
@@ -141,9 +143,13 @@ sais_dump_logs_to_db(lws_sorted_usec_list_t *sul)
 		 * something changed (event_hash is actually the task hash)
 		 */
 
-		n = lws_snprintf(sw, sizeof(sw), "{\"schema\":\"sai-tasklogs\","
+		n = lws_snprintf(sw + LWS_PRE, sizeof(sw) - LWS_PRE,
+				"{\"schema\":\"sai-tasklogs\","
 				 "\"event_hash\":\"%s\"}", lcpt->uuid);
-		sais_websrv_broadcast(vhd->h_ss_websrv, sw, (unsigned int)n);
+		sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, sw + LWS_PRE,
+						      (unsigned int)n,
+						      SAI_WEBSRV_PB__LOGS,
+						      LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
 
 		/*
 		 * Destroy the whole task-specific cache, it will regenerate
@@ -393,8 +399,16 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 				lwsac_free(&ac);
 			}
 
-			lws_snprintf(q, sizeof(q), "UPDATE builders SET online=0 WHERE name='%s'", cb->name);
-			sai_sqlite3_statement(vhd->server.pdb, q, "set builder offline");
+			/* drop any inflight task information for this builder */
+
+			lws_start_foreach_dll_safe(struct lws_dll2 *, pif, pif1,
+					      	   cb->inflight_owner.head) {
+				sai_uuid_list_t *ul = lws_container_of(pif, sai_uuid_list_t, list);
+
+				sais_inflight_entry_destroy(ul);
+
+			} lws_end_foreach_dll_safe(pif, pif1);
+
 
 			const char *dot = strchr(cb->name, '.');
 			if (dot) {
@@ -412,6 +426,8 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 
 			lws_dll2_remove(&cb->sai_plat_list);
 			free(cb);
+
+			// assert(0);
 		}
 	} lws_end_foreach_dll_safe(p, p1);
 }
@@ -428,10 +444,12 @@ sai_sql3_get_uint64_cb(void *user, int cols, char **values, char **name)
 
 /*
  * Server received a communication from a builder
+ *
+ * buf is lws callback `in` which has LWS_PRE already set aside
  */
 
 int
-sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
+sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl, unsigned int ss_flags)
 {
 	char event_uuid[33], s[128], esc[96], do_remove_uuid;
 	const sai_build_metric_t *metric;
@@ -500,6 +518,9 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 	// lwsl_hexdump_notice(buf, bl);
 
 	if (m == LEJP_CONTINUE) {
+		if (pss->a.top_schema_index == SAIM_WSSCH_BUILDER_LOADREPORT)
+			sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, (const char *)buf, bl,
+					      SAI_WEBSRV_PB__PROXIED_FROM_BUILDER, ss_flags);
 		pss->frag = 1;
 		return 0;
 	}
@@ -552,7 +573,7 @@ handle:
 			if (live_cb) {
 				/* Already exists (reconnect), just update dynamic info */
 				lwsl_err("%s: found live builder for %s\n", __func__, build->name);
-				live_cb->wsi			= pss->wsi;
+				live_cb->wsi				= pss->wsi;
 				lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 				lws_strncpy(live_cb->sai_hash, build->sai_hash,
 					    sizeof(live_cb->sai_hash));
@@ -578,21 +599,21 @@ handle:
 					char *p_str = (char *)(live_cb + 1);
 
 					memset(live_cb, 0, sizeof(*live_cb));
-					live_cb->name			= p_str;
+					live_cb->name				= p_str;
 					memcpy(p_str, build->name, nlen);
-					live_cb->platform		= p_str + nlen;
+					live_cb->platform			= p_str + nlen;
 					memcpy(p_str + nlen, build->platform, plen);
 					lws_strncpy(live_cb->sai_hash, build->sai_hash,
 						    sizeof(live_cb->sai_hash));
 					lws_strncpy(live_cb->lws_hash, build->lws_hash,
 						    sizeof(live_cb->lws_hash));
-					live_cb->windows		= build->windows;
-					live_cb->avail_slots		= 1; /* default */
-					live_cb->avail_mem_kib		= (unsigned int)-1;
-					live_cb->avail_sto_kib		= (unsigned int)-1;
-					live_cb->s_avail_slots		= live_cb->avail_slots;
-					live_cb->wsi			= pss->wsi;
-					live_cb->online			= 1;
+					live_cb->windows			= build->windows;
+					live_cb->avail_slots			= 1; /* default */
+					live_cb->avail_mem_kib			= (unsigned int)-1;
+					live_cb->avail_sto_kib			= (unsigned int)-1;
+					live_cb->s_avail_slots			= live_cb->avail_slots;
+					live_cb->wsi				= pss->wsi;
+					live_cb->online				= 1;
 					lws_strncpy(live_cb->peer_ip, pss->peer_ip, sizeof(live_cb->peer_ip));
 					lws_dll2_add_tail(&live_cb->sai_plat_list, &vhd->server.builder_owner);
 				}
@@ -666,14 +687,15 @@ bail:
 
 		if (log->finished) {
 			sai_plat_t *cb;
-			char builder_name[128], esc_uuid[129], q[128],
-			     event_uuid[33];
+			// sai_uuid_list_t *u;
+			char builder_name[128], esc_uuid[129], q[128], event_uuid[33];
 			sqlite3 *pdb = NULL;
 
 			/*
 			 * This step is finished, find the builder and update our
 			 * tracking of its state
 			 */
+
 			sai_task_uuid_to_event_uuid(event_uuid, log->task_uuid);
 			if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
 				builder_name[0] = '\0';
@@ -688,13 +710,13 @@ bail:
 						sai_uuid_list_t *sul;
 
 						lwsl_notice("%s: builder %s reports step done, slots %d, mem %d, sto %d\n",
-							    __func__, cb->name,
-							    log->avail_slots, log->avail_mem_kib, log->avail_sto_kib);
-						cb->avail_slots = log->avail_slots;
-						cb->avail_mem_kib = log->avail_mem_kib;
-						cb->avail_sto_kib = log->avail_sto_kib;
-						cb->last_rej_task_uuid[0] = '\0';
-						cb->busy = 0;
+							    __func__, cb->name, log->avail_slots, log->avail_mem_kib, log->avail_sto_kib);
+
+						cb->avail_slots			= log->avail_slots;
+						cb->avail_mem_kib		= log->avail_mem_kib;
+						cb->avail_sto_kib		= log->avail_sto_kib;
+						cb->last_rej_task_uuid[0]	= '\0';
+						cb->busy			= 0;
 
 						lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, cb->inflight_owner.head) {
 							sul = lws_container_of(d, sai_uuid_list_t, list);
@@ -713,11 +735,21 @@ bail:
 				}
 				sais_event_db_close(vhd, &pdb);
 			}
+
 			/*
-			 * We have reached the end of the logs for this task
+			 * We have reached the end of the logs for this task step
 			 */
 
 			sais_dump_logs_to_db(&vhd->sul_logcache);
+
+#if 0
+			/*
+			 * Remove us from the inflight list
+			 */
+
+			if (sais_is_task_inflight(vhd, cb, log->task_uuid, &u))
+				sais_inflight_entry_destroy(u);
+#endif
 
 			lwsl_notice("%s: \\\\\\\\\\\\\\\\\\ log->finished says 0x%x, dur %lluus\n",
 				 __func__, log->finished, (unsigned long long)(
@@ -790,7 +822,6 @@ bail:
 			break;
 		case SAI_TASK_REASON_DUPE:
 			lwsl_notice("%s: SAI_TASK_REASON_DUPE\n", __func__);
-			// do_remove_uuid = 1;
 			break;
 		case SAI_TASK_REASON_BUSY:
 			lwsl_notice("%s: SAI_TASK_REASON_BUSY\n", __func__);
@@ -816,8 +847,8 @@ bail:
 
 		// sais_task_clear_build_and_logs(vhd, rej->task_uuid, 31);
 
-		cb->s_avail_slots = cb->avail_slots;
-		cb->s_inflight_count = (int)cb->inflight_owner.count;
+		cb->s_avail_slots		= cb->avail_slots;
+		cb->s_inflight_count		= (int)cb->inflight_owner.count;
 		lws_strncpy(cb->s_last_rej_task_uuid, cb->last_rej_task_uuid,
 			    sizeof(cb->s_last_rej_task_uuid));
 
@@ -839,7 +870,8 @@ bail:
 //				lwsl_notice("%s: write failed\n", __func__);
 //		}
 //		lwsl_wsi_user(pss->wsi, "SAIM_WSSCH_BUILDER_LOADREPORT broadcasting\n");
-		sais_websrv_broadcast(vhd->h_ss_websrv, (const char *)buf, bl);
+		sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, (const char *)buf, bl,
+				      SAI_WEBSRV_PB__PROXIED_FROM_BUILDER, ss_flags);
 		break;
 
 	case SAIM_WSSCH_BUILDER_ARTIFACT:
@@ -1146,9 +1178,18 @@ bail:
 					LWS_ARRAY_SIZE(lsm_schema_build_metric),
 					0, (void *)metric);
 			if (js) {
-				int n = lws_struct_json_serialize(js, buf, sizeof(buf), &used);
-				if (n >= 0)
-					sais_websrv_broadcast(vhd->h_ss_websrv, (const char *)buf, used);
+				switch (lws_struct_json_serialize(js, buf, sizeof(buf), &used)) {
+				case LSJS_RESULT_CONTINUE:
+					assert(0); /* !!! we don't expect to generate anything that won't fit in one fragment */
+					break;
+				case LSJS_RESULT_ERROR:
+					assert(0); /* we don't expect to not to be able to represent the metrics */
+					break;
+				case LSJS_RESULT_FINISH:
+					sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, (const char *)buf, used,
+							      SAI_WEBSRV_PB__PROXIED_FROM_BUILDER, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+					break;
+				}
 				lws_struct_json_serialize_destroy(&js);
 			}
 		}

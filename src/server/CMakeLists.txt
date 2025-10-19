@@ -7,10 +7,14 @@ set(SRCS
 	s-conf.c
 	s-notification.c
 	s-comms.c
+	s-helpers.c
+	s-power.c
 	s-ws-builder.c
 	s-task.c
+	s-task-helpers.c
 	s-central.c
 	s-websrv.c
+	s-webops.c
 	s-resource.c
 	s-metrics-db.c
 	../common/c-utils.c

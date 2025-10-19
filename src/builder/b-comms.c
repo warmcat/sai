@@ -74,7 +74,7 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 {
 	lws_struct_serialize_t *js;
 	unsigned int ssf = LWSSS_FLAG_SOM;
-	uint8_t buf[4096];
+	uint8_t buf[1024];
 	size_t w = 0;
 
 	js = lws_struct_json_serialize_create(map, map_entries, 0, object);
@@ -86,19 +86,14 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 	do {
 		switch (lws_struct_json_serialize(js, buf, sizeof(buf), &w)) {
 		case LSJS_RESULT_CONTINUE:
-			lwsl_notice("%s: LSJS_RESULT_CONTINUE\n", __func__);
 			break;
 		case LSJS_RESULT_FINISH:
-			lwsl_notice("%s: LSJS_RESULT_FINISH\n", __func__);
 			ssf |= LWSSS_FLAG_EOM;
 			break;
 		case LSJS_RESULT_ERROR:
 			lwsl_warn("%s: serialization failed\n", __func__);
 			return -1;
 		}
-
-		lwsl_notice("%s: queueing %d bytes, ss_flags %d\n", __func__, (int)w, ssf);
-		lwsl_hexdump_notice(buf, w);
 
 		if (saib_srv_queue_tx(h, buf, w, ssf))
 			return -1;
@@ -117,8 +112,8 @@ saib_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	struct sai_plat_server *spm = (struct sai_plat_server *)userobj;
 	//struct sai_plat *sp = (struct sai_plat *)spm->sai_plat;
 
-	lwsl_info("%s: len %d, flags: %d\n", __func__, (int)len, flags);
-	lwsl_hexdump_info(buf, len);
+//	lwsl_info("%s: len %d, flags: %d\n", __func__, (int)len, flags);
+//	lwsl_hexdump_info(buf, len);
 
 	if (saib_ws_json_rx_builder(spm, buf, len))
 		return 1;
@@ -147,6 +142,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	}
 
 	depi = *pi;
+	*pi = (*pi) & (~(LWSSS_FLAG_SOM)); /* no SOM twice even on partial */
 
 	/*
 	 * We can only issue *len at a time.
@@ -167,19 +163,21 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		fsl -= sizeof(int);
 		lws_buflist_fragment_use(&spm->bl_to_srv, buf, sizeof(int), &som1, &eom);
 	}
+	if (!(depi & LWSSS_FLAG_SOM))
+		som = 0;
 
 	used = (size_t)lws_buflist_fragment_use(&spm->bl_to_srv, (uint8_t *)buf, *len, &som1, &eom);
 	if (!used)
 		return LWSSSSRET_TX_DONT_SEND;
 
-	if (used < fsl || (depi & LWS_WRITE_NO_FIN))
+	if (used < fsl || !(depi & LWSSS_FLAG_EOM))
 		final = 0;
 
 	*len = used;
 	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
 
-	lwsl_ss_notice(spm->ss, "Sending %d web->srv: ssflags %d", (int)*len, (int)*flags);
-	lwsl_hexdump_notice(buf, *len);
+//	lwsl_ss_notice(spm->ss, "Sending %d builder->srv: ssflags %d", (int)*len, (int)*flags);
+//	lwsl_hexdump_notice(buf, *len);
 
 	if (spm->bl_to_srv)
 		return lws_ss_request_tx(spm->ss);

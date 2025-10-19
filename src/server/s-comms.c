@@ -1,7 +1,7 @@
 /*
  * Sai server
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -61,286 +61,6 @@ typedef struct sai_job {
 extern const lws_struct_map_t lsm_schema_sq3_map_event[];
 extern const lws_ss_info_t ssi_server;
 
-/* len is typically 16 (event uuid is 32 chars + NUL)
- * But eg, task uuid is concatenated 32-char eventid and 32-char taskid
- */
-
-int
-sai_sqlite3_statement(sqlite3 *pdb, const char *cmd, const char *desc)
-{
-	sqlite3_stmt *sm;
-	int n;
-
-	if (sqlite3_prepare_v2(pdb, cmd, -1, &sm, NULL) != SQLITE_OK) {
-		lwsl_err("%s: Unable to %s: %s\n",
-			 __func__, desc, sqlite3_errmsg(pdb));
-
-		return 1;
-	}
-
-	n = sqlite3_step(sm);
-	sqlite3_reset(sm);
-	sqlite3_finalize(sm);
-	if (n != SQLITE_DONE) {
-		n = sqlite3_extended_errcode(pdb);
-		if (!n) {
-			lwsl_info("%s: failed '%s'\n", __func__, cmd);
-			return 0;
-		}
-
-		lwsl_err("%s: %d: Unable to perform \"%s\": %s\n", __func__,
-			 n, desc, sqlite3_errmsg(pdb));
-		puts(cmd);
-
-		return 1;
-	}
-
-	return 0;
-}
-
-int
-sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid,
-			  char create_if_needed, sqlite3 **ppdb)
-{
-	char filepath[256], saf[33];
-	sais_sqlite_cache_t *sc;
-
-	// lwsl_notice("%s: (sai-server) entry\n", __func__);
-
-	if (*ppdb)
-		return 0;
-
-	/* do we have this guy cached? */
-
-	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->sqlite3_cache.head) {
-		sc = lws_container_of(p, sais_sqlite_cache_t, list);
-
-		if (!strcmp(event_uuid, sc->uuid)) {
-			sc->refcount++;
-			*ppdb = sc->pdb;
-			return 0;
-		}
-
-	} lws_end_foreach_dll(p);
-
-	/* ... nope, well, let's open and cache him then... */
-
-	lws_strncpy(saf, event_uuid, sizeof(saf));
-	lws_filename_purify_inplace(saf);
-
-	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3",
-		     vhd->sqlite3_path_lhs, saf);
-
-	if (lws_struct_sq3_open(vhd->context, filepath, create_if_needed, ppdb)) {
-		lwsl_err("%s: Unable to open db %s: %s\n", __func__,
-			 filepath, sqlite3_errmsg(*ppdb));
-
-		return 2;
-	}
-
-	/* create / add to the schema for the tables we will have in here */
-
-	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_task)) {
-		lwsl_err("%s: unable to create task table in %s\n", __func__, filepath);
-		return 3;
-	}
-
-	sai_sqlite3_statement(*ppdb, "PRAGMA journal_mode=WAL;", "set WAL");
-
-	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_log)) {
-		lwsl_err("%s: unable to create log table in %s\n", __func__, filepath);
-
-		return 4;
-	}
-
-	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_artifact)) {
-		lwsl_err("%s: unable to create artifact table in %s\n", __func__, filepath);
-
-		return 5;
-	}
-
-	sc = malloc(sizeof(*sc));
-	memset(sc, 0, sizeof(*sc));
-	if (!sc) {
-		lwsl_err("%s: unable to alloc sc for %s\n", __func__, filepath);
-
-		lws_struct_sq3_close(ppdb);
-		*ppdb = NULL;
-		return 6;
-	}
-
-	lws_strncpy(sc->uuid, event_uuid, sizeof(sc->uuid));
-	sc->refcount = 1;
-	sc->pdb = *ppdb;
-	lws_dll2_add_tail(&sc->list, &vhd->sqlite3_cache);
-
-	return 0;
-}
-
-void
-sais_event_db_close(struct vhd *vhd, sqlite3 **ppdb)
-{
-	sais_sqlite_cache_t *sc;
-
-	if (!*ppdb)
-		return;
-
-	/* look for him in the cache */
-
-	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->sqlite3_cache.head) {
-		sc = lws_container_of(p, sais_sqlite_cache_t, list);
-
-		if (sc->pdb == *ppdb) {
-			*ppdb = NULL;
-			if (--sc->refcount) {
-				lwsl_notice("%s: zero refcount to idle\n",
-						__func__);
-				/*
-				 * He's not currently in use then... don't
-				 * close him immediately, s-central.c has a
-				 * timer that closes and removes sqlite3
-				 * cache entries idle for longer than 60s
-				 */
-				sc->idle_since = lws_now_usecs();
-			}
-
-			return;
-		}
-
-	} lws_end_foreach_dll(p);
-
-	lws_struct_sq3_close(ppdb);
-	*ppdb = NULL;
-}
-
-int
-sais_event_db_close_all_now(struct vhd *vhd)
-{
-	sais_sqlite_cache_t *sc;
-
-	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
-				   vhd->sqlite3_cache.head) {
-		sc = lws_container_of(p, sais_sqlite_cache_t, list);
-
-		lws_struct_sq3_close(&sc->pdb);
-		lws_dll2_remove(&sc->list);
-		free(sc);
-
-	} lws_end_foreach_dll_safe(p, p1);
-
-	return 0;
-}
-
-int
-sais_event_db_delete_database(struct vhd *vhd, const char *event_uuid)
-{
-	char filepath[256], saf[33], r = 0, ra = 0;
-
-	lws_strncpy(saf, event_uuid, sizeof(saf));
-	lws_filename_purify_inplace(saf);
-
-	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3",
-		     vhd->sqlite3_path_lhs, saf);
-
-	r = (char)!!unlink(filepath);
-	if (r) {
-		lwsl_err("%s: unable to delete %s (%d)\n", __func__, filepath, errno);
-		ra = 1;
-	}
-
-	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3-wal",
-		     vhd->sqlite3_path_lhs, saf);
-
-	r = (char)!!unlink(filepath);
-	if (r) {
-		lwsl_err("%s: unable to delete %s (%d)\n", __func__, filepath, errno);
-		ra = 1;
-	}
-
-	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3-shm",
-		     vhd->sqlite3_path_lhs, saf);
-
-	r = (char)!!unlink(filepath);
-	if (r) {
-		lwsl_err("%s: unable to delete %s (%d)\n", __func__, filepath, errno);
-		ra = 1;
-	}
-
-	if (!ra)
-		lwsl_notice("%s: deleted %s OK\n", __func__, filepath);
-
-	return ra;
-}
-
-
-#if 0
-static void
-sais_all_browser_on_writable(struct vhd *vhd)
-{
-	lws_start_foreach_dll(struct lws_dll2 *, mp, vhd->browsers.head) {
-		struct pss *pss = lws_container_of(mp, struct pss, same);
-
-		lws_callback_on_writable(pss->wsi);
-	} lws_end_foreach_dll(mp);
-}
-#endif
-
-static int
-sai_detach_builder(struct lws_dll2 *d, void *user)
-{
-//	saib_t *b = lws_container_of(d, saib_t, c.builder_list);
-
-	lws_dll2_remove(d);
-
-	return 0;
-}
-
-static int
-sai_detach_resource(struct lws_dll2 *d, void *user)
-{
-	lws_dll2_remove(d);
-
-	return 0;
-}
-
-static int
-sai_destroy_resource_wellknown(struct lws_dll2 *d, void *user)
-{
-	sai_resource_wellknown_t *rwk =
-			lws_container_of(d, sai_resource_wellknown_t, list);
-
-	/*
-	 * Just detach everything listed on this well-known resource...
-	 * everything listed here is ultimately owned by a pss and will be
-	 * destroyed when that goes down
-	 */
-
-	lws_dll2_foreach_safe(&rwk->owner_queued, NULL, sai_detach_resource);
-	lws_dll2_foreach_safe(&rwk->owner_leased, NULL, sai_detach_resource);
-
-	lws_dll2_remove(d);
-
-	free(rwk);
-
-	return 0;
-}
-
-static void
-sais_server_destroy(struct vhd *vhd, sais_t *server)
-{
-	lwsl_notice("%s: server %p\n", __func__, server);
-	if (server)
-		lws_dll2_foreach_safe(&server->builder_owner, NULL,
-				      sai_detach_builder);
-
-	sais_event_db_close_all_now(vhd);
-
-	lws_struct_sq3_close(&server->pdb);
-
-	lws_dll2_foreach_safe(&server->resource_wellknown_owner, NULL,
-			      sai_destroy_resource_wellknown);
-}
-
 typedef enum {
 	SHMUT_NONE = -1,
 	SHMUT_HOOK,
@@ -392,6 +112,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	struct pss *pss = (struct pss *)user;
 	sai_http_murl_t mu = SHMUT_NONE;
 	const char *pvo_resources, *num;
+	unsigned int ssf;
 	int n;
 
 	(void)end;
@@ -672,9 +393,12 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			 * they can update connected browsers to show the new
 			 * event
 			 */
-
-			sais_websrv_broadcast(vhd->h_ss_websrv,
-					"{\"schema\":\"sai-overview\"}", 25);
+			n = lws_snprintf((char *)start, sizeof(buf) - LWS_PRE,
+					 "{\"schema\":\"sai-overview\"}");
+			sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv,
+					   (const char *)start, (size_t)n,
+					   SAI_WEBSRV_PB__GENERATED,
+					   LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
 		}
 
 		if (lws_return_http_status(wsi,
@@ -773,21 +497,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			pss->pdb_artifact = NULL;
 		}
 
-		/* drop any inflight task information for this builder */
-
-		lws_start_foreach_dll(struct lws_dll2 *, pb,
-					vhd->server.builder_owner.head) {
-			sai_plat_t *build = lws_container_of(pb, sai_plat_t, sai_plat_list);
-
-			lws_start_foreach_dll_safe(struct lws_dll2 *, pif, pif1,
-					      build->inflight_owner.head) {
-				sai_uuid_list_t *ul = lws_container_of(pif, sai_uuid_list_t, list);
-
-				sais_inflight_entry_destroy(ul);
-
-			} lws_end_foreach_dll_safe(pif, pif1);
-		} lws_end_foreach_dll(pb);
-
 		/*
 		 * Update the sai-webs about the builder removal, so they
 		 * can update their connected browsers
@@ -798,6 +507,10 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 	case LWS_CALLBACK_RECEIVE:
 
+		pss->wsi = wsi;
+		ssf = (lws_is_first_fragment(wsi) ? LWSSS_FLAG_SOM : 0) |
+                      (lws_is_final_fragment(wsi) ? LWSSS_FLAG_EOM : 0);
+
 		/*
 		 * A ws client sent us something... it could be a builder or
 		 * it could be sai-power. We can tell which by the `is_power`
@@ -805,128 +518,17 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		 */
 
 		if (pss->is_power) {
-			struct lejp_ctx ctx;
-			lws_struct_args_t a;
-			sai_power_state_t *ps;
-			const lws_struct_map_t lsm_schema_map_power[] = {
-				LSM_SCHEMA(sai_power_state_t, NULL, lsm_power_state,
-					   "com.warmcat.sai.powerstate"),
-				LSM_SCHEMA(sai_power_managed_builders_t, NULL,
-					   lsm_power_managed_builders_list,
-					   "com.warmcat.sai.power_managed_builders"),
-				LSM_SCHEMA(sai_stay_state_update_t, NULL,
-					   lsm_stay_state_update,
-					   "com.warmcat.sai.stay_state_update"),
-			};
-
-			/* This is a message from sai-power */
-			lwsl_notice("RX from sai-power: %.*s\n", (int)len, (const char *)in);
-
-			memset(&a, 0, sizeof(a));
-			a.map_st[0] = lsm_schema_map_power;
-			a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_map_power);
-			a.ac_block_size = 512;
-
-			lws_struct_json_init_parse(&ctx, NULL, &a);
-			if (lejp_parse(&ctx, (uint8_t *)in, (int)len) < 0 || !a.dest) {
-				lwsl_warn("Failed to parse msg from sai-power\n");
-				lwsac_free(&a.ac);
-				break; // Exit case
-			}
-
-			switch (a.top_schema_index) {
-			case 0: /* powerstate */
-				ps = (sai_power_state_t *)a.dest;
-				if (ps->powering_up) {
-					lwsl_notice("sai-power is powering up: %s\n", ps->host);
-					sais_set_builder_power_state(vhd, ps->host, 1, 0);
-				} else if (ps->powering_down) {
-					lwsl_notice("sai-power is powering down: %s\n", ps->host);
-					sais_set_builder_power_state(vhd, ps->host, 0, 1);
-				}
-				break;
-
-			case 1: {
-				sai_power_managed_builders_t *pmb = (sai_power_managed_builders_t *)a.dest;
-				uint64_t bf_set = 0;
-				
-				lws_start_foreach_dll(struct lws_dll2 *, p, pmb->builders.head) {
-					sai_power_managed_builder_t *b = lws_container_of(p,
-						sai_power_managed_builder_t, list);
-					char q[256];
-					int shi = 0;
-
-					lwsl_notice("%s: Marking builder %s as power-managed\n",
-						    __func__, b->name);
-					lws_snprintf(q, sizeof(q),
-						     "UPDATE builders SET power_managed=1 WHERE name = '%s' OR name LIKE '%s.%%'",
-						     b->name, b->name);
-					if (sai_sqlite3_statement(vhd->server.pdb, q, "set power_managed"))
-						lwsl_err("%s: Failed to mark builder %s as power-managed\n",
-							 __func__, b->name);
-
-					lws_start_foreach_dll(struct lws_dll2 *, p2,
-							vhd->server.builder_owner.head) {
-					
-						sai_plat_t *cb = lws_container_of(p2, sai_plat_t, sai_plat_list);
-						const char *dot = strchr(cb->name, '.');
-
-						// lwsl_notice("%s: builder entry: %s\n", __func__, cb->name);
-
-						if (dot && !(bf_set & (1 << shi)) && strlen(b->name) <= (size_t)(dot - cb->name) &&
-						    !strncmp(cb->name + (dot - cb->name) - strlen(b->name), b->name, strlen(b->name))) {
-							lwsl_notice("%s: ++++++++++++ Setting %s .stay_on=%d\n", __func__, cb->name, b->stay_on);
-							cb->stay_on = b->stay_on;
-							bf_set |= (1 << shi);
-						} // else
-						  	// lwsl_notice("%s: ------------ Unmatched '%s' '%s'\n", __func__, cb->name + (dot - cb->name) - strlen(b->name), b->name);
-
-						shi++;
-					} lws_end_foreach_dll(p2);
-
-				} lws_end_foreach_dll(p);
-
-				sais_list_builders(vhd);
-
-				break;
-			}
-			case 2:	{
-				sai_stay_state_update_t *ssu = (sai_stay_state_update_t *)a.dest;
-				sai_plat_t *cb;
-
-				lwsl_notice("%s: Received stay_state_update for %s, stay_on=%d\n",
-					    __func__, ssu->builder_name, ssu->stay_on);
-
-				lws_start_foreach_dll(struct lws_dll2 *, p,
-						vhd->server.builder_owner.head) {
-					cb = lws_container_of(p, sai_plat_t,
-							sai_plat_list);
-
-					const char *dot = strchr(cb->name, '.');
-
-					if (dot && !strncmp(cb->name, ssu->builder_name, (size_t)(dot - cb->name))) {
-						lwsl_notice("%s: Updating builder %s stay_on from %d to %d\n",
-							    __func__, cb->name, cb->stay_on, ssu->stay_on);
-						cb->stay_on = ssu->stay_on;
-						sais_list_builders(vhd);
-						break;
-					}
-				} lws_end_foreach_dll(p);
-
-				break;
-			}
-			}
-
-			lwsac_free(&a.ac);
+			sais_power_rx(vhd, pss, in, len, ssf);
 			break;
 		}
 
 		/*
 		 * This is a message from a builder
 		 */
-		// lwsl_notice("%s: rx from builder, len %d, final: %d\n", __func__, (int)len, lws_is_final_fragment(wsi));
-		pss->wsi = wsi;
-		if (sais_ws_json_rx_builder(vhd, pss, in, len))
+
+		// lwsl_wsi_notice(wsi, "rx from builder, len %d, : ss_flags: %d\n", (int)len, ssf);
+
+		if (sais_ws_json_rx_builder(vhd, pss, in, len, ssf))
 			return -1;
 
 		if (!pss->announced) {

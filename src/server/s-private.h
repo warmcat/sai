@@ -28,6 +28,18 @@
 
 struct sai_plat;
 
+/* lws_wsmsg_ array for different sources */
+enum {
+	SAI_WEBSRV_PB__PROXIED_FROM_BUILDER,
+	SAI_WEBSRV_PB__LOGS,
+	SAI_WEBSRV_PB__GENERATED,
+	SAI_WEBSRV_PB__ACTIVITY,
+
+	SAI_WEBSRV_PB__COUNT
+};
+
+
+
 typedef enum {
 	SAI_DB_RESULT_OK,
 	SAI_DB_RESULT_BUSY,
@@ -56,6 +68,17 @@ typedef struct sai_platform {
 
 	/* build and name over-allocated here */
 } sai_platform_t;
+
+typedef struct websrvss_srv {
+	struct lws_ss_handle 		*ss;
+	struct vhd			*vhd;
+
+	struct lejp_ctx			ctx;
+	struct lws_buflist		*bl_srv_to_web;
+	unsigned int			viewers;
+
+	struct lws_buflist		*private_heads[SAI_WEBSRV_PB__COUNT];
+} websrvss_srv_t;
 
 typedef struct sai_powering_up_plat {
 	lws_dll2_t list;
@@ -189,8 +212,6 @@ struct vhd {
 
 	struct lws_ss_handle		*h_ss_websrv; /* server */
 
-	char				json_builders[8192];
-
 	/* pss lists */
 	struct lws_dll2_owner		builders;
 	struct lws_dll2_owner		sai_powers;
@@ -256,7 +277,7 @@ int
 saiw_ws_json_tx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
 
 int
-sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
+sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl, unsigned int ss_flags);
 
 int
 sais_list_builders(struct vhd *vhd);
@@ -305,8 +326,8 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 		    const char *builder_uuid, const char *task_uuid, sai_event_state_t state,
 		    uint64_t started, uint64_t duration);
 
-void
-sais_websrv_broadcast(struct lws_ss_handle *hsrv, const char *str, size_t len);
+int
+sais_websrv_broadcast_REQUIRES_LWS_PRE(struct lws_ss_handle *hsrv, const char *str, size_t len, int reassembly_idx, unsigned int ss_flags);
 
 int
 sql3_get_integer_cb(void *user, int cols, char **values, char **name);
@@ -358,4 +379,45 @@ sais_add_to_inflight_list_if_absent(struct vhd *vhd, sai_plat_t *sp, const char 
 
 void
 sais_inflight_entry_destroy(sai_uuid_list_t *ul);
+void
+sais_prune_inflight_list(struct vhd *vhd);
 
+sai_db_result_t
+sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform);
+
+sai_db_result_t
+sais_event_delete(struct vhd *vhd, const char *event_uuid);
+
+sai_db_result_t
+sais_event_reset(struct vhd *vhd, const char *event_uuid);
+
+int
+sai_detach_builder(struct lws_dll2 *d, void *user);
+
+int
+sai_detach_resource(struct lws_dll2 *d, void *user);
+
+int
+sai_destroy_resource_wellknown(struct lws_dll2 *d, void *user);
+
+void
+sais_server_destroy(struct vhd *vhd, sais_t *server);
+
+void
+sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task);
+
+int
+sais_task_cancel(struct vhd *vhd, const char *task_uuid);
+
+int
+sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid);
+
+sai_db_result_t
+sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_rejection);
+
+sai_db_result_t
+sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid);
+
+int
+sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
+	      size_t bl, unsigned int ss_flags);
