@@ -582,6 +582,10 @@ td.summary {
 	padding: 4px; 
 }
 
+td.builder-info {
+	vertical-align: top;
+}
+
 td.bn {
 	font-weight: normal;
 	font-size: 7pt;
@@ -628,7 +632,7 @@ div.ib {
 
 div.ibuil {
 	display: inline-block;
-	vertical-align:middle;
+	vertical-align:top;
 	text-align:left;
 	line-height: 50%;
 	float:left;

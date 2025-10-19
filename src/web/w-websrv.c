@@ -353,4 +353,43 @@ const lws_ss_info_t ssi_saiw_websrv = {
 	.streamtype		 = "websrv"
 };
 
+/*
+ * This function calculates the current number of connected browsers and
+ * sends an update to the sai-server.
+ */
+void
+saiw_update_viewer_count(struct vhd *vhd)
+{
+	sai_viewer_state_t vs;
+	char buf[LWS_PRE + 256];
+	size_t len;
 
+	if (!vhd || !vhd->h_ss_websrv)
+		return;
+
+	/* The count is simply the number of items in the browsers list */
+	vs.viewers = (unsigned int)vhd->browsers.count;
+
+	const lws_struct_map_t lsm_viewercount_members[] = {
+		LSM_UNSIGNED(sai_viewer_state_t, viewers,	"count"),
+	};
+
+	const lws_struct_map_t lsm_schema_json_map[] = {
+		LSM_SCHEMA	(sai_viewer_state_t,	 NULL, lsm_viewercount_members,
+						      "com.warmcat.sai.viewercount"),
+	};
+
+	lws_struct_serialize_t *js = lws_struct_json_serialize_create(
+			lsm_schema_json_map, LWS_ARRAY_SIZE(lsm_schema_json_map),
+			0, &vs);
+	if (!js)
+		return;
+
+	len = 0;
+	lws_struct_json_serialize(js, (unsigned char *)buf + LWS_PRE,
+				      sizeof(buf) - LWS_PRE, &len);
+	lws_struct_json_serialize_destroy(&js);
+
+	if (len > 0)
+		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf + LWS_PRE, len, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+}

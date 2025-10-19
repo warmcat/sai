@@ -267,3 +267,6 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 				     const lws_struct_map_t *map,
                                      size_t map_entries, void *object);
 
+int
+saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
+				const char *rej_task_uuid, unsigned int reason);

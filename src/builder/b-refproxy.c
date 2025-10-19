@@ -103,8 +103,8 @@ saib_handle_resource_result(struct sai_plat_server *spm, const char *in, size_t 
 
 	pss = resproxy_find_by_cookie(spm, p, al);
 	if (!pss) {
-		lwsl_warn("%s: the requestor left before the response\n",
-				__func__);
+		// lwsl_warn("%s: the requestor left before the response\n",
+		//		__func__);
 		/*
 		 * Explicit yield, in case the acceptance raced the client
 		 * closing... if it was telling us we can't have it, the server

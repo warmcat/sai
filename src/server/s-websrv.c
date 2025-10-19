@@ -1,7 +1,7 @@
 /*
  * Sai server
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -50,15 +50,6 @@ typedef struct sai_sul_retry_ctx {
 	uint8_t			op; /* SAIS_WS_WEBSRV_RX_... */
 } sai_sul_retry_ctx_t;
 
-typedef struct websrvss_srv {
-	struct lws_ss_handle 		*ss;
-	struct vhd			*vhd;
-	/* ... application specific state ... */
-
-	struct lejp_ctx			ctx;
-	struct lws_buflist		*bltx;
-	unsigned int			viewers;
-} websrvss_srv_t;
 
 static lws_struct_map_t lsm_browser_taskreset[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"uuid"),
@@ -166,67 +157,18 @@ reject:
 	return 1;
 }
 
-/*
- * sais_webserv_broadcast allows us to queue to broadcast a message to all
- * sai-web daemons that are connected to us.
- *
- * The queue is drained by websrvss_ws_tx() below.
- *
- * These messages are defined to all fit in a single fragment and will
- * cause an assertion if they don't.
- */
-
-typedef struct {
-	const uint8_t *buf;
-	size_t len;
-} sais_websrv_broadcast_t;
-
-static void
-_sais_websrv_broadcast(struct lws_ss_handle *h, void *arg)
-{
-	websrvss_srv_t *m = (websrvss_srv_t *)lws_ss_to_user_object(h);
-	sais_websrv_broadcast_t *a = (sais_websrv_broadcast_t *)arg;
-
-	/* sai-web might not be taking it.. */
-
-	if (lws_buflist_total_len(&m->bltx) > 5000000u) {
-		lwsl_ss_warn(h, "server->web buflist reached 5MB");
-		lws_ss_start_timeout(h, 1);
-		return;
-	}
-
-	if (lws_buflist_append_segment(&m->bltx, a->buf, a->len) < 0) {
-		lwsl_err("%s: buflist append fail\n", __func__);
-		lws_ss_start_timeout(h, 1);
-
-		return;
-	}
-	
-	if (lws_ss_request_tx(h))
-		lwsl_ss_warn(h, "tx req fail");
-}
-
-void
-sais_websrv_broadcast(struct lws_ss_handle *hsrv, const char *str, size_t len)
-{
-	sais_websrv_broadcast_t a;
-
-	a.buf = (const uint8_t *)str;
-	a.len = len;
-
-	lws_ss_server_foreach_client(hsrv, _sais_websrv_broadcast, &a);
-}
-
 
 int
 sais_list_builders(struct vhd *vhd)
 {
-	lws_dll2_owner_t db_builders_owner;
-	struct lwsac *ac = NULL;
-	char *p = vhd->json_builders, *end = p + sizeof(vhd->json_builders),
+	char json_builders[LWS_PRE + 1024], *start = json_builders + LWS_PRE,
+	     *p = start, *end = p + sizeof(json_builders) - LWS_PRE,
 	     subsequent = 0;
-	lws_struct_serialize_t *js;
+	unsigned int ss_flags = LWSSS_FLAG_SOM;
+	lws_dll2_owner_t db_builders_owner;
 	sai_plat_t *builder_from_db;
+	lws_struct_serialize_t *js;
+	struct lwsac *ac = NULL;
 	size_t w;
 
 	memset(&db_builders_owner, 0, sizeof(db_builders_owner));
@@ -244,6 +186,7 @@ sais_list_builders(struct vhd *vhd)
 			"{\"schema\":\"com.warmcat.sai.builders\",\"builders\":[");
 
 	lws_start_foreach_dll(struct lws_dll2 *, walk, db_builders_owner.head) {
+		lws_struct_json_serialize_result_t r;
 		sai_plat_t *live_builder;
 
 		builder_from_db = lws_container_of(walk, sai_plat_t, sai_plat_list);
@@ -257,20 +200,15 @@ sais_list_builders(struct vhd *vhd)
 		if (live_builder) {
 			// lwsl_notice("%s: live_builder %s found, stay_on: %d, copying to db_builder (stay_on: %d)\n",
 			//	    __func__, live_builder->name, live_builder->stay_on, builder_from_db->stay_on);
-			builder_from_db->online = 1;
+			builder_from_db->online		= 1;
 			lws_strncpy(builder_from_db->peer_ip, live_builder->peer_ip,
 				    sizeof(builder_from_db->peer_ip));
-			builder_from_db->stay_on = live_builder->stay_on;
+			builder_from_db->stay_on	= live_builder->stay_on;
 		} else
-			builder_from_db->online = 0;
+			builder_from_db->online		= 0;
 
-		/* if (builder_from_db->power_managed)
-			lwsl_notice("%s: builder %s is power managed (stay: %d)\n",
-				    __func__, builder_from_db->name,
-				    builder_from_db->stay_on); */
-
-		builder_from_db->powering_up = 0;
-		builder_from_db->powering_down = 0;
+		builder_from_db->powering_up		= 0;
+		builder_from_db->powering_down		= 0;
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
 			sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);
@@ -284,32 +222,52 @@ sais_list_builders(struct vhd *vhd)
 			}
 		} lws_end_foreach_dll(p);
 
-		js = lws_struct_json_serialize_create(
-			lsm_schema_map_plat_simple,
-			LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),
-			0, builder_from_db);
-		if (!js) {
+		js = lws_struct_json_serialize_create(lsm_schema_map_plat_simple,
+						      LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),
+						      0, builder_from_db);
+		if (!js)
 			goto bail;
-		}
+
 		if (subsequent)
 			*p++ = ',';
 		subsequent = 1;
 
-		if (lws_struct_json_serialize(js, (uint8_t *)p,
-					      lws_ptr_diff_size_t(end, p), &w) != LSJS_RESULT_FINISH) {
-			lws_struct_json_serialize_destroy(&js);
-			goto bail;
-		}
-		p += w;
+		do {
+			r = lws_struct_json_serialize(js, (uint8_t *)p,
+					lws_ptr_diff_size_t(end, p) - 2, &w);
+			p += w;
+
+			switch (r) {
+			case LSJS_RESULT_FINISH:
+				/* fallthru */
+			case LSJS_RESULT_CONTINUE:
+				sais_websrv_broadcast_REQUIRES_LWS_PRE(
+						vhd->h_ss_websrv, start,
+						lws_ptr_diff_size_t(p, start),
+						SAI_WEBSRV_PB__GENERATED,
+						ss_flags);
+				p = start;
+				ss_flags &= ~((unsigned int)LWSSS_FLAG_SOM);
+				break;
+
+			case LSJS_RESULT_ERROR:
+				lws_struct_json_serialize_destroy(&js);
+				goto bail;
+			}
+
+		} while (r == LSJS_RESULT_CONTINUE);
+
 		lws_struct_json_serialize_destroy(&js);
+
 	} lws_end_foreach_dll(walk);
 
+	ss_flags |= LWSSS_FLAG_EOM;
 	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
+	sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, start,
+			      lws_ptr_diff_size_t(p, start),
+			      SAI_WEBSRV_PB__GENERATED, ss_flags);
 
-	// lwsl_notice("%s: Broadcasting builder list: %s\n", __func__, vhd->json_builders);
-	sais_websrv_broadcast(vhd->h_ss_websrv, vhd->json_builders,
-			      lws_ptr_diff_size_t(p, vhd->json_builders));
-
+	// lwsl_notice("%s: Broadcasting builder list: %s\n", __func__, start);
 	lwsac_free(&ac);
 	return 0;
 
@@ -318,69 +276,7 @@ bail:
 	return 1;
 }
 
-struct sais_arg {
-	const char *uid;
-	int state;
-};
 
-static void
-_sais_taskchange(struct lws_ss_handle *h, void *_arg)
-{
-	websrvss_srv_t *m = (websrvss_srv_t *)lws_ss_to_user_object(h);
-	struct sais_arg *arg = (struct sais_arg *)_arg;
-	char tc[128];
-	int n;
-
-	n = lws_snprintf(tc, sizeof(tc), "{\"schema\":\"sai-taskchange\", "
-					  "\"event_hash\":\"%s\", \"state\":%d}",
-					  arg->uid, arg->state);
-
-	if (lws_buflist_append_segment(&m->bltx, (uint8_t *)tc, (unsigned int)n) < 0) {
-		lwsl_warn("%s: buflist append failed\n", __func__);
-
-		return;
-	}
-
-	if (lws_ss_request_tx(h))
-		lwsl_ss_warn(h, "tx req fail");
-}
-
-void
-sais_taskchange(struct lws_ss_handle *hsrv, const char *task_uuid, int state)
-{
-	struct sais_arg arg = { task_uuid, state };
-
-	lws_ss_server_foreach_client(hsrv, _sais_taskchange, (void *)&arg);
-}
-
-static void
-_sais_eventchange(struct lws_ss_handle *h, void *_arg)
-{
-	websrvss_srv_t *m = (websrvss_srv_t *)lws_ss_to_user_object(h);
-	struct sais_arg *arg = (struct sais_arg *)_arg;
-	char tc[128];
-	int n;
-
-	n = lws_snprintf(tc, sizeof(tc), "{\"schema\":\"sai-eventchange\", "
-					 "\"event_hash\":\"%s\", \"state\":%d}",
-					 arg->uid, arg->state);
-
-	if (lws_buflist_append_segment(&m->bltx, (uint8_t *)tc, (unsigned int)n) < 0) {
-		lwsl_warn("%s: buflist append failed\n", __func__);
-		return;
-	}
-
-	if (lws_ss_request_tx(h))
-		lwsl_ss_warn(h, "req fail");
-}
-
-void
-sais_eventchange(struct lws_ss_handle *hsrv, const char *event_uuid, int state)
-{
-	struct sais_arg arg = { event_uuid, state };
-
-	lws_ss_server_foreach_client(hsrv, _sais_eventchange, (void *)&arg);
-}
 
 static void
 sum_viewers_cb(struct lws_ss_handle *h, void *arg)
@@ -389,181 +285,7 @@ sum_viewers_cb(struct lws_ss_handle *h, void *arg)
 	*(unsigned int *)arg += m_client->viewers;
 }
 
-static sai_db_result_t
-sais_event_reset(struct vhd *vhd, const char *event_uuid)
-{
-	sqlite3 *pdb = NULL;
-	lws_dll2_owner_t o;
-	struct lwsac *ac = NULL;
-	char *err = NULL;
-	int ret;
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb))
-		return SAI_DB_RESULT_ERROR;
-
-	if (lws_struct_sq3_deserialize(pdb, NULL, NULL,
-				       lsm_schema_sq3_map_task,
-				       &o, &ac, 0, 999) >= 0) {
-
-		ret = sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
-		if (ret != SQLITE_OK) {
-			sais_event_db_close(vhd, &pdb);
-			lwsac_free(&ac);
-			if (ret == SQLITE_BUSY)
-				return SAI_DB_RESULT_BUSY;
-			return SAI_DB_RESULT_ERROR;
-		}
-		sqlite3_free(err);
-
-		lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
-			sai_task_t *t = lws_container_of(p, sai_task_t, list);
-			if (sais_task_clear_build_and_logs(vhd, t->uuid, 0) == SAI_DB_RESULT_BUSY) {
-				sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
-				sais_event_db_close(vhd, &pdb);
-				lwsac_free(&ac);
-				return SAI_DB_RESULT_BUSY;
-			}
-		} lws_end_foreach_dll(p);
-
-		ret = sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
-		if (ret != SQLITE_OK) {
-			sais_event_db_close(vhd, &pdb);
-			lwsac_free(&ac);
-			if (ret == SQLITE_BUSY)
-				return SAI_DB_RESULT_BUSY;
-			return SAI_DB_RESULT_ERROR;
-		}
-		sqlite3_free(err);
-	}
-
-	sais_event_db_close(vhd, &pdb);
-	lwsac_free(&ac);
-
-	return SAI_DB_RESULT_OK;
-}
-
-sai_db_result_t
-sais_event_delete(struct vhd *vhd, const char *event_uuid)
-{
-	sqlite3 *pdb = NULL;
-	lws_dll2_owner_t o;
-	struct lwsac *ac = NULL;
-	char *err = NULL;
-	int ret;
-	char qu[128], esc[96];
-
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) == 0) {
-		if (lws_struct_sq3_deserialize(pdb, NULL, NULL,
-					       lsm_schema_sq3_map_task,
-					       &o, &ac, 0, 999) >= 0) {
-
-			ret = sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
-			if (ret != SQLITE_OK) {
-				sais_event_db_close(vhd, &pdb);
-				lwsac_free(&ac);
-				if (ret == SQLITE_BUSY)
-					return SAI_DB_RESULT_BUSY;
-				return SAI_DB_RESULT_ERROR;
-			}
-
-			lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
-				sai_task_t *t = lws_container_of(p, sai_task_t, list);
-
-				if (t->state != SAIES_WAITING &&
-				    t->state != SAIES_SUCCESS &&
-				    t->state != SAIES_FAIL &&
-				    t->state != SAIES_CANCELLED)
-					sais_task_cancel(vhd, t->uuid);
-
-			} lws_end_foreach_dll(p);
-
-			ret = sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
-			if (ret != SQLITE_OK) {
-				sais_event_db_close(vhd, &pdb);
-				lwsac_free(&ac);
-				if (ret == SQLITE_BUSY)
-					return SAI_DB_RESULT_BUSY;
-				return SAI_DB_RESULT_ERROR;
-			}
-		}
-		sais_event_db_close(vhd, &pdb);
-		lwsac_free(&ac);
-	}
-
-	lws_sql_purify(esc, event_uuid, sizeof(esc));
-	lws_snprintf(qu, sizeof(qu), "delete from events where uuid='%s'", esc);
-	ret = sqlite3_exec(vhd->server.pdb, qu, NULL, NULL, &err);
-	if (ret != SQLITE_OK) {
-		if (ret == SQLITE_BUSY)
-			return SAI_DB_RESULT_BUSY;
-		lwsl_err("%s: evdel uuid %s, sq3 err %s\n", __func__, esc, err);
-		sqlite3_free(err);
-		return SAI_DB_RESULT_ERROR;
-	}
-
-	sais_event_db_delete_database(vhd, event_uuid);
-	sais_eventchange(vhd->h_ss_websrv, event_uuid, SAIES_DELETED);
-	sais_websrv_broadcast(vhd->h_ss_websrv,
-			      "{\"schema\":\"sai-overview\"}", 25);
-
-	return SAI_DB_RESULT_OK;
-}
-
-static sai_db_result_t
-sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
-{
-	sqlite3 *pdb = NULL;
-	lws_dll2_owner_t o;
-	struct lwsac *ac = NULL;
-	char *err = NULL;
-	int ret;
-	char filt[256], esc[96];
-
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb))
-		return SAI_DB_RESULT_ERROR;
-
-	lws_sql_purify(esc, platform, sizeof(esc));
-	lws_snprintf(filt, sizeof(filt), " and platform='%s' and state=4", esc);
-
-	if (lws_struct_sq3_deserialize(pdb, filt, NULL,
-				       lsm_schema_sq3_map_task,
-				       &o, &ac, 0, 999) >= 0) {
-		ret = sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
-		if (ret != SQLITE_OK) {
-			sais_event_db_close(vhd, &pdb);
-			lwsac_free(&ac);
-			if (ret == SQLITE_BUSY)
-				return SAI_DB_RESULT_BUSY;
-			return SAI_DB_RESULT_ERROR;
-		}
-		sqlite3_free(err);
-
-		lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
-			sai_task_t *t = lws_container_of(p, sai_task_t, list);
-			if (sais_task_clear_build_and_logs(vhd, t->uuid, 0) == SAI_DB_RESULT_BUSY) {
-				sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
-				sais_event_db_close(vhd, &pdb);
-				lwsac_free(&ac);
-				return SAI_DB_RESULT_BUSY;
-			}
-		} lws_end_foreach_dll(p);
-
-		ret = sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
-		if (ret != SQLITE_OK) {
-			sais_event_db_close(vhd, &pdb);
-			lwsac_free(&ac);
-			if (ret == SQLITE_BUSY)
-				return SAI_DB_RESULT_BUSY;
-			return SAI_DB_RESULT_ERROR;
-		}
-		sqlite3_free(err);
-	}
-
-	sais_event_db_close(vhd, &pdb);
-	lwsac_free(&ac);
-
-	return SAI_DB_RESULT_OK;
-}
 
 
 static lws_ss_state_return_t
@@ -788,28 +510,56 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	       size_t *len, int *flags)
 {
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
-	size_t fsl = lws_buflist_next_segment_len(&m->bltx, NULL); 
-	char som, eom;
-	int used;
+	int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&m->bl_srv_to_web), depi;
+	char som, som1, eom, final = 1;
+	size_t fsl, used;
 
-	if (!m->bltx)
+	if (!m->bl_srv_to_web)
 		return LWSSSSRET_TX_DONT_SEND;
 
-	used = lws_buflist_fragment_use(&m->bltx, buf, *len, &som, &eom);
+	depi = *pi;
+
+	/*
+	 * We can only issue *len at a time.
+	 *
+	 * Notice we are getting the stored flags from the START of the fragment each time.
+	 * that means we can still see the right flags stored with the fragment, even if we
+	 * have partially used the buflist frag and are partway through it.
+	 *
+	 * Ergo, only something to skip if we are at som=1.  And also notice that although
+	 * *pi will be right, after the lws_buflist..._use() api, what it points to has been
+	 * destroyed.  So we also dereference *pi into depi for use below.
+	 */
+
+	fsl = lws_buflist_next_segment_len(&m->bl_srv_to_web, NULL);
+
+	lws_buflist_fragment_use(&m->bl_srv_to_web, NULL, 0, &som, &eom);
+	if (som) {
+		fsl -= sizeof(int);
+		lws_buflist_fragment_use(&m->bl_srv_to_web, buf, sizeof(int), &som1, &eom);
+	}
+	if (!(depi & LWSSS_FLAG_SOM))
+		som = 0;
+
+	used = (size_t)lws_buflist_fragment_use(&m->bl_srv_to_web, (uint8_t *)buf, *len, &som1, &eom);
 	if (!used)
 		return LWSSSSRET_TX_DONT_SEND;
 
-	if ((size_t)used < fsl)
-		eom = 0; /* because we still be back */
+	if (used < fsl || !(depi & LWSSS_FLAG_EOM)) /* we saved SS flags at the start of the buf */
+		final = 0;
 
-	*flags = (som ? LWSSS_FLAG_SOM : 0) | (eom ? LWSSS_FLAG_EOM : 0);
-	*len = (size_t)used;
+	*len = used;
+	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
 
-	if (m->bltx)
+	// lwsl_ss_notice(m->ss, "Sending %d srv->web: som %d, som1 %d, depi %d, ssflags %d", (int)*len, som, som1, depi, (int)*flags);
+	// lwsl_hexdump_notice(buf, *len);
+
+	if (m->bl_srv_to_web)
 		return lws_ss_request_tx(m->ss);
 
 	return 0;
 }
+
 
 static lws_ss_state_return_t
 websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
@@ -824,7 +574,9 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 	case LWSSSCS_DISCONNECTED: {
 		unsigned int total_viewers = 0;
 
- 		lws_buflist_destroy_all_segments(&m->bltx);
+ 		lws_buflist_destroy_all_segments(&m->bl_srv_to_web);
+		lws_wsmsg_destroy(m->private_heads, LWS_ARRAY_SIZE(m->private_heads));
+
 		m->viewers = 0;
 
 		/* This sai-web client disconnected, recalculate total viewers */
@@ -843,6 +595,7 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 			lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
 				struct pss *pss_builder = lws_container_of(p, struct pss, same);
 				sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
+
 				if (vsend) {
 					vsend->viewers = (unsigned int)new_viewers_present;
 					lws_dll2_add_tail(&vsend->list, &pss_builder->viewer_state_owner);
@@ -850,6 +603,7 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 				}
 			} lws_end_foreach_dll(p);
 		}
+
 		break;
 	}
 	case LWSSSCS_CREATING:
@@ -857,7 +611,6 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 		return lws_ss_request_tx(m->ss);
 
 	case LWSSSCS_CONNECTED:
-		// lwsl_warn("%s: resending builders because CONNECTED\n", __func__);
 		sais_list_builders(m->vhd);
 		break;
 	case LWSSSCS_ALL_RETRIES_FAILED:

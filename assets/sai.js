@@ -800,10 +800,10 @@ function summarize_build_situation(event_uuid)
 		text = total + " pending";
 	else {
 		var parts = [];
-		if (good) parts.push(good + " OK");
-		if (bad) parts.push(bad + " bad");
-		if (ongoing) parts.push(ongoing + " building");
-		if (pending) parts.push(pending + " wait");
+		if (good) parts.push("OK: " + good);
+		if (bad) parts.push("Bad: " + bad);
+		if (ongoing) parts.push("Building: " + ongoing);
+		if (pending) parts.push("Wait: " + pending);
 		text = parts.join(", ");
 	}
 

@@ -372,16 +372,25 @@ skip:
 		free(op);
 	}
 
+	if (ns->task)
+		saib_queue_task_status_update(ns->sp, ns->spm, ns->task->uuid,
+				      SAI_TASK_REASON_DESTROYED);
+
 	return;
 
 fail:
-	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED, exit code: %d\n", ns->current_step + 1, exit_code);
+	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED, exit code: %d\n",
+			 ns->current_step + 1, exit_code);
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	saib_task_grace(ns);
 	saib_set_ns_state(ns, NSSTATE_FAILED);
 
 	saib_log_chunk_create(ns, NULL, 0, 2);
+
+	if (ns->task)
+		saib_queue_task_status_update(ns->sp, ns->spm, ns->task->uuid,
+				      SAI_TASK_REASON_DESTROYED);
 
 	if (op->spawn)
 		free(op->spawn);

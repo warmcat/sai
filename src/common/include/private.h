@@ -437,6 +437,7 @@ typedef struct sai_plat_server_ref {
 /* common struct for lists of task uuids on a builder */
 typedef struct sai_uuid_list {
 	lws_dll2_t		list;
+	lws_usec_t		us_time_listed;
 	char			uuid[65];
 	char			started;
 } sai_uuid_list_t;
@@ -633,8 +634,10 @@ extern const lws_struct_map_t
 	lsm_schema_build_metric[1],
 	lsm_schema_sq3_map_build_metric[1],
 	lsm_load_report_members[9],
-	lsm_schema_json_task_rej[5]
-	;
+	lsm_schema_json_task_rej[5],
+	lsm_stay_state_update[2],
+	lsm_schema_stay_state_update[1]
+;
 extern const lws_struct_map_t lsm_build_metric[12];
 extern const lws_struct_map_t lsm_plat[10];
 extern const lws_struct_map_t lsm_plat_for_json[16];
@@ -658,3 +661,5 @@ sul_idle_cb(lws_sorted_usec_list_t *sul);
 
 int
 sai_uuid16_create(struct lws_context *context, char *dest33);
+
+

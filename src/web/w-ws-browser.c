@@ -302,14 +302,14 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	n = lws_struct_sq3_deserialize(pdb, qu, NULL, lsm_schema_sq3_map_task,
 				       &o, &sch->query_ac, 0, 1);
 	sais_event_db_close(pss->vhd, &pdb);
-	// lwsl_notice("%s: n %d, o.head %p\n", __func__, n, o.head);
+	lwsl_notice("%s: WWWWWWWWWWW -- actual task  n %d, o.head %p\n", __func__, n, o.head);
 	if (n < 0 || !o.head)
 		goto bail;
 
 	pt = lws_container_of(o.head, sai_task_t, list);
 	sch->one_task = pt;
 
-	lwsl_info("%s: browser ws asked for task hash: %s, plat %s\n",
+	lwsl_notice("%s: WWWWWWWWWWW -- browser ws asked for task hash: %s, plat %s\n",
 		 __func__, task_uuid, sch->one_task->platform);
 
 	/* let the pss take over the task info ac and schedule sending */
@@ -348,15 +348,19 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	n = lws_struct_sq3_deserialize(pss->vhd->pdb, qu, NULL,
 				       lsm_schema_sq3_map_event, &o,
 				       &sch->query_ac, 0, 1);
-	if (n < 0 || !o.head) {
-		// lwsl_notice("%s: no result\n", __func__);
-		goto bail;
-	}
+	lwsl_notice("%s: WWWWWWWWWWW -- actual event  n %d, o.head %p\n", __func__, n, o.head);
+
+	if (n < 0 || !o.head)
+		/*
+		 * It's OK if the parent event is not visible in the current
+		 * filtered view, we can still update the task state where it
+		 * appears inside other visible events
+		 */
+		sch->one_event = NULL;
+	else
+		sch->one_event = lws_container_of(o.head, sai_event_t, list);
 
 	sch->logsub = !!logsub;
-	sch->one_event = lws_container_of(o.head, sai_event_t, list);
-
-	// lwsl_warn("%s: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
 
 	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
 
@@ -680,10 +684,11 @@ again:
 	// lwsl_notice("%s: send_state %d, pss %p, wsi %p\n", __func__,
 	// pss->send_state, pss, pss->wsi);
 
-	if (pss->sched.count)
+	// lwsl_warn("%s: pss->sched.count %d, pss->sched.head %p\n", __func__, pss->sched.count, pss->sched.head);
+
+	sch = NULL;
+	if (pss->sched.head)
 		sch = lws_container_of(pss->sched.head, saiw_scheduled_t, list);
-	else
-		sch = NULL;
 
 	switch (pss->send_state) {
 	case WSS_IDLE1:
@@ -694,7 +699,7 @@ again:
 		 * If so, let's prioritize that first...
 		 */
 
-		if ((!pss->sched.count || !pss->toggle_favour_sch) &&
+		if ((!pss->sched.head || !pss->toggle_favour_sch) &&
 				pss->subs_list.owner) {
 
 			sch = NULL;
@@ -1226,16 +1231,16 @@ b_finish:
 		 * when we go out of scope...
 		 */
 
-		lwsl_info("%s: PREPARE_TASKINFO: one_task %p\n", __func__, sch->one_task);
+		lwsl_warn("%s: wwwwwwwwwwww PREPARE_TASKINFO: one_task %p\n", __func__, sch->one_task);
 
-		task_reply.event = sch->one_event;
-		task_reply.task = sch->one_task;
-		sch->one_task->rebuildable = (sch->one_task->state == SAIES_FAIL ||
-				sch->one_task->state == SAIES_CANCELLED) &&
-				(lws_now_secs() - (sch->one_task->started +
+		task_reply.event		= sch->one_event;
+		task_reply.task			= sch->one_task;
+		sch->one_task->rebuildable	= (sch->one_task->state == SAIES_FAIL ||
+						   sch->one_task->state == SAIES_CANCELLED) &&
+						  (lws_now_secs() - (sch->one_task->started +
 						(sch->one_task->duration / 1000000)) < 24 * 3600);
-		task_reply.auth_secs = (int)(pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0);
-		task_reply.authorized = pss->authorized;
+		task_reply.auth_secs		= (int)(pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0);
+		task_reply.authorized		= pss->authorized;
 		lws_strncpy(task_reply.auth_user, pss->auth_user,
 			    sizeof(task_reply.auth_user));
 
@@ -1307,6 +1312,12 @@ b_finish:
 			lwsl_notice("%s: taskinfo: empty json\n", __func__);
 			return 0;
 		}
+
+		lwsl_notice("%s: wwwwwwwwwww TASKINFO\n", __func__);
+		if ((size_t)write(2, start, lws_ptr_diff_size_t(p, start)) != lws_ptr_diff_size_t(p, start))
+			lwsl_notice("%s: dump JSON failed\n", __func__);
+		lwsl_notice("\n");
+
 		break;
 
 	case WSS_SEND_ARTIFACT_INFO:
@@ -1412,43 +1423,4 @@ saiw_browser_state_changed(struct pss *pss, int established)
 	saiw_update_viewer_count(pss->vhd);
 }
 
-/*
- * This function calculates the current number of connected browsers and
- * sends an update to the sai-server.
- */
-void
-saiw_update_viewer_count(struct vhd *vhd)
-{
-	sai_viewer_state_t vs;
-	char buf[LWS_PRE + 256];
-	size_t len;
 
-	if (!vhd || !vhd->h_ss_websrv)
-		return;
-
-	/* The count is simply the number of items in the browsers list */
-	vs.viewers = (unsigned int)vhd->browsers.count;
-	
-	const lws_struct_map_t lsm_viewercount_members[] = {
-		LSM_UNSIGNED(sai_viewer_state_t, viewers,	"count"),
-	};
-
-	const lws_struct_map_t lsm_schema_json_map[] = {
-		LSM_SCHEMA	(sai_viewer_state_t,	 NULL, lsm_viewercount_members,
-						      "com.warmcat.sai.viewercount"),
-	};
-
-	lws_struct_serialize_t *js = lws_struct_json_serialize_create(
-			lsm_schema_json_map, LWS_ARRAY_SIZE(lsm_schema_json_map),
-			0, &vs);
-	if (!js)
-		return;
-	
-	len = 0;
-	lws_struct_json_serialize(js, (unsigned char *)buf + LWS_PRE,
-				      sizeof(buf) - LWS_PRE, &len);
-	lws_struct_json_serialize_destroy(&js);
-
-	if (len > 0)
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf + LWS_PRE, len, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
-}
