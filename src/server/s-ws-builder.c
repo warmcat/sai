@@ -831,6 +831,7 @@ bail:
 		case SAI_TASK_REASON_DESTROYED:
 			lwsl_notice("%s: SAI_TASK_REASON_DESTROYED\n", __func__);
 			do_remove_uuid = 1;
+			cb->busy = 0;
 			break;
 		}
 

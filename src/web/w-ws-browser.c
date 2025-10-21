@@ -348,13 +348,17 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	n = lws_struct_sq3_deserialize(pss->vhd->pdb, qu, NULL,
 				       lsm_schema_sq3_map_event, &o,
 				       &sch->query_ac, 0, 1);
-	if (n < 0 || !o.head) {
-		// lwsl_notice("%s: no result\n", __func__);
-		goto bail;
-	}
+	if (n < 0 || !o.head)
+		/*
+		 * It's OK if the parent event is not visible in the current
+		 * filtered view, we can still update the task state where it
+		 * appears inside other visible events
+		 */
+		sch->one_event = NULL;
+	else
+		sch->one_event = lws_container_of(o.head, sai_event_t, list);
 
 	sch->logsub = !!logsub;
-	sch->one_event = lws_container_of(o.head, sai_event_t, list);
 
 	// lwsl_warn("%s: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
 
