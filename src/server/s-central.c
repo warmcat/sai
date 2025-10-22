@@ -152,25 +152,6 @@ sais_central_cb(lws_sorted_usec_list_t *sul)
 	struct vhd *vhd = lws_container_of(sul, struct vhd, sul_central);
 
 	/*
-	 * For each builder connected to us, see if it can handle a new task,
-	 * and if so, try to select one matching its supported platforms
-	 */
-
-	lws_start_foreach_dll(struct lws_dll2 *, p,
-			      vhd->server.builder_owner.head) {
-		sai_plat_t *cb = lws_container_of(p, sai_plat_t, sai_plat_list);
-
-		if (cb->wsi && lws_wsi_user(cb->wsi))
-			/*
-			 * try to bind outstanding task to specific builder
-			 * instance
-			 */
-			sais_allocate_task(vhd, (struct pss *)lws_wsi_user(cb->wsi),
-					   cb, cb->platform);
-
-	} lws_end_foreach_dll(p);
-
-	/*
 	 * Need to globally check for abandoned tasks periodically
 	 */
 

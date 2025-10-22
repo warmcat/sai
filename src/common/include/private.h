@@ -458,6 +458,8 @@ typedef struct sai_plat {
 
 	lws_dll2_owner_t	servers; /* list of sai_plat_server_ref_t */
 
+	lws_sorted_usec_list_t	sul_find_jobs; /* server */
+
 	char			peer_ip[48];
 
 	const char		*name;
@@ -467,7 +469,9 @@ typedef struct sai_plat {
 	lws_dll2_owner_t	nspawn_owner;
 	struct lwsac		*deserialization_ac;
 
+	struct lws_context	*cx;
 	struct lws		*wsi; /* server side only */
+	void			*vhd;
 
 	lws_dll2_owner_t	env_head;
 	char			sai_hash[41];

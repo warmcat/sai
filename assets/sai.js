@@ -505,7 +505,7 @@ function hsanitize(s)
 	
 	return s.toString().replace(/[<>"'&]/g, function(chr) {
 		return '&' + table[chr] + ';';
-	}).replace(/\n/g, '\n');
+	}).replace(/\r\n/g, '\n').replace(/\n/g, '<br>');
 }
 
 function renderSpreadsheet(tasks) {

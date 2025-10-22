@@ -31,6 +31,7 @@ struct sai_plat;
 /* lws_wsmsg_ array for different sources */
 enum {
 	SAI_WEBSRV_PB__PROXIED_FROM_BUILDER,
+	SAI_WEBSRV_PB__PROXIED_FROM_BUILDER_LR,
 	SAI_WEBSRV_PB__LOGS,
 	SAI_WEBSRV_PB__GENERATED,
 	SAI_WEBSRV_PB__ACTIVITY,
@@ -128,6 +129,8 @@ struct pss {
 	struct lejp_ctx		ctx;
 	sai_notification_t	sn;
 	struct lws_dll2		same; /* owner: vhd.builders */
+
+	struct lws_buflist	*onward_reassembly;
 
 	sqlite3			*pdb_artifact;
 	sqlite3_blob		*blob_artifact;
@@ -327,7 +330,8 @@ sais_set_task_state(struct vhd *vhd, const char *builder_name,
 		    uint64_t started, uint64_t duration);
 
 int
-sais_websrv_broadcast_REQUIRES_LWS_PRE(struct lws_ss_handle *hsrv, const char *str, size_t len, int reassembly_idx, unsigned int ss_flags);
+sais_websrv_broadcast_REQUIRES_LWS_PRE(struct lws_ss_handle *hsrv,
+				       lws_wsmsg_info_t *info);
 
 int
 sql3_get_integer_cb(void *user, int cols, char **values, char **name);
@@ -421,3 +425,12 @@ sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid);
 int
 sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	      size_t bl, unsigned int ss_flags);
+
+void
+sais_plat_find_jobs_cb(lws_sorted_usec_list_t *sul);
+
+void
+sais_plat_busy(sai_plat_t *sp, char set);
+
+void
+sais_websrv_broadcast_buflist(struct lws_ss_handle *hsrv, struct lws_buflist **bl);

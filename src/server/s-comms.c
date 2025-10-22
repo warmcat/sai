@@ -112,6 +112,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	struct pss *pss = (struct pss *)user;
 	sai_http_murl_t mu = SHMUT_NONE;
 	const char *pvo_resources, *num;
+	lws_wsmsg_info_t info;
 	unsigned int ssf;
 	int n;
 
@@ -395,10 +396,15 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			 */
 			n = lws_snprintf((char *)start, sizeof(buf) - LWS_PRE,
 					 "{\"schema\":\"sai-overview\"}");
-			sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv,
-					   (const char *)start, (size_t)n,
-					   SAI_WEBSRV_PB__GENERATED,
-					   LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+
+			memset(&info, 0, sizeof(info));
+			info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;
+			info.buf			= start;
+			info.len			= (size_t)n;
+			info.ss_flags			= LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+
+			if (sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info) < 0)
+				lwsl_warn("%s: buflist append failed\n", __func__);
 		}
 
 		if (lws_return_http_status(wsi,

@@ -51,35 +51,35 @@
  * buflist.
  */
 
-
-typedef struct {
-	const uint8_t	*buf;
-	size_t		len;
-	unsigned int	ss_flags;
-	int		reassembly_idx;
-} sais_websrv_broadcast_t;
-
 static void
-_sais_websrv_broadcast(struct lws_ss_handle *h, void *v)
+_sais_websrv_broadcast(struct lws_ss_handle *h, void *arg)
 {
-	websrvss_srv_t *m		= (websrvss_srv_t *)lws_ss_to_user_object(h);
-	sais_websrv_broadcast_t *a	= (sais_websrv_broadcast_t *)v;
-	unsigned int *pi		= (unsigned int *)((const char *)a->buf - sizeof(int));
+	websrvss_srv_t *m	   = (websrvss_srv_t *)lws_ss_to_user_object(h);
+	lws_wsmsg_info_t *info	   = (lws_wsmsg_info_t *)arg;
+	unsigned int *pi	   = (unsigned int *)((const char *)info->buf - sizeof(int));
 
-	*pi = a->ss_flags;
+	info->head_upstream		= &m->bl_srv_to_web;
+	info->private_heads		= m->private_heads;
+
+	lwsl_ss_notice(h, "Queueing %u bytes, ridx %d, ff_flags: %u\n",
+		       (unsigned int)info->len, info->private_source_idx, info->ss_flags);
+
+	*pi = info->ss_flags;
 
 	/* sai-web might not be taking it.. */
 
 	if (lws_buflist_total_len(&m->bl_srv_to_web) > (5u * 1024u * 1024u)) {
 		lwsl_ss_warn(h, "server->web buflist reached 5MB");
+		/* close the connection to the client then */
 		lws_ss_start_timeout(h, 1);
+
 		return;
 	}
 
-	if (lws_wsmsg_append(&m->bl_srv_to_web,
-			     &m->private_heads[a->reassembly_idx],
-			     a->buf - sizeof(int),
-			     a->len + sizeof(int), a->ss_flags) < 0)
+	info->buf	= info->buf - sizeof(int);
+	info->len	= info->len + sizeof(int);
+
+	if (lws_wsmsg_append(info) < 0)
 		lwsl_ss_err(h, "failed to append"); /* still ask to drain */
 
 	if (lws_ss_request_tx(h))
@@ -88,20 +88,53 @@ _sais_websrv_broadcast(struct lws_ss_handle *h, void *v)
 
 int
 sais_websrv_broadcast_REQUIRES_LWS_PRE(struct lws_ss_handle *hsrv,
-				       const char *str, size_t len,
-				       int reassembly_idx, unsigned int ss_flags)
+				       lws_wsmsg_info_t *info)
 {
-	sais_websrv_broadcast_t a;
-
-	a.buf			= (const uint8_t *)str; /* LWS_PRE behind valid too */
-	a.len			= len;
-	a.ss_flags		= ss_flags;
-	a.reassembly_idx	= reassembly_idx;
-
-	lws_ss_server_foreach_client(hsrv, _sais_websrv_broadcast, &a);
+	/* calls back for every connected client on server */
+	lws_ss_server_foreach_client(hsrv, _sais_websrv_broadcast, info);
 
 	return 0;
 }
+
+
+struct sai_bl_args {
+	uint8_t		*buf;
+	size_t		len;
+};
+
+static void
+_sais_websrv_broadcast_buflist(struct lws_ss_handle *h, void *arg)
+{
+	websrvss_srv_t *m	   = (websrvss_srv_t *)lws_ss_to_user_object(h);
+	struct sai_bl_args *sbba   = (struct sai_bl_args *)arg;
+
+	if (lws_buflist_append_segment(&m->bl_srv_to_web, sbba->buf, sbba->len) < 0)
+		lwsl_notice("%s: failed to store buflist segment\n", __func__);
+}
+
+/*
+ * We will copy the buflist bl on to every sai-web client connected to our
+ * sai-server server, then empty bl.
+ */
+
+void
+sais_websrv_broadcast_buflist(struct lws_ss_handle *hsrv, struct lws_buflist **bl)
+{
+	while (*bl) {
+		struct sai_bl_args sbba;
+
+		sbba.len = lws_buflist_next_segment_len(bl, &sbba.buf);
+
+		lws_ss_server_foreach_client(hsrv,
+					     _sais_websrv_broadcast_buflist,
+					     (void *)&sbba);
+
+		lws_buflist_use_segment(bl, sbba.len);
+	}
+	lws_buflist_destroy_all_segments(bl);
+}
+
+
 
 struct sais_arg {
 	const char *uid;
@@ -113,6 +146,7 @@ _sais_taskchange(struct lws_ss_handle *h, void *_arg)
 {
 	struct sais_arg *arg = (struct sais_arg *)_arg;
 	char tc[LWS_PRE + 128], *start = tc + LWS_PRE;
+	lws_wsmsg_info_t info;
 	int n;
 
 	n = lws_snprintf(start, sizeof(tc) - LWS_PRE,
@@ -120,9 +154,13 @@ _sais_taskchange(struct lws_ss_handle *h, void *_arg)
 			 "\"event_hash\":\"%s\", \"state\":%d}",
 			 arg->uid, arg->state);
 
-	if (sais_websrv_broadcast_REQUIRES_LWS_PRE(h, start, (size_t)n,
-				  SAI_WEBSRV_PB__GENERATED,
-				  LWSSS_FLAG_SOM | LWSSS_FLAG_EOM) < 0) {
+	memset(&info, 0, sizeof(info));
+	info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;
+	info.buf			= (uint8_t *)start;
+	info.len			= (size_t)n;
+	info.ss_flags			= LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+
+	if (sais_websrv_broadcast_REQUIRES_LWS_PRE(h, &info) < 0) {
 		lwsl_warn("%s: buflist append failed\n", __func__);
 
 		return;
@@ -145,6 +183,7 @@ _sais_eventchange(struct lws_ss_handle *h, void *_arg)
 {
 	struct sais_arg *arg = (struct sais_arg *)_arg;
 	char tc[LWS_PRE + 128], *start = tc + LWS_PRE;
+	lws_wsmsg_info_t info;
 	int n;
 
 	n = lws_snprintf(start, sizeof(tc) - LWS_PRE,
@@ -152,9 +191,13 @@ _sais_eventchange(struct lws_ss_handle *h, void *_arg)
 			 "\"event_hash\":\"%s\", \"state\":%d}",
 			 arg->uid, arg->state);
 
-	if (sais_websrv_broadcast_REQUIRES_LWS_PRE(h, start, (size_t)n,
-				  SAI_WEBSRV_PB__GENERATED,
-				  LWSSS_FLAG_SOM | LWSSS_FLAG_EOM) < 0) {
+	memset(&info, 0, sizeof(info));
+	info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;
+	info.buf			= (uint8_t *)start;
+	info.len			= (size_t)n;
+	info.ss_flags			= LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+
+	if (sais_websrv_broadcast_REQUIRES_LWS_PRE(h, &info) < 0) {
 		lwsl_warn("%s: buflist append failed\n", __func__);
 		return;
 	}
@@ -174,9 +217,9 @@ sais_eventchange(struct lws_ss_handle *hsrv, const char *event_uuid, int state)
 sai_db_result_t
 sais_event_reset(struct vhd *vhd, const char *event_uuid)
 {
+	struct lwsac *ac = NULL;
 	sqlite3 *pdb = NULL;
 	lws_dll2_owner_t o;
-	struct lwsac *ac = NULL;
 	char *err = NULL;
 	int ret;
 
@@ -229,6 +272,7 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid)
 {
 	char qu[128], esc[96], pre[LWS_PRE + 128];
 	struct lwsac *ac = NULL;
+	lws_wsmsg_info_t info;
 	sqlite3 *pdb = NULL;
 	lws_dll2_owner_t o;
 	char *err = NULL;
@@ -287,9 +331,19 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid)
 	sais_event_db_delete_database(vhd, event_uuid);
 	sais_eventchange(vhd->h_ss_websrv, event_uuid, SAIES_DELETED);
 
-	len = (size_t)lws_snprintf(pre + LWS_PRE, sizeof(pre) - LWS_PRE, "{\"schema\":\"sai-overview\"}");
-	sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, pre + LWS_PRE, len,
-			      SAI_WEBSRV_PB__GENERATED, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+	len = (size_t)lws_snprintf(pre + LWS_PRE, sizeof(pre) - LWS_PRE,
+			"{\"schema\":\"sai-overview\"}");
+
+	memset(&info, 0, sizeof(info));
+	info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;
+	info.buf			= (uint8_t *)pre + LWS_PRE;
+	info.len			= len;
+	info.ss_flags			= LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+
+	if (sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info) < 0) {
+		lwsl_err("%s: unable to broadcast\n", __func__);
+		return SAI_DB_RESULT_ERROR;
+	}
 
 	return SAI_DB_RESULT_OK;
 }

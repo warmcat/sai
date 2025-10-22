@@ -169,6 +169,7 @@ sais_list_builders(struct vhd *vhd)
 	sai_plat_t *builder_from_db;
 	lws_struct_serialize_t *js;
 	struct lwsac *ac = NULL;
+	lws_wsmsg_info_t info;
 	size_t w;
 
 	memset(&db_builders_owner, 0, sizeof(db_builders_owner));
@@ -241,11 +242,16 @@ sais_list_builders(struct vhd *vhd)
 			case LSJS_RESULT_FINISH:
 				/* fallthru */
 			case LSJS_RESULT_CONTINUE:
-				sais_websrv_broadcast_REQUIRES_LWS_PRE(
-						vhd->h_ss_websrv, start,
-						lws_ptr_diff_size_t(p, start),
-						SAI_WEBSRV_PB__GENERATED,
-						ss_flags);
+				memset(&info, 0, sizeof(info));
+
+				info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;
+				info.buf			= (uint8_t *)start;
+				info.len			= lws_ptr_diff_size_t(p, start);
+				info.ss_flags			= ss_flags;
+
+				if (sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info) < 0)
+					lwsl_warn("%s: unable to broadcast to web\n", __func__);
+
 				p = start;
 				ss_flags &= ~((unsigned int)LWSSS_FLAG_SOM);
 				break;
@@ -263,9 +269,15 @@ sais_list_builders(struct vhd *vhd)
 
 	ss_flags |= LWSSS_FLAG_EOM;
 	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
-	sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, start,
-			      lws_ptr_diff_size_t(p, start),
-			      SAI_WEBSRV_PB__GENERATED, ss_flags);
+	memset(&info, 0, sizeof(info));
+
+	info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;
+	info.buf			= (uint8_t *)start;
+	info.len			= lws_ptr_diff_size_t(p, start);
+	info.ss_flags			= ss_flags;
+
+	if (sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info) < 0)
+		lwsl_warn("%s: unable to broadcast to web\n", __func__);
 
 	// lwsl_notice("%s: Broadcasting builder list: %s\n", __func__, start);
 	lwsac_free(&ac);
@@ -510,7 +522,7 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	       size_t *len, int *flags)
 {
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
-	int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&m->bl_srv_to_web), depi;
+	int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&m->bl_srv_to_web), depi, fl;
 	char som, som1, eom, final = 1;
 	size_t fsl, used;
 
@@ -549,9 +561,26 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 		final = 0;
 
 	*len = used;
-	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
+	fl = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
 
-	// lwsl_ss_notice(m->ss, "Sending %d srv->web: som %d, som1 %d, depi %d, ssflags %d", (int)*len, som, som1, depi, (int)*flags);
+	// lwsl_ss_notice(m->ss, "Sending %d srv->web: ssflags %d", (int)*len, fl);
+
+	if ((fl & LWSSS_FLAG_SOM) && (((*flags) & 3) == 2)) {
+		lwsl_ss_err(m->ss, "TX: Illegal LWSSS_FLAG_SOM after previous frame without LWSSS_FLAG_EOM");
+		assert(0);
+	}
+	if (!(fl & LWSSS_FLAG_SOM) && ((*flags) & 3) == 3) {
+		lwsl_ss_err(m->ss, "TX: Missing LWSSS_FLAG_SOM after previous frame with LWSSS_FLAG_EOM");
+		assert(0);
+	}
+	if (!(fl & LWSSS_FLAG_SOM) && !((*flags) & 2)) {
+		lwsl_ss_err(m->ss, "TX: Missing LWSSS_FLAG_SOM on first frame");
+		assert(0);
+	}	
+
+	*flags = fl;
+
+
 	// lwsl_hexdump_notice(buf, *len);
 
 	if (m->bl_srv_to_web)
