@@ -915,6 +915,7 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 	struct lwsac *ac_events = NULL, *ac_tasks = NULL;
 	lws_dll2_owner_t o_events, o_tasks;
 	char *p, *start, *end, *ast, s = 1;
+	lws_wsmsg_info_t info;
 	int cat, first = 1;
 	lws_usec_t now;
 
@@ -966,9 +967,13 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 						first = 0;
 
 						if (lws_ptr_diff_size_t(end, p) < 100) {
+							memset(&info, 0, sizeof(info));
+							info.private_source_idx		= SAI_WEBSRV_PB__ACTIVITY;
+							info.buf			= (uint8_t *)start;
+							info.len			= lws_ptr_diff_size_t(p, start);
+							info.ss_flags			= s ? LWSSS_FLAG_SOM : 0;
 							/* we might start it, but it won't be the final frag here since we have JSON closure to do */
-							sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, start, lws_ptr_diff_size_t(p, start),
-									      SAI_WEBSRV_PB__ACTIVITY, (s ? LWSSS_FLAG_SOM : 0));
+							sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info);
 							p = start;
 							s = 0;
 						}
@@ -985,9 +990,12 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 	*p++ = '}';
 
 	if (!s) { /* ie, if we sent something, send the closing part of the JSON */
-		sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, start,
-				lws_ptr_diff_size_t(p, start),
-				SAI_WEBSRV_PB__ACTIVITY, LWSSS_FLAG_EOM);
+		memset(&info, 0, sizeof(info));
+		info.private_source_idx		= SAI_WEBSRV_PB__ACTIVITY;
+		info.buf			= (uint8_t *)start;
+		info.len			= lws_ptr_diff_size_t(p, start);
+		info.ss_flags			= LWSSS_FLAG_EOM;
+		sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info);
 
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_activity, sais_activity_cb, 1 * LWS_US_PER_SEC);
 	}
@@ -1208,3 +1216,39 @@ bail:
 	return ret;
 }
 
+
+
+void
+sais_plat_find_jobs_cb(lws_sorted_usec_list_t *sul)
+{
+	sai_plat_t *sp = lws_container_of(sul, sai_plat_t, sul_find_jobs);
+
+	if (!sp->busy && sp->wsi && lws_wsi_user(sp->wsi))
+		/*
+		 * try to bind outstanding task to specific builder
+		 * instance
+		 */
+		sais_allocate_task((struct vhd *)sp->vhd,
+				   (struct pss *)lws_wsi_user(sp->wsi),
+				   sp, sp->platform);
+
+	if (!sp->busy)
+		lws_sul_schedule(sp->cx, 0, &sp->sul_find_jobs,
+				sais_plat_find_jobs_cb, 1 * LWS_US_PER_SEC);
+}
+
+void
+sais_plat_busy(sai_plat_t *sp, char set)
+{
+	if (set) {
+		lwsl_notice("%s: %s: SETTING BUSY\n", __func__, sp->name);
+		lws_sul_cancel(&sp->sul_find_jobs);
+		sp->busy = 1;
+		return;
+	}
+
+	sp->busy = 0;
+	lwsl_notice("%s: %s: CLEARING BUSY\n", __func__, sp->name);
+	lws_sul_schedule(sp->cx, 0, &sp->sul_find_jobs,
+			sais_plat_find_jobs_cb, 1 * LWS_US_PER_SEC);
+}

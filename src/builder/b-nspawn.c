@@ -49,7 +49,7 @@ extern struct lws_vhost *builder_vhost;
 int
 saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 {
-	char lj[1600];
+	char lj[2600 + LWS_PRE];
 	int n = 0;
 
 	if (!ns || !ns->spm)
@@ -58,7 +58,7 @@ saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 	if (!ns->task)
 		return 0;
 
-	n = lws_snprintf(lj, sizeof(lj),
+	n = lws_snprintf(lj + LWS_PRE, sizeof(lj) - LWS_PRE,
 		"{\"schema\":\"com-warmcat-sai-logs\","
 		 "\"task_uuid\":\"%s\", \"timestamp\": %llu,"
 		 "\"channel\": %d, \"len\": %d, ",
@@ -66,9 +66,11 @@ saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 		 channel, (int)len);
 
 	if (ns->retcode_set) {
-		n += lws_snprintf(lj + n, sizeof(lj) - (unsigned int)n,
-			"\"finished\":%d,", ns->retcode);
-		n += lws_snprintf(lj + n, sizeof(lj) - (unsigned int)n,
+		n += lws_snprintf(lj + LWS_PRE + n,
+				  sizeof(lj) - LWS_PRE - (unsigned int)n,
+				  "\"finished\":%d,", ns->retcode);
+		n += lws_snprintf(lj + LWS_PRE + n,
+				  sizeof(lj) - LWS_PRE - (unsigned int)n,
 			"\"avail_slots\":%d,\"avail_mem_kib\":%u,\"avail_sto_kib\":%u,",
 			(int)(ns->sp->job_limit ? ns->sp->job_limit : 6u) -
 				((int)ns->sp->nspawn_owner.count - 1),
@@ -77,20 +79,21 @@ saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 		ns->retcode_set = 0;
 	}
 
-	n += lws_snprintf(lj + n, sizeof(lj) - (unsigned int)n,
+	n += lws_snprintf(lj + LWS_PRE + n,
+			  sizeof(lj) - LWS_PRE - (unsigned int)n,
 			  "\"log\":\"");
 
 	// puts((const char *)&chunk[1]);
 	// puts((const char *)start);
 
-	n += lws_b64_encode_string(buf, (int)len, (char *)&lj[n],
-				   (int)sizeof(lj) - n - 5);
+	n += lws_b64_encode_string(buf, (int)len, (char *)&lj[LWS_PRE + n],
+				   (int)sizeof(lj) - LWS_PRE - n - 5);
 
-	lj[n++] = '\"';
-	lj[n++] = '}';
-	lj[n] = '\0';
+	lj[LWS_PRE + n++] = '\"';
+	lj[LWS_PRE + n++] = '}';
+	lj[LWS_PRE + n] = '\0';
 
-	return saib_srv_queue_tx(ns->spm->ss, lj, (size_t)n, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+	return saib_srv_queue_tx(ns->spm->ss, lj + LWS_PRE, (size_t)n, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
 }
 
 static int

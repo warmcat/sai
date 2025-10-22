@@ -58,7 +58,8 @@ saib_srv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned int s
 	// lwsl_ss_notice(h, "Queuing builder -> sai-server");
 	// lwsl_hexdump_notice(buf, len);
 
-	if (lws_buflist_append_segment(&spm->bl_to_srv, buf - sizeof(int), len + sizeof(int)) < 0)
+	if (lws_buflist_append_segment(&spm->bl_to_srv, (uint8_t *)buf - sizeof(int),
+				       len + sizeof(int)) < 0)
 		lwsl_ss_err(h, "failed to append"); /* still ask to drain */
 
 	if (lws_ss_request_tx(h))
@@ -74,7 +75,7 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 {
 	lws_struct_serialize_t *js;
 	unsigned int ssf = LWSSS_FLAG_SOM;
-	uint8_t buf[1024];
+	uint8_t buf[1024 + LWS_PRE];
 	size_t w = 0;
 
 	js = lws_struct_json_serialize_create(map, map_entries, 0, object);
@@ -84,7 +85,8 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 	}
 
 	do {
-		switch (lws_struct_json_serialize(js, buf, sizeof(buf), &w)) {
+		switch (lws_struct_json_serialize(js, buf + LWS_PRE,
+						  sizeof(buf) - LWS_PRE, &w)) {
 		case LSJS_RESULT_CONTINUE:
 			break;
 		case LSJS_RESULT_FINISH:
@@ -95,7 +97,7 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 			return -1;
 		}
 
-		if (saib_srv_queue_tx(h, buf, w, ssf))
+		if (saib_srv_queue_tx(h, buf + LWS_PRE, w, ssf))
 			return -1;
 
 		ssf &= ~((unsigned int)LWSSS_FLAG_SOM);
