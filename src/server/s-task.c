@@ -922,6 +922,7 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 	ast = malloc(MAX_BLOB + LWS_PRE);
 	if (!ast)
 		return;
+
 	start = ast + LWS_PRE;
 	end = start + MAX_BLOB;
 	p = start;
@@ -934,56 +935,67 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 
 	if (lws_struct_sq3_deserialize(vhd->server.pdb,
 			" and state != 3 and state != 4 and state != 5 and state != 7",
-			NULL, lsm_schema_sq3_map_event, &o_events, &ac_events, 0, 100) >= 0 &&
-			o_events.head) {
+			NULL, lsm_schema_sq3_map_event, &o_events, &ac_events, 0, 100) < 0 ||
+			!o_events.head)
+		goto nope;
 
-		lws_start_foreach_dll(struct lws_dll2 *, d, o_events.head) {
-			sai_event_t *e = lws_container_of(d, sai_event_t, list);
-			sqlite3 *pdb = NULL;
+	lws_start_foreach_dll(struct lws_dll2 *, d, o_events.head) {
+		sai_event_t *e = lws_container_of(d, sai_event_t, list);
+		sqlite3 *pdb = NULL;
 
-			if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
-				if (lws_struct_sq3_deserialize(pdb,
-						" and (state = 1 or state = 2)",
-						NULL, lsm_schema_sq3_map_task, &o_tasks,
-						&ac_tasks, 0, 100) >= 0 && o_tasks.head) {
+		if (sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb))
+			goto next;
 
-					lws_start_foreach_dll(struct lws_dll2 *, dt, o_tasks.head) {
-						sai_task_t *t = lws_container_of(dt, sai_task_t, list);
+		if (lws_struct_sq3_deserialize(pdb,
+				" and (state = 1 or state = 2)",
+				NULL, lsm_schema_sq3_map_task, &o_tasks,
+				&ac_tasks, 0, 100) < 0 || !o_tasks.head)
+			goto next1;
 
-						if (lws_ptr_diff_size_t(end, p) < 100)
-							break;
+		lws_start_foreach_dll(struct lws_dll2 *, dt, o_tasks.head) {
+			sai_task_t *t = lws_container_of(dt, sai_task_t, list);
 
-						if (now - (lws_usec_t)(t->last_updated * LWS_US_PER_SEC) > 10 * LWS_US_PER_SEC)
-							cat = 1;
-						else if (now - (lws_usec_t)(t->last_updated * LWS_US_PER_SEC) > 3 * LWS_US_PER_SEC)
-							cat = 2;
-						else
-							cat = 3;
+			if (lws_ptr_diff_size_t(end, p) < 100)
+				break;
 
-						if (!first)
-							*p++ = ',';
+			if (now - (lws_usec_t)(t->last_updated * LWS_US_PER_SEC) > 10 * LWS_US_PER_SEC)
+				cat = 1;
+			else if (now - (lws_usec_t)(t->last_updated * LWS_US_PER_SEC) > 3 * LWS_US_PER_SEC)
+				cat = 2;
+			else
+				cat = 3;
 
-						p += lws_snprintf(p, lws_ptr_diff_size_t(end, p), "{\"uuid\":\"%s\",\"cat\":%d}", t->uuid, cat);
-						first = 0;
+			if (!first)
+				*p++ = ',';
 
-						if (lws_ptr_diff_size_t(end, p) < 100) {
-							memset(&info, 0, sizeof(info));
-							info.private_source_idx		= SAI_WEBSRV_PB__ACTIVITY;
-							info.buf			= (uint8_t *)start;
-							info.len			= lws_ptr_diff_size_t(p, start);
-							info.ss_flags			= s ? LWSSS_FLAG_SOM : 0;
-							/* we might start it, but it won't be the final frag here since we have JSON closure to do */
-							sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info);
-							p = start;
-							s = 0;
-						}
-					} lws_end_foreach_dll(dt);
-				}
-				lwsac_free(&ac_tasks);
-				sais_event_db_close(vhd, &pdb);
+			p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+					  "{\"uuid\":\"%s\",\"cat\":%d}", t->uuid, cat);
+			first = 0;
+
+			if (lws_ptr_diff_size_t(end, p) < 100) {
+				memset(&info, 0, sizeof(info));
+				info.private_source_idx	= SAI_WEBSRV_PB__ACTIVITY;
+				info.buf		= (uint8_t *)start;
+				info.len		= lws_ptr_diff_size_t(p, start);
+				info.ss_flags		= s ? LWSSS_FLAG_SOM : 0;
+				/*
+				 * We might start it, but it won't be the final
+				 * frag here since we have JSON closure to do
+				 */
+				sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info);
+				p = start;
+				s = 0;
 			}
-		} lws_end_foreach_dll(d);
-	}
+		} lws_end_foreach_dll(dt);
+
+next1:
+		lwsac_free(&ac_tasks);
+		sais_event_db_close(vhd, &pdb);
+
+next: ;
+	} lws_end_foreach_dll(d);
+
+nope:
 	lwsac_free(&ac_events);
 
 	*p++ = ']';
@@ -991,13 +1003,15 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 
 	if (!s) { /* ie, if we sent something, send the closing part of the JSON */
 		memset(&info, 0, sizeof(info));
+
 		info.private_source_idx		= SAI_WEBSRV_PB__ACTIVITY;
 		info.buf			= (uint8_t *)start;
 		info.len			= lws_ptr_diff_size_t(p, start);
 		info.ss_flags			= LWSSS_FLAG_EOM;
 		sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info);
 
-		lws_sul_schedule(vhd->context, 0, &vhd->sul_activity, sais_activity_cb, 1 * LWS_US_PER_SEC);
+		lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
+				 sais_activity_cb, 3 * LWS_US_PER_SEC);
 	}
 
 	free(ast);
@@ -1234,7 +1248,7 @@ sais_plat_find_jobs_cb(lws_sorted_usec_list_t *sul)
 
 	if (!sp->busy)
 		lws_sul_schedule(sp->cx, 0, &sp->sul_find_jobs,
-				sais_plat_find_jobs_cb, 1 * LWS_US_PER_SEC);
+				sais_plat_find_jobs_cb, 500 * LWS_US_PER_MS);
 }
 
 void
@@ -1249,6 +1263,7 @@ sais_plat_busy(sai_plat_t *sp, char set)
 
 	sp->busy = 0;
 	lwsl_notice("%s: %s: CLEARING BUSY\n", __func__, sp->name);
+
 	lws_sul_schedule(sp->cx, 0, &sp->sul_find_jobs,
-			sais_plat_find_jobs_cb, 1 * LWS_US_PER_SEC);
+			sais_plat_find_jobs_cb, 500 * LWS_US_PER_MS);
 }

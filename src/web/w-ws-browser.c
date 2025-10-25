@@ -92,7 +92,7 @@ enum {
 	SAIM_WS_BROWSER_RX_EVENTRESET,
 	SAIM_WS_BROWSER_RX_EVENTDELETE,
 	SAIM_WS_BROWSER_RX_TASKCANCEL,
-	SAIM_WS_BROWSER_RX_JS_HELLO,
+	SAIM_WS_BROWSER_RX_LOADREPORT,
 	SAIM_WS_BROWSER_RX_REBUILD,
 	SAIM_WS_BROWSER_RX_PLATRESET,
 	SAIM_WS_BROWSER_RX_STAY,
@@ -418,7 +418,7 @@ saiw_event_state_change(struct vhd *vhd, const char *event_uuid)
 }
 
 /*
- * browser has sent us a request for either overview, or data on a specific
+ * sai-web has sent us a request for either overview, or data on a specific
  * task
  */
 
