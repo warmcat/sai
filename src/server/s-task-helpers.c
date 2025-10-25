@@ -27,11 +27,14 @@
 
 #include "s-private.h"
 
+
 void
 sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task)
 {
-	char query[256];
+        struct lws_genhash_ctx ctx;
+	char query[256], hex[65];
 	sqlite3_stmt *stmt;
+        uint8_t hash[32];
 
 	task->est_peak_mem_kib = 256 * 1024; /* 256MiB default */
 	task->est_cpu_load_pct = 10;
@@ -40,11 +43,24 @@ sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task)
 	if (!vhd->pdb_metrics)
 		return;
 
+	if (!task->repo_name || !task->platform[0])
+		return;
+
+        if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256) ||
+            lws_genhash_update(&ctx, (uint8_t *)task->repo_name, strlen(task->repo_name)) ||
+            lws_genhash_update(&ctx, (uint8_t *)task->platform, strlen(task->platform) ||
+            lws_genhash_update(&ctx, (uint8_t *)task->taskname, strlen(task->taskname)) ||
+            lws_genhash_destroy(&ctx, hash)))
+                lwsl_warn("%s: sha256 failed\n", __func__);
+
+        lws_hex_from_byte_array(hash, sizeof(hash) - 1, hex, sizeof(hex));
+	hex[64] = '\0';
+
 	lws_snprintf(query, sizeof(query),
 		     "SELECT AVG(peak_mem_rss), AVG(us_cpu_user), "
 		     "AVG(stg_bytes), AVG(wallclock_us) "
 		     "FROM build_metrics WHERE key = '%s'",
-		     task->taskname);
+		     hex);
 
 	if (sqlite3_prepare_v2(vhd->pdb_metrics, query, -1, &stmt, NULL) != SQLITE_OK)
 		return;
@@ -53,10 +69,12 @@ sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task)
 		uint64_t avg_us_cpu = (uint64_t)sqlite3_column_int64(stmt, 1);
 		uint64_t avg_wallclock = (uint64_t)sqlite3_column_int64(stmt, 3);
 
-		task->est_peak_mem_kib = (unsigned int)(sqlite3_column_int(stmt, 0) / 1024);
+		if (sqlite3_column_type(stmt, 0) != SQLITE_NULL)
+			task->est_peak_mem_kib = (unsigned int)(sqlite3_column_int(stmt, 0) / 1024);
 		if (avg_wallclock)
 			task->est_cpu_load_pct = (unsigned int)((avg_us_cpu * 100) / avg_wallclock);
-		task->est_disk_kib = (unsigned int)(sqlite3_column_int(stmt, 2) / 1024);
+		if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+			task->est_disk_kib = (unsigned int)(sqlite3_column_int(stmt, 2) / 1024);
 	}
 
 	sqlite3_finalize(stmt);
