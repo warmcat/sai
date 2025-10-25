@@ -62,7 +62,7 @@ saib_get_cgroup_cpu(struct sai_nspawn *ns)
 	char path[256], buf[128];
 	lws_usec_t now;
 	FILE *f;
-	int n, ret = -1;
+	int n, ret = 0;
 
 	/*
 	 * On systemd systems, nspawn creates a scope unit for the container,
@@ -75,7 +75,7 @@ saib_get_cgroup_cpu(struct sai_nspawn *ns)
 
 	f = fopen(path, "r");
 	if (!f)
-		return -1; /* cgroup file not found, fall back to system load */
+		return 0; /* cgroup file not found, fall back to system load */
 
 	while (fgets(buf, sizeof(buf) - 1, f)) {
 		if (sscanf(buf, "usage_usec %llu",
@@ -86,7 +86,7 @@ saib_get_cgroup_cpu(struct sai_nspawn *ns)
 	fclose(f);
 
 	if (!usage_usec)
-		return -1;
+		return 0;
 
 	now = lws_now_usecs();
 
@@ -117,24 +117,24 @@ saib_get_system_cpu(struct sai_builder *b)
 {
 	unsigned long long user, nice, system, idle, iowait, irq, softirq, steal;
 	uint64_t total, idle_all, total_delta, idle_delta;
-	int n, ret = -1;
+	int n, ret = 0;
 	char buf[256];
 	FILE *f;
 
 	f = fopen("/proc/stat", "r");
 	if (!f)
-		return -1;
+		return 0;
 
 	if (!fgets(buf, sizeof(buf) -1, f)) {
 		fclose(f);
-		return -1;
+		return 0;
 	}
 	fclose(f);
 
 	n = sscanf(buf, "cpu  %llu %llu %llu %llu %llu %llu %llu %llu",
 		   &user, &nice, &system, &idle, &iowait, &irq, &softirq, &steal);
 	if (n < 4)
-		return -1;
+		return 0;
 
 	idle_all = idle + iowait;
 	total = user + nice + system + idle_all + irq + softirq + steal;
@@ -159,7 +159,7 @@ saib_get_system_cpu(struct sai_builder *b)
 #elif defined(__APPLE__)
 int saib_get_cgroup_cpu(struct sai_nspawn *ns)
 {
-	return -1; /* No cgroups on macOS */
+	return 0; /* No cgroups on macOS */
 }
 
 int saib_get_system_cpu(struct sai_builder *b)
@@ -168,11 +168,11 @@ int saib_get_system_cpu(struct sai_builder *b)
 	mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
 	uint64_t total_ticks = 0, idle_ticks = 0;
 	uint64_t total_delta, idle_delta;
-	int n, ret = -1;
+	int n, ret = 0;
 
 	if (host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO,
 			    (host_info_t)&cpuinfo, &count) != KERN_SUCCESS)
-		return -1;
+		return 0;
 
 	total_ticks = cpuinfo.cpu_ticks[CPU_STATE_USER] +
 		      cpuinfo.cpu_ticks[CPU_STATE_SYSTEM] +
@@ -200,16 +200,16 @@ int saib_get_system_cpu(struct sai_builder *b)
 #elif defined(WIN32)
 int saib_get_cgroup_cpu(struct sai_nspawn *ns)
 {
-	return -1; /* No cgroups on Windows */
+	return 0; /* No cgroups on Windows */
 }
 
 int saib_get_system_cpu(struct sai_builder *b)
 {
 	ULARGE_INTEGER idle, kernel, user;
-	int n, ret = -1;
+	int n, ret = 0;
 
 	if (!GetSystemTimes((FILETIME *)&idle, (FILETIME *)&kernel, (FILETIME *)&user))
-		return -1;
+		return 0;
 
 	if (b->last_sys_kernel.QuadPart || b->last_sys_user.QuadPart) {
 		ULONGLONG total_delta, idle_delta;
@@ -237,7 +237,7 @@ int saib_get_system_cpu(struct sai_builder *b)
 #else
 int saib_get_cgroup_cpu(struct sai_nspawn *ns)
 {
-	return -1; /* Not implemented on this platform */
+	return 0; /* Not implemented on this platform */
 }
 int saib_get_system_cpu(struct sai_builder *b)
 {

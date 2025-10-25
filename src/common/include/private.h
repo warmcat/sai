@@ -70,7 +70,6 @@ typedef struct sai_active_task_info {
 	int			build_step;
 	int			total_steps;
 	unsigned int		est_peak_mem_kib;
-	unsigned int		est_cpu_load_pct;
 	unsigned int		est_disk_kib;
 	uint64_t		started;
 } sai_active_task_info_t;

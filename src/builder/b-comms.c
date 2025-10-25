@@ -330,7 +330,6 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
 						ati->build_step		= ns->current_step;
 						ati->total_steps	= ns->build_step_count;
 						ati->est_peak_mem_kib	= ns->task->est_peak_mem_kib;
-						ati->est_cpu_load_pct	= ns->task->est_cpu_load_pct;
 						ati->est_disk_kib	= ns->task->est_disk_kib;
 						ati->started		= ns->task->started;
 						lws_dll2_add_tail(&ati->list, &lr.active_tasks);

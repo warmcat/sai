@@ -30,8 +30,10 @@
 void
 sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task)
 {
-	char query[256];
+	char query[256], hex[41];
 	sqlite3_stmt *stmt;
+	unsigned char digest[20];
+	lws_SHA1_ctx sha;
 
 	task->est_peak_mem_kib = 256 * 1024; /* 256MiB default */
 	task->est_cpu_load_pct = 10;
@@ -40,11 +42,22 @@ sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task)
 	if (!vhd->pdb_metrics)
 		return;
 
+	if (!task->repo_name || !task->platform)
+		return;
+
+	lws_SHA1_init(&sha);
+	lws_SHA1_update(&sha, (uint8_t *)task->repo_name, strlen(task->repo_name));
+	lws_SHA1_update(&sha, (uint8_t *)task->platform, strlen(task->platform));
+	lws_SHA1_update(&sha, (uint8_t *)task->taskname, strlen(task->taskname));
+	lws_SHA1_final(digest, &sha);
+	lws_hex_from_bin(hex, digest, sizeof(digest));
+	hex[40] = '\0';
+
 	lws_snprintf(query, sizeof(query),
 		     "SELECT AVG(peak_mem_rss), AVG(us_cpu_user), "
 		     "AVG(stg_bytes), AVG(wallclock_us) "
 		     "FROM build_metrics WHERE key = '%s'",
-		     task->taskname);
+		     hex);
 
 	if (sqlite3_prepare_v2(vhd->pdb_metrics, query, -1, &stmt, NULL) != SQLITE_OK)
 		return;
@@ -53,10 +66,12 @@ sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task)
 		uint64_t avg_us_cpu = (uint64_t)sqlite3_column_int64(stmt, 1);
 		uint64_t avg_wallclock = (uint64_t)sqlite3_column_int64(stmt, 3);
 
-		task->est_peak_mem_kib = (unsigned int)(sqlite3_column_int(stmt, 0) / 1024);
+		if (sqlite3_column_type(stmt, 0) != SQLITE_NULL)
+			task->est_peak_mem_kib = (unsigned int)(sqlite3_column_int(stmt, 0) / 1024);
 		if (avg_wallclock)
 			task->est_cpu_load_pct = (unsigned int)((avg_us_cpu * 100) / avg_wallclock);
-		task->est_disk_kib = (unsigned int)(sqlite3_column_int(stmt, 2) / 1024);
+		if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
+			task->est_disk_kib = (unsigned int)(sqlite3_column_int(stmt, 2) / 1024);
 	}
 
 	sqlite3_finalize(stmt);
