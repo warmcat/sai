@@ -1710,7 +1710,7 @@ function ws_open_sai()
 					const diskBar = builderDiv.querySelector(".res-bar-disk");
 
 					if (cpuBar) {
-						let cpu_percentage = (jso.cpu_percent / (jso.core_count * 1000)) * 100;
+						let cpu_percentage = jso.cpu_percent / 10;
 						if (cpu_percentage > 100) cpu_percentage = 100;
 						if (cpu_percentage < 0) cpu_percentage = 0;
 						let width_class = `w-${Math.round(cpu_percentage / 5) * 5}`;
@@ -1725,7 +1725,12 @@ function ws_open_sai()
 						}
 						if (ram_percentage > 100) ram_percentage = 100;
 						if (ram_percentage < 0) ram_percentage = 0;
-						let width_class = `w-${Math.round(ram_percentage / 5) * 5}`;
+
+						let width = Math.round(ram_percentage / 5) * 5;
+						if (width === 0 && ram_percentage > 0)
+							width = 5;
+
+						let width_class = `w-${width}`;
 
 						ramBar.classList.forEach(c => { if (c.startsWith('w-')) ramBar.classList.remove(c); });
 						ramBar.classList.add(width_class);
@@ -1737,7 +1742,12 @@ function ws_open_sai()
 						}
 						if (disk_percentage > 100) disk_percentage = 100;
 						if (disk_percentage < 0) disk_percentage = 0;
-						let width_class = `w-${Math.round(disk_percentage / 5) * 5}`;
+
+						let width = Math.round(disk_percentage / 5) * 5;
+						if (width === 0 && disk_percentage > 0)
+							width = 5;
+
+						let width_class = `w-${width}`;
 
 						diskBar.classList.forEach(c => { if (c.startsWith('w-')) diskBar.classList.remove(c); });
 						diskBar.classList.add(width_class);
