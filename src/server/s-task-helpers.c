@@ -43,7 +43,7 @@ sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task)
 	if (!vhd->pdb_metrics)
 		return;
 
-	if (!task->repo_name || !task->platform[0])
+	if (!task->repo_name || !task->platform[0] || !task->taskname[0])
 		return;
 
         if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256) ||

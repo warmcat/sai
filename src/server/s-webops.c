@@ -61,8 +61,8 @@ _sais_websrv_broadcast(struct lws_ss_handle *h, void *arg)
 	info->head_upstream		= &m->bl_srv_to_web;
 	info->private_heads		= m->private_heads;
 
-	lwsl_ss_notice(h, "Queueing %u bytes, ridx %d, ff_flags: %u\n",
-		       (unsigned int)info->len, info->private_source_idx, info->ss_flags);
+	// lwsl_ss_notice(h, "Queueing %u bytes, ridx %d, ff_flags: %u\n",
+	//	       (unsigned int)info->len, info->private_source_idx, info->ss_flags);
 
 	*pi = info->ss_flags;
 
