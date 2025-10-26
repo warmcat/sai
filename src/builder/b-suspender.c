@@ -207,12 +207,18 @@ saib_suspender_start(void)
 				case 0:
 					#if defined(__NetBSD__)
 					execl("/sbin/shutdown", "/sbin/shutdown", "-h", "now", NULL);
+					#elif defined(__APPLE__)
+					execl("/sbin/shutdown", "/sbin/shutdown", "-h", "now", NULL);
 					#else
 					execl("/usr/sbin/shutdown", "/usr/sbin/shutdown", "--halt", "now", NULL);
 					#endif
 					break;
 				case 1:
+#if defined(__APPLE__)
+					execl("/usr/bin/pmset", "/usr/bin/pmset", "sleepnow", NULL);
+#else
 					execl("/usr/bin/systemctl", "/usr/bin/systemctl", "suspend", NULL);
+#endif
 					break;
 				case 3:
 					if (builder.rebuild_script_user &&
