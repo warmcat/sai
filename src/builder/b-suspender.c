@@ -113,10 +113,7 @@ saib_suspender_fork(const char *path)
 {
 #if !defined(WIN32)
 	struct lws_spawn_piped_info info;
-	char rpath[PATH_MAX];
-	const char * const ea[] = { rpath, "-s", NULL };
-
-	realpath(path, rpath);
+	const char * const ea[] = { path, "-s", NULL };
 
 	memset(&info, 0, sizeof(info));
 	memset(&builder.suspend_nspawn, 0, sizeof(builder.suspend_nspawn));
