@@ -358,3 +358,16 @@ saib_power_init(void)
 
 	return 0;
 }
+
+#if defined(__APPLE__)
+static void
+sul_release_wakelock_cb(lws_sorted_use_c_list_t *sul)
+{
+	lwsl_notice("%s: releasing wakelock (pid %d)\n", __func__, (int)builder.wakelock_pid);
+	if (builder.wakelock_pid) {
+		kill(builder.wakelock_pid, SIGTERM);
+		waitpid(builder.wakelock_pid, NULL, 0);
+		builder.wakelock_pid = 0;
+	}
+}
+#endif

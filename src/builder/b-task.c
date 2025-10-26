@@ -26,6 +26,10 @@
 #include <assert.h>
 #include <fcntl.h>
 
+#if defined(__APPLE__)
+#include <sys/wait.h>
+#endif
+
 #include "b-private.h"
 
 const char *git_helper_sh =
@@ -372,10 +376,19 @@ saib_task_destroy(struct sai_nspawn *ns)
 		 * Schedule informing all the servers we're connected to
 		 */
 
-		if (!m)
+		if (!m) {
+#if defined(__APPLE__)
+			lwsl_notice("%s: last task finished, scheduling wakelock release\n", __func__);
+			lws_sul_schedule(builder.context, 0,
+					 &builder.sul_release_wakelock,
+					 sul_release_wakelock_cb,
+					 30 * LWS_US_PER_SEC);
+#else
 			lws_sul_schedule(builder.context, 0,
 					 &builder.sul_idle, sul_idle_cb,
 					SAI_IDLE_GRACE_US);
+#endif
+		}
 	}
 
 	if (ns->task && ns->task->ac_task_container) {
@@ -1068,6 +1081,28 @@ saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
 
 		if (saib_queue_task_status_update(sp, spm, task->uuid, SAI_TASK_REASON_ACCEPTED))
 			goto bail;
+
+#if defined(__APPLE__)
+		/*
+		 * If we started the first task, acquire a wakelock to prevent
+		 * idle suspend
+		 */
+		if (sp->nspawn_owner.count == 1 && !builder.wakelock_pid) {
+			pid_t pid = fork();
+
+			if (pid == -1)
+				lwsl_err("%s: fork for wakelock failed\n", __func__);
+			else if (!pid) {
+				execl("/usr/bin/caffeinate", "/usr/bin/caffeinate", "-i", (char *)NULL);
+				exit(1); /* should not get here */
+			} else {
+				lwsl_notice("%s: acquired wakelock (pid %d)\n", __func__, (int)pid);
+				builder.wakelock_pid = pid;
+			}
+		}
+		/* if there's a pending wakelock release, cancel it */
+		lws_sul_cancel(&builder.sul_release_wakelock);
+#endif
 
 		break;
 
