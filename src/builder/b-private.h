@@ -104,6 +104,11 @@ struct sai_builder {
 	lws_sorted_usec_list_t	sul_stay;
 	lws_sorted_usec_list_t	sul_cleanup_jobs;
 
+#if defined(__APPLE__)
+	lws_sorted_usec_list_t	sul_release_wakelock;
+	pid_t			wakelock_pid;
+#endif
+
 	const char		*metrics_uri;
 	const char		*metrics_path;
 	const char		*metrics_secret;
@@ -146,8 +151,10 @@ struct sai_builder {
 
 #if !defined(WIN32)
 	int			pipe_master_wr;
+	int			pipe_suspender_wr;
 #else
 	void			*pipe_master_wr_win;
+	void			*pipe_suspender_wr;
 #endif
 };
 
@@ -270,3 +277,18 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 int
 saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 				const char *rej_task_uuid, unsigned int reason);
+
+
+extern int
+saib_suspender_fork(const char *path);
+extern int
+sai_deletion_worker(const char *home_dir);
+extern int
+saib_suspender_start(void);
+extern int
+saib_power_init(void);
+extern int
+saib_deletion_init(const char *argv0);
+extern void
+suspender_destroy(void);
+

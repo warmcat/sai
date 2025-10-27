@@ -24,6 +24,7 @@
 #include <signal.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 #include <sys/types.h>
 #if !defined(WIN32)
@@ -107,17 +108,34 @@ callback_sai_suspender_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 struct lws_protocols protocol_suspender_stdxxx =
 		{ "sai-suspender-stdxxx", callback_sai_suspender_stdwsi, 0, 0 };
 
+#if !defined(__APPLE__)
+static void reap(void *opaque, const lws_spawn_resource_us_t *res,
+                         siginfo_t *si, int we_killed_him)
+{
+	lwsl_err("%s: reaped suspender fork... %d\n", __func__, si->si_status);
+}
+#endif
 
 int
 saib_suspender_fork(const char *path)
 {
-#if !defined(WIN32)
+#if defined(__linux__)
 	struct lws_spawn_piped_info info;
-	char rpath[PATH_MAX];
 	const char * const ea[] = { rpath, "-s", NULL };
+#endif
+	char rpath[PATH_MAX];
+
+	if (!realpath(path, rpath)) {
+		lwsl_err("%s: failed to get realpath for %s: %s\n", __func__,
+			 path, strerror(errno));
+		return 1;
+	}
+
+	lwsl_err("%s: starting %s\n", __func__, rpath);
 
 	realpath(path, rpath);
 
+#if defined(__linux__)
 	memset(&info, 0, sizeof(info));
 	memset(&builder.suspend_nspawn, 0, sizeof(builder.suspend_nspawn));
 
@@ -127,12 +145,49 @@ saib_suspender_fork(const char *path)
 	info.opaque		= (void *)&builder.suspend_nspawn;
 	info.protocol_name      = "sai-suspender-stdxxx";
 	info.plsp		= &lsp_suspender;
+	info.reap_cb		= reap;
 
 	lsp_suspender = lws_spawn_piped(&info);
 	if (!lsp_suspender) {
 		lwsl_err("%s: suspend spawn failed\n", __func__);
 		return 1;
 	}
+#endif
+#if defined(__APPLE__)
+	{
+		int pfd[2];
+		pid_t pid;
+
+		if (pipe(pfd) == -1) {
+			lwsl_err("pipe() failed\n");
+			return 1;
+		}
+
+		fcntl(pfd[0], F_SETFD, FD_CLOEXEC);
+		fcntl(pfd[1], F_SETFD, FD_CLOEXEC);
+
+		pid = fork();
+		if (pid == -1) {
+			lwsl_err("fork() failed\n");
+			return 1;
+		}
+
+		if (!pid) {
+			close(pfd[1]); /* wr */
+			if (dup2(pfd[0], 0) < 0)
+				return 1;
+			close(pfd[0]);
+
+			execlp(rpath, rpath, "-s", (char *)NULL);
+			lwsl_err("execlp failed\n");
+			return 1;
+		}
+
+		/* parent */
+		close(pfd[0]); /* rd */
+		builder.pipe_suspender_wr = pfd[1];
+	}
+#endif
 
 	/*
 	 * We start off idle, with no tasks on any platform and doing
@@ -142,7 +197,8 @@ saib_suspender_fork(const char *path)
 
 	lws_sul_schedule(builder.context, 0, &builder.sul_idle,
 			 sul_idle_cb, SAI_IDLE_GRACE_US);
-#endif
+
+	lwsl_err("%s: done\n", __func__);
 
 	return 0;
 }
@@ -250,4 +306,24 @@ saib_suspender_start(void)
 	lwsl_notice("%s: exiting suspend process\n", __func__);
 
 	return 0;
+}
+
+void
+suspender_destroy()
+{
+#if defined(__linux__)
+	int fd = lws_spawn_get_fd_stdxxx(lsp_suspender, 0);
+#endif
+#if defined(__APPLE__)
+	int fd = builder.pipe_suspender_wr;
+#endif
+	if (lsp_suspender) {
+		uint8_t te = 2;
+
+		/*
+		* Clean up after the suspend process
+		*/
+
+		write(fd, &te, 1);
+	}
 }

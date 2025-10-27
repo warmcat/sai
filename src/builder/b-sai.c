@@ -89,7 +89,7 @@ struct active_job_uuid {
 	char uuid[65];
 };
 
-static const char *config_dir = "/etc/sai/builder";
+static const char *config_dir = "/etc/sai/builder", *argv0;
 static int interrupted;
 static lws_state_notify_link_t nl;
 
@@ -98,17 +98,6 @@ struct sai_builder builder;
 extern struct lws_spawn_piped *lsp_suspender;
 extern struct lws_protocols protocol_stdxxx;
 extern struct lws_protocols protocol_suspender_stdxxx;
-
-extern int
-saib_suspender_fork(const char *path);
-extern int
-sai_deletion_worker(const char *home_dir);
-extern int
-saib_suspender_start(void);
-extern int
-saib_power_init(void);
-extern int
-saib_deletion_init(const char *argv0);
  
 static const char * const default_ss_policy =
 	"{"
@@ -327,6 +316,12 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 		if (current != LWS_SYSTATE_OPERATIONAL)
 			break;
 
+		if (saib_deletion_init(argv0))
+			return 1;
+
+		if (saib_suspender_fork(argv0))
+			return 1;
+
 		/*
 		 * The builder JSON conf listed servers we want to connect to,
 		 * let's collect the config, make a ss for each and add the
@@ -423,6 +418,8 @@ int main(int argc, const char **argv)
 	struct stat sb;
 	const char *p;
 
+	argv0 = argv[0];
+
 	if ((p = lws_cmdline_option(argc, argv, "--home")))
 		/*
 		 * This is the deletion worker process being spawned, it only
@@ -430,11 +427,14 @@ int main(int argc, const char **argv)
 		 */
 		return sai_deletion_worker(p);
 
-	if ((p = lws_cmdline_option(argc, argv, "-s")))
+	if ((p = lws_cmdline_option(argc, argv, "-s"))) {
+		lwsl_notice("%s: starting shutdown worker\n", __func__);
+		sleep(3000);
 		/*
 		 * This is the suspend / shutdown worker process being spawned
 		 */
 		return saib_suspender_start();
+	}
 
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
@@ -591,26 +591,12 @@ int main(int argc, const char **argv)
 	}
 
 	saib_power_init();
-	if (saib_deletion_init(argv[0]))
-		goto bail;
-
-	if (saib_suspender_fork(argv[0]))
-		goto bail;
 
 	while (!lws_service(builder.context, 0) && !interrupted)
 		;
 
 bail:
-
-	if (lsp_suspender) {
-		uint8_t te = 2;
-
-		/*
-		* Clean up after the suspend process
-		*/
-
-		write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
-	}
+	suspender_destroy();
 
 	/* destroy the unique servers */
 

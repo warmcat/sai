@@ -24,6 +24,7 @@
 #include <signal.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 #include <sys/types.h>
 #if !defined(WIN32)
@@ -53,10 +54,6 @@
 #endif
 
 #include "b-private.h"
-
-extern int
-saib_suspender_fork(void);
-extern struct lws_protocols protocol_suspender_stdxxx;
 
 int
 sai_deletion_worker(const char *home_dir)
@@ -267,6 +264,9 @@ saib_deletion_init(const char *argv0)
 			lwsl_err("pipe() failed\n");
 			return 1;
 		}
+
+		fcntl(pfd[0], F_SETFD, FD_CLOEXEC);
+		fcntl(pfd[1], F_SETFD, FD_CLOEXEC);
 
 		pid = fork();
 		if (pid == -1) {

@@ -195,8 +195,16 @@ LWS_SS_USER_TYPEDEF
 static lws_ss_state_return_t
 saib_power_link_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
+#if !defined(WIN32)
 	uint8_t te = 0;
 	ssize_t n;
+#if defined(__linux__)
+	int fd = lws_spawn_get_fd_stdxxx(lsp_suspender, 0);
+#endif
+#if defined(__APPLE__)
+	int fd = builder.pipe_suspender_wr;
+#endif
+
 
 	if (len < 4 || !(flags & LWSSS_FLAG_SOM))
 		return 0;
@@ -217,10 +225,10 @@ saib_power_link_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	 * cleanly
 	 */
 
-	n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
+	n = write(fd, &te, 1);
 	if (n != 1)
 		lwsl_err("%s: unable to request shutdown\n", __func__);
-
+#endif
 	return LWSSSSRET_OK;
 }
 
@@ -235,10 +243,16 @@ sul_do_suspend_cb(lws_sorted_usec_list_t *sul)
 #if !defined(WIN32)
 	uint8_t te = 1;
 	ssize_t n;
+#if defined(__linux__)
+	int fd = lws_spawn_get_fd_stdxxx(lsp_suspender, 0);
+#endif
+#if defined(__APPLE__)
+	int fd = builder.pipe_suspender_wr;
+#endif
 
 	lwsl_notice("%s: actioning suspend...\n", __func__);
 
-	n = write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &te, 1);
+	n = write(fd, &te, 1);
 	if (n == 1) {
 #if defined(WIN32)
 		Sleep(2000);
@@ -358,3 +372,16 @@ saib_power_init(void)
 
 	return 0;
 }
+
+#if defined(__APPLE__)
+void
+sul_release_wakelock_cb(lws_sorted_usec_list_t *sul)
+{
+	lwsl_notice("%s: releasing wakelock (pid %d)\n", __func__, (int)builder.wakelock_pid);
+	if (builder.wakelock_pid) {
+		kill(builder.wakelock_pid, SIGTERM);
+		waitpid(builder.wakelock_pid, NULL, 0);
+		builder.wakelock_pid = 0;
+	}
+}
+#endif
