@@ -45,6 +45,7 @@ static lws_struct_map_t lsm_browser_taskreset[] = {
 static lws_struct_map_t lsm_browser_platreset[] = {
 	LSM_CARRAY	(sai_browse_rx_platreset_t, event_uuid, "event_uuid"),
 	LSM_CARRAY	(sai_browse_rx_platreset_t, platform,   "platform"),
+	LSM_SIGNED	(sai_browse_rx_platreset_t, failed_only, "failed_only"),
 };
 
 static lws_struct_map_t lsm_browser_taskinfo[] = {

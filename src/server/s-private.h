@@ -387,7 +387,7 @@ void
 sais_prune_inflight_list(struct vhd *vhd);
 
 sai_db_result_t
-sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform);
+sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform, char failed_only);
 
 sai_db_result_t
 sais_event_delete(struct vhd *vhd, const char *event_uuid);

@@ -2031,12 +2031,24 @@ window.addEventListener("load", function() {
 						}
 					},
 					{
-						label: `Rebuild all <b>${hsanitize(platform)}</b>`,
+						label: `Reset All <b>${hsanitize(platform)}</b>`,
 						callback: () => {
 							sai.send(JSON.stringify({
 								schema: "com.warmcat.sai.platreset",
 								event_uuid: eventUuid,
-								platform: platform
+								platform: platform,
+								failed_only: 0
+							}));
+						}
+					},
+					{
+						label: `Reset Failed <b>${hsanitize(platform)}</b>`,
+						callback: () => {
+							sai.send(JSON.stringify({
+								schema: "com.warmcat.sai.platreset",
+								event_uuid: eventUuid,
+								platform: platform,
+								failed_only: 1
 							}));
 						}
 					}

@@ -268,9 +268,6 @@ saib_deletion_init(const char *argv0)
 			return 1;
 		}
 
-		fcntl(pfd[0], F_SETFD, FD_CLOEXEC);
-		fcntl(pfd[1], F_SETFD, FD_CLOEXEC);
-
 		pid = fork();
 		if (pid == -1) {
 			lwsl_err("fork() failed\n");

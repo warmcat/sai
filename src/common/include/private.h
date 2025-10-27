@@ -273,6 +273,7 @@ typedef struct sai_platreset {
 	lws_dll2_t		list;
 	char			event_uuid[65];
 	char			platform[65];
+	char			failed_only;
 } sai_browse_rx_platreset_t;
 
 struct sai_event;

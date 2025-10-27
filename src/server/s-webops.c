@@ -349,7 +349,7 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid)
 }
 
 sai_db_result_t
-sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
+sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform, char failed_only)
 {
 	sqlite3 *pdb = NULL;
 	lws_dll2_owner_t o;
@@ -362,7 +362,10 @@ sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 		return SAI_DB_RESULT_ERROR;
 
 	lws_sql_purify(esc, platform, sizeof(esc));
-	lws_snprintf(filt, sizeof(filt), " and platform='%s' and state=4", esc);
+	if (failed_only)
+		lws_snprintf(filt, sizeof(filt), " and platform='%s' and state=4", esc);
+	else
+		lws_snprintf(filt, sizeof(filt), " and platform='%s'", esc);
 
 	if (lws_struct_sq3_deserialize(pdb, filt, NULL,
 				       lsm_schema_sq3_map_task,

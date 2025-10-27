@@ -58,6 +58,7 @@ static lws_struct_map_t lsm_browser_taskreset[] = {
 static lws_struct_map_t lsm_browser_platreset[] = {
 	LSM_CARRAY	(sai_browse_rx_platreset_t, event_uuid, "event_uuid"),
 	LSM_CARRAY	(sai_browse_rx_platreset_t, platform,   "platform"),
+	LSM_SIGNED	(sai_browse_rx_platreset_t, failed_only, "failed_only"),
 };
 
 static const lws_struct_map_t lsm_viewercount_members[] = {
@@ -377,7 +378,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		if (sais_validate_id(pr->event_uuid, SAI_EVENTID_LEN))
 			goto soft_error;
 
-		r = sais_plat_reset(m->vhd, pr->event_uuid, pr->platform);
+		r = sais_plat_reset(m->vhd, pr->event_uuid, pr->platform, pr->failed_only);
 		if (r)
 			lwsl_ss_err(m->ss, "platreset failed");
 		lwsac_free(&a.ac);
