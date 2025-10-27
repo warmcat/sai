@@ -95,7 +95,6 @@ static lws_state_notify_link_t nl;
 
 struct sai_builder builder;
 
-extern struct lws_spawn_piped *lsp_suspender;
 extern struct lws_protocols protocol_stdxxx;
 extern struct lws_protocols protocol_suspender_stdxxx;
  

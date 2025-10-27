@@ -1,7 +1,7 @@
 /*
  * Sai builder definitions src/builder/b-private.h
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -21,6 +21,32 @@
 
 #include "../common/include/private.h"
 
+#if !defined(WIN32)
+#include <pwd.h>
+#include <grp.h>
+#endif
+
+#if defined(__linux__) || defined(__APPLE__)
+#include <unistd.h>
+#endif
+
+#if defined(__APPLE__)
+#include <sys/stat.h>	/* for mkdir() */
+#endif
+
+#if defined(WIN32)
+#include <initguid.h>
+#include <KnownFolders.h>
+#include <Shlobj.h>
+#include <processthreadsapi.h>
+#include <handleapi.h>
+
+
+#if !defined(PATH_MAX)
+#define PATH_MAX MAX_PATH
+#endif
+#endif
+
 #include <sys/stat.h>
 #if defined(WIN32)
 #include <direct.h>
@@ -36,6 +62,8 @@
 #endif
 #endif
 #include <pthread.h>
+
+extern char suspender_exists;
 
 struct lws_spawn_piped;
 
@@ -278,6 +306,15 @@ int
 saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 				const char *rej_task_uuid, unsigned int reason);
 
+int
+saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
+			      const uint8_t *in, size_t len, int flags);
+
+void
+saib_sul_task_cancel(struct lws_sorted_usec_list *sul);
+
+int
+saib_suspender_get_pipe(void);
 
 extern int
 saib_suspender_fork(const char *path);

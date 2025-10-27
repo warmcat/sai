@@ -1,7 +1,7 @@
 /*
  * sai-builder task acquisition
  *
- * Copyright (C) 2019 - 2021 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -211,76 +211,39 @@ static char csep = '/';
 static char csep = '\\';
 #endif
 
-static const lws_struct_map_t lsm_viewerstate_members[] = {
-       LSM_UNSIGNED(sai_viewer_state_t, viewers,       "viewers"),
-};
-
-const lws_struct_map_t lsm_schema_map_m_to_b[] = {
-	LSM_SCHEMA	(sai_task_t, NULL, lsm_task, "com-warmcat-sai-ta"),
-	LSM_SCHEMA	(sai_cancel_t, NULL, lsm_task_cancel, "com.warmcat.sai.taskcan"),
-	LSM_SCHEMA	(sai_viewer_state_t, NULL, lsm_viewerstate_members,
-						 "com.warmcat.sai.viewerstate"),
-	LSM_SCHEMA	(sai_resource_t, NULL, lsm_resource, "com-warmcat-sai-resource"),
-	LSM_SCHEMA	(sai_rebuild_t, NULL, lsm_rebuild, "com.warmcat.sai.rebuild")
-};
-
-enum {
-	SAIB_RX_TASK_ALLOCATION,
-	SAIB_RX_TASK_CANCEL,
-	SAIB_RX_VIEWERSTATE,
-	SAIB_RX_RESOURCE_REPLY,
-	SAIB_RX_REBUILD
-};
-
-#if 0
-static const char * const nsstates[] = {
-	"NSSTATE_INIT",
-	"NSSTATE_MOUNTING",
-	"NSSTATE_EXECUTING_STEPS",
-	"NSSTATE_DONE",
-	"NSSTATE_UPLOADING_ARTIFACTS",
-	"NSSTATE_FAILED",
-};
-#endif
-
 static void saib_start_artifact_upload(struct sai_nspawn *ns);
+
 
 int
 saib_set_ns_state(struct sai_nspawn *ns, int state)
 {
-//	char log[100];
-//	int n;
+	ns->state		= (uint8_t)state;
+	ns->state_changed	= 1;
 
-	ns->state = (uint8_t)state;
-	ns->state_changed = 1;
-
-//	if (state >= 0 && state < (int)LWS_ARRAY_SIZE(nsstates))
-//		n = lws_snprintf(log, sizeof(log), ">saib> %s\n", nsstates[state]);
-//	else
-//		n = lws_snprintf(log, sizeof(log), ">saib> ILLEGAL_STATE %d\n", (int)state);
-
-//	lwsl_user("%s: task %s: %s\n", __func__, ns->task ? ns->task->uuid : "null", log);
-
-//	saib_log_chunk_create(ns, log, (unsigned int)n, 3);
-
-	if (state == NSSTATE_EXECUTING_STEPS && ns->spm &&
-	    !ns->spm->sul_load_report.list.owner)
+	switch (state) {
+	case NSSTATE_EXECUTING_STEPS:
+	    if (ns->spm && !ns->spm->sul_load_report.list.owner)
 		lws_sul_schedule(ns->builder->context, 0,
 				 &ns->spm->sul_load_report,
 				 saib_sul_load_report_cb, 1);
+	    break;
 
-	if (state == NSSTATE_UPLOADING_ARTIFACTS)
+	case NSSTATE_UPLOADING_ARTIFACTS:
 		saib_start_artifact_upload(ns);
+		break;
 
-	if (state == NSSTATE_FAILED) {
+	case NSSTATE_FAILED:
 		ns->retcode = SAISPRF_EXIT | 254;
 		saib_task_grace(ns);
+		break;
+	default:
+		break;
 	}
 
-	if (ns->spm && ns->spm->ss)
-		return lws_ss_request_tx(ns->spm->ss) ? -1 : 0;
+	if (!ns->spm || !ns->spm->ss)
+		return 0;
 
-	return 0;
+	return lws_ss_request_tx(ns->spm->ss) ? -1 : 0;
 }
 
 /*
@@ -289,7 +252,7 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 
 int
 saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
-				const char *rej_task_uuid, unsigned int reason)
+			      const char *rej_task_uuid, unsigned int reason)
 {
 	struct sai_rejection rej;
 
@@ -330,7 +293,8 @@ saib_task_destroy(struct sai_nspawn *ns)
 {
 	int n;
 
-	lwsl_notice("%s: destroying task %s\n", __func__, ns->task ? ns->task->uuid : "null");
+	lwsl_notice("%s: destroying task %s\n", __func__,
+		    ns->task ? ns->task->uuid : "null");
 
 	lws_sul_cancel(&ns->sul_cleaner);
 	lws_sul_cancel(&ns->sul_task_cancel);
@@ -677,10 +641,11 @@ scan:
         	lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
                          saib_sub_cleaner_cb, 1);
 	} else
-		lwsl_notice("%s: created / waiting on %d artifact uploads\n", __func__, ns->count_artifacts);
+		lwsl_notice("%s: created / waiting on %d artifact uploads\n",
+				__func__, ns->count_artifacts);
 }
 
-static void
+void
 saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 {
 	struct sai_nspawn *ns = lws_container_of(sul,
@@ -702,519 +667,391 @@ saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 			 saib_sul_task_cancel, 500 * LWS_US_PER_MS);
 }
 
-extern struct lws_spawn_piped *lsp_suspender;
-
 int
-saib_ws_json_rx_builder(struct sai_plat_server *spm, const void *in, size_t len)
+saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
+			      const uint8_t *in, size_t len, int flags)
 {
+	char *p, mb[96], pur[128], ordinal_acc[SAI_BUILDER_INSTANCE_LIMIT],
+		script_path[512];
 	sai_plat_t *sp = NULL;
 	struct sai_nspawn *ns;
-	sai_resource_t *reso;
-	struct lejp_ctx ctx;
-	lws_struct_args_t a;
-	sai_cancel_t *can;
-	sai_rebuild_t *reb;
+	int n, en, ml, fd;
+
 	sai_task_t *task;
-	int n, m, en;
-	char mb[96];
-	char *p;
-	int ml;
+
+	task = (sai_task_t *)a->dest;
+	task->ac_task_container = a->ac; /* bequeath lwsac responsibility */
 
 	/*
-	 * use the schema name on the incoming JSON to decide what kind of
-	 * structure to instantiate
+	 * Server is requesting that a platform adopt a task...
+	 *
+	 * Multiple platforms may be using this connection to a given
+	 * server so we have to disambiguate which platform he's
+	 * tasking first.
 	 */
 
-	memset(&a, 0, sizeof(a));
-	a.map_st[0] = lsm_schema_map_m_to_b;
-	a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_map_m_to_b);
-	a.ac_block_size = 512;
+	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+			builder.sai_plat_owner.head) {
+	       sp = lws_container_of(d, sai_plat_t, sai_plat_list);
 
-//	lwsl_hexdump_warn(in, len);
+	       if (!strcmp(sp->platform, task->platform))
+		       break;
+	       sp = NULL;
+	} lws_end_foreach_dll_safe(d, d1);
 
-	lws_struct_json_init_parse(&ctx, NULL, &a);
-	m = lejp_parse(&ctx, (uint8_t *)in, (int)len);
-	if (m < 0) {
-		lwsl_hexdump_err(in, len);
-		lwsl_err("%s: builder rx JSON decode failed '%s'\n",
-			    __func__, lejp_error_to_string(m));
-		return m;
-	}
+	if (!sp) {
+		lwsl_err("%s: can't identify req task plat '%s'\n",
+				__func__, task->platform);
 
-	if (!a.dest) {
-		lwsac_free(&a.ac);
 		return 1;
 	}
 
-	switch (a.top_schema_index) {
+	/*
+	 * For debugging, it's good to see what tasks are ongoing
+	 */
 
-	case SAIB_RX_TASK_ALLOCATION:
-		task = (sai_task_t *)a.dest;
-		task->ac_task_container = a.ac; /* bequeath lwsac responsibility */
+	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
+		struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
 
-		/*
-		 * Server is requesting that a platform adopt a task...
-		 *
-		 * Multiple platforms may be using this connection to a given
-		 * server so we have to disambiguate which platform he's
-		 * tasking first.
-		 */
+		lwsl_notice("%s: nspawn_census: %s\n", __func__, xns->task->uuid);
 
-		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
-				builder.sai_plat_owner.head) {
-		       sp = lws_container_of(d, sai_plat_t, sai_plat_list);
+	} lws_end_foreach_dll_safe(d, d1);
 
-		       if (!strcmp(sp->platform, task->platform))
-			       break;
-		       sp = NULL;
-		} lws_end_foreach_dll_safe(d, d1);
+	/*
+	 * store a copy of the toplevel ac used for the deserialization
+	 * into the outer part of the c builder wrapper
+	 */
 
-		if (!sp) {
-			lwsl_err("%s: can't identify req task plat '%s'\n",
-					__func__, task->platform);
+	sp->deserialization_ac = a->ac;
 
-			return 1;
-		}
+	/*
+	 * Are we willing to take this task step on?
+	 *
+	 * We may connect to multiple servers and it's asynchronous
+	 * which server may have tasked us first, so it's not that
+	 * unusual to reject a task the server thought we could have
+	 * taken
+	 */
 
-		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
-			struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
+	n = 0;
+	ns = NULL;
+	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
+		struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
 
-			lwsl_notice("%s: nspawn_census: %s\n", __func__, xns->task->uuid);
+		if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
+			lwsl_warn("%s: server offered task that's already running\n", __func__);
+			saib_queue_task_status_update(sp, spm, task->uuid,
+						      SAI_TASK_REASON_DUPE);
 
-		} lws_end_foreach_dll_safe(d, d1);
-
-
-
-		/*
-		 * store a copy of the toplevel ac used for the deserialization
-		 * into the outer part of the c builder wrapper
-		 */
-
-		sp->deserialization_ac = a.ac;
-
-		/*
-		 * Are we willing to take this task step on?
-		 *
-		 * We may connect to multiple servers and it's asynchronous
-		 * which server may have tasked us first, so it's not that
-		 * unusual to reject a task the server thought we could have
-		 * taken
-		 */
-
-		n = 0;
-		ns = NULL;
-		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
-		       struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
-		       if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
-				lwsl_warn("%s: server offered task that's already running\n", __func__);
-				saib_queue_task_status_update(sp, spm, task->uuid, SAI_TASK_REASON_DUPE);
-			       return 0;
-		       }
-		       if (!xns->task && !ns)
-			       ns = xns;
-		} lws_end_foreach_dll_safe(d, d1);
-
-
-               if (saib_can_accept_task(task, sp)) {
-			lwsl_warn("%s: builder rejects offered task\n", __func__);
-			if (saib_queue_task_status_update(sp, spm, task->uuid, SAI_TASK_REASON_BUSY))
-				return -1;
 			return 0;
 		}
 
-		if (!ns) {
-			char pur[128], *p, ordinal_acc[SAI_BUILDER_INSTANCE_LIMIT];
-			int n;
+		/* trying to reuse an nspawn?  let's not do that... */
 
-			ns = malloc(sizeof(*ns));
-			if (!ns)
+		// if (!xns->task && !ns)
+		//	ns = xns;
+
+	} lws_end_foreach_dll_safe(d, d1);
+
+	/*
+	 * We're not already running it, let's consider accepting it
+	 */
+
+	if (saib_can_accept_task(task, sp)) {
+		lwsl_warn("%s: builder rejects offered task\n", __func__);
+		if (saib_queue_task_status_update(sp, spm, task->uuid,
+				SAI_TASK_REASON_BUSY))
+			return -1;
+
+		return 0;
+	}
+
+	/*
+	 * We're going to accept the task.  Create the nspawn.
+	 */
+
+	ns = malloc(sizeof(*ns));
+	if (!ns)
+		return -1;
+
+	memset(ns, 0, sizeof(*ns));
+	ns->builder	= &builder;
+	ns->sp		= sp;
+
+	/*
+	 * Find the lowest free ordinal and use that.  It doesn't
+	 * have any meaning for us, but the project being built needs
+	 * it in SAI_INSTANCE_IDX so ctest can use, eg, test ports
+	 * that don't conflict with any other running instance.
+	 */
+
+	memset(ordinal_acc, 0, sizeof(ordinal_acc));
+	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
+		struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
+
+		assert(xns->instance_ordinal < (int)sizeof(ordinal_acc));
+		ordinal_acc[xns->instance_ordinal] = 1;
+	} lws_end_foreach_dll_safe(d, d1);
+
+	for (n = 0; n < (int)sizeof(ordinal_acc); n++)
+		if (ordinal_acc[n] == 0) {
+			ns->instance_ordinal = n;
+			break;
+		}
+
+
+	lws_dll2_add_tail(&ns->list, &sp->nspawn_owner);
+
+	/*
+	 * If we're using sai-device, sort out the log proxy
+	 * information
+	 */
+
+	if (strstr(task->script, "sai-device")) {
+		lws_strncpy(pur, sp->name, sizeof(pur));
+		lws_filename_purify_inplace(pur);
+		p = pur;
+		while ((p = strchr(p, '/')))
+			*p = '_';
+
+		lws_snprintf(ns->slp_control.sockpath,
+				sizeof(ns->slp_control.sockpath),
+#if defined(__linux__)
+				UDS_PATHNAME_LOGPROXY".%s.saib",
+#else
+				UDS_PATHNAME_LOGPROXY"/%s.saib",
+#endif
+				task->uuid);
+		ns->slp_control.ns = ns;
+		ns->slp_control.log_channel_idx = 3;
+		if (saib_create_listen_uds(builder.context, &ns->slp_control,
+					&ns->vhosts[0])) {
+			lwsl_err("%s: Failed to create ctl log proxy listen UDS %s\n",
+					__func__, ns->slp_control.sockpath);
+			return -1;
+		}
+
+		for (n = 0; n < (int)LWS_ARRAY_SIZE(ns->slp); n++) {
+			lws_snprintf(ns->slp[n].sockpath,
+					sizeof(ns->slp[n].sockpath),
+#if defined(__linux__)
+					UDS_PATHNAME_LOGPROXY".%s.tty%d",
+#else
+					UDS_PATHNAME_LOGPROXY"/%s.tty%d",
+#endif
+					task->uuid, n);
+
+			ns->slp[n].ns = ns;
+			ns->slp[n].log_channel_idx = n + 4;
+
+			if (saib_create_listen_uds(builder.context, &ns->slp[n],
+						&ns->vhosts[n + 1])) {
+				lwsl_err("%s: Failed to create log proxy listen UDS %s\n",
+						__func__, ns->slp[n].sockpath);
 				return -1;
-			memset(ns, 0, sizeof(*ns));
-			ns->builder = &builder;
-			ns->sp = sp;
-
-			/*
-			 * Find the lowest free ordinal and use that.  It doesn't
-			 * have any meaning for us, but the project being built needs
-			 * it in SAI_INSTANCE_IDX so ctest can use, eg, test ports
-			 * that don't conflict with any other running instance.
-			 */
-
-			memset(ordinal_acc, 0, sizeof(ordinal_acc));
-			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
-			       struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
-			       assert(xns->instance_ordinal < (int)sizeof(ordinal_acc));
-			       ordinal_acc[xns->instance_ordinal] = 1;
-			} lws_end_foreach_dll_safe(d, d1);
-
-			for (n = 0; n < (int)sizeof(ordinal_acc); n++)
-				if (ordinal_acc[n] == 0) {
-					ns->instance_ordinal = n;
-					break;
-				}
-
-
-			lws_dll2_add_tail(&ns->list, &sp->nspawn_owner);
-
-			if (strstr(task->script, "sai-device")) {
-				lws_strncpy(pur, sp->name, sizeof(pur));
-				lws_filename_purify_inplace(pur);
-				p = pur;
-				while ((p = strchr(p, '/')))
-					*p = '_';
-
-				lws_snprintf(ns->slp_control.sockpath,
-						sizeof(ns->slp_control.sockpath),
-#if defined(__linux__)
-						UDS_PATHNAME_LOGPROXY".%s.saib",
-#else
-						UDS_PATHNAME_LOGPROXY"/%s.saib",
-#endif
-						task->uuid);
-				ns->slp_control.ns = ns;
-				ns->slp_control.log_channel_idx = 3;
-				if (saib_create_listen_uds(builder.context, &ns->slp_control,
-							&ns->vhosts[0])) {
-					lwsl_err("%s: Failed to create ctl log proxy listen UDS %s\n",
-							__func__, ns->slp_control.sockpath);
-					return -1;
-				}
-
-				for (n = 0; n < (int)LWS_ARRAY_SIZE(ns->slp); n++) {
-					lws_snprintf(ns->slp[n].sockpath,
-							sizeof(ns->slp[n].sockpath),
-#if defined(__linux__)
-							UDS_PATHNAME_LOGPROXY".%s.tty%d",
-#else
-							UDS_PATHNAME_LOGPROXY"/%s.tty%d",
-#endif
-							task->uuid, n);
-
-					ns->slp[n].ns = ns;
-					ns->slp[n].log_channel_idx = n + 4;
-
-					if (saib_create_listen_uds(builder.context, &ns->slp[n],
-								&ns->vhosts[n + 1])) {
-						lwsl_err("%s: Failed to create log proxy listen UDS %s\n",
-								__func__, ns->slp[n].sockpath);
-						return -1;
-					}
-				}
 			}
 		}
+	}
 
 //		lwsl_hexdump_warn(task->build, strlen(task->build));
 
 
-		lws_strncpy(ns->fsm.distro, task->platform,
-			    sizeof(ns->fsm.distro));
-		lws_filename_purify_inplace(ns->fsm.distro);
-		p = ns->fsm.distro;
-		while ((p = strchr(p, '/')))
-			*p = '_';
+	lws_strncpy(ns->fsm.distro, task->platform,
+		    sizeof(ns->fsm.distro));
+	lws_filename_purify_inplace(ns->fsm.distro);
+	p = ns->fsm.distro;
+	while ((p = strchr(p, '/')))
+		*p = '_';
 
-		/*
-		 * unique for remote server name ("warmcat"),
-		 * project name ("libwebsockets")
-		 */
-		ns->server_name = spm->name;
-		ns->project_name = task->repo_name;
-		if (!strncmp(task->git_ref, "refs/heads/", 11))
-			ns->ref = task->git_ref + 11;
+	/*
+	 * unique for remote server name ("warmcat"),
+	 * project name ("libwebsockets")
+	 */
+	ns->server_name		= spm->name;
+	ns->project_name	= task->repo_name;
+	if (!strncmp(task->git_ref, "refs/heads/", 11))
+		ns->ref = task->git_ref + 11;
+	else
+		if (!strncmp(task->git_ref, "refs/tags/", 10))
+			ns->ref = task->git_ref + 10;
 		else
-			if (!strncmp(task->git_ref, "refs/tags/", 10))
-				ns->ref = task->git_ref + 10;
-			else
-				ns->ref = task->git_ref;
-		ns->hash = task->git_hash;
-		ns->git_repo_url = task->git_repo_url;
-		if (ns->task && ns->task->ac_task_container)
-			lwsac_free(&ns->task->ac_task_container);
+			ns->ref = task->git_ref;
+	ns->hash		= task->git_hash;
+	ns->git_repo_url	= task->git_repo_url;
+	if (ns->task && ns->task->ac_task_container)
+		lwsac_free(&ns->task->ac_task_container);
 
-		ns->task = task; /* we are owning this nspawn for the duration */
-		ns->current_step = task->build_step;
-		ns->build_step_count = task->build_step_count;
-		if (!ns->current_step) {
-			ns->spins	= 0;
-			ns->user_cancel = 0;
-			ns->us_cpu_user = 0;
-			ns->us_cpu_sys	= 0;
-			ns->worst_mem	= 0;
-			ns->worst_stg	= 0;
-		}
-		ns->spm = spm; /* bind this task to the spm the req came in on */
+	ns->task		= task; /* we are owning this nspawn for the duration */
+	ns->current_step	= task->build_step;
+	ns->build_step_count	= task->build_step_count;
+	if (!ns->current_step) {
+		ns->spins	= 0;
+		ns->user_cancel = 0;
+		ns->us_cpu_user = 0;
+		ns->us_cpu_sys	= 0;
+		ns->worst_mem	= 0;
+		ns->worst_stg	= 0;
+	}
+	ns->spm = spm; /* bind this task to the spm the req came in on */
 
-		if (!ns->current_step) {
-			saib_log_chunk_create(ns, ">saib>\n", 7, 3);
-			saib_log_chunk_create(ns, ">saib>\n", 7, 3);
-			saib_log_chunk_create(ns, ">saib>\n", 7, 3);
-
-			ml = lws_snprintf(mb, sizeof(mb),
-					  ">saib> Sai Builder Version: %s, lws: %s\n",
-					  BUILD_INFO, LWS_BUILD_HASH);
-			saib_log_chunk_create(ns, mb, (unsigned int)ml, 3);
-		}
-
+	if (!ns->current_step) {
+		/*
+		 * If it's the first step, log some preamble info
+		 */
 		saib_log_chunk_create(ns, ">saib>\n", 7, 3);
+		saib_log_chunk_create(ns, ">saib>\n", 7, 3);
+		saib_log_chunk_create(ns, ">saib>\n", 7, 3);
+
 		ml = lws_snprintf(mb, sizeof(mb),
-				  ">saib> Starting task step %d ===>\n",
-				  ns->current_step + 1);
-
+				  ">saib> Sai Builder Version: %s, lws: %s\n",
+				  BUILD_INFO, LWS_BUILD_HASH);
 		saib_log_chunk_create(ns, mb, (unsigned int)ml, 3);
+	}
 
-		saib_set_ns_state(ns, NSSTATE_INIT);
+	saib_log_chunk_create(ns, ">saib>\n", 7, 3);
+	ml = lws_snprintf(mb, sizeof(mb),
+			  ">saib> Starting task step %d ===>\n",
+			  ns->current_step + 1);
+
+	saib_log_chunk_create(ns, mb, (unsigned int)ml, 3);
+
+	saib_set_ns_state(ns, NSSTATE_INIT);
 
 #if defined(__linux__)
-		ns->fsm.layers[0] = "base";
-		ns->fsm.layers[1] = "env";
+	ns->fsm.layers[0] = "base";
+	ns->fsm.layers[1] = "env";
 #endif
 
-		lws_snprintf(ns->fsm.ovname, sizeof(ns->fsm.ovname), "%s", task->uuid);
+	lws_snprintf(ns->fsm.ovname, sizeof(ns->fsm.ovname), "%s", task->uuid);
 
-//		lwsl_notice("%s: server %s\n", __func__, ns->server_name);
-//		lwsl_notice("%s: project %s\n", __func__, ns->project_name);
-//		lwsl_notice("%s: ref %s\n", __func__, ns->ref);
-//		lwsl_notice("%s: hash %s\n", __func__, ns->hash);
-//		lwsl_notice("%s: distro %s\n", __func__, ns->fsm.distro);
-//		lwsl_notice("%s: ovname %s\n", __func__, ns->fsm.ovname);
-//		lwsl_notice("%s: git_repo_url %s\n", __func__, ns->git_repo_url);
-//		lwsl_notice("%s: mountpoint %s\n", __func__, ns->fsm.mp);
+	n = lws_snprintf(ns->inp, sizeof(ns->inp), "%s%c",
+			 builder.home, csep);
 
-		n = lws_snprintf(ns->inp, sizeof(ns->inp), "%s%c",
-				 builder.home, csep);
+	n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "jobs%c",
+			csep);
+	lws_filename_purify_inplace(ns->inp);
 
-		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "jobs%c",
-				csep);
-		lws_filename_purify_inplace(ns->inp);
-		if (mkdir(ns->inp, 0755) && errno != EEXIST) {
-			en = errno;
-			lwsl_err("%s: mkdir %s -> errno %d\n", __func__, ns->inp, en);
-			goto ebail;
-		}
+	if (mkdir(ns->inp, 0755) && errno != EEXIST) {
+		en = errno;
+		lwsl_err("%s: mkdir %s -> errno %d\n", __func__, ns->inp, en);
+		goto ebail;
+	}
 
-		memcpy(ns->inp_vn, ns->fsm.ovname, 4);
-		memcpy(ns->inp_vn + 4, ns->fsm.ovname + strlen(ns->fsm.ovname) - 4, 4);
-		ns->inp_vn[8] = '\0';
+	memcpy(ns->inp_vn, ns->fsm.ovname, 4);
+	memcpy(ns->inp_vn + 4, ns->fsm.ovname + strlen(ns->fsm.ovname) - 4, 4);
+	ns->inp_vn[8] = '\0';
 
-		n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
-				  ns->inp_vn, csep);
-		lws_filename_purify_inplace(ns->inp);
-		if (mkdir(ns->inp, 0755) && errno != EEXIST) {
-			en = errno;
-			lwsl_err("%s: mkdir %s -> errno %d\n", __func__, ns->inp, en);
+	n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
+			  ns->inp_vn, csep);
+	lws_filename_purify_inplace(ns->inp);
+	if (mkdir(ns->inp, 0755) && errno != EEXIST) {
+		en = errno;
+		lwsl_err("%s: mkdir %s -> errno %d\n", __func__, ns->inp, en);
 
-			goto ebail;
-		}
+		goto ebail;
+	}
 
-		/*
-		 * Create a pending upload dir to mv artifacts into while
-		 * we get on with the next job.
-		 */
-		lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "../.sai-uploads");
-		if (mkdir(ns->inp, 0755) && errno != EEXIST) {
-			en = errno;
-			lwsl_err("%s: mkdir %s -> errno %d\n", __func__, ns->inp, en);
+	/*
+	 * Create a pending upload dir to mv artifacts into while
+	 * we get on with the next job.
+	 */
+	lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n,
+			"../.sai-uploads");
 
-			goto ebail;
-		}
-		/*
-		 * Snip that last bit off so ns->inp is the fully qualified
-		 * builder instance base dir
-		 */
-		ns->inp[n] = '\0';
+	if (mkdir(ns->inp, 0755) && errno != EEXIST) {
+		en = errno;
+		lwsl_err("%s: mkdir %s -> errno %d\n", __func__, ns->inp, en);
 
-		{
-			char script_path[512];
-			int fd;
+		goto ebail;
+	}
+
+	/*
+	 * Snip that last bit off so ns->inp is the fully qualified
+	 * builder instance base dir
+	 */
+
+	ns->inp[n] = '\0';
+
+
 #if !defined(WIN32)
-			/* create git_helper.sh */
-			lws_snprintf(script_path, sizeof(script_path), "%s%cgit_helper.sh",
-				     ns->inp, csep);
-			fd = open(script_path, O_CREAT | O_TRUNC | O_WRONLY, 0755);
-			if (fd < 0) {
-				lwsl_warn("%s: failed to open git script for write %s\n", __func__, script_path);
-				goto bail;
-			}
+	/* create git_helper.sh */
+	lws_snprintf(script_path, sizeof(script_path), "%s%cgit_helper.sh",
+			ns->inp, csep);
+	fd = open(script_path, O_CREAT | O_TRUNC | O_WRONLY, 0755);
+	if (fd < 0) {
+		lwsl_warn("%s: failed to open git script for write %s\n",
+			  __func__, script_path);
+		goto bail;
+	}
 
-			if ((size_t)write(fd, git_helper_sh, strlen(git_helper_sh)) != strlen(git_helper_sh)) {
-				lwsl_warn("%s: failed to write git script %s\n", __func__, script_path);
-				close(fd);
-				goto bail;
-			}
-			close(fd);
+	if ((size_t)write(fd, git_helper_sh, strlen(git_helper_sh)) != strlen(git_helper_sh)) {
+		lwsl_warn("%s: failed to write git script %s\n", __func__, script_path);
+		close(fd);
+		goto bail;
+	}
+	close(fd);
 #else
-			/* create git_helper.bat */
-			lws_snprintf(script_path, sizeof(script_path), "%s%cgit_helper.bat",
-					ns->inp, csep);
-			if (_sopen_s(&fd, script_path, _O_CREAT | _O_TRUNC | _O_WRONLY,
-					_SH_DENYNO, _S_IWRITE))
-				fd = -1;
-			if (fd < 0) {
-				lwsl_warn("%s: failed to open git script for write %s\n", __func__, script_path);
-				goto bail;
-			}
+	/* create git_helper.bat */
+	lws_snprintf(script_path, sizeof(script_path), "%s%cgit_helper.bat",
+			ns->inp, csep);
+	if (_sopen_s(&fd, script_path, _O_CREAT | _O_TRUNC | _O_WRONLY,
+			_SH_DENYNO, _S_IWRITE))
+		fd = -1;
+	if (fd < 0) {
+		lwsl_warn("%s: failed to open git script for write %s\n", __func__, script_path);
+		goto bail;
+	}
 
-			if ((size_t)write(fd, git_helper_bat, (unsigned int)strlen(git_helper_bat)) != strlen(git_helper_bat)) {
-				lwsl_warn("%s: failed to write git script %s\n", __func__, script_path);
-				close(fd);
-				goto bail;
-			}
-			close(fd);
+	if ((size_t)write(fd, git_helper_bat, (unsigned int)strlen(git_helper_bat)) != strlen(git_helper_bat)) {
+		lwsl_warn("%s: failed to write git script %s\n", __func__, script_path);
+		close(fd);
+		goto bail;
+	}
+	close(fd);
 #endif
-		}
 
-		saib_set_ns_state(ns, NSSTATE_EXECUTING_STEPS);
+	saib_set_ns_state(ns, NSSTATE_EXECUTING_STEPS);
 
-		ns->user_cancel = 0;
-		ns->spins = 0;
+	ns->user_cancel		= 0;
+	ns->spins		= 0;
 
-		if (saib_spawn_script(ns)) {
-			lwsl_err("%s: saib_spawn_script failed\n", __func__);
-			goto bail;
-		}
+	if (saib_spawn_script(ns)) {
+		lwsl_err("%s: saib_spawn_script failed\n", __func__);
+		goto bail;
+	}
 
-		/* we're busy, we're not in the mood for suspending */
+	/* we're busy, we're not in the mood for suspending */
 
-		lws_sul_cancel(&ns->builder->sul_idle);
+	lws_sul_cancel(&ns->builder->sul_idle);
 
-		/*
-		 * We accepted the task
-		 */
+	/*
+	 * We accepted the task
+	 */
 
-		if (saib_queue_task_status_update(sp, spm, task->uuid, SAI_TASK_REASON_ACCEPTED))
-			goto bail;
+	if (saib_queue_task_status_update(sp, spm, task->uuid, SAI_TASK_REASON_ACCEPTED))
+		goto bail;
 
 #if defined(__APPLE__)
-		/*
-		 * If we started the first task, acquire a wakelock to prevent
-		 * idle suspend
-		 */
-		if (sp->nspawn_owner.count == 1 && !builder.wakelock_pid) {
-			pid_t pid = fork();
+	/*
+	 * If we started the first task, acquire a wakelock to prevent
+	 * idle suspend
+	 */
+	if (sp->nspawn_owner.count == 1 && !builder.wakelock_pid) {
+		pid_t pid = fork();
 
-			if (pid == -1)
-				lwsl_err("%s: fork for wakelock failed\n", __func__);
-			else if (!pid) {
-				execl("/usr/bin/caffeinate", "/usr/bin/caffeinate", "-i", (char *)NULL);
-				exit(1); /* should not get here */
-			} else {
-				lwsl_notice("%s: acquired wakelock (pid %d)\n", __func__, (int)pid);
-				builder.wakelock_pid = pid;
-			}
+		if (pid == -1)
+			lwsl_err("%s: fork for wakelock failed\n", __func__);
+		else if (!pid) {
+			execl("/usr/bin/caffeinate", "/usr/bin/caffeinate", "-i", (char *)NULL);
+			exit(1); /* should not get here */
+		} else {
+			lwsl_notice("%s: acquired wakelock (pid %d)\n", __func__, (int)pid);
+			builder.wakelock_pid = pid;
 		}
-		/* if there's a pending wakelock release, cancel it */
-		lws_sul_cancel(&builder.sul_release_wakelock);
-#endif
-
-		break;
-
-	case SAIB_RX_TASK_CANCEL:
-
-		can = (sai_cancel_t *)a.dest;
-
-		lwsl_notice("%s: received task cancel for %s\n", __func__, can->task_uuid);
-
-		lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
-				           builder.sai_plat_owner.head) {
-			struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
-						sai_plat_list);
-
-			lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
-						   sp->nspawn_owner.head) {
-				struct sai_nspawn *ns = lws_container_of(p,
-							struct sai_nspawn, list);
-
-				if (ns->task &&
-				    !strcmp(can->task_uuid, ns->task->uuid)) {
-					lwsl_notice("%s: trying to cancel %s\n",
-						    __func__, can->task_uuid);
-
-					/*
-					 * We're going to send a few signals
-					 * at 500ms intervals
-					 */
-					ns->user_cancel = 1;
-					ns->term_budget = 5;
-					lws_sul_schedule(ns->builder->context, 0,
-							 &ns->sul_task_cancel,
-							 saib_sul_task_cancel, 1);
-				}
-
-			} lws_end_foreach_dll_safe(p, p1);
-
-		} lws_end_foreach_dll_safe(mp, mp1);
-		break;
-
-	case SAIB_RX_VIEWERSTATE:
-		{
-			sai_viewer_state_t *vs = (sai_viewer_state_t *)a.dest;
-			char any_busy = 0;
-
-                       lwsl_notice("Received viewer state update: %u viewers\n", vs->viewers);
-
-			spm->viewer_count = vs->viewers;
-
-			if (!vs->viewers) {
-                               lwsl_notice("%s: VIEWERSTATE: no viewers -> no load reports\n", __func__);
-				lws_sul_cancel(&spm->sul_load_report);
-				break;
-			}
-
-			/* are there any busy instances */
-
-			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
-						builder.sai_plat_owner.head) {
-			       sp = lws_container_of(d, sai_plat_t, sai_plat_list);
-
-		      		lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
-			      		 struct sai_nspawn *ns = lws_container_of(d, struct sai_nspawn, list);
-
-			       		if (ns->state == NSSTATE_EXECUTING_STEPS)
-						any_busy = 1;
-
-		       		} lws_end_foreach_dll(d);
-			} lws_end_foreach_dll_safe(d, d1);
-
-		        if (!any_busy) {
-                               lwsl_notice("%s: VIEWERSTATE: no busy instances -> no load reports\n", __func__);
-
-				lws_sul_cancel(&spm->sul_load_report);
-				break;
-			}
-
-			/* At least one viewer, start reporting */
-                       lwsl_notice("%s: VIEWERSTATE: viewers + busy instances -> load reports\n", __func__);
-
-			lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
-					 saib_sul_load_report_cb, 1);
-		}
-		break;
-
-	case SAIB_RX_RESOURCE_REPLY:
-		reso = (sai_resource_t *)a.dest;
-
-		lwsl_notice("%s: RESOURCE_REPLY: cookie %s\n",
-				__func__, reso->cookie);
-
-		saib_handle_resource_result(spm, in, len);
-		break;
-
-	case SAIB_RX_REBUILD:
-		reb = (sai_rebuild_t *)a.dest;
-
-		lwsl_notice("%s: REBUILD: %s\n", __func__, reb->builder_name);
-
-		if (lsp_suspender) {
-			uint8_t b = 3;
-			if (write(lws_spawn_get_fd_stdxxx(lsp_suspender, 0), &b, 1) != 1)
-				lwsl_err("%s: Failed to write to suspender\n",
-					 __func__);
-		}
-		break;
-
-	default:
-		break;
 	}
+	/* if there's a pending wakelock release, cancel it */
+	lws_sul_cancel(&builder.sul_release_wakelock);
+#endif
 
 	return 0;
 

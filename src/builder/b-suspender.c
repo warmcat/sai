@@ -56,6 +56,19 @@
 
 struct lws_spawn_piped *lsp_suspender;
 struct lws_protocols protocol_suspender_stdxxx;
+char suspender_exists;
+
+int
+saib_suspender_get_pipe(void)
+{
+#if defined(__linux__)
+	int fd = lws_spawn_get_fd_stdxxx(lsp_suspender, 0);
+#endif
+#if defined(__APPLE__)
+	int fd = builder.pipe_suspender_wr;
+#endif
+	return fd;
+}
 
 void *
 saib_thread_suspend(void *d)
@@ -119,11 +132,11 @@ static void reap(void *opaque, const lws_spawn_resource_us_t *res,
 int
 saib_suspender_fork(const char *path)
 {
+	char rpath[PATH_MAX];
 #if defined(__linux__)
 	struct lws_spawn_piped_info info;
 	const char * const ea[] = { rpath, "-s", NULL };
 #endif
-	char rpath[PATH_MAX];
 
 	if (!realpath(path, rpath)) {
 		lwsl_err("%s: failed to get realpath for %s: %s\n", __func__,
@@ -188,6 +201,8 @@ saib_suspender_fork(const char *path)
 		builder.pipe_suspender_wr = pfd[1];
 	}
 #endif
+
+	suspender_exists	= 1;
 
 	/*
 	 * We start off idle, with no tasks on any platform and doing
@@ -292,7 +307,7 @@ saib_suspender_start(void)
 					if (ret == 0) {
 						lws_snprintf(cmd, sizeof(cmd),
 							     "PATH=/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin %s",
-		   builder.rebuild_script_root);
+							     builder.rebuild_script_root);
 						system(cmd);
 					}
 						}
@@ -311,13 +326,8 @@ saib_suspender_start(void)
 void
 suspender_destroy()
 {
-#if defined(__linux__)
-	int fd = lws_spawn_get_fd_stdxxx(lsp_suspender, 0);
-#endif
-#if defined(__APPLE__)
-	int fd = builder.pipe_suspender_wr;
-#endif
-	if (lsp_suspender) {
+	if (suspender_exists) {
+		int fd = saib_suspender_get_pipe();
 		uint8_t te = 2;
 
 		/*

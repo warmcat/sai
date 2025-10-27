@@ -25,14 +25,33 @@
 
 #include "b-private.h"
 
-#include "../common/struct-metadata.c"
+extern struct lws_spawn_piped *lsp_suspender;
 
-const lws_struct_map_t lsm_viewerstate_members[] = {
-	LSM_UNSIGNED(sai_viewer_state_t, viewers,	"viewers"),
-};
+#include "../common/struct-metadata.c"
 
 static const lws_struct_map_t lsm_schema_json_loadreport[] = {
 	LSM_SCHEMA	(sai_load_report_t, NULL, lsm_load_report_members, "com.warmcat.sai.loadreport"),
+};
+
+static const lws_struct_map_t lsm_viewerstate_members[] = {
+       LSM_UNSIGNED(sai_viewer_state_t, viewers,       "viewers"),
+};
+
+const lws_struct_map_t lsm_schema_map_m_to_b[] = {
+	LSM_SCHEMA	(sai_task_t, NULL, lsm_task, "com-warmcat-sai-ta"),
+	LSM_SCHEMA	(sai_cancel_t, NULL, lsm_task_cancel, "com.warmcat.sai.taskcan"),
+	LSM_SCHEMA	(sai_viewer_state_t, NULL, lsm_viewerstate_members,
+						 "com.warmcat.sai.viewerstate"),
+	LSM_SCHEMA	(sai_resource_t, NULL, lsm_resource, "com-warmcat-sai-resource"),
+	LSM_SCHEMA	(sai_rebuild_t, NULL, lsm_rebuild, "com.warmcat.sai.rebuild")
+};
+
+enum {
+	SAIB_RX_TASK_ALLOCATION,
+	SAIB_RX_TASK_CANCEL,
+	SAIB_RX_VIEWERSTATE,
+	SAIB_RX_RESOURCE_REPLY,
+	SAIB_RX_REBUILD
 };
 
 /*
@@ -109,18 +128,163 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 }
 
 static lws_ss_state_return_t
-saib_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
+saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 {
 	struct sai_plat_server *spm = (struct sai_plat_server *)userobj;
-	//struct sai_plat *sp = (struct sai_plat *)spm->sai_plat;
+	sai_plat_t *sp = NULL;
+	sai_resource_t *reso;
+	struct lejp_ctx ctx;
+	lws_struct_args_t a;
+	sai_cancel_t *can;
+	sai_rebuild_t *reb;
+	int m;
 
-//	lwsl_info("%s: len %d, flags: %d\n", __func__, (int)len, flags);
-//	lwsl_hexdump_info(buf, len);
+	/*
+	 * use the schema name on the incoming JSON to decide what kind of
+	 * structure to instantiate
+	 */
 
-	if (saib_ws_json_rx_builder(spm, buf, len))
-		return 1;
+	memset(&a, 0, sizeof(a));
+	a.map_st[0]		= lsm_schema_map_m_to_b;
+	a.map_entries_st[0]	= LWS_ARRAY_SIZE(lsm_schema_map_m_to_b);
+	a.ac_block_size		= 512;
 
-	return 0;
+//	lwsl_hexdump_warn(in, len);
+
+	lws_struct_json_init_parse(&ctx, NULL, &a);
+	m = lejp_parse(&ctx, (uint8_t *)in, (int)len);
+	if (m < 0) {
+		lwsl_hexdump_err(in, len);
+		lwsl_err("%s: builder rx JSON decode failed '%s'\n",
+			    __func__, lejp_error_to_string(m));
+		return m;
+	}
+
+	if (!a.dest) {
+		lwsac_free(&a.ac);
+		return LWSSSSRET_OK;
+	}
+
+	switch (a.top_schema_index) {
+
+	case SAIB_RX_TASK_ALLOCATION:
+		if (saib_consider_allocating_task(spm, &a, in, len, flags))
+			break;
+
+		break;
+
+	case SAIB_RX_TASK_CANCEL:
+
+		can = (sai_cancel_t *)a.dest;
+
+		lwsl_notice("%s: received task cancel for %s\n", __func__, can->task_uuid);
+
+		lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
+					   builder.sai_plat_owner.head) {
+			struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
+						sai_plat_list);
+
+			lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
+						   sp->nspawn_owner.head) {
+				struct sai_nspawn *ns = lws_container_of(p,
+							struct sai_nspawn, list);
+
+				if (ns->task &&
+				    !strcmp(can->task_uuid, ns->task->uuid)) {
+					lwsl_notice("%s: trying to cancel %s\n",
+						    __func__, can->task_uuid);
+
+					/*
+					 * We're going to send a few signals
+					 * at 500ms intervals
+					 */
+					ns->user_cancel = 1;
+					ns->term_budget = 5;
+
+					lws_sul_schedule(ns->builder->context, 0,
+							 &ns->sul_task_cancel,
+							 saib_sul_task_cancel, 1);
+				}
+
+			} lws_end_foreach_dll_safe(p, p1);
+
+		} lws_end_foreach_dll_safe(mp, mp1);
+		break;
+
+	case SAIB_RX_VIEWERSTATE:
+		{
+			sai_viewer_state_t *vs = (sai_viewer_state_t *)a.dest;
+			char any_busy = 0;
+
+		       lwsl_notice("Received viewer state update: %u viewers\n", vs->viewers);
+
+			spm->viewer_count = vs->viewers;
+
+			if (!vs->viewers) {
+			       lwsl_notice("%s: VIEWERSTATE: no viewers -> no load reports\n", __func__);
+				lws_sul_cancel(&spm->sul_load_report);
+				break;
+			}
+
+			/* are there any busy instances */
+
+			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+						builder.sai_plat_owner.head) {
+			       sp = lws_container_of(d, sai_plat_t, sai_plat_list);
+
+				lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
+					 struct sai_nspawn *ns = lws_container_of(d, struct sai_nspawn, list);
+
+					if (ns->state == NSSTATE_EXECUTING_STEPS)
+						any_busy = 1;
+
+				} lws_end_foreach_dll(d);
+			} lws_end_foreach_dll_safe(d, d1);
+
+			if (!any_busy) {
+			       lwsl_notice("%s: VIEWERSTATE: no busy instances -> no load reports\n", __func__);
+
+				lws_sul_cancel(&spm->sul_load_report);
+				break;
+			}
+
+			/* At least one viewer, start reporting */
+		       lwsl_notice("%s: VIEWERSTATE: viewers + busy instances -> load reports\n", __func__);
+
+			lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
+					 saib_sul_load_report_cb, 1);
+		}
+		break;
+
+	case SAIB_RX_RESOURCE_REPLY:
+		reso = (sai_resource_t *)a.dest;
+
+		lwsl_notice("%s: RESOURCE_REPLY: cookie %s\n",
+				__func__, reso->cookie);
+
+		saib_handle_resource_result(spm, (const char *)in, len);
+		break;
+
+	case SAIB_RX_REBUILD:
+		reb = (sai_rebuild_t *)a.dest;
+
+		lwsl_notice("%s: REBUILD: %s\n", __func__, reb->builder_name);
+
+		if (suspender_exists) {
+			uint8_t b = 3;
+			int fd = saib_suspender_get_pipe();
+
+			if (write(fd, &b, 1) != 1)
+				lwsl_err("%s: Failed to write to suspender\n",
+					 __func__);
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	return LWSSSSRET_OK;
 }
 
 /*

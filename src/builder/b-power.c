@@ -26,31 +26,6 @@
 #include <stdlib.h>
 
 #include <sys/types.h>
-#if !defined(WIN32)
-#include <pwd.h>
-#include <grp.h>
-#endif
-
-#if defined(__linux__) || defined(__APPLE__)
-#include <unistd.h>
-#endif
-
-#if defined(__APPLE__)
-#include <sys/stat.h>	/* for mkdir() */
-#endif
-
-#if defined(WIN32)
-#include <initguid.h>
-#include <KnownFolders.h>
-#include <Shlobj.h>
-#include <processthreadsapi.h>
-#include <handleapi.h>
-
-
-#if !defined(PATH_MAX)
-#define PATH_MAX MAX_PATH
-#endif
-#endif
 
 #include "b-private.h"
 
@@ -165,7 +140,7 @@ saib_stay_init(void)
 	if (!builder.url_sai_power)
 		return 1;
 
-	if (!lsp_suspender)
+	if (!suspender_exists)
 		return LWSSSSRET_OK;
 
 	snprintf(builder.path, sizeof(builder.path) - 1, "%s/stay/%s",
@@ -196,15 +171,9 @@ static lws_ss_state_return_t
 saib_power_link_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
 #if !defined(WIN32)
+	int fd = saib_suspender_get_pipe();
 	uint8_t te = 0;
 	ssize_t n;
-#if defined(__linux__)
-	int fd = lws_spawn_get_fd_stdxxx(lsp_suspender, 0);
-#endif
-#if defined(__APPLE__)
-	int fd = builder.pipe_suspender_wr;
-#endif
-
 
 	if (len < 4 || !(flags & LWSSS_FLAG_SOM))
 		return 0;
@@ -215,7 +184,7 @@ saib_power_link_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		return LWSSSSRET_OK;
 	}
 
-	if (!lsp_suspender)
+	if (!suspender_exists)
 		return LWSSSSRET_OK;
 
 	lwsl_notice("%s: sai-power scheduling power-off: doing shutdown...\n", __func__);
@@ -241,14 +210,9 @@ static void
 sul_do_suspend_cb(lws_sorted_usec_list_t *sul)
 {
 #if !defined(WIN32)
+	int fd = saib_suspender_get_pipe();
 	uint8_t te = 1;
 	ssize_t n;
-#if defined(__linux__)
-	int fd = lws_spawn_get_fd_stdxxx(lsp_suspender, 0);
-#endif
-#if defined(__APPLE__)
-	int fd = builder.pipe_suspender_wr;
-#endif
 
 	lwsl_notice("%s: actioning suspend...\n", __func__);
 
