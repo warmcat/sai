@@ -32,6 +32,7 @@
 
 #if defined(__APPLE__)
 #include <sys/stat.h>	/* for mkdir() */
+#include <sys/wait.h>
 #endif
 
 #if defined(WIN32)
@@ -304,7 +305,8 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 
 int
 saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
-				const char *rej_task_uuid, unsigned int reason);
+			      const char *rej_task_uuid, unsigned int ecode,
+			      unsigned int reason);
 
 int
 saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
@@ -328,4 +330,15 @@ extern int
 saib_deletion_init(const char *argv0);
 extern void
 suspender_destroy(void);
+
+#if defined(__APPLE__)
+int
+saib_need_wakelock(void);
+
+void
+sul_release_wakelock_cb(lws_sorted_usec_list_t *sul);
+
+void
+saib_wakelock(void);
+#endif
 

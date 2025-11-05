@@ -1,7 +1,7 @@
 /*
  * Sai server - src/server/notification.c
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -268,13 +268,13 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 		 */
 		lws_strncpy(sn->t.taskname, &ctx->path[15],
 			    sizeof(sn->t.taskname));
-		sn->t.prep[0] = '\0';
-		sn->t.packages[0] = '\0';
-		sn->t.cmake[0] = '\0';
-		sn->t.cpack[0] = '\0';
-		sn->t.artifacts[0] = '\0';
-		sn->t.branches[0] = '\0';
-		sn->explicit_platforms[0] = '\0';
+		sn->t.prep[0]			= '\0';
+		sn->t.packages[0]		= '\0';
+		sn->t.cmake[0]			= '\0';
+		sn->t.cpack[0]			= '\0';
+		sn->t.artifacts[0]		= '\0';
+		sn->t.branches[0]		= '\0';
+		sn->explicit_platforms[0]	= '\0';
 		return 0;
 	}
 
@@ -578,7 +578,12 @@ next_plat: ;
 				lws_strncpy(pss->sn.t.platform, pl->name,
 					    sizeof(pss->sn.t.platform));
 
-				memset(&pss->sn.t.list, 0, sizeof(pss->sn.t.list));
+				// pss->sn.t.server_name	= ;
+				pss->sn.t.repo_name	= pss->sn.e.repo_name;
+				pss->sn.t.git_ref	= sn->e.ref;
+				pss->sn.t.git_hash	= sn->e.hash;
+
+				lws_dll2_clear(&pss->sn.t.list);
 				lws_dll2_owner_clear(&owner);
 				lws_dll2_add_head(&pss->sn.t.list, &owner);
 

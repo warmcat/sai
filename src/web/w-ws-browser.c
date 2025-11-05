@@ -18,6 +18,10 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  *  MA  02110-1301  USA
  *
+ *   b1 --\   sai-        sai-   /-- browser
+ *   b2 ----- server ---- web ------ browser
+ *   b3 --/                  *   \-- browser
+ *
  * These are ws rx and tx handlers related to browser ws connections, on
  * /broswe URLs.
  */
@@ -302,15 +306,11 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	n = lws_struct_sq3_deserialize(pdb, qu, NULL, lsm_schema_sq3_map_task,
 				       &o, &sch->query_ac, 0, 1);
 	sais_event_db_close(pss->vhd, &pdb);
-	lwsl_notice("%s: WWWWWWWWWWW -- actual task  n %d, o.head %p\n", __func__, n, o.head);
 	if (n < 0 || !o.head)
 		goto bail;
 
 	pt = lws_container_of(o.head, sai_task_t, list);
 	sch->one_task = pt;
-
-	lwsl_notice("%s: WWWWWWWWWWW -- browser ws asked for task hash: %s, plat %s\n",
-		 __func__, task_uuid, sch->one_task->platform);
 
 	/* let the pss take over the task info ac and schedule sending */
 
@@ -348,8 +348,6 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	n = lws_struct_sq3_deserialize(pss->vhd->pdb, qu, NULL,
 				       lsm_schema_sq3_map_event, &o,
 				       &sch->query_ac, 0, 1);
-	lwsl_notice("%s: WWWWWWWWWWW -- actual event  n %d, o.head %p\n", __func__, n, o.head);
-
 	if (n < 0 || !o.head)
 		/*
 		 * It's OK if the parent event is not visible in the current
@@ -1192,14 +1190,8 @@ so_finish:
 				pss->send_state = WSS_IDLE1;
 				saiw_dealloc_sched(sch);
 				return 1;
-			case LSJS_RESULT_FINISH:
-				p += w;
-				lws_struct_json_serialize_destroy(&js);
-				sch->walk = sch->walk->next;
-				if (!sch->walk)
-					goto b_finish;
-				break;
 
+			case LSJS_RESULT_FINISH:
 			case LSJS_RESULT_CONTINUE:
 				p += w;
 				lws_struct_json_serialize_destroy(&js);
@@ -1212,6 +1204,7 @@ so_finish:
 		break;
 b_finish:
 		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
+
 	//	lwsac_unreference(&vhd->builders);
 		endo = 1;
 		break;
@@ -1314,10 +1307,8 @@ b_finish:
 		}
 
 		lwsl_notice("%s: wwwwwwwwwww TASKINFO\n", __func__);
-		if ((size_t)write(2, start, lws_ptr_diff_size_t(p, start)) != lws_ptr_diff_size_t(p, start))
-			lwsl_notice("%s: dump JSON failed\n", __func__);
-		lwsl_notice("\n");
 
+		sai_dump_stderr((const char *)start, lws_ptr_diff_size_t(p, start));
 		break;
 
 	case WSS_SEND_ARTIFACT_INFO:

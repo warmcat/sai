@@ -325,9 +325,12 @@ int
 sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid, char force);
 
 int
-sais_set_task_state(struct vhd *vhd, const char *builder_name,
-		    const char *builder_uuid, const char *task_uuid, sai_event_state_t state,
+sais_set_task_state(struct vhd *vhd, const char *task_uuid, sai_event_state_t state,
 		    uint64_t started, uint64_t duration);
+
+int
+sais_bind_task_to_builder(struct vhd *vhd, const char *builder_name,
+			  const char *builder_uuid, const char *task_uuid);
 
 int
 sais_websrv_broadcast_REQUIRES_LWS_PRE(struct lws_ss_handle *hsrv,
@@ -358,7 +361,7 @@ int
 sais_platforms_with_tasks_pending(struct vhd *vhd);
 
 sai_plat_t *
-sais_builder_from_uuid(struct vhd *vhd, const char *hostname, const char *_file, int _line);
+sais_builder_from_uuid(struct vhd *vhd, const char *hostname);
 sai_plat_t *
 sais_builder_from_host(struct vhd *vhd, const char *host);
 
@@ -367,9 +370,6 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi);
 
 void
 sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down);
-
-void
-sais_mark_all_builders_offline(struct vhd *vhd);
 
 int
 sql3_get_string_cb(void *user, int cols, char **values, char **name);
@@ -434,3 +434,9 @@ sais_plat_busy(sai_plat_t *sp, char set);
 
 void
 sais_websrv_broadcast_buflist(struct lws_ss_handle *hsrv, struct lws_buflist **bl);
+
+int
+sais_metrics_db_init(struct vhd *vhd);
+
+int
+sais_metrics_db_prune(struct vhd *vhd, const char *key);

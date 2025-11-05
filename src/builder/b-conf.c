@@ -416,4 +416,8 @@ void
 saib_config_destroy(struct sai_builder *builder)
 {
 	lwsac_free(&builder->conf_head);
+
+#if defined(__APPLE__)
+	sul_release_wakelock_cb(NULL);
+#endif
 }

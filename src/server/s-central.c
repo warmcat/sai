@@ -120,7 +120,7 @@ sais_central_clean_abandoned(struct vhd *vhd)
 			lws_snprintf(s, sizeof(s),
 				     "SELECT uuid FROM tasks WHERE "
 				     "(state = %d OR state = %d) AND "
-				     "started < %llu",
+				     "started != 0 AND started < %llu",
 				     SAIES_PASSED_TO_BUILDER,
 				     SAIES_BEING_BUILT, (unsigned long long)
 					(lws_now_secs() -

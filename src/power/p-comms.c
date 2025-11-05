@@ -27,8 +27,6 @@
 
 #include "p-private.h"
 
-#include "../common/struct-metadata.c"
-
 /* Map for the "powering up" message we send to the server */
 static const lws_struct_map_t lsm_schema_power_state[] = {
 	LSM_SCHEMA(sai_power_state_t, NULL, lsm_power_state,

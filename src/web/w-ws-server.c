@@ -1,7 +1,7 @@
 /*
- * Sai web websrv - saiw SS client private UDS link to sais SS server
+ * Sai web websrv - saiw SS client private link to sais SS server
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -17,6 +17,10 @@
  *  License along with this library; if not, write to the Free Software
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  *  MA  02110-1301  USA
+ *
+ *   b1 --\   sai-        sai-   /-- browser
+ *   b2 ----- server ---- web ------ browser
+ *   b3 --/               *      \-- browser
  *
  * We copy JSON to heap and forward it in order to sais side.
  */
@@ -37,8 +41,27 @@ typedef struct saiw_websrv {
 	struct lws_buflist		*wbltx;
 } saiw_websrv_t;
 
-extern const lws_struct_map_t lsm_schema_json_map[];
-extern size_t lsm_schema_json_map_array_size;
+static lws_struct_map_t lsm_websrv_evinfo[] = {
+	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"event_hash"),
+};
+
+const lws_struct_map_t lsm_schema_json_map[] = {
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
+			/* shares struct */   "sai-taskchange"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
+			/* shares struct */   "sai-eventchange"),
+	LSM_SCHEMA	(sai_plat_owner_t, NULL, lsm_plat_list, "com.warmcat.sai.builders"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
+			/* shares struct */   "sai-overview"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
+			/* shares struct */   "sai-tasklogs"),
+	LSM_SCHEMA	(sai_load_report_t, NULL, lsm_load_report_members,
+			 "com.warmcat.sai.loadreport"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
+			 "com.warmcat.sai.taskactivity"),
+	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric,
+			 "com.warmcat.sai.build-metric"),
+};
 
 enum {
 	SAIS_WS_WEBSRV_RX_TASKCHANGE,
@@ -48,6 +71,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_TASKLOGS,	/* new logs for task (ratelimited) */
 	SAIS_WS_WEBSRV_RX_LOADREPORT,	/* builder's cpu load report */
 	SAIS_WS_WEBSRV_RX_TASKACTIVITY,
+	SAIS_WS_WEBSRV_RX_BUILD_METRIC,
 };
 
 /*
@@ -115,16 +139,18 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	sai_browse_rx_evinfo_t *ei;
 	int n;
 
-	// lwsl_warn("%s: len %d, flags %d\n", __func__, (int)len, flags);
+	// lwsl_ss_warn(m->ss, "%s: len %d, flags %d\n", __func__, (int)len, flags);
 	// lwsl_hexdump_notice(buf, len);
 
 	if (flags & LWSSS_FLAG_SOM) {
-		/* First fragment of a new message. Clear old parse results and init. */
+		/* First frag of a new message. Clear old parse results and init */
 		lwsac_free(&m->a.ac);
 		memset(&m->a, 0, sizeof(m->a));
-		m->a.map_st[0] = lsm_schema_json_map;
-		m->a.map_entries_st[0] = lsm_schema_json_map_array_size;
-		m->a.ac_block_size = 4096;
+		m->a.map_st[0]		= lsm_schema_json_map;
+		m->a.map_entries_st[0]	= LWS_ARRAY_SIZE(lsm_schema_json_map);
+		m->a.map_st[1]		= lsm_schema_json_map;
+		m->a.map_entries_st[1]	= LWS_ARRAY_SIZE(lsm_schema_json_map);
+		m->a.ac_block_size	= 4096;
 
 		lws_struct_json_init_parse(&m->ctx, NULL, &m->a);
 	}
@@ -150,15 +176,38 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		switch (m->a.top_schema_index) {
 		case SAIS_WS_WEBSRV_RX_LOADREPORT:
 			saiw_ws_broadcast_raw(vhd, buf, len, 0,
-				lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, 0));
+				lws_write_ws_flags(LWS_WRITE_TEXT,
+						   flags & LWSSS_FLAG_SOM, 0));
 			break;
 		case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
 			saiw_ws_broadcast_raw(vhd, buf, len, 0,
-				lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, 0));
+				lws_write_ws_flags(LWS_WRITE_TEXT,
+						   flags & LWSSS_FLAG_SOM, 0));
+			break;
+		case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
+			saiw_ws_broadcast_raw(vhd, buf, len, 0,
+				lws_write_ws_flags(LWS_WRITE_TEXT,
+						   flags & LWSSS_FLAG_SOM,
+						   flags & LWSSS_FLAG_EOM));
+			break;
+		default:
+			lwsl_err("%s: SWALLOWING %.*s\n", __func__, (int)len, buf);
 			break;
 		}
 
 		return 0;
+	} else {
+		switch (m->a.top_schema_index) {
+		case SAIS_WS_WEBSRV_RX_TASKCHANGE:
+		case SAIS_WS_WEBSRV_RX_EVENTCHANGE:
+		case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
+			saiw_ws_broadcast_raw(vhd, buf, len, 0,
+				lws_write_ws_flags(LWS_WRITE_TEXT,
+						   flags & LWSSS_FLAG_SOM,
+						   flags & LWSSS_FLAG_EOM));
+			break;
+		}
+		// lwsl_err("%s: proxying %.*s\n", __func__, (int)len, buf);
 	}
 
 	/*
@@ -193,10 +242,10 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		/* Move the parsed objects to the vhd's list */
 		lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
 					   ((sai_plat_owner_t *)m->a.dest)->plat_owner.head) {
-			sai_plat_t *cb = lws_container_of(p, sai_plat_t, sai_plat_list);
+			sai_plat_t *sp = lws_container_of(p, sai_plat_t, sai_plat_list);
 
-			lws_dll2_remove(&cb->sai_plat_list);
-			lws_dll2_add_tail(&cb->sai_plat_list, &vhd->builders_owner);
+			lws_dll2_remove(&sp->sai_plat_list);
+			lws_dll2_add_tail(&sp->sai_plat_list, &vhd->builders_owner);
 		} lws_end_foreach_dll_safe(p, p1);
 
 		/* schedule emitting the builder summary to each browser */
@@ -211,6 +260,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lwsl_notice("%s: force overview\n", __func__);
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 			struct pss *pss = lws_container_of(p, struct pss, same);
+
 			saiw_alloc_sched(pss, WSS_PREPARE_OVERVIEW);
 		} lws_end_foreach_dll(p);
 		break;
@@ -261,7 +311,7 @@ saiw_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	size_t fsl, used;
 
 	if (!m->wbltx) {
-		lwsl_notice("%s: nothing to send from web -> srv\n", __func__);
+		// lwsl_notice("%s: nothing to send from web -> srv\n", __func__);
 		return LWSSSSRET_TX_DONT_SEND;
 	}
 

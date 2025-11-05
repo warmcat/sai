@@ -1,7 +1,7 @@
 /*
  * sai-builder
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -71,9 +71,7 @@ saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 				  "\"finished\":%d,", ns->retcode);
 		n += lws_snprintf(lj + LWS_PRE + n,
 				  sizeof(lj) - LWS_PRE - (unsigned int)n,
-			"\"avail_slots\":%d,\"avail_mem_kib\":%u,\"avail_sto_kib\":%u,",
-			(int)(ns->sp->job_limit ? ns->sp->job_limit : 6u) -
-				((int)ns->sp->nspawn_owner.count - 1),
+			"\"avail_mem_kib\":%u,\"avail_sto_kib\":%u,",
 			saib_get_free_ram_kib(),
 			saib_get_free_disk_kib(builder.home));
 		ns->retcode_set = 0;
@@ -106,24 +104,9 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 	uint8_t buf[600];
 	int ilen;
 
-	// lwsl_warn("%s: reason %d\n", __func__, reason);
-
 	switch (reason) {
 
 	case LWS_CALLBACK_RAW_CLOSE_FILE:
-		lwsl_info("%s: stdwsi CLOSE, ns %p, lsp: %p, wsi: %p, fd: %d, stdfd: %d\n",
-			  __func__, op ? op->ns : NULL, op ? op->lsp : NULL,
-			  wsi, lws_get_socket_fd(wsi), lws_spawn_get_stdfd(wsi));
-/*
-		ilen = lws_snprintf((char *)buf, sizeof(buf), "Stdwsi %d close\n", lws_spawn_get_stdfd(wsi));
-		if (ns) {
-			saib_log_chunk_create(ns, buf, (size_t)ilen, 3);
-			if (ns->spm)
-				if (lws_ss_request_tx(ns->spm->ss))
-					lwsl_warn("%s: lws_ss_request_tx failed\n",
-						  __func__);
-		}
-*/
 		if (op && op->lsp) {
 			if (lws_spawn_stdwsi_closed(op->lsp, wsi) &&
 			    ns->reap_cb_called) {
@@ -156,7 +139,8 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		len = (unsigned int)ilen;
 
 		if (!op || !op->ns || !op->ns->spm) {
-			printf("%s: (%d) %.*s\n", __func__, (int)lws_spawn_get_stdfd(wsi), (int)len, buf);
+			printf("%s: (%d) %.*s\n", __func__,
+			       (int)lws_spawn_get_stdfd(wsi), (int)len, buf);
 			return -1;
 		}
 
@@ -188,6 +172,8 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	struct saib_opaque_spawn *op = (struct saib_opaque_spawn *)opaque;
 	struct sai_nspawn *ns = op ? op->ns : NULL;
 	uint64_t us_wallclock = op ? (uint64_t)(lws_now_usecs() - op->start_time) : 0;
+	char h5[40], h6[40], h7[40], h8[40], h9[40];
+	sai_build_metric_t m;
 	int exit_code = -1;
 	char s[256];
 	int n;
@@ -259,89 +245,60 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	peak_mem_bytes /= 1024;
 #endif
 
-	{
-		// char h1[40], h2[40], h3[40], h4[40], h10[40];
-		char h5[40], h6[40], h7[40], h8[40], h9[40];
+	ns->us_cpu_user		+= res->us_cpu_user;
+	ns->us_cpu_sys		+= res->us_cpu_sys;
+	ns->us_wallclock	+= us_wallclock;
 
-		ns->us_cpu_user += res->us_cpu_user;
-		ns->us_cpu_sys += res->us_cpu_sys;
-		ns->us_wallclock += us_wallclock;
+	if (du.size_in_bytes > ns->worst_stg)
+		ns->worst_stg	= du.size_in_bytes;
+	if (peak_mem_bytes > ns->worst_mem)
+		ns->worst_mem	= peak_mem_bytes;
 
-		if (du.size_in_bytes > ns->worst_stg)
-			ns->worst_stg = du.size_in_bytes;
-		if (peak_mem_bytes > ns->worst_mem)
-			ns->worst_mem = peak_mem_bytes;
+	lws_humanize_pad(h5, sizeof(h5), res->us_cpu_user, humanize_schema_us);
+	lws_humanize_pad(h6, sizeof(h6), res->us_cpu_sys,  humanize_schema_us);
+	lws_humanize_pad(h7, sizeof(h7), peak_mem_bytes,   humanize_schema_si);
+	lws_humanize_pad(h8, sizeof(h8), du.size_in_bytes, humanize_schema_si);
+	lws_humanize_pad(h9, sizeof(h9), us_wallclock,     humanize_schema_us);
 
-		// lws_humanize_pad(h1,  sizeof(h1),  ns->us_cpu_user,	humanize_schema_us);
-		// lws_humanize_pad(h2,  sizeof(h2),  ns->us_cpu_sys,	humanize_schema_us);
-		// lws_humanize_pad(h3,  sizeof(h3),  ns->worst_mem,	humanize_schema_si);
-		// lws_humanize_pad(h4,  sizeof(h4),  ns->worst_stg,	humanize_schema_si);
-		lws_humanize_pad(h5,  sizeof(h5),  res->us_cpu_user,	humanize_schema_us);
-		lws_humanize_pad(h6,  sizeof(h6),  res->us_cpu_sys,	humanize_schema_us);
-		lws_humanize_pad(h7,  sizeof(h7),  peak_mem_bytes,	humanize_schema_si);
-		lws_humanize_pad(h8,  sizeof(h8),  du.size_in_bytes,	humanize_schema_si);
-		lws_humanize_pad(h9,  sizeof(h9),  us_wallclock,	humanize_schema_us);
-		// lws_humanize_pad(h10, sizeof(h10), ns->us_wallclock,	humanize_schema_us);
+	n = lws_snprintf(s, sizeof(s),
+		 ">saib> Step %d: [ %s (%s U / %s S), Mem: %sB, Stg: %sB ]\n",
+		 ns->task->build_step + 1, h9, h5, h6, h7, h8);
+	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
-		n = lws_snprintf(s, sizeof(s),
-			 ">saib> Step %d: [ %s (%s u / %s s), Mem: %sB, Stg: %sB ]\n",
-			 ns->current_step + 1, h9, h5, h6, h7, h8);
-		saib_log_chunk_create(ns, s, (size_t)n, 3);
+	/*
+	 * Let's send the metrics about the step build back to the
+	 * server so it can store them.
+	 */
 
-//		n = lws_snprintf(s, sizeof(s),
-//			 ">saib>   Task: [ %s (%s u / %s s), Mem: %sB, Stg: %sB ]\n",
-//			 h10, h1, h2, h3, h4);
-//		saib_log_chunk_create(ns, s, (size_t)n, 3);
-	}
+	if (!op->spawn || !ns->spm)
+		goto skip;
 
-	if (op->spawn) {
-		sai_build_metric_t m;
-		char hash_input[8192];
-		unsigned char hash[32];
-		struct lws_genhash_ctx ctx;
-		int n;
+	memset(&m, 0, sizeof(m));
 
-		if (!ns->spm) {
-			lwsl_err("%s: NULL ns->spm", __func__);
-			goto skip;
-		}
+	if (sai_metrics_hash((uint8_t *)m.key, sizeof(m.key),
+			     ns->sp->name, ns->task->build, ns->project_name, ns->ref))
+		goto fail;
 
-		memset(&m, 0, sizeof(m));
+	lws_strncpy(m.builder_name, ns->sp->name,	sizeof(m.builder_name));
+	lws_strncpy(m.project_name, ns->project_name,	sizeof(m.project_name));
+	lws_strncpy(m.ref,	    ns->ref,		sizeof(m.ref));
+	lws_strncpy(m.task_uuid,    ns->task->uuid,	sizeof(m.task_uuid));
 
-		lws_snprintf(hash_input, sizeof(hash_input), "%s%s%s%s",
-			     ns->sp->name, op->spawn,
-			     ns->project_name, ns->ref);
+	m.unix_time	= (uint64_t)time(NULL);
+	m.us_cpu_user	= res->us_cpu_user;
+	m.us_cpu_sys	= res->us_cpu_sys;
+	m.wallclock_us	= us_wallclock;
+	m.peak_mem_rss	= peak_mem_bytes;
+	m.stg_bytes	= du.size_in_bytes;
+	m.parallel	= ns->task->parallel;
+	m.step		= ns->task->build_step + 1;
 
-		if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256) ||
-		    lws_genhash_update(&ctx, hash_input,
-				       strlen(hash_input)) ||
-		    lws_genhash_destroy(&ctx, hash))
-			lwsl_warn("%s: sha256 failed\n", __func__);
-		else
-			for (n = 0; n < 32; n++)
-				lws_snprintf(m.key + (n * 2), 3,
-					     "%02x", hash[n]);
-
-		lws_strncpy(m.builder_name, ns->sp->name, sizeof(m.builder_name));
-		lws_strncpy(m.project_name, ns->project_name, sizeof(m.project_name));
-		lws_strncpy(m.ref, ns->ref, sizeof(m.ref));
-		lws_strncpy(m.task_uuid, ns->task->uuid, sizeof(m.task_uuid));
-		m.unixtime	= (uint64_t)time(NULL);
-		m.us_cpu_user	= res->us_cpu_user;
-		m.us_cpu_sys	= res->us_cpu_sys;
-		m.wallclock_us	= us_wallclock;
-		m.peak_mem_rss	= peak_mem_bytes;
-		m.stg_bytes	= du.size_in_bytes;
-		m.parallel	= ns->task->parallel;
-
-		if (saib_srv_queue_json_fragments_helper(ns->spm->ss,
-				lsm_schema_build_metric,
-				LWS_ARRAY_SIZE(lsm_schema_build_metric), &m))
-			return;
-	}
+	if (saib_srv_queue_json_fragments_helper(ns->spm->ss,
+					lsm_schema_map_build_metric,
+					LWS_ARRAY_SIZE(lsm_schema_build_metric), &m))
+		return;
 
 skip:
-	ns->current_step++;
 
 	/* step succeeded, wait for next instruction */
 	lwsl_notice("%s: step succeeded\n", __func__);
@@ -375,15 +332,24 @@ skip:
 		free(op);
 	}
 
-	if (ns->task)
+	if (ns->task) {
 		saib_queue_task_status_update(ns->sp, ns->spm, ns->task->uuid,
-				      SAI_TASK_REASON_DESTROYED);
+					      (unsigned int)ns->retcode,
+					      SAI_TASK_REASON_DESTROYED);
+
+		builder.ram_reserved_kib	-= ns->task->est_peak_mem_kib;
+		builder.disk_reserved_kib	-= ns->task->est_disk_kib;
+		if (ns->spm)
+			lws_sul_schedule(builder.context, 0,
+					 &ns->spm->sul_load_report,
+					 saib_sul_load_report_cb, 1);
+	}
 
 	return;
 
 fail:
 	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED, exit code: %d\n",
-			 ns->current_step + 1, exit_code);
+			 ns->task->build_step, exit_code);
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	saib_task_grace(ns);
@@ -391,9 +357,18 @@ fail:
 
 	saib_log_chunk_create(ns, NULL, 0, 2);
 
-	if (ns->task)
+	if (ns->task) {
 		saib_queue_task_status_update(ns->sp, ns->spm, ns->task->uuid,
-				      SAI_TASK_REASON_DESTROYED);
+					      (unsigned int)ns->retcode,
+					      SAI_TASK_REASON_DESTROYED);
+
+		builder.ram_reserved_kib	-= ns->task->est_peak_mem_kib;
+		builder.disk_reserved_kib	-= ns->task->est_disk_kib;
+		if (ns->spm)
+			lws_sul_schedule(builder.context, 0,
+					 &ns->spm->sul_load_report,
+					 saib_sul_load_report_cb, 1);
+	}
 
 	if (op->spawn)
 		free(op->spawn);
@@ -512,7 +487,9 @@ saib_spawn_script(struct sai_nspawn *ns)
 {
 	struct lws_spawn_piped_info info;
 	struct saib_opaque_spawn *op;
-	char st[2048];
+#if !defined(WIN32)
+	const char *script_template;
+#endif
 	const char *respath = "unk";
 	const char * cmd[] = {
 		"/bin/ps",
@@ -523,6 +500,8 @@ saib_spawn_script(struct sai_nspawn *ns)
 		"LANG=en_US.UTF-8",
 		NULL
 	};
+	char one_step[4096];
+	char st[2048];
 	int fd, n;
 #if defined(__linux__)
 	int in_cgroup = 1;
@@ -539,7 +518,6 @@ saib_spawn_script(struct sai_nspawn *ns)
 		     ns->inp);
 #endif
 
-	char one_step[4096];
 	lws_strncpy(one_step, ns->task->script, sizeof(one_step));
 
 #if defined(WIN32)
@@ -564,25 +542,28 @@ saib_spawn_script(struct sai_nspawn *ns)
 
 #if defined(WIN32)
 	n = lws_snprintf(st, sizeof(st),
-			 ns->current_step ? runscript_win_next : runscript_win_first,
+			 ns->task->build_step ? runscript_win_next : runscript_win_first,
 			 ns->instance_ordinal + 1,
 			 ns->task->parallel ? ns->task->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
-                        ns->inp, ns->current_step > 1 ? "\\src" : "",
+                        ns->inp, ns->task->build_step > 1 ? "\\src" : "",
                         one_step);
 #else
-	const char *script_template;
 
-	if (ns->current_step == 0)
+	switch (ns->task->build_step) {
+	case 0:
 		script_template = runscript_first;
-	else if (ns->current_step == 1)
+		break;
+	case 1:
 		script_template = runscript_next;
-	else
+		break;
+	default:
 		script_template = runscript_build;
+		break;
+	}
 
-	n = lws_snprintf(st, sizeof(st),
-			 script_template,
+	n = lws_snprintf(st, sizeof(st), script_template,
 			 builder.home, ns->fsm.ovname, ns->inp_vn,
 			 ns->project_name, ns->ref, ns->instance_ordinal + 1,
 			 ns->task->parallel ? ns->task->parallel : 1,
@@ -622,27 +603,24 @@ saib_spawn_script(struct sai_nspawn *ns)
 	info.p_cgroup_ret	= &in_cgroup;
 #endif
 
-	op = malloc(sizeof(*op));
+	op			= malloc(sizeof(*op));
 	if (!op)
 		return 1;
 	memset(op, 0, sizeof(*op));
 
-	op->ns = ns;
-	ns->reap_cb_called = 0;
-	ns->op = op;
+	op->ns			= ns;
+	ns->reap_cb_called	= 0;
+	ns->op			= op;
 #if defined(WIN32)
-	op->spawn = _strdup(one_step);
+	op->spawn		= _strdup(one_step);
 #else
-	op->spawn = strdup(one_step);
+	op->spawn		= strdup(one_step);
 #endif
-	op->start_time = lws_now_usecs();
+	op->start_time		= lws_now_usecs();
 
-	info.opaque = op;
-	info.owner = &builder.lsp_owner;
-	info.plsp = &op->lsp;
-
-	// lwsl_warn("%s: spawning build script at %llu\n", __func__,
-	//	  (unsigned long long)lws_now_usecs());
+	info.opaque		= op;
+	info.owner		= &builder.lsp_owner;
+	info.plsp		= &op->lsp;
 
 	lws_spawn_piped(&info);
 	if (!op->lsp) {
@@ -651,17 +629,9 @@ saib_spawn_script(struct sai_nspawn *ns)
 		 * we can't free it here
 		 */
 		ns->op = NULL;
-		lwsl_err("%s: failed\n", __func__);
 
 		return 1;
 	}
-
-	// lwsl_warn("%s: build script spawn returned at %llu\n", __func__,
-	//	  (unsigned long long)lws_now_usecs());
-
-#if defined(__linux__)
-	lwsl_notice("%s: lws_spawn_piped started (cgroup: %d)\n", __func__, in_cgroup);
-#endif
 
 	return 0;
 }
@@ -694,43 +664,14 @@ saib_prepare_mount(struct sai_builder *b, struct sai_nspawn *ns)
 		goto bail_dir;
 	lws_strncpy(homedir, ns->fsm.mp, sizeof(homedir));
 
-	/* create work dir, session layer and mountpoint, retain mountpoint */
-
-#if defined(__linux__) && 0
-
-	lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n, "%cwork", csep);
-	m = mkdir(ns->fsm.mp, 0770);
-	if (m && errno != EEXIST)
-		goto bail_dir;
-
-	lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n, "%csession", csep);
-	m = mkdir(ns->fsm.mp, 0777);
-	if (m && errno != EEXIST)
-		goto bail_dir;
-
-	n += lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n, "%cmountpoint",
-				csep);
-	m = mkdir(ns->fsm.mp, 0777);
-	if (m && errno != EEXIST)
-		goto bail_dir;
-
-	lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n, "%chome%csai",
-			csep, csep);
-	lws_strncpy(homedir, ns->fsm.mp, sizeof(homedir));
-	ns->fsm.mp[n] = '\0';
-
-	n = lws_fsmount_mount(&ns->fsm);
-
-	if (!n)
-#endif
 	{
 
 		/* these are ephemeral on top of the mountpoint path, we snip
 		 * them off later */
 
 		n = (int)strlen(ns->fsm.mp);
-		lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n, "%chome",
-				csep);
+		lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n,
+			     "%chome", csep);
 		m = mkdir(ns->fsm.mp, 0700);
 		if (m && errno != EEXIST)
 			goto bail_dir;

@@ -6,10 +6,11 @@ set(SRCS
 	w-sai.c
 	w-conf.c
 	w-comms.c
-	w-central.c
 	w-artifact.c
+	w-ws-server.c
 	w-ws-browser.c
-	w-websrv.c
+	../common/c-utils.c
+	../common/struct-metadata.c
 )
 
 set(requirements 1)

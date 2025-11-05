@@ -1,7 +1,7 @@
 /*
  * Sai server definitions src/server/private.h
  *
- * Copyright (C) 2019 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -45,34 +45,6 @@ typedef struct sai_platform {
 
 	/* build and name over-allocated here */
 } sai_platform_t;
-
-typedef enum {
-	SAIN_ACTION_INVALID,
-	SAIN_ACTION_REPO_UPDATED
-} sai_notification_action_t;
-
-typedef struct {
-
-	sai_event_t			e;
-	sai_task_t			t;
-
-	char				platbuild[4096];
-	char				platname[96];
-	char				explicit_platforms[2048];
-
-	int				event_task_index;
-
-	struct lws_b64state		b64;
-	char				*saifile;
-	uint64_t			when;
-	size_t				saifile_in_len;
-	size_t				saifile_out_len;
-	size_t				saifile_out_pos;
-	size_t				saifile_in_seen;
-	sai_notification_action_t	action;
-
-	uint8_t				nondefault;
-} sai_notification_t;
 
 typedef enum {
 	WSS_IDLE1,
@@ -136,7 +108,6 @@ struct pss {
 	struct lws_spa		*spa;
 	struct lejp_ctx		ctx;
 	struct lws_buflist	*raw_tx;
-	sai_notification_t	sn;
 	struct lws_dll2		same; /* owner: vhd.browsers */
 
 	struct lws_dll2		subs_list;
@@ -227,12 +198,11 @@ struct vhd {
 
 	struct lws_ss_handle		*h_ss_websrv; /* client */
 
-	const char *sqlite3_path_lhs;
+	const char			*sqlite3_path_lhs;
 
-	lws_dll2_owner_t sqlite3_cache; /* sais_sqlite_cache_t */
-	lws_dll2_owner_t tasklog_cache;
-	lws_sorted_usec_list_t sul_logcache;
-	lws_sorted_usec_list_t sul_central; /* background task allocation sul */
+	lws_dll2_owner_t		sqlite3_cache; /* sais_sqlite_cache_t */
+	lws_dll2_owner_t		tasklog_cache;
+	lws_sorted_usec_list_t		sul_logcache;
 };
 
 extern struct lws_context *

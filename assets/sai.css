@@ -603,6 +603,9 @@ td.tn {
 	font-weight: normal;
 	font-size: 7pt;
 	padding-left:0px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 table.nomar {

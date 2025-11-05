@@ -7,6 +7,7 @@ set(SRCS
 	p-comms.c
 	p-smartplug.c
 	p-api.c
+	../common/struct-metadata.c
 )
 
 set(requirements 1)

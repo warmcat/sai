@@ -61,7 +61,7 @@ _sais_websrv_broadcast(struct lws_ss_handle *h, void *arg)
 	info->head_upstream		= &m->bl_srv_to_web;
 	info->private_heads		= m->private_heads;
 
-	// lwsl_ss_notice(h, "Queueing %u bytes, ridx %d, ff_flags: %u\n",
+	// lwsl_ss_notice(h, "Queueing %u bytes, ridx %d, ff_flags: %u",
 	//	       (unsigned int)info->len, info->private_source_idx, info->ss_flags);
 
 	*pi = info->ss_flags;
@@ -135,24 +135,19 @@ sais_websrv_broadcast_buflist(struct lws_ss_handle *hsrv, struct lws_buflist **b
 }
 
 
-
-struct sais_arg {
-	const char *uid;
-	int state;
-};
-
-static void
-_sais_taskchange(struct lws_ss_handle *h, void *_arg)
+void
+sais_taskchange(struct lws_ss_handle *hsrv, const char *task_uuid, int state)
 {
-	struct sais_arg *arg = (struct sais_arg *)_arg;
-	char tc[LWS_PRE + 128], *start = tc + LWS_PRE;
+	char tc[LWS_PRE + 256], *start = tc + LWS_PRE;
 	lws_wsmsg_info_t info;
 	int n;
+
+	lwsl_ss_notice(hsrv, "%%%%%%%% sai-taskchange %s -> %d", task_uuid, state);
 
 	n = lws_snprintf(start, sizeof(tc) - LWS_PRE,
 			 "{\"schema\":\"sai-taskchange\", "
 			 "\"event_hash\":\"%s\", \"state\":%d}",
-			 arg->uid, arg->state);
+			 task_uuid, state);
 
 	memset(&info, 0, sizeof(info));
 	info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;
@@ -160,58 +155,38 @@ _sais_taskchange(struct lws_ss_handle *h, void *_arg)
 	info.len			= (size_t)n;
 	info.ss_flags			= LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
 
-	if (sais_websrv_broadcast_REQUIRES_LWS_PRE(h, &info) < 0) {
+	if (sais_websrv_broadcast_REQUIRES_LWS_PRE(hsrv, &info) < 0) {
 		lwsl_warn("%s: buflist append failed\n", __func__);
 
 		return;
 	}
-
-	if (lws_ss_request_tx(h))
-		lwsl_ss_warn(h, "tx req fail");
-}
-
-void
-sais_taskchange(struct lws_ss_handle *hsrv, const char *task_uuid, int state)
-{
-	struct sais_arg arg = { task_uuid, state };
-
-	lws_ss_server_foreach_client(hsrv, _sais_taskchange, (void *)&arg);
-}
-
-static void
-_sais_eventchange(struct lws_ss_handle *h, void *_arg)
-{
-	struct sais_arg *arg = (struct sais_arg *)_arg;
-	char tc[LWS_PRE + 128], *start = tc + LWS_PRE;
-	lws_wsmsg_info_t info;
-	int n;
-
-	n = lws_snprintf(start, sizeof(tc) - LWS_PRE,
-			 "{\"schema\":\"sai-eventchange\", "
-			 "\"event_hash\":\"%s\", \"state\":%d}",
-			 arg->uid, arg->state);
-
-	memset(&info, 0, sizeof(info));
-	info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;
-	info.buf			= (uint8_t *)start;
-	info.len			= (size_t)n;
-	info.ss_flags			= LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
-
-	if (sais_websrv_broadcast_REQUIRES_LWS_PRE(h, &info) < 0) {
-		lwsl_warn("%s: buflist append failed\n", __func__);
-		return;
-	}
-
-	if (lws_ss_request_tx(h))
-		lwsl_ss_warn(h, "req fail");
 }
 
 void
 sais_eventchange(struct lws_ss_handle *hsrv, const char *event_uuid, int state)
 {
-	struct sais_arg arg = { event_uuid, state };
+	char tc[LWS_PRE + 256], *start = tc + LWS_PRE;
+	lws_wsmsg_info_t info;
+	int n;
 
-	lws_ss_server_foreach_client(hsrv, _sais_eventchange, (void *)&arg);
+	lwsl_ss_notice(hsrv, "%%%%%%%% sai-eventchange %s -> %d", event_uuid, state);
+
+	n = lws_snprintf(start, sizeof(tc) - LWS_PRE,
+			 "{\"schema\":\"sai-eventchange\", "
+			 "\"event_hash\":\"%s\", \"state\":%d}",
+			 event_uuid, state);
+
+	memset(&info, 0, sizeof(info));
+	info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;
+	info.buf			= (uint8_t *)start;
+	info.len			= (size_t)n;
+	info.ss_flags			= LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+
+	if (sais_websrv_broadcast_REQUIRES_LWS_PRE(hsrv, &info) < 0) {
+		lwsl_warn("%s: buflist append failed\n", __func__);
+
+		return;
+	}
 }
 
 sai_db_result_t
@@ -362,7 +337,7 @@ sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 		return SAI_DB_RESULT_ERROR;
 
 	lws_sql_purify(esc, platform, sizeof(esc));
-	lws_snprintf(filt, sizeof(filt), " and platform='%s' and state=4", esc);
+	lws_snprintf(filt, sizeof(filt), " and platform='%s'", esc);
 
 	if (lws_struct_sq3_deserialize(pdb, filt, NULL,
 				       lsm_schema_sq3_map_task,

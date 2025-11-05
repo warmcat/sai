@@ -37,27 +37,6 @@
 
 #include "s-private.h"
 
-#include "../common/struct-metadata.c"
-
-typedef enum {
-	SJS_CLONING,
-	SJS_ASSIGNING,
-	SJS_WAITING,
-	SJS_DONE
-} sai_job_state_t;
-
-typedef struct sai_job {
-	struct lws_dll2 jobs_list;
-	char reponame[64];
-	char ref[64];
-	char head[64];
-
-	time_t requested;
-
-	sai_job_state_t state;
-
-} sai_job_t;
-
 extern const lws_struct_map_t lsm_schema_sq3_map_event[];
 extern const lws_ss_info_t ssi_server;
 
@@ -139,7 +118,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (!lws_pvo_get_str(in, "task-abandoned-timeout-mins", &num))
 			vhd->task_abandoned_timeout_mins = (unsigned int)atoi(num);
 		else
-			vhd->task_abandoned_timeout_mins = 30;
+			vhd->task_abandoned_timeout_mins = 3000;
 
 		if (lws_pvo_get_str(in, "database", &vhd->sqlite3_path_lhs)) {
 			lwsl_err("%s: database pvo required\n", __func__);
@@ -225,8 +204,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
  		sai_sqlite3_statement(vhd->server.pdb,
 				"CREATE UNIQUE INDEX IF NOT EXISTS name_idx ON builders (name)",
 				"create builder name index");
-
-//		sais_mark_all_builders_offline(vhd);
 
 		lwsl_notice("%s: creating server stream\n", __func__);
 
@@ -516,6 +493,8 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		pss->wsi = wsi;
 		ssf = (lws_is_first_fragment(wsi) ? LWSSS_FLAG_SOM : 0) |
                       (lws_is_final_fragment(wsi) ? LWSSS_FLAG_EOM : 0);
+
+		lws_validity_confirmed(wsi);
 
 		/*
 		 * A ws client sent us something... it could be a builder or

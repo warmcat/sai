@@ -1,7 +1,7 @@
 /*
  * Sai web
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -37,29 +37,6 @@
 
 #include "w-private.h"
 
-#include "../common/struct-metadata.c"
-
-extern const lws_struct_map_t lsm_schema_json_map[];
-
-typedef enum {
-	SJS_CLONING,
-	SJS_ASSIGNING,
-	SJS_WAITING,
-	SJS_DONE
-} sai_job_state_t;
-
-typedef struct sai_job {
-	struct lws_dll2 jobs_list;
-	char reponame[64];
-	char ref[64];
-	char head[64];
-
-	time_t requested;
-
-	sai_job_state_t state;
-
-} sai_job_t;
-
 const lws_struct_map_t lsm_schema_map_ta[] = {
 	LSM_SCHEMA (sai_task_t,	    NULL, lsm_task,    "com-warmcat-sai-ta"),
 };
@@ -82,30 +59,6 @@ const lws_struct_map_t lsm_auth[] = {
 const lws_struct_map_t lsm_schema_sq3_map_auth[] = {
 	LSM_SCHEMA_DLL2	(sai_auth_t, list, NULL, lsm_auth,	"auth"),
 };
-
-static lws_struct_map_t lsm_websrv_evinfo[] = {
-	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"event_hash"),
-};
-
-const lws_struct_map_t lsm_schema_json_map[] = {
-	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
-			/* shares struct */   "sai-taskchange"),
-	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
-			/* shares struct */   "sai-eventchange"),
-	LSM_SCHEMA	(sai_plat_owner_t, NULL, lsm_plat_list, "com.warmcat.sai.builders"),
-	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
-			/* shares struct */   "sai-overview"),
-	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
-			/* shares struct */   "sai-tasklogs"),
-	LSM_SCHEMA	(sai_load_report_t, NULL, lsm_load_report_members,
-			 "com.warmcat.sai.loadreport"),
-	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
-			 "com.warmcat.sai.taskactivity"),
-	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric,
-			 "com.warmcat.sai.build-metric"),
-};
-
-size_t lsm_schema_json_map_array_size = LWS_ARRAY_SIZE(lsm_schema_json_map);
 
 extern const lws_struct_map_t lsm_schema_sq3_map_event[];
 
@@ -267,7 +220,7 @@ sais_event_db_close(struct vhd *vhd, sqlite3 **ppdb)
 int
 sais_event_db_delete_database(struct vhd *vhd, const char *event_uuid)
 {
-	char filepath[256], saf[33], r = 0, ra = 0;
+	char filepath[256], saf[33], ra = 0;
 
 	lws_strncpy(saf, event_uuid, sizeof(saf));
 	lws_filename_purify_inplace(saf);
@@ -275,27 +228,27 @@ sais_event_db_delete_database(struct vhd *vhd, const char *event_uuid)
 	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3",
 		     vhd->sqlite3_path_lhs, saf);
 
-	r = (char)!!unlink(filepath);
-	if (r) {
-		lwsl_err("%s (web): unable to delete %s (%d)\n", __func__, filepath, errno);
+	if (unlink(filepath)) {
+		lwsl_err("%s (web): unable to delete %s (%d)\n", __func__,
+				filepath, errno);
 		ra = 1;
 	}
 
 	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3-wal",
 		     vhd->sqlite3_path_lhs, saf);
 
-	r = (char)!!unlink(filepath);
-	if (r) {
-		lwsl_err("%s (web): unable to delete %s (%d)\n", __func__, filepath, errno);
+	if (unlink(filepath)) {
+		lwsl_err("%s (web): unable to delete %s (%d)\n", __func__,
+				filepath, errno);
 		ra = 1;
 	}
 
 	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3-shm",
 		     vhd->sqlite3_path_lhs, saf);
 
-	r = (char)!!unlink(filepath);
-	if (r) {
-		lwsl_err("%s (web): unable to delete %s (%d)\n", __func__, filepath, errno);
+	if (unlink(filepath)) {
+		lwsl_err("%s (web): unable to delete %s (%d)\n", __func__,
+				filepath, errno);
 		ra = 1;
 	}
 
@@ -305,19 +258,6 @@ sais_event_db_delete_database(struct vhd *vhd, const char *event_uuid)
 	return ra;
 }
 
-
-
-#if 0
-static void
-sais_all_browser_on_writable(struct vhd *vhd)
-{
-	lws_start_foreach_dll(struct lws_dll2 *, mp, vhd->browsers.head) {
-		struct pss *pss = lws_container_of(mp, struct pss, same);
-
-		lws_callback_on_writable(pss->wsi);
-	} lws_end_foreach_dll(mp);
-}
-#endif
 
 typedef enum {
 	SHMUT_NONE = -1,
@@ -560,9 +500,6 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		lwsl_notice("%s: Auth JWK type %d\n", __func__,
 						vhd->jwt_jwk_auth.kty);
 
-		lws_sul_schedule(vhd->context, 0, &vhd->sul_central,
-				 saiw_central_cb, 500 * LWS_US_PER_MS);
-
 		/*
 		 * Reach out to the sai-server part over the SS ws websrv link
 		 */
@@ -736,10 +673,6 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return 0;
 		}
 
-//		resp = HTTP_STATUS_OK;
-
-//		/* faillthru */
-
 http_resp:
 		if (lws_add_http_header_status(wsi, (unsigned int)resp, &p, end))
 			goto bail;
@@ -751,8 +684,6 @@ http_resp:
 
 
 	case LWS_CALLBACK_HTTP_WRITEABLE:
-
-		// lwsl_notice("%s: HTTP_WRITEABLE\n", __func__);
 
 		if (!pss || !pss->blob_artifact)
 			break;
@@ -875,7 +806,8 @@ http_resp:
 			sr = lws_spa_get_string(pss->spa, EPN_SUCCESS_REDIR);
 
 			if (!un || !pw || !sr) {
-				lwsl_notice("%s: missing form args %p %p %p\n",__func__, un, pw, sr);
+				lwsl_notice("%s: missing form args %p %p %p\n",
+						__func__, un, pw, sr);
 				pss->spa_failed = 1;
 				goto final;
 			}
@@ -1028,39 +960,6 @@ clean_spa:
 			lwsl_err("%s: NULL vhd\n", __func__);
 			return -1;
 		}
-
-#if 0
-		{
-			const unsigned char *c;
-
-			n = 0;
-
-			do {
-				int hlen;
-
-				c = lws_token_to_string((enum lws_token_indexes)n);
-				if (!c) {
-					n++;
-					continue;
-				}
-
-				hlen = lws_hdr_total_length(wsi, (enum lws_token_indexes)n);
-				if (!hlen || hlen > (int)sizeof(buf) - 1) {
-					n++;
-					continue;
-				}
-
-				if (lws_hdr_copy(wsi, (char *)buf, sizeof buf, (enum lws_token_indexes)n) < 0)
-					lwsl_wsi_err(wsi, "ESTABLISHED    %s (too big)", (char *)c);
-				else {
-					buf[sizeof(buf) - 1] = '\0';
-
-					lwsl_wsi_notice(wsi, "ESTABLISHED    %s = %s\n", (char *)c, buf);
-				}
-				n++;
-			} while (c);
-		}
-#endif
 
 		/*
 		 * What's the situation with a JWT cookie?  Normal users won't

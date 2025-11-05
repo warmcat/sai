@@ -63,10 +63,14 @@ saib_suspender_get_pipe(void)
 {
 #if defined(__linux__)
 	int fd = lws_spawn_get_fd_stdxxx(lsp_suspender, 0);
-#endif
+#else
 #if defined(__APPLE__)
 	int fd = builder.pipe_suspender_wr;
+#else
+	int fd = 2;
 #endif
+#endif
+
 	return fd;
 }
 
@@ -121,11 +125,11 @@ callback_sai_suspender_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 struct lws_protocols protocol_suspender_stdxxx =
 		{ "sai-suspender-stdxxx", callback_sai_suspender_stdwsi, 0, 0 };
 
-#if !defined(__APPLE__)
+#if !defined(__APPLE__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
 static void reap(void *opaque, const lws_spawn_resource_us_t *res,
                          siginfo_t *si, int we_killed_him)
 {
-	lwsl_err("%s: reaped suspender fork... %d\n", __func__, si->si_status);
+	// lwsl_err("%s: reaped suspender fork... %d\n", __func__, si->si_status);
 }
 #endif
 
@@ -138,15 +142,17 @@ saib_suspender_fork(const char *path)
 	const char * const ea[] = { rpath, "-s", NULL };
 #endif
 
+#if !defined(WIN32)
 	if (!realpath(path, rpath)) {
 		lwsl_err("%s: failed to get realpath for %s: %s\n", __func__,
 			 path, strerror(errno));
 		return 1;
 	}
+#else
+	lws_strncpy(rpath, path, sizeof(rpath) - 1);
+#endif
 
 	lwsl_err("%s: starting %s\n", __func__, rpath);
-
-	realpath(path, rpath);
 
 #if defined(__linux__)
 	memset(&info, 0, sizeof(info));

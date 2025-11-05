@@ -4,7 +4,7 @@ set(CPACK_DEBIAN_BUILDER_PACKAGE_NAME "sai-builder")
 set(SRCS
 	b-sai.c
 	b-conf.c
-	b-comms.c
+	b-ws-server.c
 	b-nspawn.c
 	b-task.c
 	b-artifacts.c
@@ -16,6 +16,7 @@ set(SRCS
 	b-deletion.c
 	b-power.c
 	../common/c-utils.c
+	../common/struct-metadata.c
 )
 
 set(requirements 1)

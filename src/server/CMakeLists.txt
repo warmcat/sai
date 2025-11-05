@@ -13,11 +13,11 @@ set(SRCS
 	s-task.c
 	s-task-helpers.c
 	s-central.c
-	s-websrv.c
+	s-ws-web.c
 	s-webops.c
 	s-resource.c
-	s-metrics-db.c
 	../common/c-utils.c
+	../common/struct-metadata.c
 )
 
 set(requirements 1)

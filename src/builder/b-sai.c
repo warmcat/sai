@@ -110,8 +110,8 @@ static const char * const default_ss_policy =
 				"],"
 			"\"conceal\":"		"99999,"
 			"\"jitterpc\":"		"20,"
-			"\"svalidping\":"	"100,"
-			"\"svalidhup\":"	"110"
+			"\"svalidping\":"	"15,"
+			"\"svalidhup\":"	"30"
 		"}}"
 	  "],"
 
@@ -317,9 +317,10 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 
 		if (saib_deletion_init(argv0))
 			return 1;
-
+#if defined(__APPLE__)
 		if (saib_suspender_fork(argv0))
 			return 1;
+#endif
 
 		/*
 		 * The builder JSON conf listed servers we want to connect to,
@@ -369,6 +370,11 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 
 		lws_sul_schedule(builder.context, 0, &builder.sul_cleanup_jobs,
 			 sul_cleanup_jobs_cb, SAI_CLEANUP_JOBS_INTERVAL_US);
+
+		/* let's sample the best possible free RAM + disk situation,
+		 * we will derate it a bit when using it */
+		builder.ram_limit_kib	= saib_get_free_ram_kib();
+		builder.disk_total_kib	= saib_get_free_disk_kib(builder.home);
 
 		break;
 	}
@@ -428,7 +434,6 @@ int main(int argc, const char **argv)
 
 	if ((p = lws_cmdline_option(argc, argv, "-s"))) {
 		lwsl_notice("%s: starting shutdown worker\n", __func__);
-		sleep(3000);
 		/*
 		 * This is the suspend / shutdown worker process being spawned
 		 */
@@ -590,6 +595,10 @@ int main(int argc, const char **argv)
 	}
 
 	saib_power_init();
+#if defined(__linux__)
+		if (saib_suspender_fork(argv[0]))
+			return 1;
+#endif
 
 	while (!lws_service(builder.context, 0) && !interrupted)
 		;

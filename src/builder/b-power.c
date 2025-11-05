@@ -47,6 +47,8 @@ LWS_SS_USER_TYPEDEF
 static lws_ss_state_return_t
 saib_power_stay_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
+	char in_use = 0;
+
 	if (len < 1)
 		return 0;
 
@@ -74,13 +76,25 @@ saib_power_stay_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
 					sai_plat_list);
 
-			if (sp->nspawn_owner.count) {
-				lwsl_warn("%s: cancelling idle grace time as ongoing task steps\n", __func__);
-				lws_sul_cancel(&builder.sul_idle);
-				return 0;
+			if (sp->nspawn_owner.head) {
+				lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
+					struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
+
+					lwsl_notice("%s: ongoing task: %s\n", __func__, xns->task->uuid);
+
+				} lws_end_foreach_dll_safe(d, d1);
+
+				in_use = 1;
 			}
 
 		} lws_end_foreach_dll_safe(mp, mp1);
+
+		if (in_use) {
+			lwsl_warn("%s: cancelling idle grace time as ongoing task steps\n", __func__);
+			lws_sul_cancel(&builder.sul_idle);
+
+			return 0;
+		}
 
 		/*
 		* if no ongoing tasks, and we want to go OFF, then start
@@ -242,6 +256,10 @@ sul_do_suspend_cb(lws_sorted_usec_list_t *sul)
 void
 sul_idle_cb(lws_sorted_usec_list_t *sul)
 {
+#if defined(__APPLE__)
+	return;
+#endif
+
 	lws_ss_state_return_t r;
 	char path[256];
 
@@ -338,14 +356,74 @@ saib_power_init(void)
 }
 
 #if defined(__APPLE__)
+
+int
+saib_need_wakelock(void)
+{
+	int r = 0;
+
+	lws_start_foreach_dll(struct lws_dll2 *, d,
+		   builder.sai_plat_owner.head) {
+		struct sai_plat *sp = lws_container_of(d, struct sai_plat, sai_plat_list);
+
+		if (sp->nspawn_owner.head) /* we are busy */
+			r = 1;
+
+	} lws_end_foreach_dll(d);
+
+	if (builder.stay) /* there's a manual stay */
+		r = 1;
+
+	return r;
+}
+
 void
 sul_release_wakelock_cb(lws_sorted_usec_list_t *sul)
 {
-	lwsl_notice("%s: releasing wakelock (pid %d)\n", __func__, (int)builder.wakelock_pid);
-	if (builder.wakelock_pid) {
-		kill(builder.wakelock_pid, SIGTERM);
-		waitpid(builder.wakelock_pid, NULL, 0);
-		builder.wakelock_pid = 0;
-	}
+	if (!builder.wakelock_pid)
+		return;
+
+	lwsl_notice("%s: releasing wakelock (pid %d)\n", __func__,
+			(int)builder.wakelock_pid);
+
+	kill(builder.wakelock_pid, SIGTERM);
+	waitpid(builder.wakelock_pid, NULL, 0);
+	builder.wakelock_pid = 0;
 }
+
+void
+saib_wakelock()
+{
+	int need = saib_need_wakelock();
+	pid_t pid;
+
+	if (( need &&  builder.wakelock_pid) ||
+	    (!need && !builder.wakelock_pid))
+		return;
+
+	if (!need) {
+		sul_release_wakelock_cb(NULL);
+		return;
+	}
+
+	pid = fork();
+	switch (pid) {
+	case -1:
+		lwsl_err("%s: fork for wakelock failed\n", __func__);
+		break;
+	case 0:
+		execl("/usr/bin/caffeinate", "/usr/bin/caffeinate", "-i",
+		      (char *)NULL);
+		exit(1); /* should not get here */
+	default:
+		lwsl_notice("%s: acquired wakelock (pid %d)\n", __func__,
+			    (int)pid);
+		builder.wakelock_pid = pid;
+		break;
+	}
+
+	/* if there's a pending wakelock release, cancel it */
+	lws_sul_cancel(&builder.sul_release_wakelock);
+}
+
 #endif

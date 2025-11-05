@@ -26,12 +26,6 @@
 #include <assert.h>
 #include <fcntl.h>
 
-#if defined(__APPLE__)
-#include <sys/wait.h>
-void
-sul_release_wakelock_cb(lws_sorted_usec_list_t *sul);
-#endif
-
 #include "b-private.h"
 
 const char *git_helper_sh =
@@ -170,37 +164,32 @@ const char *git_helper_bat =
 static int
 saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
 {
+	unsigned int tc = sp->job_limit ? sp->job_limit : 6u;
 #if 0
 	unsigned int free_ram = saib_get_free_ram_kib();
 	unsigned int total_ram = saib_get_total_ram_kib();
 	unsigned int free_disk = saib_get_free_disk_kib(builder.home);
 	unsigned int total_disk = saib_get_total_disk_kib(builder.home);
 //	int cpu_load = saib_get_system_cpu(&builder);
-
-	if (total_ram &&
-	    (free_ram - task->est_peak_mem_kib) < (total_ram / 10) * 3) {
-		lwsl_notice("%s: reject task %s: not enough RAM\n", __func__,
-			    task->uuid);
-		return 1;
-	}
-
-	if (total_disk &&
-	    (free_disk - task->est_disk_kib) < (total_disk / 10) * 2) {
-		lwsl_notice("%s: reject task %s: not enough disk space\n",
-			    __func__, task->uuid);
-		return 1;
-	}
-
-/*	if (cpu_load >= 0 && (cpu_load + (int)task->est_cpu_load_pct) > 50) {
-		lwsl_notice("%s: reject task %s: CPU load too high\n",
-			    __func__, task->uuid);
-		return 1;
-	}
-*/
 #endif
 
-       if (sp->nspawn_owner.count >= (sp->job_limit ? sp->job_limit : 6u))
+	if ((((builder.ram_limit_kib * 4) / 3) - builder.ram_reserved_kib) < task->est_peak_mem_kib) {
+		lwsl_notice("%s: reject task %s: not enough RAM: task %u vs %u lim - %u res\n", __func__,
+			    task->uuid, (unsigned int)task->est_peak_mem_kib, (unsigned int)builder.ram_limit_kib, (unsigned int)builder.ram_reserved_kib);
+		return 1;
+	}
+
+	if ((((builder.disk_total_kib * 7) / 8) - builder.disk_reserved_kib) < task->est_disk_kib) {
+		lwsl_notice("%s: reject task %s: not enough disk: total %u, res %u, needed %u\n", __func__,
+			    task->uuid, (unsigned int)builder.disk_total_kib, (unsigned int)builder.disk_reserved_kib, (unsigned int)task->est_disk_kib);
+		return 1;
+	}
+
+       if (sp->nspawn_owner.count >= tc) {
+		lwsl_notice("%s: reject task %s: already running %u tasks\n",
+			    __func__, task->uuid, tc);
                return 1; /* nope */
+       }
 
 	return 0; /* acceptable */
 }
@@ -252,7 +241,8 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 
 int
 saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
-			      const char *rej_task_uuid, unsigned int reason)
+			      const char *rej_task_uuid, unsigned int ecode,
+			      unsigned int reason)
 {
 	struct sai_rejection rej;
 
@@ -274,11 +264,7 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 
 	lws_snprintf(rej.host_platform, sizeof(rej.host_platform), "%s", sp->name);
 
-	rej.avail_slots		= (int)(sp->job_limit ? sp->job_limit : 6u) -
-					(int)sp->nspawn_owner.count;
-	rej.avail_mem_kib	= saib_get_free_ram_kib();
-	rej.avail_sto_kib	= saib_get_free_disk_kib(builder.home);
-
+	rej.ecode		= ecode;
 	rej.reason		= (uint8_t)reason;
 
 	if (saib_srv_queue_json_fragments_helper(spm->ss, lsm_schema_json_task_rej,
@@ -344,11 +330,13 @@ saib_task_destroy(struct sai_nspawn *ns)
 
 		if (!m) {
 #if defined(__APPLE__)
-			lwsl_notice("%s: last task finished, scheduling wakelock release\n", __func__);
-			lws_sul_schedule(builder.context, 0,
+			if (!saib_need_wakelock()) {
+				lwsl_notice("%s: last task finished, scheduling wakelock release\n", __func__);
+				lws_sul_schedule(builder.context, 0,
 					 &builder.sul_release_wakelock,
 					 sul_release_wakelock_cb,
 					 30 * LWS_US_PER_SEC);
+			}
 #else
 			lws_sul_schedule(builder.context, 0,
 					 &builder.sul_idle, sul_idle_cb,
@@ -403,15 +391,6 @@ saib_task_destroy(struct sai_nspawn *ns)
 					 __func__);
 		}
 #endif
-	}
-
-	if (ns->task) {
-		builder.ram_reserved_kib -= ns->task->est_peak_mem_kib;
-		builder.disk_reserved_kib -= ns->task->est_disk_kib;
-		if (ns->spm)
-			lws_sul_schedule(builder.context, 0,
-					 &ns->spm->sul_load_report,
-					 saib_sul_load_report_cb, 1);
 	}
 
 	lws_dll2_remove(&ns->list);
@@ -676,7 +655,6 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 	sai_plat_t *sp = NULL;
 	struct sai_nspawn *ns;
 	int n, en, ml, fd;
-
 	sai_task_t *task;
 
 	task = (sai_task_t *)a->dest;
@@ -716,6 +694,7 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 		lwsl_notice("%s: nspawn_census: %s\n", __func__, xns->task->uuid);
 
 	} lws_end_foreach_dll_safe(d, d1);
+	lwsl_notice("%s:\n", __func__);
 
 	/*
 	 * store a copy of the toplevel ac used for the deserialization
@@ -740,16 +719,11 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 
 		if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
 			lwsl_warn("%s: server offered task that's already running\n", __func__);
-			saib_queue_task_status_update(sp, spm, task->uuid,
+			saib_queue_task_status_update(sp, spm, task->uuid, 0,
 						      SAI_TASK_REASON_DUPE);
 
 			return 0;
 		}
-
-		/* trying to reuse an nspawn?  let's not do that... */
-
-		// if (!xns->task && !ns)
-		//	ns = xns;
 
 	} lws_end_foreach_dll_safe(d, d1);
 
@@ -759,8 +733,8 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 
 	if (saib_can_accept_task(task, sp)) {
 		lwsl_warn("%s: builder rejects offered task\n", __func__);
-		if (saib_queue_task_status_update(sp, spm, task->uuid,
-				SAI_TASK_REASON_BUSY))
+		if (saib_queue_task_status_update(sp, spm, task->uuid, 0,
+						  SAI_TASK_REASON_BUSY))
 			return -1;
 
 		return 0;
@@ -822,8 +796,10 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 				UDS_PATHNAME_LOGPROXY"/%s.saib",
 #endif
 				task->uuid);
+
 		ns->slp_control.ns = ns;
 		ns->slp_control.log_channel_idx = 3;
+
 		if (saib_create_listen_uds(builder.context, &ns->slp_control,
 					&ns->vhosts[0])) {
 			lwsl_err("%s: Failed to create ctl log proxy listen UDS %s\n",
@@ -853,9 +829,6 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 		}
 	}
 
-//		lwsl_hexdump_warn(task->build, strlen(task->build));
-
-
 	lws_strncpy(ns->fsm.distro, task->platform,
 		    sizeof(ns->fsm.distro));
 	lws_filename_purify_inplace(ns->fsm.distro);
@@ -867,34 +840,28 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 	 * unique for remote server name ("warmcat"),
 	 * project name ("libwebsockets")
 	 */
+
 	ns->server_name		= spm->name;
 	ns->project_name	= task->repo_name;
-	if (!strncmp(task->git_ref, "refs/heads/", 11))
-		ns->ref = task->git_ref + 11;
-	else
-		if (!strncmp(task->git_ref, "refs/tags/", 10))
-			ns->ref = task->git_ref + 10;
-		else
-			ns->ref = task->git_ref;
+	ns->ref			= sai_get_ref(task->git_ref);
 	ns->hash		= task->git_hash;
 	ns->git_repo_url	= task->git_repo_url;
+
 	if (ns->task && ns->task->ac_task_container)
 		lwsac_free(&ns->task->ac_task_container);
 
 	ns->task		= task; /* we are owning this nspawn for the duration */
-	ns->current_step	= task->build_step;
-	ns->build_step_count	= task->build_step_count;
-	if (!ns->current_step) {
+	ns->spm			= spm; /* bind this task to the spm the req came in on */
+
+	if (!ns->task->build_step) {
 		ns->spins	= 0;
 		ns->user_cancel = 0;
 		ns->us_cpu_user = 0;
 		ns->us_cpu_sys	= 0;
 		ns->worst_mem	= 0;
 		ns->worst_stg	= 0;
-	}
-	ns->spm = spm; /* bind this task to the spm the req came in on */
 
-	if (!ns->current_step) {
+
 		/*
 		 * If it's the first step, log some preamble info
 		 */
@@ -911,7 +878,7 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 	saib_log_chunk_create(ns, ">saib>\n", 7, 3);
 	ml = lws_snprintf(mb, sizeof(mb),
 			  ">saib> Starting task step %d ===>\n",
-			  ns->current_step + 1);
+			  ns->task->build_step + 1);
 
 	saib_log_chunk_create(ns, mb, (unsigned int)ml, 3);
 
@@ -1028,29 +995,16 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 	 * We accepted the task
 	 */
 
-	if (saib_queue_task_status_update(sp, spm, task->uuid, SAI_TASK_REASON_ACCEPTED))
+	task->started = (uint64_t)lws_now_secs();
+
+	builder.ram_reserved_kib += task->est_peak_mem_kib;
+	builder.disk_reserved_kib += task->est_disk_kib;
+
+	if (saib_queue_task_status_update(sp, spm, task->uuid, 0, SAI_TASK_REASON_ACCEPTED))
 		goto bail;
 
 #if defined(__APPLE__)
-	/*
-	 * If we started the first task, acquire a wakelock to prevent
-	 * idle suspend
-	 */
-	if (sp->nspawn_owner.count == 1 && !builder.wakelock_pid) {
-		pid_t pid = fork();
-
-		if (pid == -1)
-			lwsl_err("%s: fork for wakelock failed\n", __func__);
-		else if (!pid) {
-			execl("/usr/bin/caffeinate", "/usr/bin/caffeinate", "-i", (char *)NULL);
-			exit(1); /* should not get here */
-		} else {
-			lwsl_notice("%s: acquired wakelock (pid %d)\n", __func__, (int)pid);
-			builder.wakelock_pid = pid;
-		}
-	}
-	/* if there's a pending wakelock release, cancel it */
-	lws_sul_cancel(&builder.sul_release_wakelock);
+	saib_wakelock();
 #endif
 
 	return 0;

@@ -1,7 +1,7 @@
 /*
  * Sai web
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -76,13 +76,13 @@ int main(int argc, const char **argv)
 		logs = atoi(p);
 
 	lws_set_log_level(logs, NULL);
-	lwsl_user("Sai Web - Copyright (C) 2019-2020 Andy Green <andy@warmcat.com>\n");
+	lwsl_user("Sai Web - Copyright (C) 2019-2025 Andy Green <andy@warmcat.com>\n");
 
 	if ((p = lws_cmdline_option(argc, argv, "-c")))
 		conf = p;
 
 	context = sai_lws_context_from_json(conf, &info, pprotocols,
-						default_ss_policy);
+					    default_ss_policy);
 	if (!context) {
 		lwsl_err("lws init failed\n");
 		return 1;

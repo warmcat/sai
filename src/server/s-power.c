@@ -105,15 +105,15 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			lws_start_foreach_dll(struct lws_dll2 *, p2,
 					vhd->server.builder_owner.head) {
 			
-				sai_plat_t *cb = lws_container_of(p2, sai_plat_t, sai_plat_list);
-				const char *dot = strchr(cb->name, '.');
+				sai_plat_t *sp = lws_container_of(p2, sai_plat_t, sai_plat_list);
+				const char *dot = strchr(sp->name, '.');
 
 				// lwsl_notice("%s: builder entry: %s\n", __func__, cb->name);
 
-				if (dot && !(bf_set & (1 << shi)) && strlen(b->name) <= (size_t)(dot - cb->name) &&
-				    !strncmp(cb->name + (dot - cb->name) - strlen(b->name), b->name, strlen(b->name))) {
-					lwsl_notice("%s: ++++++++++++ Setting %s .stay_on=%d\n", __func__, cb->name, b->stay_on);
-					cb->stay_on = b->stay_on;
+				if (dot && !(bf_set & (1 << shi)) && strlen(b->name) <= (size_t)(dot - sp->name) &&
+				    !strncmp(sp->name + (dot - sp->name) - strlen(b->name), b->name, strlen(b->name))) {
+					lwsl_notice("%s: ++++++++++++ Setting %s .stay_on=%d\n", __func__, sp->name, b->stay_on);
+					sp->stay_on = b->stay_on;
 					bf_set |= (1 << shi);
 				}
 				shi++;
@@ -127,22 +127,22 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	}
 	case 2:	{
 		sai_stay_state_update_t *ssu = (sai_stay_state_update_t *)a.dest;
-		sai_plat_t *cb;
+		sai_plat_t *sp;
 
 		lwsl_notice("%s: Received stay_state_update for %s, stay_on=%d\n",
 			    __func__, ssu->builder_name, ssu->stay_on);
 
 		lws_start_foreach_dll(struct lws_dll2 *, p,
 				vhd->server.builder_owner.head) {
-			cb = lws_container_of(p, sai_plat_t,
+			sp = lws_container_of(p, sai_plat_t,
 					sai_plat_list);
 
-			const char *dot = strchr(cb->name, '.');
+			const char *dot = strchr(sp->name, '.');
 
-			if (dot && !strncmp(cb->name, ssu->builder_name, (size_t)(dot - cb->name))) {
+			if (dot && !strncmp(sp->name, ssu->builder_name, (size_t)(dot - sp->name))) {
 				lwsl_notice("%s: Updating builder %s stay_on from %d to %d\n",
-					    __func__, cb->name, cb->stay_on, ssu->stay_on);
-				cb->stay_on = ssu->stay_on;
+					    __func__, sp->name, sp->stay_on, ssu->stay_on);
+				sp->stay_on = ssu->stay_on;
 				sais_list_builders(vhd);
 				break;
 			}

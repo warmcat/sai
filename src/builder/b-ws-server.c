@@ -17,6 +17,13 @@
  *  License along with this library; if not, write to the Free Software
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  *  MA  02110-1301  USA
+ *
+ *   b1 --\   sai-        sai-   /-- browser
+ *   b2 ----- server ---- web ------ browser
+ *   b3 --/                      \-- browser
+ *    *
+ *
+ * Builder -> Server Secure Streams ws link
  */
 
 #include <libwebsockets.h>
@@ -26,8 +33,6 @@
 #include "b-private.h"
 
 extern struct lws_spawn_piped *lsp_suspender;
-
-#include "../common/struct-metadata.c"
 
 static const lws_struct_map_t lsm_schema_json_loadreport[] = {
 	LSM_SCHEMA	(sai_load_report_t, NULL, lsm_load_report_members, "com.warmcat.sai.loadreport"),
@@ -92,9 +97,9 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 				     const lws_struct_map_t *map,
                                      size_t map_entries, void *object)
 {
-	lws_struct_serialize_t *js;
 	unsigned int ssf = LWSSS_FLAG_SOM;
 	uint8_t buf[1024 + LWS_PRE];
+	lws_struct_serialize_t *js;
 	size_t w = 0;
 
 	js = lws_struct_json_serialize_create(map, map_entries, 0, object);
@@ -116,6 +121,8 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 			return -1;
 		}
 
+		sai_dump_stderr((const char *)buf + LWS_PRE, w);
+
 		if (saib_srv_queue_tx(h, buf + LWS_PRE, w, ssf))
 			return -1;
 
@@ -135,9 +142,11 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 	sai_resource_t *reso;
 	struct lejp_ctx ctx;
 	lws_struct_args_t a;
-	sai_cancel_t *can;
 	sai_rebuild_t *reb;
+	sai_cancel_t *can;
 	int m;
+
+	lws_ss_validity_confirmed(spm->ss);
 
 	/*
 	 * use the schema name on the incoming JSON to decide what kind of
@@ -302,10 +311,8 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	char som, som1, eom, final = 1;
 	size_t fsl, used;
 
-	if (!spm->bl_to_srv) {
-		lwsl_notice("%s: nothing to send from builder -> srv\n", __func__);
+	if (!spm->bl_to_srv)
 		return LWSSSSRET_TX_DONT_SEND;
-	}
 
 	depi = *pi;
 	*pi = (*pi) & (~(LWSSS_FLAG_SOM)); /* no SOM twice even on partial */
@@ -483,16 +490,17 @@ saib_sul_load_report_cb(struct lws_sorted_usec_list *sul)
 
 		if (is_active) {
 			lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
-				struct sai_nspawn *ns = lws_container_of(d,
-								struct sai_nspawn, list);
+				struct sai_nspawn *ns = lws_container_of(d, struct sai_nspawn, list);
+
 				if (ns->spm == spm &&
 				    ns->state == NSSTATE_EXECUTING_STEPS && ns->task) {
 					sai_active_task_info_t *ati = lwsac_use_zero(&ac, sizeof(*ati), 512);
+
 					if (ati) {
 						lws_strncpy(ati->task_uuid, ns->task->uuid, sizeof(ati->task_uuid));
 						lws_strncpy(ati->task_name, ns->task->taskname, sizeof(ati->task_name));
-						ati->build_step		= ns->current_step;
-						ati->total_steps	= ns->build_step_count;
+						ati->build_step		= ns->task->build_step;
+						ati->total_steps	= ns->task->build_step_count;
 						ati->est_peak_mem_kib	= ns->task->est_peak_mem_kib;
 						ati->est_disk_kib	= ns->task->est_disk_kib;
 						ati->started		= ns->task->started;

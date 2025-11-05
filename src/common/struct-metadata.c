@@ -1,7 +1,7 @@
 /*
  * Sai server - ./src/common/struct-metadata.c
  *
- * Copyright (C) 2019 - 2021 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -21,27 +21,31 @@
  * lws_struct metadata for structs common to builder and server
  */
 
+#include <libwebsockets.h>
+
+#include "../common/include/private.h"
+
 const lws_struct_map_t lsm_active_task_info[] = {
-	LSM_CARRAY	(sai_active_task_info_t, task_uuid, "task_uuid"),
-	LSM_CARRAY	(sai_active_task_info_t, task_name, "task_name"),
-	LSM_SIGNED	(sai_active_task_info_t, build_step, "build_step"),
-	LSM_SIGNED	(sai_active_task_info_t, total_steps, "total_steps"),
-	LSM_UNSIGNED	(sai_active_task_info_t, est_peak_mem_kib, "est_peak_mem_kib"),
-	LSM_UNSIGNED	(sai_active_task_info_t, est_disk_kib, "est_disk_kib"),
-	LSM_UNSIGNED	(sai_active_task_info_t, started, "started"),
+	LSM_CARRAY	(sai_active_task_info_t, task_uuid,		"task_uuid"),
+	LSM_CARRAY	(sai_active_task_info_t, task_name,		"task_name"),
+	LSM_SIGNED	(sai_active_task_info_t, build_step,		"build_step"),
+	LSM_SIGNED	(sai_active_task_info_t, total_steps,		"total_steps"),
+	LSM_UNSIGNED	(sai_active_task_info_t, est_peak_mem_kib,	"est_peak_mem_kib"),
+	LSM_UNSIGNED	(sai_active_task_info_t, est_disk_kib,		"est_disk_kib"),
+	LSM_UNSIGNED	(sai_active_task_info_t, started,		"started"),
 };
 
 const lws_struct_map_t lsm_load_report_members[] = {
-	LSM_CARRAY	(sai_load_report_t, builder_name, "builder_name"),
-	LSM_SIGNED	(sai_load_report_t, core_count,	"core_count"),
-	LSM_UNSIGNED	(sai_load_report_t, initial_free_ram_kib, "initial_free_ram_kib"),
-	LSM_UNSIGNED	(sai_load_report_t, reserved_ram_kib, "reserved_ram_kib"),
-	LSM_UNSIGNED	(sai_load_report_t, initial_free_disk_kib, "initial_free_disk_kib"),
-	LSM_UNSIGNED	(sai_load_report_t, reserved_disk_kib, "reserved_disk_kib"),
-	LSM_UNSIGNED	(sai_load_report_t, active_steps, "active_steps"),
-	LSM_UNSIGNED	(sai_load_report_t, cpu_percent, "cpu_percent"),
+	LSM_CARRAY	(sai_load_report_t, builder_name,		"builder_name"),
+	LSM_SIGNED	(sai_load_report_t, core_count,			"core_count"),
+	LSM_UNSIGNED	(sai_load_report_t, initial_free_ram_kib,	"initial_free_ram_kib"),
+	LSM_UNSIGNED	(sai_load_report_t, reserved_ram_kib,		"reserved_ram_kib"),
+	LSM_UNSIGNED	(sai_load_report_t, initial_free_disk_kib,	"initial_free_disk_kib"),
+	LSM_UNSIGNED	(sai_load_report_t, reserved_disk_kib,		"reserved_disk_kib"),
+	LSM_UNSIGNED	(sai_load_report_t, active_steps,		"active_steps"),
+	LSM_UNSIGNED	(sai_load_report_t, cpu_percent,		"cpu_percent"),
 	LSM_LIST	(sai_load_report_t, active_tasks, sai_active_task_info_t, list,
-			 NULL, lsm_active_task_info, "active_tasks"),
+			 NULL, lsm_active_task_info,			"active_tasks"),
 };
 
 const lws_struct_map_t lsm_build_metric[] = {
@@ -51,42 +55,33 @@ const lws_struct_map_t lsm_build_metric[] = {
 	LSM_CARRAY	(sai_build_metric_t, project_name,	"project_name"),
 	LSM_CARRAY	(sai_build_metric_t, ref,		"ref"),
 	LSM_UNSIGNED	(sai_build_metric_t, unixtime,		"unixtime"),
+	LSM_UNSIGNED	(sai_build_metric_t, unix_time,		"unix_time"),
 	LSM_UNSIGNED	(sai_build_metric_t, us_cpu_user,	"us_cpu_user"),
 	LSM_UNSIGNED	(sai_build_metric_t, us_cpu_sys,	"us_cpu_sys"),
 	LSM_UNSIGNED	(sai_build_metric_t, wallclock_us,	"wallclock_us"),
 	LSM_UNSIGNED	(sai_build_metric_t, peak_mem_rss,	"peak_mem_rss"),
 	LSM_UNSIGNED	(sai_build_metric_t, stg_bytes,		"stg_bytes"),
 	LSM_SIGNED	(sai_build_metric_t, parallel,		"parallel"),
+	LSM_UNSIGNED	(sai_build_metric_t, step,		"step"),
 };
 
-const lws_struct_map_t lsm_schema_build_metric[] = {
+const lws_struct_map_t lsm_schema_map_build_metric[] = {
 	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric, "com.warmcat.sai.build-metric")
 };
 
-const lws_struct_map_t lsm_sq3_build_metric[] = {
-	LSM_CARRAY	(sai_build_metric_db_t, key,		"key"),
-	LSM_CARRAY	(sai_build_metric_db_t, task_uuid,	"task_uuid"),
-	LSM_UNSIGNED	(sai_build_metric_db_t, unixtime,	"unixtime"),
-	LSM_CARRAY	(sai_build_metric_db_t, builder_name,	"builder_name"),
-	LSM_CARRAY	(sai_build_metric_db_t, project_name,	"project_name"),
-	LSM_CARRAY	(sai_build_metric_db_t, ref,		"ref"),
-	LSM_UNSIGNED	(sai_build_metric_db_t, us_cpu_user,	"us_cpu_user"),
-	LSM_UNSIGNED	(sai_build_metric_db_t, us_cpu_sys,	"us_cpu_sys"),
-	LSM_UNSIGNED	(sai_build_metric_db_t, wallclock_us,	"wallclock_us"),
-	LSM_UNSIGNED	(sai_build_metric_db_t, peak_mem_rss,	"peak_mem_rss"),
-	LSM_UNSIGNED	(sai_build_metric_db_t, stg_bytes,	"stg_bytes"),
-	LSM_SIGNED	(sai_build_metric_db_t, parallel,	"parallel"),
+const lws_struct_map_t lsm_schema_sq3_map_build_metric[] = {
+       LSM_SCHEMA_DLL2 (sai_build_metric_t, list, NULL, lsm_build_metric, "build_metrics"),
 };
 
-const lws_struct_map_t lsm_schema_sq3_map_build_metric[] = {
-	LSM_SCHEMA_DLL2	(sai_build_metric_db_t, list, NULL, lsm_sq3_build_metric, "build_metrics"),
-};
 
 const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/include/private.h in sync */
 	LSM_UNSIGNED	(sai_plat_t, uid,		"uid"),
 	LSM_STRING_PTR	(sai_plat_t, name,		"name"),
 	LSM_STRING_PTR	(sai_plat_t, platform,		"platform"),
+	LSM_JO_SIGNED	(sai_plat_t, online,		"online"),
 	LSM_UNSIGNED	(sai_plat_t, last_seen,		"last_seen"),
+	LSM_JO_SIGNED	(sai_plat_t, powering_up,	"powering_up"),
+	LSM_JO_SIGNED	(sai_plat_t, powering_down,	"powering_down"),
 	LSM_CARRAY	(sai_plat_t, peer_ip,		"peer_ip"),
 	LSM_CARRAY	(sai_plat_t, sai_hash,		"sai_hash"),
 	LSM_CARRAY	(sai_plat_t, lws_hash,		"lws_hash"),
@@ -95,33 +90,13 @@ const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/includ
 	LSM_UNSIGNED	(sai_plat_t, stay_on,		"stay_on"),
 };
 
-// This is the map for serializing to JSON
-const lws_struct_map_t lsm_plat_for_json[] = {
-    LSM_UNSIGNED(sai_plat_t, uid,       "uid"),
-    LSM_STRING_PTR(sai_plat_t, name,    "name"),
-    LSM_STRING_PTR(sai_plat_t, platform,"platform"),
-    LSM_SIGNED(sai_plat_t, online,      "online"), // MUST be present
-    LSM_UNSIGNED(sai_plat_t, last_seen, "last_seen"),
-    LSM_SIGNED(sai_plat_t, powering_up, "powering_up"),
-    LSM_SIGNED(sai_plat_t, powering_down, "powering_down"),
-    LSM_CARRAY(sai_plat_t, peer_ip,     "peer_ip"),
-    LSM_CARRAY(sai_plat_t, sai_hash,    "sai_hash"),
-    LSM_CARRAY(sai_plat_t, lws_hash,    "lws_hash"),
-    LSM_UNSIGNED(sai_plat_t, windows,    "windows"),
-    LSM_UNSIGNED(sai_plat_t, power_managed, "power_managed"),
-    LSM_UNSIGNED(sai_plat_t, stay_on, "stay_on"),
-    LSM_SIGNED(sai_plat_t, s_avail_slots, "s_avail_slots"),
-    LSM_SIGNED(sai_plat_t, s_inflight_count, "s_inflight_count"),
-    LSM_CARRAY(sai_plat_t, s_last_rej_task_uuid, "s_last_rej_task_uuid"),
-};
-
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {
-	LSM_SCHEMA	(sai_plat_t, NULL, lsm_plat_for_json,	"com-warmcat-sai-ba"),
+	LSM_SCHEMA	(sai_plat_t, NULL, lsm_plat,	"com-warmcat-sai-ba"),
 };
 
 const lws_struct_map_t lsm_plat_list[] = {
 	LSM_LIST	(sai_plat_owner_t, plat_owner, sai_plat_t,
-			 sai_plat_list, NULL, lsm_plat_for_json, "builders"),
+			 sai_plat_list, NULL, lsm_plat, "builders"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat[] = {
@@ -190,8 +165,9 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_SIGNED	(sai_task_t, build_step,	"build_step"),
 	LSM_SIGNED	(sai_task_t, build_step_count,	"build_step_count"),
 	LSM_UNSIGNED	(sai_task_t, est_peak_mem_kib,	"est_peak_mem_kib"),
-	LSM_UNSIGNED	(sai_task_t, est_cpu_load_pct,	"est_cpu_load_pct"),
 	LSM_UNSIGNED	(sai_task_t, est_disk_kib,	"est_disk_kib"),
+	LSM_UNSIGNED	(sai_task_t, est_wallclock_ms,	"est_wallclock_ms"),
+	LSM_UNSIGNED	(sai_task_t, est_compute_ms,	"est_compute_ms"),
 	LSM_SIGNED	(sai_task_t, parallel,		"parallel"),
 	LSM_SIGNED	(sai_task_t, rebuildable,	"rebuildable"),
 };
@@ -210,9 +186,7 @@ const lws_struct_map_t lsm_schema_sq3_map_task[] = {
 const lws_struct_map_t lsm_task_rej[] = {
 	LSM_CARRAY	(sai_rejection_t, host_platform, "host_platform"),
 	LSM_CARRAY	(sai_rejection_t, task_uuid,	 "task_uuid"),
-	LSM_JO_SIGNED	(sai_rejection_t, avail_slots,	 "avail_slots"),
-	LSM_JO_UNSIGNED	(sai_rejection_t, avail_mem_kib, "avail_mem_kib"),
-	LSM_JO_UNSIGNED	(sai_rejection_t, avail_sto_kib, "avail_sto_kib"),
+	LSM_JO_UNSIGNED (sai_rejection_t, ecode,	 "ecode"),
 	LSM_JO_UNSIGNED (sai_rejection_t, reason,	 "reason"),
 };
 
@@ -259,9 +233,6 @@ const lws_struct_map_t lsm_log[] = {
 	LSM_UNSIGNED	(sai_log_t, finished,		"finished"),
 	LSM_CARRAY	(sai_log_t, task_uuid,		"task_uuid"),
 	LSM_STRING_PTR	(sai_log_t, log,		"log"),
-	LSM_JO_SIGNED	(sai_log_t, avail_slots,	"avail_slots"),
-	LSM_JO_UNSIGNED	(sai_log_t, avail_mem_kib,	"avail_mem_kib"),
-	LSM_JO_UNSIGNED	(sai_log_t, avail_sto_kib,	"avail_sto_kib"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_log[] = {

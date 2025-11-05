@@ -147,8 +147,9 @@ typedef struct {
 
 	/* estimations for builder resource consumption */
 	unsigned int		est_peak_mem_kib;
-	unsigned int		est_cpu_load_pct;
 	unsigned int		est_disk_kib;
+	unsigned int		est_wallclock_ms;
+	unsigned int		est_compute_ms;
 
 	int			parallel;
 	char			told_ongoing;
@@ -212,8 +213,6 @@ struct sai_nspawn {
 	int				retcode;
 	int				instance_ordinal;
 	int				count_artifacts;
-	int				current_step;
-	int				build_step_count;
 
 	uint8_t				spins;
 	uint8_t				state;		/* NSSTATE_ */
@@ -242,12 +241,12 @@ enum {
 typedef struct sai_rejection {
 	struct lws_dll2 list;
 
-	char		host_platform[65];
-	char		task_uuid[65];
-	int		avail_slots;
-	unsigned int	avail_mem_kib;
-	unsigned int	avail_sto_kib;
-	unsigned char	reason;
+	char				host_platform[65];
+	char				task_uuid[65];
+	unsigned int			avail_mem_kib;
+	unsigned int			avail_sto_kib;
+	unsigned int			ecode;
+	unsigned char			reason;
 } sai_rejection_t;
 
 /*
@@ -256,8 +255,8 @@ typedef struct sai_rejection {
  */
 
 typedef struct sai_cancel {
-	struct lws_dll2 list;
-	char		task_uuid[65];
+	struct lws_dll2			list;
+	char				task_uuid[65];
 } sai_cancel_t;
 
 /*
@@ -265,14 +264,14 @@ typedef struct sai_cancel {
  */
 
 typedef struct sai_rebuild {
-	lws_dll2_t		list;
-	char			builder_name[96];
+	lws_dll2_t			list;
+	char				builder_name[96];
 } sai_rebuild_t;
 
 typedef struct sai_platreset {
-	lws_dll2_t		list;
-	char			event_uuid[65];
-	char			platform[65];
+	lws_dll2_t			list;
+	char				event_uuid[65];
+	char				platform[65];
 } sai_browse_rx_platreset_t;
 
 struct sai_event;
@@ -304,7 +303,6 @@ typedef struct {
 	int				uid;
 
 	/* builder can report this along with step completion */
-	int				avail_slots;
 	unsigned int			avail_mem_kib;
 	unsigned int			avail_sto_kib;
 } sai_log_t;
@@ -485,15 +483,9 @@ typedef struct sai_plat {
 
 	/* server side only: builder resource tracking */
 	lws_dll2_owner_t	inflight_owner; /* sai_uuid_list_t */
-	char			last_rej_task_uuid[65];
 	int			avail_slots;
 	unsigned int		avail_mem_kib;
 	unsigned int		avail_sto_kib;
-
-	/* server side only: for UI visibility */
-	int			s_avail_slots;
-	int			s_inflight_count;
-	char			s_last_rej_task_uuid[65];
 
 	char			windows;
 	char			power_managed;
@@ -546,30 +538,16 @@ typedef struct sai_build_metric {
 	char		builder_name[96];
 	char		project_name[96];
 	char		ref[96];
-	uint64_t	unixtime;
+	uint64_t	unixtime;/* actually autoincrement index in sql3 */
+	uint64_t	unix_time;
 	uint64_t	us_cpu_user;
 	uint64_t	us_cpu_sys;
 	uint64_t	wallclock_us;
 	uint64_t	peak_mem_rss;
 	uint64_t	stg_bytes;
 	int		parallel;
+	int		step;
 } sai_build_metric_t;
-
-typedef struct sai_build_metric_db {
-	lws_dll2_t	list; /* for lws_struct */
-	char		key[65];
-	char		task_uuid[65];
-	uint64_t	unixtime;
-	char		builder_name[96];
-	char		project_name[96];
-	char		ref[96];
-	uint64_t	us_cpu_user;
-	uint64_t	us_cpu_sys;
-	uint64_t	wallclock_us;
-	uint64_t	peak_mem_rss;
-	uint64_t	stg_bytes;
-	int		parallel;
-} sai_build_metric_db_t;
 
 /*
  * Browser -> sai-web -> sai-server -> sai-power
@@ -620,12 +598,12 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[11],
-	lsm_task[29],
-	lsm_log[10],
+	lsm_task[30],
+	lsm_log[7],
 	lsm_artifact[8],
 	lsm_plat_list[1],
 	lsm_schema_map_plat[1],
-	lsm_task_rej[6],
+	lsm_task_rej[4],
 	lsm_task_cancel[1],
 	lsm_schema_json_map_can[1],
 	lsm_schema_json_map_task[1],
@@ -635,15 +613,14 @@ extern const lws_struct_map_t
 	lsm_rebuild[1],
 	lsm_schema_rebuild[1],
 	lsm_schema_build_metric[1],
+	lsm_schema_map_build_metric[1],
 	lsm_schema_sq3_map_build_metric[1],
 	lsm_load_report_members[9],
 	lsm_schema_json_task_rej[5],
 	lsm_stay_state_update[2],
-	lsm_schema_stay_state_update[1]
-;
-extern const lws_struct_map_t lsm_build_metric[12];
-extern const lws_struct_map_t lsm_plat[10];
-extern const lws_struct_map_t lsm_plat_for_json[16];
+	lsm_schema_stay_state_update[1],
+	lsm_build_metric[14],
+	lsm_plat[13];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];
@@ -665,4 +642,16 @@ sul_idle_cb(lws_sorted_usec_list_t *sul);
 int
 sai_uuid16_create(struct lws_context *context, char *dest33);
 
+const char *
+sai_task_describe(sai_task_t *task, char *buf, size_t len);
 
+int
+sai_metrics_hash(uint8_t *key, size_t key_len, const char *sp_name,
+		 const char *spawn, const char *project_name,
+		 const char *ref);
+
+const char *
+sai_get_ref(const char *fullref);
+
+void
+sai_dump_stderr(const char *buf, size_t w);

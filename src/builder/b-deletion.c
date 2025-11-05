@@ -69,7 +69,6 @@ sai_deletion_worker(const char *home_dir)
 	 * On Windows, stdin is not a pipe from the parent but a handle
 	 * value passed on the commandline
 	 */
-	// detach from console...
 	FreeConsole();
 #endif
 
@@ -152,7 +151,6 @@ int
 scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 {
 	struct active_job_uuids *active = (struct active_job_uuids *)user;
-	struct active_job_uuid *aj;
 	char path[512];
 	struct stat sb;
 
@@ -160,10 +158,12 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 		return 0;
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, active->owner.head) {
-		aj = lws_container_of(p, struct active_job_uuid, list);
+		struct active_job_uuid *aj = lws_container_of(p, struct active_job_uuid, list);
+
 		if (!strcmp(aj->uuid, lde->name))
 			/* it's an active job, leave it alone */
 			return 0;
+
 	} lws_end_foreach_dll(p);
 
 	lws_snprintf(path, sizeof(path), "%s/%s", dirpath, lde->name);
@@ -173,29 +173,23 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 	/* older than 24h? */
 
 	if (((uint64_t)lws_now_secs() - (uint64_t)sb.st_mtime) > SAI_CLEANUP_JOB_DIR_MIN_AGE_SECS) {
+		char temp[128];
+		size_t len = (size_t)lws_snprintf(temp, sizeof(temp), "%s\n", lde->name);
+#if defined(WIN32)
+		DWORD written;
+#endif
+
 		lwsl_notice("%s: requesting removal of old job dir %s\n",
 			    __func__, path);
+
 #if !defined(WIN32)
-		{
-			char temp[128];
-			int len = lws_snprintf(temp, sizeof(temp), "%s\n", lde->name);
-
-			if (write(builder.pipe_master_wr, temp, (unsigned int)len) != len)
-				lwsl_err("%s: failed to write to deletion worker\n",
-					 __func__);
-		}
+		if (write(builder.pipe_master_wr, temp, LWS_POSIX_LENGTH_CAST(len)) != (ssize_t)len)
 #else
-		{
-			char temp[128];
-			int len = lws_snprintf(temp, sizeof(temp), "%s\n", lde->name);
-			DWORD written;
-
-			if (!WriteFile(builder.pipe_master_wr_win, temp, (DWORD)len,
-				       &written, NULL) || written != (DWORD)len)
-				lwsl_err("%s: failed to write to deletion worker\n",
-					 __func__);
-		}
+		if (!WriteFile(builder.pipe_master_wr_win, temp, (DWORD)len,
+				&written, NULL) || written != (DWORD)len)
 #endif
+			lwsl_err("%s: failed to write to deletion worker\n",
+			 __func__);
 	}
 
 	return 0;

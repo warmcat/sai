@@ -536,7 +536,7 @@ function renderSpreadsheet(tasks) {
 		html += '<tr>' +
 			`<td>` + s1 + `</td>` +
 			`<td>${agify(now_ut, task.started)} ago</td>` +
-			`<td><a href="?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>` +
+			`<td><a href="index.html?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>` +
 			'</tr>';
 	}
 

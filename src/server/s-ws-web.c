@@ -18,6 +18,9 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  *  MA  02110-1301  USA
  *
+ *   b1 --\   sai-        sai-   /-- browser
+ *   b2 ----- server ---- web ------ browser
+ *   b3 --/        *             \-- browser
  *
  * This is a ws server over a unix domain socket made available by sai-server
  * and connected to by sai-web instances running on the same box.
@@ -61,7 +64,7 @@ static lws_struct_map_t lsm_browser_platreset[] = {
 };
 
 static const lws_struct_map_t lsm_viewercount_members[] = {
-	LSM_UNSIGNED(sai_viewer_state_t, viewers,	"count"),
+	LSM_UNSIGNED(sai_viewer_state_t, viewers,		"count"),
 };
 
 static const lws_struct_map_t lsm_schema_json_map[] = {
@@ -97,22 +100,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_STAY,
 };
 
-void
-sais_mark_all_builders_offline(struct vhd *vhd)
-{
-	char *err = NULL;
-
-	lwsl_notice("%s: marking all builders offline initially\n", __func__);
-
-	sqlite3_exec(vhd->server.pdb, "UPDATE builders SET online = 0;",
-		     NULL, NULL, &err);
-	if (err) {
-		lwsl_err("%s: sqlite error: %s\n", __func__, err);
-		sqlite3_free(err);
-	}
-}
-
-int
+static int
 sais_validate_id(const char *id, int reqlen)
 {
 	const char *idin = id;
@@ -191,16 +179,9 @@ sais_list_builders(struct vhd *vhd)
 		sai_plat_t *live_builder;
 
 		builder_from_db = lws_container_of(walk, sai_plat_t, sai_plat_list);
-
-		/*
-		 * Find this builder in the live list by name. This is safe because
-		 * builder_from_db->name is a valid string within the scope of this function.
-		 */
-		live_builder = sais_builder_from_uuid(vhd, builder_from_db->name, __FILE__, __LINE__);
+		live_builder = sais_builder_from_uuid(vhd, builder_from_db->name);
 
 		if (live_builder) {
-			// lwsl_notice("%s: live_builder %s found, stay_on: %d, copying to db_builder (stay_on: %d)\n",
-			//	    __func__, live_builder->name, live_builder->stay_on, builder_from_db->stay_on);
 			builder_from_db->online		= 1;
 			lws_strncpy(builder_from_db->peer_ip, live_builder->peer_ip,
 				    sizeof(builder_from_db->peer_ip));
@@ -306,16 +287,17 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
 	sai_browse_rx_evinfo_t *ei;
 	lws_struct_args_t a;
+	sai_db_result_t r;
 	int n;
 
 	// lwsl_user("%s: len %d, flags: %d\n", __func__, (int)len, flags);
 	// lwsl_hexdump_info(buf, len);
 
 	memset(&a, 0, sizeof(a));
-	a.map_st[0] = lsm_schema_json_map;
-	a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_json_map);
-	a.map_entries_st[1] = LWS_ARRAY_SIZE(lsm_schema_json_map);
-	a.ac_block_size = 128;
+	a.map_st[0]		= lsm_schema_json_map;
+	a.map_entries_st[0]	= LWS_ARRAY_SIZE(lsm_schema_json_map);
+	a.map_entries_st[1]	= LWS_ARRAY_SIZE(lsm_schema_json_map);
+	a.ac_block_size		= 128;
 
 	lws_struct_json_init_parse(&m->ctx, NULL, &a);
 	n = lejp_parse(&m->ctx, (uint8_t *)buf, (int)len);
@@ -329,8 +311,8 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	// lwsl_notice("%s: schema idx %d\n", __func__, a.top_schema_index);
 
 	switch (a.top_schema_index) {
+
 	case SAIS_WS_WEBSRV_RX_TASKRESET:
-	{
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 		if (sais_validate_id(ei->event_hash, SAI_TASKID_LEN))
 			goto soft_error;
@@ -339,10 +321,8 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		if (sais_task_clear_build_and_logs(m->vhd, ei->event_hash, 0))
 			lwsl_ss_err(m->ss, "taskreset failed");
 		break;
-	}
 
 	case SAIS_WS_WEBSRV_RX_TASKREBUILDLASTSTEP:
-	{
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 		if (sais_validate_id(ei->event_hash, SAI_TASKID_LEN))
 			goto soft_error;
@@ -351,12 +331,8 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		if (sais_task_rebuild_last_step(m->vhd, ei->event_hash))
 			lwsl_ss_err(m->ss, "taskrebuildlaststep failed");
 		break;
-	}
 
 	case SAIS_WS_WEBSRV_RX_EVENTRESET:
-	{
-		sai_db_result_t r;
-
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 
 		if (sais_validate_id(ei->event_hash, SAI_EVENTID_LEN))
@@ -368,11 +344,9 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		lwsac_free(&a.ac);
 		break;
-	}
 
 	case SAIS_WS_WEBSRV_RX_PLATRESET: {
 		sai_browse_rx_platreset_t *pr = (sai_browse_rx_platreset_t *)a.dest;
-		sai_db_result_t r;
 
 		if (sais_validate_id(pr->event_uuid, SAI_EVENTID_LEN))
 			goto soft_error;
@@ -385,9 +359,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	}
 
 	case SAIS_WS_WEBSRV_RX_EVENTDELETE:
-	{
-		sai_db_result_t r;
-
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 		if (sais_validate_id(ei->event_hash, SAI_EVENTID_LEN)) {
 			lwsl_err("%s: SAIS_WS_WEBSRV_RX_EVENTDELETE: unable to validate id %s\n", __func__, ei->event_hash);
@@ -401,11 +372,8 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			lwsl_ss_err(m->ss, "event delete failed");
 		lwsac_free(&a.ac);
 		break;
-	}
 
 	case SAIS_WS_WEBSRV_RX_TASKCANCEL:
-
-
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 		if (sais_validate_id(ei->event_hash, SAI_TASKID_LEN))
 			goto soft_error;
@@ -454,27 +422,27 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	case SAIS_WS_WEBSRV_RX_REBUILD:
 		{
 			sai_rebuild_t *reb = (sai_rebuild_t *)a.dest;
-			sai_plat_t *cb;
+			sai_plat_t *sp;
 
 			if (sais_validate_builder_name(reb->builder_name))
 				goto soft_error;
 
-			cb = sais_builder_from_uuid(m->vhd, reb->builder_name,
-						    __FILE__, __LINE__);
-			if (!cb) {
+			sp = sais_builder_from_uuid(m->vhd, reb->builder_name);
+			if (!sp) {
 				lwsl_info("%s: unknown builder %s for rebuild\n",
 					    __func__, reb->builder_name);
 				lwsac_free(&a.ac);
 				break;
 			}
 
-			/* cb->wsi is the builder connection */
+			/* sp->wsi is the builder connection to server */
 			lws_start_foreach_dll(struct lws_dll2 *, p,
 					      m->vhd->builders.head) {
 				struct pss *pss = lws_container_of(p, struct pss, same);
 
-				if (pss->wsi == cb->wsi) {
+				if (pss->wsi == sp->wsi) {
 					sai_rebuild_t *r = malloc(sizeof(*r));
+
 					if (!r)
 						break;
 					*r = *reb;
