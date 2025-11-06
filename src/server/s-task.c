@@ -27,20 +27,14 @@
 
 #include "s-private.h"
 
-/* temporary info about a task that failed in a previous run */
-typedef struct sai_failed_task_info {
-	lws_dll2_t      list;
-	/* over-allocated */
-	const char      *build;
-	const char      *taskname;
-} sai_failed_task_info_t;
+
 
 /*
  * Checks if a given event db contains any tasks for a given platform
  */
 static int
-sais_event_ran_platform(struct vhd *vhd, const char *event_uuid,
-			const char *platform)
+sais_event_check_for_plat_tasks(struct vhd *vhd, const char *event_uuid,
+				const char *platform)
 {
 	sqlite3 *check_pdb = NULL;
 	char query[256];
@@ -180,6 +174,12 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	struct lwsac *ac = NULL, *failed_ac = NULL;
 	char esc_plat[96], pf[2048], query[384];
 	lws_dll2_owner_t o, failed_tasks_owner;
+	typedef struct sai_failed_task_info {
+		lws_dll2_t      list;
+		/* over-allocated */
+		const char      *build;
+		const char      *taskname;
+	} sai_failed_task_info_t;
 	unsigned int pending_count;
 	int n;
 
@@ -221,200 +221,204 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		uint64_t last_created;
 		int m;
 
-		lwsl_notice("candidate event %s '%s'\n", e->uuid, esc_plat);
+		// lwsl_notice("candidate event %s '%s'\n", e->uuid, esc_plat);
 
-		if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
+		if (sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb))
+			goto next;
+
+		/*
+		 * Find out how many tasks in startable state for this platform,
+		 * on this event
+		 */
+
+		lws_snprintf(query, sizeof(query), "select count(state) from tasks where "
+						   "(state = 0 or state = 9) and platform = '%s'", esc_plat);
+		m = sqlite3_exec(pdb, query, sql3_get_integer_cb, &pending_count, NULL);
+
+		if (m != SQLITE_OK) {
+			pending_count = 0;
+			lwsl_err("%s: query failed: %d\n", __func__, m);
+		}
+
+		// lwsl_notice("%s: %s: platform: '%s' startable tasks: %d\n", __func__, e->uuid, esc_plat, pending_count);
+
+		if (pending_count <= 0) {
+			lwsl_notice("%s: platform %s: no pending count\n", __func__, platform);
+			goto close_next;
+		}
+
+		/* there are some startable tasks on this event */
+
+		lws_sql_purify(esc_repo, e->repo_name, sizeof(esc_repo));
+		lws_sql_purify(esc_ref, e->ref, sizeof(esc_ref));
+		last_created = e->created;
+
+		do {
+			sqlite3_stmt *sm;
+			int pr;
+
+			prev_event_uuid[0] = '\0';
+			lws_snprintf(query, sizeof(query),
+				 "select uuid, created from events where repo_name='%s' and "
+				 "ref='%s' and created < %llu "
+				 "order by created desc limit 1",
+				 esc_repo, esc_ref, (unsigned long long)last_created);
 
 			/*
-			 * Find out how many tasks in startable state for this platform,
-			 * on this event
+			 * ... this is the 32-char EVENT uuid coming,
+			 * not a compound (64 char) task one
 			 */
 
-			lws_snprintf(query, sizeof(query), "select count(state) from tasks where "
-							   "(state = 0 or state = 9) and platform = '%s'", esc_plat);
-			m = sqlite3_exec(pdb, query, sql3_get_integer_cb, &pending_count, NULL);
-		       
-			if (m != SQLITE_OK) {
-				pending_count = 0;
-				lwsl_err("%s: query failed: %d\n", __func__, m);
+			pr = sqlite3_prepare_v2(vhd->server.pdb, query, -1, &sm, NULL);
+			if (pr != SQLITE_OK) {
+				lwsl_warn("%s: sq3 prep returned %d instead of SQLITE_OK\n", __func__, pr);
+				break;
+			}
+			if (sqlite3_step(sm) == SQLITE_ROW) {
+				const char *u = (const char *)sqlite3_column_text(sm, 0);
+
+				if (u)
+					lws_strncpy(prev_event_uuid, (const char *)u, sizeof(prev_event_uuid));
+
+				last_created = (uint64_t)sqlite3_column_int64(sm, 1);
+			} else
+				lwsl_notice("%s: no results from event check %s %s\n", __func__, esc_repo, esc_ref);
+
+			sqlite3_finalize(sm);
+
+			if (!prev_event_uuid[0]) {
+				lwsl_notice("%s: breaking due to NUL prev_event_uuid\n", __func__);
+				break;
 			}
 
-			lwsl_notice("%s: %s: platform: '%s' startable tasks: %d\n", __func__, e->uuid, esc_plat, pending_count);
+			if (!sais_event_check_for_plat_tasks(vhd, prev_event_uuid, esc_plat)) {
+				lwsl_notice("%s: continuing due to event_ran_platform 0\n", __func__);
+				continue;
+			}
 
-			if (pending_count > 0) { /* there are some startable tasks on this event */
+			lws_strncpy(checked_uuid, prev_event_uuid, sizeof(checked_uuid));
+			break;
+		} while (1);
 
-				lws_sql_purify(esc_repo, e->repo_name, sizeof(esc_repo));
-				lws_sql_purify(esc_ref, e->ref, sizeof(esc_ref));
-				last_created = e->created;
+		if (checked_uuid[0] &&
+		    !sais_event_db_ensure_open(vhd, checked_uuid, 1, &prev_pdb)) {
+			sqlite3_stmt *sm;
 
-				do {
-					sqlite3_stmt *sm;
-					int pr;
+			/* we are looking for failed tasks here */
 
-					prev_event_uuid[0] = '\0';
-					lws_snprintf(query, sizeof(query),
-						 "select uuid, created from events where repo_name='%s' and "
-						 "ref='%s' and created < %llu "
-						 "order by created desc limit 1",
-						 esc_repo, esc_ref, (unsigned long long)last_created);
+			lws_snprintf(query, sizeof(query),
+				     "select taskname from tasks where "
+				     "state = 4 and platform = ?");
 
-					/* this is the 32-char EVENT uuid coming, not a compound (64 char) task one */
+			if (sqlite3_prepare_v2(prev_pdb, query, -1, &sm, NULL) == SQLITE_OK) {
+				const unsigned char *t;
+				sai_failed_task_info_t *fti;
 
-					pr = sqlite3_prepare_v2(vhd->server.pdb, query, -1, &sm, NULL);
-					if (pr != SQLITE_OK) {
-						lwsl_warn("%s: sq3 prep returned %d instead of SQLITE_OK\n", __func__, pr);
+				sqlite3_bind_text(sm, 1, esc_plat, -1, SQLITE_TRANSIENT);
+
+				while (1) {
+					int nn = sqlite3_step(sm);
+
+					if (nn != SQLITE_ROW)
 						break;
-					}
-					if (sqlite3_step(sm) == SQLITE_ROW) {
-						const char *u = (const char *)sqlite3_column_text(sm, 0);
-						if (u) {
-#if 0
-							if (sais_is_task_inflight(vhd, NULL, u, NULL)) { /* we have it in hand */
-								lwsl_notice("%s: skipping pending task %s due to being inflight\n", __func__, u);
-								sqlite3_finalize(sm);
-								break;
-							}
-#endif
-							lws_strncpy(prev_event_uuid, (const char *)u, sizeof(prev_event_uuid));
-						}
-						last_created = (uint64_t)sqlite3_column_int64(sm, 1);
-					} else
-						lwsl_notice("%s: no results from event check %s %s\n", __func__, esc_repo, esc_ref);
 
-					sqlite3_finalize(sm);
-
-					if (!prev_event_uuid[0]) {
-						lwsl_notice("%s: breaking due to NUL prev_event_uuid\n", __func__);
-						break;
-					}
-					if (!sais_event_ran_platform(vhd, prev_event_uuid, esc_plat)) {
-						lwsl_notice("%s: continuing due to event_ran_platform 0\n", __func__);
+					t = sqlite3_column_text(sm, 0);
+					if (!t)
 						continue;
+
+					/*
+					 * We found errored tasks in the previous event for this
+					 * repo / branch / platform.  Let's record them in a temp
+					 * lwsac and condsider if we should use this info to
+					 * prioritize running the corresponding task in the current
+					 * event first
+					 */
+
+					fti = lwsac_use_zero(&failed_ac, sizeof(*fti) +
+							strlen((const char *)t) + 1, 256);
+					if (fti) {
+						fti->taskname = (const char *)&fti[1];
+						memcpy((char *)fti->taskname, t,
+						       strlen((const char *)t) + 1);
+						lws_dll2_add_tail(&fti->list, &failed_tasks_owner);
 					}
-
-					lws_strncpy(checked_uuid, prev_event_uuid, sizeof(checked_uuid));
-					break;
-				} while (1);
-
-				if (checked_uuid[0]) {
-					lwsl_notice("%s: checked_uuid %s\n", __func__, checked_uuid);
-					if (!sais_event_db_ensure_open(vhd, checked_uuid, 1, &prev_pdb)) {
-						sqlite3_stmt *sm;
-
-						/* we are looking for failed tasks here */
-
-						lws_snprintf(query, sizeof(query),
-							     "select taskname from tasks where "
-							     "state = 4 and platform = ?");
-
-						if (sqlite3_prepare_v2(prev_pdb, query, -1, &sm, NULL) == SQLITE_OK) {
-							const unsigned char *t;
-							sai_failed_task_info_t *fti;
-
-							sqlite3_bind_text(sm, 1, esc_plat, -1, SQLITE_TRANSIENT);
-
-							while (1) {
-								int nn = sqlite3_step(sm);
-						       
-								if (nn != SQLITE_ROW)
-									break;
-
-								t = sqlite3_column_text(sm, 0);
-								if (!t)
-									continue;
-
-								/*
-								 * We found errored tasks in the previous event for this
-								 * repo / branch / platform.  Let's record them in a temp
-								 * lwsac and condsider if we should use this info to
-								 * prioritize running the corresponding task in the current
-								 * event first
-								 */
-
-								fti = lwsac_use_zero(&failed_ac, sizeof(*fti) +
-										strlen((const char *)t) + 1, 256);
-								if (fti) {
-									fti->taskname = (const char *)&fti[1];
-									memcpy((char *)fti->taskname, t,
-									       strlen((const char *)t) + 1);
-									lws_dll2_add_tail(&fti->list, &failed_tasks_owner);
-								}
-							}
-							sqlite3_finalize(sm);
-						} else
-							lwsl_err("%s: query fail 1\n", __func__);
-
-						sais_event_db_close(vhd, &prev_pdb);
-					} else
-						lwsl_err("%s: unable to open %s\n", __func__, checked_uuid);
-				} else
-					lwsl_notice("%s: platform %s: no checked uuid\n", __func__, platform);
-
-				/*
-				 * Let's go through the tasks that failed last time we built this repo / branch, and see
-				 * if we can find the analagous task in the current event.
-				 */
-
-				lws_start_foreach_dll(struct lws_dll2 *, p_fail, failed_tasks_owner.head) {
-					sai_failed_task_info_t *fti = lws_container_of(p_fail, sai_failed_task_info_t, list);
-					char esc_taskname[256];
-					lws_dll2_owner_t owner;
-
-					lws_sql_purify(esc_taskname, fti->taskname, sizeof(esc_taskname));
-					lws_snprintf(pf, sizeof(pf), " and (state == 0 or state == 9) and (platform == '%s') and (taskname == '%s')",
-						     esc_plat, esc_taskname);
-
-					lwsac_free(&pss->ac_alloc_task);
-					lws_dll2_owner_clear(&owner);
-					n = lws_struct_sq3_deserialize(pdb, pf, NULL,
-								       lsm_schema_sq3_map_task,
-								       &owner, &pss->ac_alloc_task, 0, 1);
-					if (owner.count) {
-						lwsl_notice("%s: Prioritizing failed task for %s ('%s')\n",
-							    __func__, platform, fti->taskname);
-						sais_event_db_close(vhd, &pdb);
-						lwsac_free(&ac);
-						lwsac_free(&failed_ac);
-						memcpy(&pss->alloc_task, lws_container_of(
-							       owner.head, sai_task_t, list), sizeof(pss->alloc_task));
-
-						lwsl_notice("%s: platform %s: returning selected task\n", __func__, platform);
-
-						return &pss->alloc_task;
-					}
-				} lws_end_foreach_dll(p_fail);
-
-				lwsl_notice("%s: no priority\n", __func__);
-
-				/* We have fallen back to doing tasks earliest-first */
-
-				lws_snprintf(pf, sizeof(pf), " and (state = 0 or state = 9) and (platform = '%s')", esc_plat);
-
-				lwsac_free(&pss->ac_alloc_task);
-				lws_dll2_owner_t owner;
-				lws_dll2_owner_clear(&owner);
-				n = lws_struct_sq3_deserialize(pdb, pf, "uid asc ",
-							       lsm_schema_sq3_map_task,
-							       &owner, &pss->ac_alloc_task, 0, 1);
-				// lwsl_notice("%s: deser returned %d\n", __func__, n);
-				if (owner.count && pss->ac_alloc_task) {
-					lwsl_notice("%s: orig exit\n", __func__);
-					sais_event_db_close(vhd, &pdb);
-					lwsac_free(&ac);
-					lwsac_free(&failed_ac);
-					memcpy(&pss->alloc_task, lws_container_of(
-						       owner.head, sai_task_t, list), sizeof(pss->alloc_task));
-
-					lwsl_notice("%s: platform %s: returning fallback task\n", __func__, platform);
-
-					return &pss->alloc_task;
 				}
-			}  else
-				 lwsl_notice("%s: platform %s: no pending count\n", __func__, platform);
+				sqlite3_finalize(sm);
+			} else
+				lwsl_err("%s: query fail 1\n", __func__);
 
+			sais_event_db_close(vhd, &prev_pdb);
+		}
+
+		/*
+		 * Let's go through the tasks that failed last time we built this repo / branch, and see
+		 * if we can find the analagous task in the current event.
+		 */
+
+		lws_start_foreach_dll(struct lws_dll2 *, p_fail, failed_tasks_owner.head) {
+			sai_failed_task_info_t *fti = lws_container_of(p_fail, sai_failed_task_info_t, list);
+			char esc_taskname[256];
+			lws_dll2_owner_t owner;
+
+			lws_sql_purify(esc_taskname, fti->taskname, sizeof(esc_taskname));
+			lws_snprintf(pf, sizeof(pf),
+				     " and (state == 0 or state == 9) and "
+				     "(platform == '%s') and (taskname == '%s')",
+				     esc_plat, esc_taskname);
+
+			lwsac_free(&pss->ac_alloc_task);
+			lws_dll2_owner_clear(&owner);
+			n = lws_struct_sq3_deserialize(pdb, pf, NULL,
+						       lsm_schema_sq3_map_task,
+						       &owner, &pss->ac_alloc_task, 0, 1);
+			if (!owner.count)
+				goto next1;
+
+			lwsl_notice("%s: Prioritizing failed task for %s ('%s')\n",
+				    __func__, platform, fti->taskname);
 
 			sais_event_db_close(vhd, &pdb);
-		}
+			lwsac_free(&ac);
+			lwsac_free(&failed_ac);
+			memcpy(&pss->alloc_task, lws_container_of(
+						owner.head, sai_task_t, list),
+						sizeof(pss->alloc_task));
+
+			return &pss->alloc_task;
+next1: ;
+		} lws_end_foreach_dll(p_fail);
+
+		lwsl_notice("%s: no priority\n", __func__);
+
+		/* We have fallen back to doing tasks earliest-first */
+
+		lws_snprintf(pf, sizeof(pf),
+			     " and (state = 0 or state = 9) and (platform = '%s')",
+			     esc_plat);
+
+		lwsac_free(&pss->ac_alloc_task);
+		lws_dll2_owner_t owner;
+		lws_dll2_owner_clear(&owner);
+		n = lws_struct_sq3_deserialize(pdb, pf, "uid asc ",
+					       lsm_schema_sq3_map_task,
+					       &owner, &pss->ac_alloc_task, 0, 1);
+		// lwsl_notice("%s: deser returned %d\n", __func__, n);
+		if (!owner.count || !pss->ac_alloc_task)
+			goto close_next;
+
+		lwsl_notice("%s: orig exit\n", __func__);
+		sais_event_db_close(vhd, &pdb);
+		lwsac_free(&ac);
+		lwsac_free(&failed_ac);
+		memcpy(&pss->alloc_task, lws_container_of(
+						owner.head, sai_task_t, list),
+						sizeof(pss->alloc_task));
+
+		return &pss->alloc_task;
+
+close_next:
+		sais_event_db_close(vhd, &pdb);
+next: ;
 	} lws_end_foreach_dll(p);
 
 bail:
@@ -444,8 +448,6 @@ sais_find_or_add_pending_plat(struct vhd *vhd, const char *name)
 			return 1;
 
 	} lws_end_foreach_dll(p);
-
-	// lwsl_notice("%s: ->->->->-> adding %s\n", __func__, name);
 
 	/* platform name is new, make an entry in the ac */
 
@@ -628,7 +630,7 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *sp,
 	lwsl_notice("%s: %s: task %s found for %s\n", __func__,
 		    platform_name, task_template->uuid, sp->name);
 
-	if (sais_create_and_offer_task_step(vhd, task_template->uuid, 3))
+	if (sais_create_and_offer_task_step(vhd, task_template->uuid))
 		return 1;
 
 	/* yes, we will offer it to him */
@@ -753,7 +755,7 @@ nope:
 }
 
 int
-sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid, char force)
+sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 {
 	char event_uuid[33], esc_uuid[129], *p, *start, url[128],
 	     mirror_path[256], update[128];
@@ -770,11 +772,10 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid, char for
 	int ret = -1;
 
 	inflight = sais_is_task_inflight(vhd, NULL, task_uuid, &ul);
-
-	lwsl_notice("%s: caller %d\n", __func__, force);
        
 	if (inflight /* && ul->started */) {
-		lwsl_notice("%s: ~~~~~~~ not continuing %s as listed on inflight\n", __func__, task_uuid);
+		lwsl_notice("%s: ~~~ not continuing %s as listed on inflight\n",
+			    __func__, task_uuid);
 		return 1;
 	}
 
@@ -841,9 +842,11 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid, char for
 	temp_task->git_repo_url		= event->repo_fetchurl;
 
 	/* find builder */
+
 	sp = sais_builder_from_uuid(vhd, temp_task->builder_name);
 	if (!sp) {
-		lwsl_warn("%s: bailing as can't find builder from %s\n", __func__, temp_task->builder_name);
+		lwsl_warn("%s: bailing as can't find builder from %s\n",
+			  __func__, temp_task->builder_name);
 		goto bail;
 	}
 
@@ -902,7 +905,8 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid, char for
 		if (!p) { /* no more steps */
 			sai_uuid_list_t *u;
 
-			lwsl_err("%s: +++++++++++++++++++ determined no more steps after build_step %d for task %s, setting SAIES_SUCCESS\n",
+			lwsl_err("%s: +++ determined no more steps after "
+				 "build_step %d for task %s, setting SAIES_SUCCESS\n",
 					__func__, build_step, temp_task->uuid);
 			sais_set_task_state(vhd, temp_task->uuid, SAIES_SUCCESS, 0, 0);
 

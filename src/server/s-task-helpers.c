@@ -347,7 +347,7 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 
 	if (ostate == SAIES_STEP_SUCCESS) {
 		lwsl_notice("%s: sais_set_task_state() is calling sais_create_and_offer_task_step()\n", __func__);
-		sais_create_and_offer_task_step(vhd, task_uuid, 1);
+		sais_create_and_offer_task_step(vhd, task_uuid);
 	}
 
 	return 0;

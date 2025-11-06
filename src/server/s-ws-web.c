@@ -360,10 +360,8 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 	case SAIS_WS_WEBSRV_RX_EVENTDELETE:
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
-		if (sais_validate_id(ei->event_hash, SAI_EVENTID_LEN)) {
-			lwsl_err("%s: SAIS_WS_WEBSRV_RX_EVENTDELETE: unable to validate id %s\n", __func__, ei->event_hash);
+		if (sais_validate_id(ei->event_hash, SAI_EVENTID_LEN))
 			goto soft_error;
-		}
 
 		lwsl_notice("%s: eventdelete %s\n", __func__, ei->event_hash);
 
@@ -403,20 +401,19 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			 * Only broadcast to builders if the state has changed
 			 * from 0 viewers to >0, or from >0 viewers to 0.
 			 */
-			if (old_viewers_present != m->vhd->viewers_are_present) {
-				lwsl_notice("%s: Viewer presence changed to %d. Broadcasting to builders.\n",
-					    __func__, m->vhd->viewers_are_present);
-				lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
-					struct pss *pss_builder = lws_container_of(p, struct pss, same);
-					sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
+			if (old_viewers_present == m->vhd->viewers_are_present)
+				break;
 
-					if (vsend) {
-						vsend->viewers = m->vhd->viewers_are_present;
-						lws_dll2_add_tail(&vsend->list, &pss_builder->viewer_state_owner);
-						lws_callback_on_writable(pss_builder->wsi);
-					}
- 				} lws_end_foreach_dll(p);
-			}
+			lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
+				struct pss *pss_builder = lws_container_of(p, struct pss, same);
+				sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
+
+				if (vsend) {
+					vsend->viewers = m->vhd->viewers_are_present;
+					lws_dll2_add_tail(&vsend->list, &pss_builder->viewer_state_owner);
+					lws_callback_on_writable(pss_builder->wsi);
+				}
+			} lws_end_foreach_dll(p);
 			break;
 		}
 	case SAIS_WS_WEBSRV_RX_REBUILD:

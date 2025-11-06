@@ -322,7 +322,7 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		   const char *cns_name);
 
 int
-sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid, char force);
+sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid);
 
 int
 sais_set_task_state(struct vhd *vhd, const char *task_uuid, sai_event_state_t state,

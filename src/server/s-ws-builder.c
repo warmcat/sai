@@ -464,6 +464,138 @@ sai_sql3_get_uint64_cb(void *user, int cols, char **values, char **name)
 }
 
 /*
+ * "reject" packet from the builder is actually a disposition about the
+ * offered task, it can also indicate ACCEPTED.
+ */
+
+static int
+sais_process_rej(struct vhd *vhd, struct pss *pss,
+		 sai_plat_t *sp, sai_rejection_t *rej)
+{
+	char event_uuid[33], do_remove_uuid = 0, q[128], esc_uuid[129];
+	int n, build_step = -1;
+	sqlite3 *pdb = NULL;
+	sai_uuid_list_t *ul;
+
+	switch (rej->reason) {
+	case SAI_TASK_REASON_ACCEPTED:
+		lwsl_notice("%s: SAI_TASK_REASON_ACCEPTED: %s\n",
+			    __func__, rej->task_uuid);
+
+		/* start build duration only from first step accepted */
+
+		sai_task_uuid_to_event_uuid(event_uuid, rej->task_uuid);
+		if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb))
+			break;
+
+		lws_sql_purify(esc_uuid, rej->task_uuid, sizeof(esc_uuid));
+		lws_snprintf(q, sizeof(q),
+			     "select build_step from tasks where uuid='%s'",
+			     esc_uuid);
+
+		if (sqlite3_exec(pdb, q, sql3_get_integer_cb, &build_step,
+				 NULL) != SQLITE_OK)
+			build_step = -1;
+
+		/*
+		 * Bump the build step on the accepted task
+		 */
+
+		build_step++;
+		lws_snprintf(q, sizeof(q),
+			     "update tasks set build_step=%d "
+			     "where state != 4 and uuid='%s'",
+			     build_step, esc_uuid);
+		sqlite3_exec(pdb, q, NULL, NULL, NULL);
+
+		if (build_step == 1) {
+			pss->first_log_timestamp = (uint64_t)lws_now_secs();
+			lws_snprintf(q, sizeof(q),
+			     "update tasks set started=%llu where uuid='%s'",
+			     (unsigned long long)pss->first_log_timestamp, esc_uuid);
+
+			if (sqlite3_exec(pdb, q, NULL, NULL, NULL) != SQLITE_OK)
+				lwsl_notice("%s: unable to set started\n", __func__);
+		}
+
+		lwsl_notice("%s: exiting, setting build_step %d\n", __func__, build_step);
+
+		sais_event_db_close(vhd, &pdb);
+
+		if (sais_set_task_state(vhd,
+					rej->task_uuid,
+					SAIES_BEING_BUILT,
+					build_step == 1 ? pss->first_log_timestamp : 0, 0))
+			break;
+
+		/* leave the uuid listed as inflight until step completed */
+		break;
+
+	case SAI_TASK_REASON_DUPE:
+		lwsl_notice("%s: SAI_TASK_REASON_DUPE: %s\n",
+				__func__, rej->task_uuid);
+		break;
+
+	case SAI_TASK_REASON_BUSY:
+		lwsl_notice("%s: SAI_TASK_REASON_BUSY: Set busy: %s\n",
+				__func__, rej->task_uuid);
+		do_remove_uuid = 1;
+		sais_plat_busy(sp, 1);
+		break;
+
+	case SAI_TASK_REASON_DESTROYED:
+		lwsl_notice("%s: SAI_TASK_REASON_DESTROYED: Clear busy: %s\n",
+				__func__, rej->task_uuid);
+		do_remove_uuid = 1;
+
+		if (rej->ecode & SAISPRF_EXIT) {
+			if ((rej->ecode & 0xff) == 0) {
+				n = SAIES_STEP_SUCCESS;
+				lwsl_notice("%s: |||| SAIES_STEP_SUCCESS: %s\n",
+						__func__, rej->task_uuid);
+			} else {
+				n = SAIES_FAIL;
+				lwsl_notice("%s: |||| SAIES_FAIL: %s\n",
+						__func__, rej->task_uuid);
+			}
+		} else
+			if (rej->ecode & 0x2000) {
+				n = SAIES_CANCELLED;
+				lwsl_notice("%s: |||| SAIES_CANCELLED: %s\n",
+						__func__, rej->task_uuid);
+
+			} else {
+				n = SAIES_FAIL;
+				lwsl_notice("%s: |||| SAIES_STEP_FAIL: %s\n",
+						__func__, rej->task_uuid);
+			}
+
+		if (sais_set_task_state(vhd, rej->task_uuid, n, 0,
+					lws_now_secs() - pss->first_log_timestamp))
+			return 1;
+
+		sais_plat_busy(sp, 0);
+		break;
+	}
+
+	if (do_remove_uuid &&
+	    sais_is_task_inflight(vhd, sp, rej->task_uuid, &ul)) {
+		lwsl_notice("%s: ### Removing %s from inflight\n",
+				__func__, rej->task_uuid);
+		sais_inflight_entry_destroy(ul);
+		// sais_task_clear_build_and_logs(vhd, rej->task_uuid, 1);
+	}
+
+	if (rej->reason == SAI_TASK_REASON_DESTROYED)
+		/* uuid will not be found listed as inflight for this */
+		sais_create_and_offer_task_step(vhd, rej->task_uuid);
+
+	sais_list_builders(vhd);
+
+	return 0;
+}
+
+/*
  * Server received a communication from a builder
  *
  * buf is lws callback `in` which has LWS_PRE already set aside
@@ -474,7 +606,7 @@ sai_sql3_get_uint64_cb(void *user, int cols, char **values, char **name)
 int
 sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl, unsigned int ss_flags)
 {
-	char event_uuid[33], s[128], esc[96], do_remove_uuid;
+	char event_uuid[33], s[128], esc[96];
 	sai_resource_requisition_t *rr;
 	sai_resource_wellknown_t *wk;
 	sai_plat_owner_t *bp_owner;
@@ -485,7 +617,6 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 	lws_wsmsg_info_t info;
 	sai_rejection_t *rej;
 	sai_resource_t *res;
-	sai_uuid_list_t *ul;
 	lws_dll2_owner_t o;
 	sai_artifact_t *ap;
 	uint8_t xbuf[2048];
@@ -766,119 +897,13 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				break;
 			}
 
-			lwsl_notice("%s: builder %s reports task status update, reason: %d, %s, slots %d, mem %d, sto %d\n",
+			lwsl_notice("%s: builder %s reports task status update, "
+				    "reason: %d, %s, slots %d, mem %d, sto %d\n",
 				    __func__, sp->name, rej->reason, rej->task_uuid,
 				    sp->avail_slots, sp->avail_mem_kib, sp->avail_sto_kib);
 
-			do_remove_uuid = 0;
-
-			switch (rej->reason) {
-			case SAI_TASK_REASON_ACCEPTED:
-				lwsl_notice("%s: SAI_TASK_REASON_ACCEPTED: %s\n", __func__, rej->task_uuid);
-				/* start build duration only from first step accepted */
-				{
-					char event_uuid[33];
-					sqlite3 *pdb = NULL;
-					int build_step = -1;
-
-					sai_task_uuid_to_event_uuid(event_uuid, rej->task_uuid);
-					if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
-						char q[128], esc_uuid[129];
-
-						lws_sql_purify(esc_uuid, rej->task_uuid, sizeof(esc_uuid));
-						lws_snprintf(q, sizeof(q),
-							     "select build_step from tasks where uuid='%s'",
-							     esc_uuid);
-
-						if (sqlite3_exec(pdb, q, sql3_get_integer_cb, &build_step,
-								 NULL) != SQLITE_OK)
-							build_step = -1;
-
-						/*
-						 * Bump the build step on the accepted task
-						 */
-
-						build_step++;
-						lws_snprintf(q, sizeof(q), "update tasks set build_step=%d where state != 4 and uuid='%s'",
-							     build_step, esc_uuid);
-						sqlite3_exec(pdb, q, NULL, NULL, NULL);
-
-						if (build_step == 1) {
-							pss->first_log_timestamp = (uint64_t)lws_now_secs();
-							lws_snprintf(q, sizeof(q),
-							     "update tasks set started=%llu where uuid='%s'",
-							     (unsigned long long)pss->first_log_timestamp, esc_uuid);
-
-							if (sqlite3_exec(pdb, q, NULL, NULL, NULL) != SQLITE_OK)
-								lwsl_notice("%s: unable to set started\n", __func__);
-						}
-
-						lwsl_notice("%s: exiting, setting build_step %d\n", __func__, build_step);
-
-						sais_event_db_close(vhd, &pdb);
-
-						if (sais_set_task_state(vhd,
-									rej->task_uuid,
-									SAIES_BEING_BUILT,
-									!build_step ? pss->first_log_timestamp : 0, 0))
-							break;
-					}
-				}
-				/* leave the uuid listed as inflight until step completed */
-				break;
-
-			case SAI_TASK_REASON_DUPE:
-				lwsl_notice("%s: SAI_TASK_REASON_DUPE: %s\n", __func__, rej->task_uuid);
-				break;
-
-			case SAI_TASK_REASON_BUSY:
-				lwsl_notice("%s: SAI_TASK_REASON_BUSY: Set busy: %s\n", __func__, rej->task_uuid);
-				do_remove_uuid = 1;
-				sais_plat_busy(sp, 1);
-				break;
-
-			case SAI_TASK_REASON_DESTROYED:
-				lwsl_notice("%s: SAI_TASK_REASON_DESTROYED: Clear busy: %s\n", __func__, rej->task_uuid);
-				do_remove_uuid = 1;
-
-				if (rej->ecode & SAISPRF_EXIT) {
-					if ((rej->ecode & 0xff) == 0) {
-						n = SAIES_STEP_SUCCESS;
-						lwsl_notice("%s: |||||||||||||||||||| SAIES_STEP_SUCCESS: %s\n", __func__, rej->task_uuid);
-					} else {
-						n = SAIES_FAIL;
-						lwsl_notice("%s: |||||||||||||||||||| SAIES_FAIL: %s\n", __func__, rej->task_uuid);
-					}
-				} else
-					if (rej->ecode & 0x2000) {
-						n = SAIES_CANCELLED;
-						lwsl_notice("%s: |||||||||||||||||||| SAIES_CANCELLED: %s\n", __func__, rej->task_uuid);
-
-					} else {
-						n = SAIES_FAIL;
-						lwsl_notice("%s: |||||||||||||||||||| SAIES_STEP_FAIL: %s\n", __func__, rej->task_uuid);
-					}
-
-				if (sais_set_task_state(vhd, rej->task_uuid, n, 0,
-							lws_now_secs() - pss->first_log_timestamp))
-					goto bail;
-
-				sais_plat_busy(sp, 0);
-				break;
-			}
-
-			if (do_remove_uuid &&
-			    sais_is_task_inflight(vhd, sp, rej->task_uuid, &ul)) {
-				lwsl_notice("%s: ### Removing %s from inflight\n", __func__, rej->task_uuid);
-				sais_inflight_entry_destroy(ul);
-				// sais_task_clear_build_and_logs(vhd, rej->task_uuid, 1);
-			}
-
-			if (rej->reason == SAI_TASK_REASON_DESTROYED)
-				/* uuid will not be found listed as inflight for this */
-				sais_create_and_offer_task_step(vhd, rej->task_uuid, 10);
-
-			sais_list_builders(vhd);
+			if (sais_process_rej(vhd, pss, sp, rej))
+				goto bail;
 
 			lwsac_free(&pss->a.ac);
 			break;

@@ -118,7 +118,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (!lws_pvo_get_str(in, "task-abandoned-timeout-mins", &num))
 			vhd->task_abandoned_timeout_mins = (unsigned int)atoi(num);
 		else
-			vhd->task_abandoned_timeout_mins = 3000;
+			vhd->task_abandoned_timeout_mins = 8 * 60;
 
 		if (lws_pvo_get_str(in, "database", &vhd->sqlite3_path_lhs)) {
 			lwsl_err("%s: database pvo required\n", __func__);
@@ -274,7 +274,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			goto passthru;
 		}
 
-		lwsl_user("LWS_CALLBACK_HTTP_BODY: %d\n", (int)len);
 		/* create the POST argument parser if not already existing */
 
 		if (!pss->spa) {
@@ -345,8 +344,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		break;
 
 	case LWS_CALLBACK_HTTP_BODY_COMPLETION:
-		lwsl_user("%s: LWS_CALLBACK_HTTP_BODY_COMPLETION: %d\n",
-			  __func__, (int)len);
 
 		if (!pss->our_form) {
 			lwsl_user("%s: no sai form\n", __func__);
@@ -359,36 +356,29 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			pss->spa = NULL;
 		}
 
-		if (pss->spa_failed)
-			lwsl_notice("%s: notification failed\n", __func__);
-		else {
-			lwsl_notice("%s: notification: %d %s %s %s\n", __func__,
-				    pss->sn.action, pss->sn.e.hash,
-				    pss->sn.e.ref, pss->sn.e.repo_name);
+		/*
+		 * Inform sai-webs about notification processing, so
+		 * they can update connected browsers to show the new
+		 * event
+		 */
+		n = lws_snprintf((char *)start, sizeof(buf) - LWS_PRE,
+				 "{\"schema\":\"sai-overview\"}");
 
-			/*
-			 * Inform sai-webs about notification processing, so
-			 * they can update connected browsers to show the new
-			 * event
-			 */
-			n = lws_snprintf((char *)start, sizeof(buf) - LWS_PRE,
-					 "{\"schema\":\"sai-overview\"}");
+		memset(&info, 0, sizeof(info));
+		info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;
+		info.buf			= start;
+		info.len			= (size_t)n;
+		info.ss_flags			= LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
 
-			memset(&info, 0, sizeof(info));
-			info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;
-			info.buf			= start;
-			info.len			= (size_t)n;
-			info.ss_flags			= LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
-
-			if (sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info) < 0)
-				lwsl_warn("%s: buflist append failed\n", __func__);
-		}
+		if (sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info) < 0)
+			lwsl_warn("%s: buflist append failed\n", __func__);
 
 		if (lws_return_http_status(wsi,
-				pss->spa_failed ? HTTP_STATUS_FORBIDDEN :
-						  HTTP_STATUS_OK,
-				NULL) < 0)
+					pss->spa_failed ? HTTP_STATUS_FORBIDDEN :
+							  HTTP_STATUS_OK,
+							  NULL) < 0)
 			return -1;
+
 		return 0;
 
 	/*
@@ -401,18 +391,17 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	case LWS_CALLBACK_ESTABLISHED:
 		pss->wsi = wsi;
 		pss->vhd = vhd;
+
 		if (!vhd)
 			return -1;
 
 		if (lws_hdr_total_length(wsi, WSI_TOKEN_GET_URI)) {
-			if (lws_hdr_copy(wsi, (char *)start, 64,
-					 WSI_TOKEN_GET_URI) < 0)
+			if (lws_hdr_copy(wsi, (char *)start, 64, WSI_TOKEN_GET_URI) < 0)
 				return -1;
 		}
 #if defined(LWS_ROLE_H2)
 		else
-			if (lws_hdr_copy(wsi, (char *)start, 64,
-					 WSI_TOKEN_HTTP_COLON_PATH) < 0)
+			if (lws_hdr_copy(wsi, (char *)start, 64, WSI_TOKEN_HTTP_COLON_PATH) < 0)
 				return -1;
 #endif
 
@@ -462,7 +451,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	case LWS_CALLBACK_CLOSED:
 		lwsac_free(&pss->query_ac);
 
-		lwsl_wsi_user(wsi, "############################### sai-server: CLOSED builder conn ###############");
+		lwsl_wsi_user(wsi, "#### sai-server: CLOSED builder conn ####");
 		/* remove pss from vhd->builders (active connection list) */
 		lws_dll2_remove(&pss->same);
 
@@ -484,7 +473,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		 * Update the sai-webs about the builder removal, so they
 		 * can update their connected browsers
 		 */
-		lwsl_wsi_warn(pss->wsi, "LWS_CALLBACK_CLOSED: doing WSS_PREPARE_BUILDER_SUMMARY\n");
 		sais_list_builders(vhd);
 		break;
 
@@ -517,12 +505,10 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 
 		if (!pss->announced) {
-
 			/*
 			 * Update the sai-webs about the builder creation, so
 			 * they can update their connected browsers
 			 */
-			lwsl_wsi_warn(pss->wsi, "LWS_CALLBACK_RECEIVE: unannounced pss doing WSS_PREPARE_BUILDER_SUMMARY\n");
 			sais_list_builders(vhd);
 
 			pss->announced = 1;
