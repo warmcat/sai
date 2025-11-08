@@ -49,21 +49,24 @@ saip_sul_action_power_off(struct lws_sorted_usec_list *sul)
 {
 	saip_server_plat_t *sp = lws_container_of(sul,
 					saip_server_plat_t, sul_delay_off);
+	lws_ss_state_return_t r;
+	saip_pcon_t *pc;
 
-	if (!sp->power_off_url) {
-		lwsl_notice("%s: no power_off_url for %s\n", __func__, sp->host);
-		return;
-	}
-	if (!sp->ss_tasmota_off) {
-		lwsl_notice("%s: no power_off ss for %s\n", __func__, sp->host);
+	if (!sp->pcon_list.owner) {
+		lwsl_notice("%s: no power-controller ss for %s\n", __func__, sp->host);
 		return;
 	}
 
-	lwsl_warn("%s: powering off host %s\n", __func__, sp->host);
+	pc = lws_container_of(sp->pcon_list.owner, saip_pcon_t,
+						   controlled_plats_owner);
+
 	saip_notify_server_power_state(sp->host, 0, 1);
 
-	if (lws_ss_client_connect(sp->ss_tasmota_off))
-		lwsl_ss_err(sp->ss_tasmota_off, "failed to connect tasmota OFF secure stream");
+	lwsl_warn("%s: powering OFF host %s via power-control %s\n", __func__, sp->host, pc->name);
+
+	r = lws_ss_client_connect(pc->ss_tasmota_off);
+	if (r)
+		lwsl_ss_err(pc->ss_tasmota_off, "failed to connect tasmota OFF secure stream: %d", r);
 }
 
 saip_server_plat_t *
@@ -87,8 +90,8 @@ find_platform(struct sai_power *pwr, const char *host)
 void
 saip_notify_server_stay_state(const char *plat_name, int stay_on)
 {
-	saip_server_t *sps;
 	sai_stay_state_update_t *ssu;
+	saip_server_t *sps;
 
 	/* Find the first (usually only) configured sai-server connection */
 	if (!power.sai_server_owner.head) {
@@ -113,6 +116,7 @@ saip_notify_server_stay_state(const char *plat_name, int stay_on)
 	/* The per-connection user object for the server link is a saip_server_link_t */
 	{
 		saip_server_link_t *pss = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
+
 		lws_dll2_add_tail(&ssu->list, &pss->stay_state_update_owner);
 	}
 
@@ -133,37 +137,25 @@ saip_set_stay(const char *builder_name, int stay_on)
 	if (!sp)
 		return;
 
+	sps = lws_container_of(power.sai_server_owner.head, saip_server_t, list);
+	pss = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
 	sp->stay = (char)stay_on;
-	saip_notify_server_stay_state(builder_name, stay_on);
+	saip_notify_server_stay_state(builder_name, stay_on | sp->needed);
 
-	if (stay_on) {
-		if (sp->power_on_mac) {
-			saip_notify_server_power_state(sp->host, 1, 0);
-			write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
-				      sp->power_on_mac, strlen(sp->power_on_mac));
-		}
-		if (sp->power_on_url) {
-			if (lws_ss_client_connect(sp->ss_tasmota_on))
-				lwsl_notice("%s: tasmota connect failed\n", __func__);
-			saip_notify_server_power_state(sp->host, 1, 0);
-		}
-	} else {
+	if (stay_on | sp->needed)
+		saip_builder_bringup(sps, sp, pss);
+	else
 		/*
 		 * power-off is delayed, so we just set the stay flag...
 		 * but let's cancel any pending power-off
 		 */
 		lws_sul_cancel(&sp->sul_delay_off);
-	}
-
 
 	/* Find the first (usually only) configured sai-server connection */
 	if (!power.sai_server_owner.head) {
 		lwsl_warn("%s: No sai-server configured to notify\n", __func__);
 		return;
 	}
-
-	sps = lws_container_of(power.sai_server_owner.head, saip_server_t, list);
-	pss = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
 
 	saip_queue_stay_info(sps, sp, pss);
 }
@@ -280,7 +272,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 			if (sp)
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-								"%c", '0' + sp->stay);
+								"%c", '0' + (sp->stay | sp->needed));
 			else
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
 								"unknown host %s", pn);
@@ -308,16 +300,20 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 				sp->stay = 1;
 				goto bail;
 			}
-			if (!sp->power_on_url) {
-				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-						"no power-on-url entry for %s", pn);
-				goto bail;
-			}
 
-			if (lws_ss_client_connect(sp->ss_tasmota_on)) {
-				lwsl_ss_err(sp->ss_tasmota_off, "failed to connect tasmota ON secure stream");
+			if (sp->pcon_list.owner) {
+				saip_pcon_t *pc = lws_container_of(sp->pcon_list.owner,
+								   saip_pcon_t,
+								   controlled_plats_owner);
+				if (lws_ss_client_connect(pc->ss_tasmota_on)) {
+					lwsl_ss_err(pc->ss_tasmota_on, "failed to connect tasmota ON secure stream");
+					g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
+						"power-on ss failed create %s", sp->host);
+					goto bail;
+				}
+			} else {
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-					"power-on ss failed create %s", sp->host);
+						"no power-controller entry for %s", pn);
 				goto bail;
 			}
 

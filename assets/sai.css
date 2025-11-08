@@ -660,6 +660,11 @@ div.ibuil.power-stay {
 	border: 2px solid green;
 }
 
+div.ibuil.power-stay-dep {
+	border: 2px solid blue;
+}
+
+
 div.ibuilctr {
 	font-weight: normal;
 	font-size: 9pt;
@@ -811,6 +816,7 @@ img.branch {
 .context-menu {
 	position: absolute;
 	background-color: #f9f9f9;
+	font-size: 8pt;
 	border: 1px solid #ccc;
 	padding: 5px;
 	z-index: 3000;

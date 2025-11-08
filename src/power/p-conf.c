@@ -33,6 +33,10 @@ static const char * const paths_global[] = {
 	"perms",
 	"wol-if",
 	"servers[].url",
+	"servers[].power-control[].name",
+	"servers[].power-control[].type",
+	"servers[].power-control[].url",
+	"servers[].power-control[]",
 	"servers[].platforms[].name",
 	"servers[].platforms[].host",
 	"servers[].platforms[].depends",
@@ -43,6 +47,7 @@ static const char * const paths_global[] = {
 	"servers[].platforms[].power-off.type",
 	"servers[].platforms[].power-off.url",
 	"servers[].platforms[].power-off",
+	"servers[].platforms[].power-control",
 	"servers[].platforms[]",
 	"servers[]"
 };
@@ -51,6 +56,10 @@ enum enum_paths_global {
 	LEJPM_PERMS,
 	LEJPM_WOL_IF,
 	LEJPM_SERVERS_URL,
+	LEJPM_SERVERS_POWER_CONTROL_NAME,
+	LEJPM_SERVERS_POWER_CONTROL_TYPE,
+	LEJPM_SERVERS_POWER_CONTROL_URL,
+	LEJPM_SERVERS_POWER_CONTROL,
 	LEJPM_SERVERS_PLATFORMS_NAME,
 	LEJPM_SERVERS_PLATFORMS_HOST,
 	LEJPM_SERVERS_PLATFORMS_DEPENDS,
@@ -61,6 +70,7 @@ enum enum_paths_global {
 	LEJPM_SERVERS_PLATFORMS_POWER_OFF_TYPE,
 	LEJPM_SERVERS_PLATFORMS_POWER_OFF_URL,
 	LEJPM_SERVERS_PLATFORMS_POWER_OFF,
+	LEJPM_SERVERS_PLATFORMS_POWER_CONTROL,
 	LEJPM_SERVERS_PLATFORMS,
 	LEJPM_SERVERS
 };
@@ -69,6 +79,7 @@ static signed char
 saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 {
 	struct jpargs *a = (struct jpargs *)ctx->user;
+	saip_pcon_t *pc;
 
 	const char **pp = NULL;
 #if 0
@@ -100,6 +111,18 @@ saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 					  &a->power->sai_server_owner);
 			break;
 
+		case LEJPM_SERVERS_POWER_CONTROL:
+			/*
+			 * Create the saip_pcon_t object and bind to the server
+			 */
+			a->sai_pcon = lwsac_use_zero(&a->power->ac_conf_head,
+					         sizeof(*a->sai_pcon), 4096);
+			if (!a->sai_pcon)
+				return -1;
+
+			lws_dll2_add_tail(&a->sai_pcon->list,
+					  &a->power->sai_pcon_owner);
+			break;
 
 		case LEJPM_SERVERS_PLATFORMS:
 			/*
@@ -138,6 +161,18 @@ saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		pp = &a->power->wol_if;
 		break;
 
+	case LEJPM_SERVERS_POWER_CONTROL_NAME:
+		pp = &a->sai_pcon->name;
+		break;
+
+	case LEJPM_SERVERS_POWER_CONTROL_TYPE:
+		pp = &a->sai_pcon->type;
+		break;
+
+	case LEJPM_SERVERS_POWER_CONTROL_URL:
+		pp = &a->sai_pcon->url;
+		break;
+
 	case LEJPM_SERVERS_URL:
 		pp = &a->sai_server->url;
 		lwsl_user("%s: server url %.*s\n", __func__, ctx->npos, ctx->buf);
@@ -174,6 +209,14 @@ saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 	case LEJPM_SERVERS_PLATFORMS_POWER_OFF_URL:
 		pp = &a->sai_server_plat->power_off_url;
 		break;
+
+	case LEJPM_SERVERS_PLATFORMS_POWER_CONTROL:
+		pc = saip_pcon_by_name(a->power, ctx->buf);
+		if (pc)
+			lws_dll2_add_tail(&a->sai_server_plat->pcon_list,
+					  &pc->controlled_plats_owner);
+
+		return 0;
 
 	default:
 		return 0;

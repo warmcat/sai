@@ -1030,8 +1030,10 @@ function createBuilderDiv(plat) {
 		if (!plat.power_managed)
 			platDiv.className += " power-unmanaged";
 		else
-			if (plat.stay_on)
+			if (plat.stay_on !== 0)
 				platDiv.className += " power-stay";
+			else
+				platDiv.className += " power-stay-dep";
 	}
 	if (plat.powering_up)
 		platDiv.className += " powering-up";
@@ -1055,7 +1057,7 @@ function createBuilderDiv(plat) {
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-ram w-0"></div></div>` +
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-disk w-0"></div></div>` +
 		     `</div>`;
-	innerHTML += `${plat.peer_ip}`;
+	innerHTML += `${plat.peer_ip}` + "  " + plat.stay_on;
 //	`<div class="server-state">` +
 //		     `Slots: ${plat.s_avail_slots}, In-flight: ${plat.s_inflight_count}<br>` +
 //		     `Last Reject: ${plat.s_last_rej_task_uuid ? plat.s_last_rej_task_uuid.substring(0, 8) : 'none'}` + "</div>" +
@@ -1075,22 +1077,10 @@ function createBuilderDiv(plat) {
 	const menuItems = [
 		{ label: `<b>SAI:</b> ${plat.sai_hash}` },
 		{ label: `<b>LWS:</b> ${plat.lws_hash}` },
-		/*
-		{
-			label: "Update SAI",
-			callback: () => {
-				const rebuildMsg = {
-					schema: "com.warmcat.sai.rebuild",
-					builder_name: plat.name
-				};
-				sai.send(JSON.stringify(rebuildMsg));
-			}
-		}
-		*/
 	];
 
 	if (plat.power_managed && authd) {
-		if (plat.stay_on) {
+		if (plat.stay_on !== 0) {
 			menuItems.push({
 				label: "Release Stay",
 				callback: () => {

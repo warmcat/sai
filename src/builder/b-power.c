@@ -31,6 +31,72 @@
 
 extern struct lws_spawn_piped *lsp_suspender;
 
+int
+saib_reassess_idle_situation()
+{
+	char in_use = 0;
+
+	if (builder.stay) {
+		/*
+		 * We need to deal with finding we have been manually powered-on.
+		 * Just cancel any pending grace period
+		 */
+		lws_sul_cancel(&builder.sul_idle);
+
+		lwsl_warn("%s: %s: stay applied: cancelled idle grace time\n",
+					__func__, builder.host);
+
+		return 0;
+	}
+
+	/*
+	 * If any plat on this builder has tasks, just leave it
+	 */
+	lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
+				builder.sai_plat_owner.head) {
+		struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
+				sai_plat_list);
+
+		if (sp->nspawn_owner.head) {
+			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+						   sp->nspawn_owner.head) {
+				struct sai_nspawn *xns = lws_container_of(d,
+							struct sai_nspawn, list);
+
+				lwsl_notice("%s: ongoing task: %s\n", __func__,
+							xns->task->uuid);
+
+			} lws_end_foreach_dll_safe(d, d1);
+
+			lws_sul_cancel(&builder.sul_idle);
+			in_use = 1;
+		}
+
+	} lws_end_foreach_dll_safe(mp, mp1);
+
+	if (in_use) {
+		lwsl_warn("%s: cancelling idle grace time as ongoing task steps\n", __func__);
+
+		return 0;
+	}
+
+	/*
+	* if no ongoing tasks, and we want to go OFF, then start
+	* the idle grace timer.  This will get cancelled if
+	* we start a task during the grace time, otherwise it will
+	* expire and do the power-off or suspend
+	*/
+
+	if (lws_dll2_is_detached(&builder.sul_idle.list)) {
+		lwsl_warn("%s: %s: no stay: starting idle grace time\n",
+			__func__, builder.host);
+		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
+				 sul_idle_cb, SAI_IDLE_GRACE_US);
+	}
+
+	return 0;
+}
+
 /*
  * This is used to check with sai-power if we should stay up (due to the power
  * being turned on manually)
@@ -47,69 +113,12 @@ LWS_SS_USER_TYPEDEF
 static lws_ss_state_return_t
 saib_power_stay_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
-	char in_use = 0;
-
 	if (len < 1)
 		return 0;
 
-	builder.stay = *buf == '1';
+	builder.stay = *buf != '0';
 
-//	lwsl_err("%s: stay %d\n", __func__, builder.stay);
-
-	if (builder.stay) {
-		/*
-		 * We need to deal with finding we have been manually powered-on.
-		 * Just cancel any pending grace period
-		 */
-		lws_sul_cancel(&builder.sul_idle);
-
-		// lwsl_warn("%s: %s: stay applied: cancelled idle grace time\n",
-		//			__func__, builder.host);
-	} else {
-
-		/*
-		 * If any plat on this builder has tasks, just
-		 * leave it
-		 */
-		lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
-					builder.sai_plat_owner.head) {
-			struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
-					sai_plat_list);
-
-			if (sp->nspawn_owner.head) {
-				lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
-					struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
-
-					lwsl_notice("%s: ongoing task: %s\n", __func__, xns->task->uuid);
-
-				} lws_end_foreach_dll_safe(d, d1);
-
-				in_use = 1;
-			}
-
-		} lws_end_foreach_dll_safe(mp, mp1);
-
-		if (in_use) {
-			lwsl_warn("%s: cancelling idle grace time as ongoing task steps\n", __func__);
-			lws_sul_cancel(&builder.sul_idle);
-
-			return 0;
-		}
-
-		/*
-		* if no ongoing tasks, and we want to go OFF, then start
-		* the idle grace timer.  This will get cancelled if
-		* we start a task during the grace time, otherwise it will
-		* expire and do the power-off or suspend
-		*/
-
-		if (lws_dll2_is_detached(&builder.sul_idle.list)) {
-			lwsl_warn("%s: %s: no stay: starting idle grace time\n",
-				__func__, builder.host);
-			lws_sul_schedule(builder.context, 0, &builder.sul_idle,
-					sul_idle_cb, SAI_IDLE_GRACE_US);
-		}
-	}
+	saib_reassess_idle_situation();
 
 	return 0;
 }
@@ -351,6 +360,8 @@ saib_power_init(void)
 		lwsl_err("%s: failed to create sai-power ss\n", __func__);
 		return 1;
 	}
+
+	saib_reassess_idle_situation();
 
 	return 0;
 }

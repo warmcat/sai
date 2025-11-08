@@ -64,7 +64,7 @@ saib_suspender_get_pipe(void)
 #if defined(__linux__)
 	int fd = lws_spawn_get_fd_stdxxx(lsp_suspender, 0);
 #else
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(__NetBSD__)
 	int fd = builder.pipe_suspender_wr;
 #else
 	int fd = 2;
@@ -172,7 +172,7 @@ saib_suspender_fork(const char *path)
 		return 1;
 	}
 #endif
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(__NetBSD__)
 	{
 		int pfd[2];
 		pid_t pid;

@@ -298,24 +298,33 @@ sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down
 	sai_power_state_t *ps = NULL;
 	sai_plat_t *live_builder = sais_builder_from_host(vhd, name);
 
-	if (live_builder && up)
+	if (live_builder && up) {
+		lwsl_notice("%s: live builder so killing up\n", __func__);
 		up = 0;
+	}
 
-	if (!live_builder && down)
+	if (!live_builder && down) {
+		lwsl_notice("%s: no live builder so killing down\n", __func__);
 		down = 0;
+	}
 
 	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
 			      vhd->server.power_state_owner.head) {
 		ps = lws_container_of(p, sai_power_state_t, list);
 
 		if (!strcmp(ps->host, name)) {
-			if (live_builder && ps->powering_up)
+			if (live_builder && ps->powering_up) {
+				lwsl_notice("%s: live builder so removing powering_up\n", __func__);
 				ps->powering_up = 0;
+			}
 
-			if (!live_builder && ps->powering_down)
+			if (!live_builder && ps->powering_down) {
+				lwsl_notice("%s: no live builder so killing powering_down\n", __func__);
 				ps->powering_down = 0;
+			}
 
 			if (!ps->powering_up && !ps->powering_down) {
+				lwsl_notice("%s: nothing left to do for power state change, removing\n", __func__);
 				lws_dll2_remove(&ps->list);
 				free(ps);
 			}
@@ -345,7 +354,8 @@ sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down
 		if (!ps->powering_up && !ps->powering_down) {
 			lws_dll2_remove(&ps->list);
 			free(ps);
-		}
+		} else
+			lwsl_notice("%s: added ps with %d %d\n", __func__, up, down);
 	}
 
 	sais_list_builders(vhd);
@@ -1358,27 +1368,6 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		goto send_json;
 	}
 
-	if (pss->stay_owner.head) {
-		/*
-		 * Pending stay message to send
-		 */
-		sai_stay_t *s = lws_container_of(pss->stay_owner.head,
-						   sai_stay_t, list);
-
-		js = lws_struct_json_serialize_create(lsm_schema_stay,
-				LWS_ARRAY_SIZE(lsm_schema_stay), 0, s);
-		if (!js)
-			return 1;
-
-		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
-		lws_struct_json_serialize_destroy(&js);
-
-		lws_dll2_remove(&s->list);
-		free(s);
-
-		goto send_json;
-	}
-
 	if (pss->rebuild_owner.head) {
 		/*
 		 * Pending rebuild message to send
@@ -1443,50 +1432,6 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		goto send_json;
 	}
-
-	if (pss->is_power) {
-		char diff = 0;
-
-		n = 0;
-		lws_start_foreach_dll(struct lws_dll2 *, px, vhd->pending_plats.head) {
-			sais_plat_t *pl = lws_container_of(px, sais_plat_t, list);
-			size_t m;
-
-			if (n)
-				*p++ = ',';
-			m = strlen(pl->plat);
-			if (lws_ptr_diff_size_t(end, p) < m + 2)
-				break;
-			memcpy(p, pl->plat, m);
-			p += m;
-			*p = '\0';
-			n = 1;
-
-		} lws_end_foreach_dll(px);
-
-		/*
-		 * Don't resend the same status over and over
-		 */
-
-		if (strncmp(pss->last_power_report, (const char *)start, lws_ptr_diff_size_t(p, start) + 1)) {
-			diff = 1;
-			memcpy(pss->last_power_report, start, lws_ptr_diff_size_t(p, start) + 1);
-		}
-
-		if (diff && start != p) {
-			lwsl_notice("%s: detected jobs for %.*s\n", __func__,
-					(int)lws_ptr_diff_size_t(p, start), start);
-
-			if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
-					LWS_WRITE_TEXT) < 0)
-				return -1;
-
-			lws_callback_on_writable(pss->wsi);
-
-			return 0;
-		}
-	}
-
 
        if (!pss->issue_task_owner.head)
 		return 0; /* nothing to send */

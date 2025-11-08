@@ -210,37 +210,37 @@ typedef struct sais_plat {
 } sais_plat_t;
 
 struct vhd {
-	struct lws_context *context;
-	struct lws_vhost *vhost;
+	struct lws_context	*context;
+	struct lws_vhost	*vhost;
 
-	struct lws_ss_handle		*h_ss_websrv; /* server */
+	sais_t			server;
+
+	struct lws_ss_handle	*h_ss_websrv; /* server */
 
 	/* pss lists */
-	struct lws_dll2_owner		builders;
-	struct lws_dll2_owner		sai_powers;
-	struct lws_dll2_owner		pending_plats;
-	lws_dll2_owner_t		powering_up_list; /* sai_powering_up_plat_t */
+	struct lws_dll2_owner	builders;
+	struct lws_dll2_owner	sai_powers;
+	struct lws_dll2_owner	pending_plats;
+	lws_dll2_owner_t	powering_up_list; /* sai_powering_up_plat_t */
 
-	struct lwsac			*ac_plats;
+	struct lwsac		*ac_plats;
 
-	const char *sqlite3_path_lhs;
-	sqlite3 *pdb_metrics;
+	const char		*sqlite3_path_lhs;
+	sqlite3			*pdb_metrics;
 
-	lws_dll2_owner_t sqlite3_cache; /* sais_sqlite_cache_t */
-	lws_dll2_owner_t tasklog_cache;
-	lws_sorted_usec_list_t sul_logcache;
-	lws_sorted_usec_list_t sul_central; /* background task allocation sul */
-	lws_sorted_usec_list_t sul_activity; /* activity broadcast sul */
+	lws_dll2_owner_t	sqlite3_cache; /* sais_sqlite_cache_t */
+	lws_dll2_owner_t	tasklog_cache;
+	lws_sorted_usec_list_t	sul_logcache;
+	lws_sorted_usec_list_t	sul_central; /* background task allocation sul */
+	lws_sorted_usec_list_t	sul_activity; /* activity broadcast sul */
 
-	lws_usec_t	last_check_abandoned_tasks;
+	lws_usec_t		last_check_abandoned_tasks;
 
-	const char *notification_key;
-	unsigned int	task_abandoned_timeout_mins;
+	const char		*notification_key;
+	unsigned int		task_abandoned_timeout_mins;
 
 	unsigned int		browser_viewer_count; 
 	unsigned int		viewers_are_present:1;
-
-	sais_t server;
 };
 
 extern struct lws_context *
@@ -440,3 +440,6 @@ sais_metrics_db_init(struct vhd *vhd);
 
 int
 sais_metrics_db_prune(struct vhd *vhd, const char *key);
+
+int
+sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);

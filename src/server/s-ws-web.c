@@ -194,10 +194,15 @@ sais_list_builders(struct vhd *vhd)
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
 			sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);
-			size_t host_len = strlen(ps->host);
+			size_t host_len = strlen(ps->host), pl = strlen(builder_from_db->name);
 
-			if (!strncmp(builder_from_db->name, ps->host, host_len) &&
-			    builder_from_db->name[host_len] == '.') {
+			lwsl_notice("%s: %s vs %s\n", __func__, builder_from_db->name, ps->host);
+
+			if ((!strncmp(builder_from_db->name, ps->host, host_len) &&
+			    builder_from_db->name[host_len] == '.') || (pl > host_len &&
+					    !strncmp(builder_from_db->name + (pl - host_len), ps->host, host_len)))
+			{
+				lwsl_notice("%s: adjusting powering_ %d %d\n", __func__, ps->powering_up, ps->powering_down);
 				builder_from_db->powering_up = ps->powering_up;
 				builder_from_db->powering_down = ps->powering_down;
 				break;
@@ -456,8 +461,10 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	{
 		sai_stay_t *stay = (sai_stay_t *)a.dest;
 
+		lwsl_notice("%s: stay received from web\n", __func__);
+
 		lws_start_foreach_dll(struct lws_dll2 *, p,
-				m->vhd->sai_powers.head) {
+				      m->vhd->sai_powers.head) {
 			struct pss *pss_power = lws_container_of(p, struct pss, same);
 			sai_stay_t *s;
 			
@@ -466,6 +473,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				*s = *stay;
 				lws_dll2_add_tail(&s->list, &pss_power->stay_owner);
 				lws_callback_on_writable(pss_power->wsi);
+				lwsl_wsi_notice(pss_power->wsi, "queued stay on power conn");
 			}
 		} lws_end_foreach_dll(p);
 

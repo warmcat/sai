@@ -52,19 +52,53 @@ typedef enum {
 
 } cursor_phase_t;
 
+typedef struct tasmota_data {
+	unsigned int		voltage_v;
+	unsigned int		current_ma;
+	unsigned int		active_power_w;
+	unsigned int		apparent_power_va;
+	unsigned int		reactive_power_var;
+	unsigned int		power_factor_scaled_1000;
+	unsigned int		energy_today_wh;
+	unsigned int		energy_yesterday_wh;
+	unsigned int		energy_total_wh;
+} tasmota_data_t;
 
+typedef struct tasmota_parse {
+	tasmota_data_t		td;
+	struct lws_tokenize	ts;
+	uint16_t		match;
+	uint8_t			s;
+} tasmota_parse_t;
+
+typedef struct saip_pcon {
+	struct lws_dll2		list;
+
+	lws_dll2_owner_t	controlled_plats_owner; /* saip_server_plat_t */
+
+	const char		*name;
+	const char		*type;
+	const char		*url;
+
+	char			url_on[128];
+	char			url_off[128];
+	char			url_monitor[128];
+
+	struct lws_ss_handle	*ss_tasmota_on;
+	struct lws_ss_handle	*ss_tasmota_off;
+	struct lws_ss_handle	*ss_tasmota_monitor;
+} saip_pcon_t;
 
 struct saip_ws_pss;
 
 typedef struct saip_server_plat {
-	struct lws_dll2		list;
-	lws_dll2_owner_t	dependencies_owner;
+	lws_dll2_t		list;
 	lws_dll2_t		dependencies_list;
+	lws_dll2_t		pcon_list; /* saip_pcon->controlled_plats_owner */
+
+	lws_dll2_owner_t	dependencies_owner; /* saip_server_plat_t->dependencies_list */
 
 	lws_sorted_usec_list_t	sul_delay_off;
-
-	struct lws_ss_handle	*ss_tasmota_on;
-	struct lws_ss_handle	*ss_tasmota_off;
 
 	const char		*name;
 	const char		*host;
@@ -81,7 +115,7 @@ typedef struct saip_server_plat {
 } saip_server_plat_t;
 
 typedef struct saip_server {
-	struct lws_dll2		list;
+	lws_dll2_t		list;
 
 	lws_dll2_owner_t	sai_plat_owner; /* list of platforms we offer */
 
@@ -97,6 +131,8 @@ typedef struct saip_server {
 
 struct sai_power {
 	lws_dll2_owner_t	sai_server_owner; /* servers we connect to */
+
+	lws_dll2_owner_t	sai_pcon_owner; /* saip_pcon_t */
 
 	struct lwsac		*ac_conf_head;
 	struct lws_context	*context;
@@ -125,6 +161,7 @@ struct jpargs {
 
 	saip_server_t		*sai_server;
 	saip_server_plat_t	*sai_server_plat;
+	saip_pcon_t		*sai_pcon;
 
 	sai_plat_server_ref_t	*mref;
 
@@ -158,4 +195,13 @@ saip_notify_server_power_state(const char *plat_name, int up, int down);
 void
 saip_set_stay(const char *builder_name, int stay_on);
 int
-saip_queue_stay_info(saip_server_t *sps, saip_server_plat_t *sp, saip_server_link_t *pss);
+saip_queue_stay_info(saip_server_t *sps, saip_server_plat_t *sp,
+		     saip_server_link_t *pss);
+saip_pcon_t *
+saip_pcon_by_name(struct sai_power *power, const char *name);
+
+int
+parse_tasmota_status(tasmota_parse_t *tp);
+int
+saip_builder_bringup(saip_server_t *sps, saip_server_plat_t *sp,
+		     saip_server_link_t *pss);

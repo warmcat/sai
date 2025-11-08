@@ -721,6 +721,7 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 			lwsl_warn("%s: server offered task that's already running\n", __func__);
 			saib_queue_task_status_update(sp, spm, task->uuid, 0,
 						      SAI_TASK_REASON_DUPE);
+			saib_reassess_idle_situation();
 
 			return 0;
 		}
@@ -736,6 +737,7 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 		if (saib_queue_task_status_update(sp, spm, task->uuid, 0,
 						  SAI_TASK_REASON_BUSY))
 			return -1;
+		saib_reassess_idle_situation();
 
 		return 0;
 	}
@@ -775,6 +777,7 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 
 
 	lws_dll2_add_tail(&ns->list, &sp->nspawn_owner);
+	saib_reassess_idle_situation();
 
 	/*
 	 * If we're using sai-device, sort out the log proxy

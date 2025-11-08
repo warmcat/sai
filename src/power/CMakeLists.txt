@@ -7,6 +7,8 @@ set(SRCS
 	p-comms.c
 	p-smartplug.c
 	p-api.c
+	p-utils.c
+	p-tasmota-monitor.c
 	../common/struct-metadata.c
 )
 

@@ -336,6 +336,7 @@ skip:
 		saib_queue_task_status_update(ns->sp, ns->spm, ns->task->uuid,
 					      (unsigned int)ns->retcode,
 					      SAI_TASK_REASON_DESTROYED);
+		saib_reassess_idle_situation();
 
 		builder.ram_reserved_kib	-= ns->task->est_peak_mem_kib;
 		builder.disk_reserved_kib	-= ns->task->est_disk_kib;
@@ -361,6 +362,7 @@ fail:
 		saib_queue_task_status_update(ns->sp, ns->spm, ns->task->uuid,
 					      (unsigned int)ns->retcode,
 					      SAI_TASK_REASON_DESTROYED);
+		saib_reassess_idle_situation();
 
 		builder.ram_reserved_kib	-= ns->task->est_peak_mem_kib;
 		builder.disk_reserved_kib	-= ns->task->est_disk_kib;

@@ -107,20 +107,25 @@ saip_queue_stay_info(saip_server_t *sps, saip_server_plat_t *sp, saip_server_lin
 }
 
 int
-saip_builder_bringup(saip_server_t *sps, saip_server_plat_t *sp, saip_server_link_t *pss)
+saip_builder_bringup(saip_server_t *sps, saip_server_plat_t *sp,
+		     saip_server_link_t *pss)
 {
 	saip_notify_server_power_state(sp->name, 1, 0);
 
-	if (!strcmp(sp->power_on_type, "wol")) {
+	if (sp->power_on_type && !strcmp(sp->power_on_type, "wol")) {
 		lwsl_notice("%s:   triggering WOL\n", __func__);
 		write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
 		      sp->power_on_mac, strlen(sp->power_on_mac));
 	}
 
-	if (!strcmp(sp->power_on_type, "tasmota")) {
-		lwsl_ss_notice(sp->ss_tasmota_on, "starting tasmota");
-		if (lws_ss_client_connect(sp->ss_tasmota_on))
-			lwsl_ss_err(sp->ss_tasmota_on, "failed to connect tasmota ON secure stream");
+	if (sp->pcon_list.owner) {
+		saip_pcon_t *pc = lws_container_of(sp->pcon_list.owner,
+						   saip_pcon_t,
+						   controlled_plats_owner);
+
+		lwsl_ss_notice(pc->ss_tasmota_on, "starting tasmota");
+		if (lws_ss_client_connect(pc->ss_tasmota_on))
+			lwsl_ss_err(pc->ss_tasmota_on, "failed to connect tasmota ON secure stream");
 	}
 
 	return saip_queue_stay_info(sps, sp, pss);
@@ -137,8 +142,8 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	lws_struct_args_t a;
 	struct lejp_ctx ctx;
 
-	lwsl_info("%s: len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
-	lwsl_hexdump_info(buf, len);
+	lwsl_notice("%s: len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
+	lwsl_hexdump_notice(buf, len);
 
 	memset(&a, 0, sizeof(a));
 	a.map_st[0] = lsm_schema_stay;
@@ -149,6 +154,8 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	if (lejp_parse(&ctx, (uint8_t *)buf, (int)len) >= 0 && a.dest) {
 		sai_stay_t *stay = (sai_stay_t *)a.dest;
 
+		// {"schema":"com.warmcat.sai.power.stay","builder_name":"ubuntu_rpi4","stay_on":1}
+
 		lwsl_warn("%s: received stay %s: %d\n", __func__, stay->builder_name, stay->stay_on);
 
 		saip_set_stay(stay->builder_name, stay->stay_on);
@@ -156,6 +163,8 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		return 0;
 	}
 	lwsac_free(&a.ac);
+
+	/* starting position is that no server-plat is needed */
 
 	lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
 		saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
@@ -189,10 +198,9 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			lws_start_foreach_dll(struct lws_dll2 *, px1, sp->dependencies_owner.head) {
 				saip_server_plat_t *sp1 = lws_container_of(px1, saip_server_plat_t, dependencies_list);
 
-				if (!strcmp(sp1->name, plat)) {
-					sp->needed = 2;
-					break;
-				}
+				lwsl_notice("%s: setting %s as needed dep\n", __func__, sp1->name);
+				sp1->needed = 2;
+				saip_set_stay(sp1->name, sp1->stay);
 
 			} lws_end_foreach_dll(px1);
 
@@ -205,6 +213,27 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		} lws_end_foreach_dll(px);
 	}
+
+	/*
+	 * Cascade dependencies up the platforms
+	 */
+
+	lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
+		saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
+
+		if (sp->needed) {
+			lws_start_foreach_dll(struct lws_dll2 *, py, sp->dependencies_owner.head) {
+				saip_server_plat_t *spd = lws_container_of(py, saip_server_plat_t, dependencies_list);
+
+				spd->needed |= 2;
+
+			} lws_end_foreach_dll(py);
+		}
+	} lws_end_foreach_dll(px);
+
+	/*
+	 * Bringup any directly needed or needed by dependency builders
+	 */
 
 	lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
 		saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
@@ -252,7 +281,6 @@ saip_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		if (!js)
 			lwsl_ss_warn(lws_ss_from_user(pss), "Failed to serialize managed builder");
 		else
-			/* crashes here walking pmb */
 			if (lws_struct_json_serialize(js, buf, *len, len) == LSJS_RESULT_FINISH)
 				*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
 

@@ -330,6 +330,8 @@ extern int
 saib_deletion_init(const char *argv0);
 extern void
 suspender_destroy(void);
+int
+saib_reassess_idle_situation(void);
 
 #if defined(__APPLE__)
 int

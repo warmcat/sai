@@ -437,7 +437,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		if (!strcmp((char *)start, "/power")) {
 			lwsl_notice("%s: ESTABLISHED: power connection\n", __func__);
-			pss->wsi = wsi;
 			pss->is_power = 1;
 			lws_dll2_add_head(&pss->same, &vhd->sai_powers);
 			sais_platforms_with_tasks_pending(vhd);
@@ -519,6 +518,12 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (!vhd) {
 			lwsl_notice("%s: no vhd\n", __func__);
 			break;
+		}
+
+		if (pss->is_power || pss->stay_owner.head) {
+			lwsl_notice("%s: going down power tx path\n", __func__);
+
+			return sais_power_tx(vhd, pss, buf, sizeof(buf));
 		}
 
 		return sais_ws_json_tx_builder(vhd, pss, buf, sizeof(buf));

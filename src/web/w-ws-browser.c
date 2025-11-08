@@ -518,8 +518,12 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		break;
 
 	case SAIM_WS_BROWSER_RX_STAY:
-		if (!sais_conn_auth(pss))
+		if (!sais_conn_auth(pss)) {
+			lwsl_err("%s: stay didn't like auth\n", __func__);
 			goto auth_error;
+		}
+
+		lwsl_notice("%s: web: received stay req\n", __func__);
 
 		/*
 		 * User is asking us to set or release a stay on a builder
@@ -1224,14 +1228,12 @@ b_finish:
 		 * when we go out of scope...
 		 */
 
-		lwsl_warn("%s: wwwwwwwwwwww PREPARE_TASKINFO: one_task %p\n", __func__, sch->one_task);
-
 		task_reply.event		= sch->one_event;
 		task_reply.task			= sch->one_task;
 		sch->one_task->rebuildable	= (sch->one_task->state == SAIES_FAIL ||
 						   sch->one_task->state == SAIES_CANCELLED) &&
 						  (lws_now_secs() - (sch->one_task->started +
-						(sch->one_task->duration / 1000000)) < 24 * 3600);
+						   (sch->one_task->duration / 1000000)) < 24 * 3600);
 		task_reply.auth_secs		= (int)(pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0);
 		task_reply.authorized		= pss->authorized;
 		lws_strncpy(task_reply.auth_user, pss->auth_user,
@@ -1306,9 +1308,7 @@ b_finish:
 			return 0;
 		}
 
-		lwsl_notice("%s: wwwwwwwwwww TASKINFO\n", __func__);
-
-		sai_dump_stderr((const char *)start, lws_ptr_diff_size_t(p, start));
+//		sai_dump_stderr((const char *)start, lws_ptr_diff_size_t(p, start));
 		break;
 
 	case WSS_SEND_ARTIFACT_INFO:
