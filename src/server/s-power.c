@@ -191,7 +191,7 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 		lws_struct_json_serialize_destroy(&js);
 
 		lwsl_wsi_notice(pss->wsi, "%s: server issuing stay notice\n", __func__);
-		sai_dump_stderr((char *)start, w);
+		sai_dump_stderr(start, w);
 
 		lws_dll2_remove(&s->list);
 		free(s);

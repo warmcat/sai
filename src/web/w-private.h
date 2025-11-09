@@ -167,14 +167,6 @@ struct pss {
 	unsigned int		toggle_favour_sch:1;
 };
 
-typedef struct sais_sqlite_cache {
-	lws_dll2_t	list;
-	char		uuid[65];
-	sqlite3		*pdb;
-	lws_usec_t	idle_since;
-	int		refcount;
-} sais_sqlite_cache_t;
-
 struct vhd {
 	struct lws_context		*context;
 	struct lws_vhost		*vhost;
@@ -205,6 +197,16 @@ struct vhd {
 	lws_sorted_usec_list_t		sul_logcache;
 };
 
+typedef struct saiw_websrv {
+	struct lws_ss_handle		*ss;
+	void				*opaque_data;
+
+	lws_struct_args_t		a;
+	struct lejp_ctx			ctx;
+	struct lws_buflist		*wbltx;
+} saiw_websrv_t;
+
+
 extern struct lws_context *
 sai_lws_context_from_json(const char *config_dir,
 			  struct lws_context_creation_info *info,
@@ -217,18 +219,6 @@ int
 sai_notification_file_upload_cb(void *data, const char *name,
 				const char *filename, char *buf, int len,
 				enum lws_spa_fileupload_states state);
-
-int
-sai_sqlite3_statement(sqlite3 *pdb, const char *cmd, const char *desc);
-
-int
-sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid, char can_create, sqlite3 **ppdb);
-
-void
-sais_event_db_close(struct vhd *vhd, sqlite3 **ppdb);
-
-int
-sais_event_db_delete_database(struct vhd *vhd, const char *event_uuid);
 
 int
 sai_sq3_event_lookup(sqlite3 *pdb, uint64_t start, lws_struct_args_cb cb, void *ca);
@@ -268,9 +258,6 @@ int
 saiw_task_cancel(struct vhd *vhd, const char *task_uuid);
 
 int
-saiw_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned int ss_flags);
-
-int
 saiw_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,
 	      sqlite3_blob **blob, uint64_t *length);
 
@@ -288,7 +275,8 @@ saiw_sched_destroy(struct lws_dll2 *d, void *user);
 
 
 void
-saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int min_api_version, enum lws_write_protocol flags);
+saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len,
+		      enum lws_write_protocol flags);
 
 void
 saiw_browser_state_changed(struct pss *pss, int established);

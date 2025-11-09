@@ -90,7 +90,8 @@ sais_central_clean_abandoned(struct vhd *vhd)
 		sai_event_t *e = lws_container_of(p, sai_event_t, list);
 		sqlite3 *pdb = NULL;
 
-		if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
+		if (!sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+					      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
 			char *err = NULL;
 
 			/*
@@ -138,7 +139,7 @@ sais_central_clean_abandoned(struct vhd *vhd)
 				sqlite3_finalize(sm);
 			}
 
-			sais_event_db_close(vhd, &pdb);
+			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		}
 
 	} lws_end_foreach_dll(p);

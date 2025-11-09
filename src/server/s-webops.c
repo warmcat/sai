@@ -198,7 +198,8 @@ sais_event_reset(struct vhd *vhd, const char *event_uuid)
 	char *err = NULL;
 	int ret;
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb))
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb))
 		return SAI_DB_RESULT_ERROR;
 
 	if (lws_struct_sq3_deserialize(pdb, NULL, NULL,
@@ -207,7 +208,7 @@ sais_event_reset(struct vhd *vhd, const char *event_uuid)
 
 		ret = sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
 		if (ret != SQLITE_OK) {
-			sais_event_db_close(vhd, &pdb);
+			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			lwsac_free(&ac);
 			if (ret == SQLITE_BUSY)
 				return SAI_DB_RESULT_BUSY;
@@ -219,7 +220,7 @@ sais_event_reset(struct vhd *vhd, const char *event_uuid)
 			sai_task_t *t = lws_container_of(p, sai_task_t, list);
 			if (sais_task_clear_build_and_logs(vhd, t->uuid, 0) == SAI_DB_RESULT_BUSY) {
 				sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
-				sais_event_db_close(vhd, &pdb);
+				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 				lwsac_free(&ac);
 				return SAI_DB_RESULT_BUSY;
 			}
@@ -227,7 +228,7 @@ sais_event_reset(struct vhd *vhd, const char *event_uuid)
 
 		ret = sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
 		if (ret != SQLITE_OK) {
-			sais_event_db_close(vhd, &pdb);
+			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			lwsac_free(&ac);
 			if (ret == SQLITE_BUSY)
 				return SAI_DB_RESULT_BUSY;
@@ -236,7 +237,7 @@ sais_event_reset(struct vhd *vhd, const char *event_uuid)
 		sqlite3_free(err);
 	}
 
-	sais_event_db_close(vhd, &pdb);
+	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 	lwsac_free(&ac);
 
 	return SAI_DB_RESULT_OK;
@@ -254,14 +255,15 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid)
 	size_t len;
 	int ret;
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) == 0) {
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb) == 0) {
 		if (lws_struct_sq3_deserialize(pdb, NULL, NULL,
 					       lsm_schema_sq3_map_task,
 					       &o, &ac, 0, 999) >= 0) {
 
 			ret = sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
 			if (ret != SQLITE_OK) {
-				sais_event_db_close(vhd, &pdb);
+				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 				lwsac_free(&ac);
 				if (ret == SQLITE_BUSY)
 					return SAI_DB_RESULT_BUSY;
@@ -281,14 +283,14 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid)
 
 			ret = sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
 			if (ret != SQLITE_OK) {
-				sais_event_db_close(vhd, &pdb);
+				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 				lwsac_free(&ac);
 				if (ret == SQLITE_BUSY)
 					return SAI_DB_RESULT_BUSY;
 				return SAI_DB_RESULT_ERROR;
 			}
 		}
-		sais_event_db_close(vhd, &pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		lwsac_free(&ac);
 	}
 
@@ -303,7 +305,7 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid)
 		return SAI_DB_RESULT_ERROR;
 	}
 
-	sais_event_db_delete_database(vhd, event_uuid);
+	sai_event_db_delete_database(vhd->sqlite3_path_lhs, event_uuid);
 	sais_eventchange(vhd->h_ss_websrv, event_uuid, SAIES_DELETED);
 
 	len = (size_t)lws_snprintf(pre + LWS_PRE, sizeof(pre) - LWS_PRE,
@@ -326,14 +328,15 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid)
 sai_db_result_t
 sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 {
+	char filt[256], esc[96];
+	struct lwsac *ac = NULL;
 	sqlite3 *pdb = NULL;
 	lws_dll2_owner_t o;
-	struct lwsac *ac = NULL;
 	char *err = NULL;
 	int ret;
-	char filt[256], esc[96];
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb))
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb))
 		return SAI_DB_RESULT_ERROR;
 
 	lws_sql_purify(esc, platform, sizeof(esc));
@@ -344,7 +347,7 @@ sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 				       &o, &ac, 0, 999) >= 0) {
 		ret = sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
 		if (ret != SQLITE_OK) {
-			sais_event_db_close(vhd, &pdb);
+			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			lwsac_free(&ac);
 			if (ret == SQLITE_BUSY)
 				return SAI_DB_RESULT_BUSY;
@@ -356,7 +359,7 @@ sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 			sai_task_t *t = lws_container_of(p, sai_task_t, list);
 			if (sais_task_clear_build_and_logs(vhd, t->uuid, 0) == SAI_DB_RESULT_BUSY) {
 				sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
-				sais_event_db_close(vhd, &pdb);
+				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 				lwsac_free(&ac);
 				return SAI_DB_RESULT_BUSY;
 			}
@@ -364,7 +367,7 @@ sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 
 		ret = sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
 		if (ret != SQLITE_OK) {
-			sais_event_db_close(vhd, &pdb);
+			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			lwsac_free(&ac);
 			if (ret == SQLITE_BUSY)
 				return SAI_DB_RESULT_BUSY;
@@ -373,7 +376,7 @@ sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 		sqlite3_free(err);
 	}
 
-	sais_event_db_close(vhd, &pdb);
+	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 	lwsac_free(&ac);
 
 	return SAI_DB_RESULT_OK;

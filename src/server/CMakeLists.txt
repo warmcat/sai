@@ -20,6 +20,16 @@ set(SRCS
 	../common/struct-metadata.c
 )
 
+include(CheckCCompilerFlag)
+include(CheckFunctionExists)
+include(CheckSymbolExists)
+include(CheckIncludeFile)
+include(CheckIncludeFiles)
+include(CheckLibraryExists)
+include(CheckTypeSize)
+include(CheckCSourceCompiles)
+include(GNUInstallDirs)
+
 set(requirements 1)
 require_lws_config(LWS_WITH_SERVER		1 requirements)
 require_lws_config(LWS_WITH_GENCRYPTO		1 requirements)
@@ -48,6 +58,8 @@ if (requirements)
 	target_link_libraries(${SUB} websockets ${SQLITE3_LIB_PATH})
 
        	include_directories(BEFORE "${SAI_LWS_INC_PATH}")
+
+	#	set(CMAKE_C_FLAGS "-ffunction-sections -Wl,--gc-sections -Wl,--print-gc-sections ${CMAKE_C_FLAGS}" )
 
 	CHECK_C_SOURCE_COMPILES("#include <libwebsockets.h>\nint
 	main(void) {\n#if defined(LWS_HAVE_LIBCAP)\n return

@@ -24,6 +24,7 @@
 #include <libwebsockets.h>
 #include <string.h>
 #include <signal.h>
+#include <assert.h>
 
 #include "p-private.h"
 
@@ -36,8 +37,9 @@ static const lws_struct_map_t lsm_schema_power_state[] = {
 void
 saip_notify_server_power_state(const char *plat_name, int up, int down)
 {
+	saip_server_link_t *m;
+	sai_power_state_t ps;
 	saip_server_t *sps;
-	sai_power_state_t *ps;
 
 	/* Find the first (usually only) configured sai-server connection */
 	if (!power.sai_server_owner.head) {
@@ -50,60 +52,83 @@ saip_notify_server_power_state(const char *plat_name, int up, int down)
 		return;
 	}
 
-	/* Allocate and queue the notification message */
-	ps = malloc(sizeof(*ps));
-	if (!ps)
-		return;
+	m = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
 
-	memset(ps, 0, sizeof(*ps));
-	lws_strncpy(ps->host, plat_name, sizeof(ps->host));
-	ps->powering_up = (char)up;
-	ps->powering_down = (char)down;
+	memset(&ps, 0, sizeof(ps));
 
-	/* The per-connection user object for the server link is a saip_server_link_t */
-	{
-		saip_server_link_t *pss = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
-		lws_dll2_add_tail(&ps->list, &pss->ps_owner);
-	}
+	lws_strncpy(ps.host, plat_name, sizeof(ps.host));
+	ps.powering_up		= (char)up;
+	ps.powering_down	= (char)down;
 
-	/* Request a writable callback to send the message */
-	if (lws_ss_request_tx(sps->ss))
-		lwsl_ss_warn(sps->ss, "Unable to request tx");
-
-	lwsl_notice("%s: Queued notification for %s\n", __func__, plat_name);
+	sai_ss_serialize_queue_helper(sps->ss, &m->bl_pwr_to_srv,
+				      lsm_schema_power_state,
+				      LWS_ARRAY_SIZE(lsm_schema_power_state),
+				      &ps);
 }
 
 int
-saip_queue_stay_info(saip_server_t *sps, saip_server_plat_t *sp, saip_server_link_t *pss)
+saip_queue_stay_info(saip_server_t *sps)
 {
-	sai_power_managed_builders_t *pmb;
-	sai_power_managed_builder_t *b;
+	sai_power_managed_builders_t pmb;
+	struct lwsac *ac = NULL;
+	saip_server_link_t *m;
+	int r;
 
-	pmb = malloc(sizeof(*pmb));
-	if (!pmb)
-		return 1;
+	lwsl_ss_notice(sps->ss, "@@@@@@@@@@@@@@ sai-power CONNECTED to server");
 
-	memset(pmb, 0, sizeof(*pmb));
+	m = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
 
-	/* queue the update for the builder state */
+	memset(&pmb, 0, sizeof(pmb));
 
-	b = malloc(sizeof(*b));
-	if (!b) {
-		free(pmb);
-		return 1;
-	}
+	lws_start_foreach_dll(struct lws_dll2 *, p, sps->sai_plat_owner.head) {
+		saip_server_plat_t *sp = lws_container_of(p,
+					saip_server_plat_t, list);
+		sai_power_managed_builder_t *b = lwsac_use_zero(&ac, sizeof(*b), 2048);
 
-	memset(b, 0, sizeof(*b));
-	lws_strncpy(b->name, sp->host, sizeof(b->name));
-	b->stay_on = sp->stay;
+		if (b) {
+			lws_strncpy(b->name, sp->host, sizeof(b->name));
+			b->stay_on	= sp->stay;
 
-	lws_dll2_add_tail(&b->list, &pmb->builders);
-	lws_dll2_add_tail(&pmb->list, &pss->managed_builders_owner);
+			lws_dll2_add_tail(&b->list, &pmb.builders);
+		}
+	} lws_end_foreach_dll(p);
 
-	if (lws_ss_request_tx(sps->ss))
-		lwsl_ss_warn(sps->ss, "Unable to request tx");
+	lws_start_foreach_dll(struct lws_dll2 *, p, power.sai_pcon_owner.head) {
+		saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
+		sai_power_controller_t *pc1 = lwsac_use_zero(&ac, sizeof(*pc1), 2048);
 
-	return 0;
+		if (pc1) {
+			lws_strncpy(pc1->name, pc->name, sizeof(pc1->name));
+			pc1->on		= pc->on;
+
+			lws_dll2_add_tail(&pc1->list, &pmb.power_controllers);
+
+			lws_start_foreach_dll(struct lws_dll2 *, p1,
+					      pc->controlled_plats_owner.head) {
+				saip_server_plat_t *sp = lws_container_of(p1,
+						saip_server_plat_t, pcon_list);
+				sai_controlled_builder_t *c = lwsac_use_zero(&ac,
+							      sizeof(*c), 2048);
+
+				if (c) {
+					if (sp->host)
+						lws_strncpy(c->name, sp->host,
+								sizeof(c->name));
+
+					lws_dll2_add_tail(&c->list,
+						&pc1->controlled_builders_owner);
+				}
+			} lws_end_foreach_dll(p1);
+		}
+	} lws_end_foreach_dll(p);
+
+	r = sai_ss_serialize_queue_helper(sps->ss, &m->bl_pwr_to_srv,
+				          lsm_schema_power_managed_builders,
+				          LWS_ARRAY_SIZE(lsm_schema_power_managed_builders),
+				          &pmb);
+	lwsac_free(&ac);
+
+	return r;
 }
 
 int
@@ -128,7 +153,7 @@ saip_builder_bringup(saip_server_t *sps, saip_server_plat_t *sp,
 			lwsl_ss_err(pc->ss_tasmota_on, "failed to connect tasmota ON secure stream");
 	}
 
-	return saip_queue_stay_info(sps, sp, pss);
+	return saip_queue_stay_info(sps);
 }
 
 static lws_ss_state_return_t
@@ -223,7 +248,8 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		if (sp->needed) {
 			lws_start_foreach_dll(struct lws_dll2 *, py, sp->dependencies_owner.head) {
-				saip_server_plat_t *spd = lws_container_of(py, saip_server_plat_t, dependencies_list);
+				saip_server_plat_t *spd = lws_container_of(py,
+					saip_server_plat_t, dependencies_list);
 
 				spd->needed |= 2;
 
@@ -251,7 +277,8 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			saip_builder_bringup(sps, sp, pss);
 
 		} else {
-			bp += (size_t)lws_snprintf(&benched[bp], sizeof(benched) - bp - 1, "%s%s", !bp ? "" : ", ", sp->name);
+			bp += (size_t)lws_snprintf(&benched[bp], sizeof(benched) - bp - 1,
+					"%s%s", !bp ? "" : ", ", sp->name);
 			benched[sizeof(benched) - 1] = '\0';
 		}
 
@@ -270,70 +297,20 @@ saip_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	  int *flags)
 {
 	saip_server_link_t *pss = (saip_server_link_t *)userobj;
-	lws_struct_serialize_t *js;
+	lws_ss_state_return_t r;
 
-	if (pss->managed_builders_owner.head) {
-		sai_power_managed_builders_t *pmb = lws_container_of(pss->managed_builders_owner.head,
-								     sai_power_managed_builders_t, list);
+	/*
+	 * helper fills tx with next buflist content, and asks to write again
+	 * if any left.
+	 */
 
-		js = lws_struct_json_serialize_create(lsm_schema_power_managed_builders,
-						      LWS_ARRAY_SIZE(lsm_schema_power_managed_builders), 0, pmb);
-		if (!js)
-			lwsl_ss_warn(lws_ss_from_user(pss), "Failed to serialize managed builder");
-		else
-			if (lws_struct_json_serialize(js, buf, *len, len) == LSJS_RESULT_FINISH)
-				*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+	r = sai_ss_tx_from_buflist_helper(pss->ss, &pss->bl_pwr_to_srv,
+					  buf, len, flags);
 
-		lws_dll2_remove(&pmb->list);
-		free(pmb);
-		goto sendify;
-	}
+	if (r == LWSSSSRET_OK)
+		sai_dump_stderr(buf, *len);
 
-	if (pss->stay_state_update_owner.head) {
-		sai_stay_state_update_t *ssu = lws_container_of(pss->stay_state_update_owner.head,
-								sai_stay_state_update_t, list);
-		js = lws_struct_json_serialize_create(lsm_schema_stay_state_update,
-						      LWS_ARRAY_SIZE(lsm_schema_stay_state_update), 0, ssu);
-		if (!js)
-			lwsl_ss_warn(lws_ss_from_user(pss), "Failed to serialize state update");
-		else
-			if (lws_struct_json_serialize(js, buf, *len, len) == LSJS_RESULT_FINISH)
-				*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
-
-		lws_dll2_remove(&ssu->list);
-		free(ssu);
-		goto sendify;
-	}
-
-	if (pss->ps_owner.head) {
-		/* Dequeue the first pending notification */
-		sai_power_state_t *ps = lws_container_of(pss->ps_owner.head, sai_power_state_t, list);
-
-		js = lws_struct_json_serialize_create(lsm_schema_power_state, 1, 0, ps);
-		if (!js)
-			lwsl_ss_warn(lws_ss_from_user(pss), "Failed to serialize state update");
-		else
-			if (lws_struct_json_serialize(js, buf, *len, len) == LSJS_RESULT_FINISH)
-				*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
-
-		lws_dll2_remove(&ps->list);
-		free(ps);
-		goto sendify;
-	}
-
-	return LWSSSSRET_TX_DONT_SEND;
-
-sendify:
-	lws_struct_json_serialize_destroy(&js);
-
-	/* If there are more to send, request another writable callback */
-	if (pss->ps_owner.head || pss->managed_builders_owner.head || pss->stay_state_update_owner.head)
-		if (lws_ss_request_tx(lws_ss_from_user(pss)))
-			lwsl_ss_warn(lws_ss_from_user(pss), "tx request failed");
-
-	lwsl_hexdump_notice(buf, *len);
-
-	return LWSSSSRET_OK;
+	return r;
 }
 
 static int
@@ -363,8 +340,8 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 	const char *pq;
 	int n;
 
-	lwsl_info("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
-		  (unsigned int)ack);
+	// lwsl_info("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
+	//	  (unsigned int)ack);
 
 	switch (state) {
 
@@ -388,74 +365,20 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 			pq = sps->url;
 			n = (int)strlen(pq);
 		}
-#if 0
-		sps->name = sps->url + strlen(sps->url) + 1;
-		memcpy((char *)sps->name, pq, (unsigned int)n);
-		((char *)sps->name)[n] = '\0';
-
-		while (strchr(sps->name, '.'))
-			*strchr(sps->name, '.') = '_';
-		while (strchr(sps->name, '/'))
-			*strchr(sps->name, '/') = '_';
-#endif
 		break;
 
 	case LWSSSCS_DESTROYING:
-
-		/*
-		 * If the logical SS itself is going down, every platform that
-		 * used us to connect to their server and has nspawns are also
-		 * going down
-		 */
 		lws_dll2_foreach_safe(&power.sai_server_owner, sps,
 				      cleanup_on_ss_destroy);
-
 		break;
 
 	case LWSSSCS_CONNECTED:
-	{
-		saip_server_link_t *pss = (saip_server_link_t *)userobj;
-		sai_power_managed_builders_t *pmb = malloc(sizeof(*pmb));
-
 		lwsl_ss_notice(sps->ss, "@@@@@@@@@@@@@@ sai-power CONNECTED to server");
+		saip_queue_stay_info(sps);
+		break;
 
-		if (!pmb)
-			return LWSSSSRET_DISCONNECT_ME;
-
-		memset(pmb, 0, sizeof(*pmb));
-
-		lws_start_foreach_dll(struct lws_dll2 *, p,
-				      sps->sai_plat_owner.head) {
-			saip_server_plat_t *sp = lws_container_of(p,
-						saip_server_plat_t, list);
-			sai_power_managed_builder_t *b = malloc(sizeof(*b));
-
-			if (!b)
-				continue;
-
-			memset(b, 0, sizeof(*b));
-			lws_strncpy(b->name, sp->host, sizeof(b->name));
-			b->stay_on = sp->stay;
-
-			lws_dll2_add_tail(&b->list, &pmb->builders);
-		} lws_end_foreach_dll(p);
-
-		lws_dll2_add_tail(&pmb->list, &pss->managed_builders_owner);
-
-		return lws_ss_request_tx(sps->ss);
-	}
 	case LWSSSCS_DISCONNECTED:
-		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, pss->ps_owner.head) {
-			sai_power_state_t *ps = lws_container_of(d, sai_power_state_t, list);
-
-			lws_dll2_remove(&ps->list);
-			free(ps);
-		} lws_end_foreach_dll_safe(d, d1);
-
-		/*
-		 * clean up any ongoing spawns related to this connection
-		 */
-
+		lws_buflist_destroy_all_segments(&pss->bl_pwr_to_srv);
 		lwsl_info("%s: DISCONNECTED\n", __func__);
 		lws_dll2_foreach_safe(&power.sai_server_owner, sps,
 				      cleanup_on_ss_disconnect);
@@ -477,7 +400,7 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 }
 
 LWS_SS_INFO("sai_power", saip_server_link_t)
-	.rx = saip_m_rx,
-	.state = saip_m_state,
-	.tx = saip_m_tx, /* We need a TX handler to send messages */
+	.rx		= saip_m_rx,
+	.state		= saip_m_state,
+	.tx		= saip_m_tx,
 };

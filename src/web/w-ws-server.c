@@ -32,15 +32,6 @@
 
 #include "w-private.h"
 
-typedef struct saiw_websrv {
-	struct lws_ss_handle		*ss;
-	void				*opaque_data;
-
-	lws_struct_args_t		a;
-	struct lejp_ctx			ctx;
-	struct lws_buflist		*wbltx;
-} saiw_websrv_t;
-
 static lws_struct_map_t lsm_websrv_evinfo[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"event_hash"),
 };
@@ -81,15 +72,13 @@ enum {
  * The flags are lws_write() flags.
  */
 void
-saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int api_ver_min, enum lws_write_protocol flags)
+saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len,
+		      enum lws_write_protocol flags)
 {
-	int eff = 0;
-
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 		struct pss *pss = lws_container_of(p, struct pss, same);
 		int *pi = (int *)((const char *)buf - sizeof(int));
 
-		eff++;
 		*pi = (int)flags;
 
 		if (lws_buflist_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) < 0)
@@ -98,31 +87,6 @@ saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len, unsigned int
 		lws_callback_on_writable(pss->wsi);
 
 	} lws_end_foreach_dll(p);
-}
-
-
-/*
- * Queue messages to send from sai-web to sai-server
- */
-
-int
-saiw_websrv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned int ss_flags)
-{
-	saiw_websrv_t *m = (saiw_websrv_t *)lws_ss_to_user_object(h);
-	unsigned int *pi = (unsigned int *)((const char *)buf - sizeof(int));
-
-	*pi = ss_flags;
-	
-	// lwsl_ss_notice(h, "sai-web: Queuing sai-web -> sai-server");
-	// lwsl_hexdump_notice(buf, len);
-
-	if (lws_buflist_append_segment(&m->wbltx, buf - sizeof(int), len + sizeof(int)) < 0)
-		lwsl_ss_err(h, "failed to append"); /* still ask to drain */
-
-	if (lws_ss_request_tx(h))
-		lwsl_ss_err(h, "failed to request tx");
-
-	return 0;
 }
 
 /*
@@ -175,17 +139,17 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		 */
 		switch (m->a.top_schema_index) {
 		case SAIS_WS_WEBSRV_RX_LOADREPORT:
-			saiw_ws_broadcast_raw(vhd, buf, len, 0,
+			saiw_ws_broadcast_raw(vhd, buf, len,
 				lws_write_ws_flags(LWS_WRITE_TEXT,
 						   flags & LWSSS_FLAG_SOM, 0));
 			break;
 		case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
-			saiw_ws_broadcast_raw(vhd, buf, len, 0,
+			saiw_ws_broadcast_raw(vhd, buf, len,
 				lws_write_ws_flags(LWS_WRITE_TEXT,
 						   flags & LWSSS_FLAG_SOM, 0));
 			break;
 		case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
-			saiw_ws_broadcast_raw(vhd, buf, len, 0,
+			saiw_ws_broadcast_raw(vhd, buf, len,
 				lws_write_ws_flags(LWS_WRITE_TEXT,
 						   flags & LWSSS_FLAG_SOM,
 						   flags & LWSSS_FLAG_EOM));
@@ -201,7 +165,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		case SAIS_WS_WEBSRV_RX_TASKCHANGE:
 		case SAIS_WS_WEBSRV_RX_EVENTCHANGE:
 		case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
-			saiw_ws_broadcast_raw(vhd, buf, len, 0,
+			saiw_ws_broadcast_raw(vhd, buf, len,
 				lws_write_ws_flags(LWS_WRITE_TEXT,
 						   flags & LWSSS_FLAG_SOM,
 						   flags & LWSSS_FLAG_EOM));
@@ -277,11 +241,11 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	case SAIS_WS_WEBSRV_RX_LOADREPORT:
 		// lwsl_notice("%s: ^^^^^^^^^^^^^^ SAIS_WS_WEBSRV_RX_LOADREPORT forwarding to browser\n", __func__);
 		// lwsl_hexdump_notice(buf, len);
-		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n, 0,
+		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 	case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
-		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n, 0,
+		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 	}
@@ -306,55 +270,8 @@ saiw_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	     int *flags)
 {
 	saiw_websrv_t *m = (saiw_websrv_t *)userobj;
-	int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&m->wbltx), depi;
-	char som, som1, eom, final = 1;
-	size_t fsl, used;
 
-	if (!m->wbltx) {
-		// lwsl_notice("%s: nothing to send from web -> srv\n", __func__);
-		return LWSSSSRET_TX_DONT_SEND;
-	}
-
-	depi = *pi;
-
-	/*
-	 * We can only issue *len at a time.
-	 *
-	 * Notice we are getting the stored flags from the START of the fragment each time.
-	 * that means we can still see the right flags stored with the fragment, even if we
-	 * have partially used the buflist frag and are partway through it.
-	 *
-	 * Ergo, only something to skip if we are at som=1.  And also notice that although
-	 * *pi will be right, after the lws_buflist..._use() api, what it points to has been
-	 * destroyed.  So we also dereference *pi into depi for use below.
-	 */
-
-	fsl = lws_buflist_next_segment_len(&m->wbltx, NULL);
-
-	lws_buflist_fragment_use(&m->wbltx, NULL, 0, &som, &eom);
-	if (som) {
-		fsl -= sizeof(int);
-		lws_buflist_fragment_use(&m->wbltx, buf, sizeof(int), &som1, &eom);
-	}
-
-	/* this is the only buflist user on pss->raw_tx */
-	used = (size_t)lws_buflist_fragment_use(&m->wbltx, (uint8_t *)buf, *len, &som1, &eom);
-	if (!used)
-		return LWSSSSRET_TX_DONT_SEND;
-
-	if (used < fsl || (depi & LWS_WRITE_NO_FIN))
-		final = 0;
-
-	*len = used;
-	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
-
-	// lwsl_ss_notice(m->ss, "Sending %d web->srv: ssflags %d", (int)*len, (int)*flags);
-	// lwsl_hexdump_notice(buf, *len);
-
-	if (m->wbltx)
-		return lws_ss_request_tx(m->ss);
-
-	return 0;
+	return sai_ss_tx_from_buflist_helper(m->ss, &m->wbltx, buf, len, flags);
 }
 
 static int
@@ -441,5 +358,7 @@ saiw_update_viewer_count(struct vhd *vhd)
 	lws_struct_json_serialize_destroy(&js);
 
 	if (len > 0)
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf + LWS_PRE, len, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+		sai_ss_queue_frag_on_buflist_REQUIRES_LWS_PRE(vhd->h_ss_websrv,
+			&((saiw_websrv_t *)lws_ss_to_user_object(vhd->h_ss_websrv))->wbltx,
+			buf + LWS_PRE, len, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
 }

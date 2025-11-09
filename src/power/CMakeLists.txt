@@ -4,11 +4,12 @@ set(CPACK_DEBIAN_BUILDER_PACKAGE_NAME "sai-power")
 set(SRCS
 	p-sai.c
 	p-conf.c
-	p-comms.c
 	p-smartplug.c
-	p-api.c
+	p-http-api.c
 	p-utils.c
+	p-ws-server.c
 	p-tasmota-monitor.c
+	../common/c-utils.c
 	../common/struct-metadata.c
 )
 

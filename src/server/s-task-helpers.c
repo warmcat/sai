@@ -108,7 +108,8 @@ sais_bind_task_to_builder(struct vhd *vhd, const char *builder_name,
 	 * Open the event-specific database on the temporary event object
 	 */
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, (sqlite3 **)&e->pdb)) {
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, (sqlite3 **)&e->pdb)) {
 		lwsl_err("%s: unable to open event-specific database\n",
 				__func__);
 
@@ -144,7 +145,7 @@ sais_bind_task_to_builder(struct vhd *vhd, const char *builder_name,
 
 bail:
 	if (e)
-		sais_event_db_close(vhd, (sqlite3 **)&e->pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, (sqlite3 **)&e->pdb);
 	lwsac_free(&ac);
 
 	return r;
@@ -190,7 +191,8 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 	 * Open the event-specific database on the temporary event object
 	 */
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, (sqlite3 **)&e->pdb)) {
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, (sqlite3 **)&e->pdb)) {
 		lwsl_err("%s: unable to open event-specific database\n",
 				__func__);
 
@@ -342,7 +344,7 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 		}
 	}
 
-	sais_event_db_close(vhd, (sqlite3 **)&e->pdb);
+	sai_event_db_close(&vhd->sqlite3_cache, (sqlite3 **)&e->pdb);
 	lwsac_free(&ac);
 
 	if (ostate == SAIES_STEP_SUCCESS) {
@@ -354,7 +356,7 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 
 bail:
 	if (e)
-		sais_event_db_close(vhd, (sqlite3 **)&e->pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, (sqlite3 **)&e->pdb);
 	lwsac_free(&ac);
 
 	return 1;
@@ -417,7 +419,8 @@ sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid)
 
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
 		lwsl_err("%s: unable to open event-specific database\n", __func__);
 		return -1;
 	}
@@ -429,14 +432,14 @@ sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid)
 	if (sqlite3_exec(pdb, q, sql3_get_string_cb, builder_name, NULL) !=
 							SQLITE_OK ||
 	    !builder_name[0]) {
-		sais_event_db_close(vhd, &pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		/*
 		 * This is not an error... the task may not have had a builder
 		 * assigned yet.  There's nothing to do.
 		 */
 		return 0;
 	}
-	sais_event_db_close(vhd, &pdb);
+	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 	/*
 	 * This frees the sqlite task from being bound to any builder
@@ -494,7 +497,8 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
 		lwsl_err("%s: unable to open event-specific database\n",
 				__func__);
 
@@ -507,7 +511,7 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 
 	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 	if (ret != SQLITE_OK) {
-		sais_event_db_close(vhd, &pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		if (ret == SQLITE_BUSY)
 			return SAI_DB_RESULT_BUSY;
 		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
@@ -519,7 +523,7 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 
 	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 	if (ret != SQLITE_OK) {
-		sais_event_db_close(vhd, &pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		if (ret == SQLITE_BUSY)
 			return SAI_DB_RESULT_BUSY;
 		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
@@ -527,7 +531,7 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 		return SAI_DB_RESULT_ERROR;
 	}
 
-	sais_event_db_close(vhd, &pdb);
+	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 	/* 1,1 == reset started and duration in db for task to 0 */
 	sais_set_task_state(vhd, task_uuid, SAIES_WAITING, 1, 1);
@@ -574,7 +578,8 @@ sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
 		lwsl_err("%s: unable to open event-specific database\n",
 				__func__);
 
@@ -586,7 +591,7 @@ sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 	ret = lws_struct_sq3_deserialize(pdb, cmd, NULL,
 					 lsm_schema_sq3_map_task, &o, &ac, 0, 1);
 	if (ret < 0 || !o.head) {
-		sais_event_db_close(vhd, &pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		lwsac_free(&ac);
 		return SAI_DB_RESULT_ERROR;
 	}
@@ -600,7 +605,7 @@ sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 
 		ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 		if (ret != SQLITE_OK) {
-			sais_event_db_close(vhd, &pdb);
+			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			lwsac_free(&ac);
 			if (ret == SQLITE_BUSY)
 				return SAI_DB_RESULT_BUSY;
@@ -612,7 +617,7 @@ sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 	}
 
 	lwsac_free(&ac);
-	sais_event_db_close(vhd, &pdb);
+	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 	sais_set_task_state(vhd, task_uuid, SAIES_WAITING, 0, 0);
 

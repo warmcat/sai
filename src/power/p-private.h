@@ -72,7 +72,7 @@ typedef struct tasmota_parse {
 } tasmota_parse_t;
 
 typedef struct saip_pcon {
-	struct lws_dll2		list;
+	struct lws_dll2		list; /* sai_power.sai_pcon_owner */
 
 	lws_dll2_owner_t	controlled_plats_owner; /* saip_server_plat_t */
 
@@ -87,6 +87,8 @@ typedef struct saip_pcon {
 	struct lws_ss_handle	*ss_tasmota_on;
 	struct lws_ss_handle	*ss_tasmota_off;
 	struct lws_ss_handle	*ss_tasmota_monitor;
+
+	char			on;
 } saip_pcon_t;
 
 struct saip_ws_pss;
@@ -174,16 +176,14 @@ LWS_SS_USER_TYPEDEF
         size_t                  size;
         size_t                  pos;
 
-	lws_dll2_owner_t	ps_owner;
-	lws_dll2_owner_t	managed_builders_owner;
-	lws_dll2_owner_t	stay_state_update_owner;
+	struct lws_buflist	*bl_pwr_to_srv;
 } saip_server_link_t;
 
 
 
 extern struct sai_power power;
 extern const lws_ss_info_t ssi_saip_server_link_t, ssi_saip_smartplug_t;
-extern const struct lws_protocols protocol_com_warmcat_sai, protocol_ws_power;
+extern const struct lws_protocols protocol_com_warmcat_sai;
 extern struct lws_spawn_piped *lsp_wol;
 int
 saip_config_global(struct sai_power *power, const char *d);
@@ -195,13 +195,14 @@ saip_notify_server_power_state(const char *plat_name, int up, int down);
 void
 saip_set_stay(const char *builder_name, int stay_on);
 int
-saip_queue_stay_info(saip_server_t *sps, saip_server_plat_t *sp,
-		     saip_server_link_t *pss);
+saip_queue_stay_info(saip_server_t *sps);
 saip_pcon_t *
 saip_pcon_by_name(struct sai_power *power, const char *name);
 
 int
-parse_tasmota_status(tasmota_parse_t *tp);
+saip_parse_tasmota_status(tasmota_parse_t *tp);
 int
 saip_builder_bringup(saip_server_t *sps, saip_server_plat_t *sp,
 		     saip_server_link_t *pss);
+void
+saip_ss_create_tasmota(void);

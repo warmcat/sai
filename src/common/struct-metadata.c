@@ -19,6 +19,9 @@
  *  MA  02110-1301  USA
  *
  * lws_struct metadata for structs common to builder and server
+ *
+ * For arrays, keep extern length in common/include/private.h in sync
+ * with changes to array lengths!
  */
 
 #include <libwebsockets.h>
@@ -74,7 +77,7 @@ const lws_struct_map_t lsm_schema_sq3_map_build_metric[] = {
 };
 
 
-const lws_struct_map_t lsm_plat[] = { /* !!! keep extern length in common/include/private.h in sync */
+const lws_struct_map_t lsm_plat[] = {
 	LSM_UNSIGNED	(sai_plat_t, uid,		"uid"),
 	LSM_STRING_PTR	(sai_plat_t, name,		"name"),
 	LSM_STRING_PTR	(sai_plat_t, platform,		"platform"),
@@ -287,9 +290,9 @@ const lws_struct_map_t lsm_schema_json_map_artifact[] = {
 };
 
 const lws_struct_map_t lsm_power_state[] = {
-	LSM_CARRAY(sai_power_state_t, host, "host"),
-	LSM_SIGNED(sai_power_state_t, powering_up, "powering_up"),
-	LSM_SIGNED(sai_power_state_t, powering_down, "powering_down"),
+	LSM_CARRAY(sai_power_state_t, host,			"host"),
+	LSM_SIGNED(sai_power_state_t, powering_up,		"powering_up"),
+	LSM_SIGNED(sai_power_state_t, powering_down,		"powering_down"),
 };
 
 const lws_struct_map_t lsm_schema_sq3_map_artifact[] = {
@@ -297,14 +300,25 @@ const lws_struct_map_t lsm_schema_sq3_map_artifact[] = {
 };
 
 const lws_struct_map_t lsm_stay[] = {
-	LSM_CARRAY(sai_stay_t, builder_name, "builder_name"),
-	LSM_UNSIGNED(sai_stay_t, stay_on, "stay_on"),
+	LSM_CARRAY(sai_stay_t, builder_name,			"builder_name"),
+	LSM_UNSIGNED(sai_stay_t, stay_on,			"stay_on"),
 };
 
 const lws_struct_map_t lsm_schema_stay[] = {
 	LSM_SCHEMA(sai_stay_t, NULL, lsm_stay, "com.warmcat.sai.power.stay"),
 };
 
+const lws_struct_map_t lsm_controlled_builder[] = {
+	LSM_CARRAY(sai_controlled_builder_t, name,		"name"),
+};
+
+const lws_struct_map_t lsm_power_controller[] = {
+	LSM_CARRAY(sai_power_controller_t, name, "name"),
+	LSM_UNSIGNED(sai_power_controller_t, on, "on"),
+	LSM_LIST(sai_power_controller_t, controlled_builders_owner,
+		 sai_controlled_builder_t, list, NULL,
+		 lsm_controlled_builder, "controlled_builders"),
+};
 
 const lws_struct_map_t lsm_power_managed_builder[] = {
 	LSM_CARRAY(sai_power_managed_builder_t, name, "name"),
@@ -315,6 +329,9 @@ const lws_struct_map_t lsm_power_managed_builders_list[] = {
 	LSM_LIST(sai_power_managed_builders_t, builders,
 		 sai_power_managed_builder_t, list, NULL,
 		 lsm_power_managed_builder, "builders"),
+	LSM_LIST(sai_power_managed_builders_t, power_controllers,
+		 sai_power_controller_t, list, NULL,
+		 lsm_power_controller, "power_controllers"),
 };
 
 const lws_struct_map_t lsm_schema_power_managed_builders[] = {

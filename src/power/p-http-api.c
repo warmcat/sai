@@ -90,7 +90,8 @@ find_platform(struct sai_power *pwr, const char *host)
 void
 saip_notify_server_stay_state(const char *plat_name, int stay_on)
 {
-	sai_stay_state_update_t *ssu;
+	sai_stay_state_update_t ssu;
+	saip_server_link_t *m;
 	saip_server_t *sps;
 
 	/* Find the first (usually only) configured sai-server connection */
@@ -104,27 +105,16 @@ saip_notify_server_stay_state(const char *plat_name, int stay_on)
 		return;
 	}
 
-	/* Allocate and queue the notification message */
-	ssu = malloc(sizeof(*ssu));
-	if (!ssu)
-		return;
+	m = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
 
-	memset(ssu, 0, sizeof(*ssu));
-	lws_strncpy(ssu->builder_name, plat_name, sizeof(ssu->builder_name));
-	ssu->stay_on = (char)stay_on;
+	memset(&ssu, 0, sizeof(ssu));
+	lws_strncpy(ssu.builder_name, plat_name, sizeof(ssu.builder_name));
+	ssu.stay_on = (char)stay_on;
 
-	/* The per-connection user object for the server link is a saip_server_link_t */
-	{
-		saip_server_link_t *pss = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
-
-		lws_dll2_add_tail(&ssu->list, &pss->stay_state_update_owner);
-	}
-
-	/* Request a writable callback to send the message */
-	if (lws_ss_request_tx(sps->ss))
-		lwsl_ss_warn(sps->ss, "Unable to request tx");
-
-	lwsl_notice("%s: Queued notification for %s\n", __func__, plat_name);
+	sai_ss_serialize_queue_helper(sps->ss, &m->bl_pwr_to_srv,
+				      lsm_schema_stay_state_update,
+				      LWS_ARRAY_SIZE(lsm_schema_stay_state_update),
+				      &ssu);
 }
 
 void
@@ -157,7 +147,7 @@ saip_set_stay(const char *builder_name, int stay_on)
 		return;
 	}
 
-	saip_queue_stay_info(sps, sp, pss);
+	saip_queue_stay_info(sps);
 }
 
 /*
@@ -205,10 +195,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
                lws_ss_tx_ordinal_t ack)
 {
         local_srv_t *g = (local_srv_t *)userobj;
-	sai_power_managed_builders_t *pmb;
-	sai_power_managed_builder_t *b;
 	char *path = NULL, pn[128];
-	saip_server_link_t *pss;
 	saip_server_plat_t *sp;
 	saip_server_t *sps;
 	int apo = 0;
@@ -280,6 +267,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 		}
 
 		if (len > 10 && !strncmp(path, "/power-on/", 10)) {
+
 			lws_strnncpy(pn, &path[10], len - 10, sizeof(pn));
 			sp = find_platform(&power, pn);
 			if (!sp) {
@@ -318,29 +306,14 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 			}
 
 			lwsl_warn("%s: powered on host %s\n", __func__, sp->host);
+
 			sp->stay = 1; /* so builder can understand it's manual */
 			saip_notify_server_power_state(sp->host, 1, 0);
 
-			pmb = malloc(sizeof(*pmb));
-			if (!pmb)
-				return 1;
-			memset(pmb, 0, sizeof(*pmb));
+			sps = lws_container_of(power.sai_server_owner.head,
+						saip_server_t, list);
 
-			b = malloc(sizeof(*b));
-			if (!b) {
-				free(pmb);
-				return 1;
-			}
-			memset(b, 0, sizeof(*b));
-
-			lws_strncpy(b->name, sp->host, sizeof(b->name));
-			b->stay_on = sp->stay;
-
-			sps = lws_container_of(power.sai_server_owner.head, saip_server_t, list);
-			pss = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
-
-			lws_dll2_add_tail(&b->list, &pmb->builders);
-			lws_dll2_add_tail(&pmb->list, &pss->managed_builders_owner);
+			saip_queue_stay_info(sps);
 
 			g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
 				"Manually powered on %s", sp->host);

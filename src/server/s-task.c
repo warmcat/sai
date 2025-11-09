@@ -40,7 +40,8 @@ sais_event_check_for_plat_tasks(struct vhd *vhd, const char *event_uuid,
 	char query[256];
 	unsigned int count = 0;
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 1, &check_pdb))
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 1, &check_pdb))
 		return 0;
 
 	lws_snprintf(query, sizeof(query),
@@ -51,7 +52,7 @@ sais_event_check_for_plat_tasks(struct vhd *vhd, const char *event_uuid,
 			 NULL) != SQLITE_OK)
 		count = 0;
 
-	sais_event_db_close(vhd, &check_pdb);
+	sai_event_db_close(&vhd->sqlite3_cache, &check_pdb);
 
 	lwsl_notice("%s: event %s, platform %s: count %u\n", __func__, event_uuid,
 		  platform, count);
@@ -223,7 +224,8 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 
 		// lwsl_notice("candidate event %s '%s'\n", e->uuid, esc_plat);
 
-		if (sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb))
+		if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+				      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb))
 			goto next;
 
 		/*
@@ -301,7 +303,8 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		} while (1);
 
 		if (checked_uuid[0] &&
-		    !sais_event_db_ensure_open(vhd, checked_uuid, 1, &prev_pdb)) {
+		    !sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+				      vhd->sqlite3_path_lhs, checked_uuid, 1, &prev_pdb)) {
 			sqlite3_stmt *sm;
 
 			/* we are looking for failed tasks here */
@@ -347,7 +350,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 			} else
 				lwsl_err("%s: query fail 1\n", __func__);
 
-			sais_event_db_close(vhd, &prev_pdb);
+			sai_event_db_close(&vhd->sqlite3_cache, &prev_pdb);
 		}
 
 		/*
@@ -377,7 +380,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 			lwsl_notice("%s: Prioritizing failed task for %s ('%s')\n",
 				    __func__, platform, fti->taskname);
 
-			sais_event_db_close(vhd, &pdb);
+			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			lwsac_free(&ac);
 			lwsac_free(&failed_ac);
 			memcpy(&pss->alloc_task, lws_container_of(
@@ -407,7 +410,7 @@ next1: ;
 			goto close_next;
 
 		lwsl_notice("%s: orig exit\n", __func__);
-		sais_event_db_close(vhd, &pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		lwsac_free(&ac);
 		lwsac_free(&failed_ac);
 		memcpy(&pss->alloc_task, lws_container_of(
@@ -417,7 +420,7 @@ next1: ;
 		return &pss->alloc_task;
 
 close_next:
-		sais_event_db_close(vhd, &pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 next: ;
 	} lws_end_foreach_dll(p);
 
@@ -522,7 +525,8 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 		sqlite3_stmt *sm;
 		int n;
 
-		if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
+		if (!sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+				      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
 
 			if (sqlite3_prepare_v2(pdb, "select distinct platform "
 						    "from tasks where "
@@ -553,7 +557,7 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 					 __func__, n, sqlite3_errmsg(pdb));
 			}
 
-			sais_event_db_close(vhd, &pdb);
+			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		}
 
 	} lws_end_foreach_dll(p);
@@ -680,7 +684,8 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 		sai_event_t *e = lws_container_of(d, sai_event_t, list);
 		sqlite3 *pdb = NULL;
 
-		if (sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb))
+		if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+				      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb))
 			goto next;
 
 		if (lws_struct_sq3_deserialize(pdb,
@@ -727,7 +732,7 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 
 next1:
 		lwsac_free(&ac_tasks);
-		sais_event_db_close(vhd, &pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 next: ;
 	} lws_end_foreach_dll(d);
@@ -782,7 +787,8 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 	event_uuid[0] = '\0';
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb) || !pdb)
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb) || !pdb)
 		return -1;
 
 	// lwsl_notice("%s: task_uuid %s, pdb %p\n", __func__, task_uuid, pdb);
@@ -793,7 +799,7 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 				       lsm_schema_sq3_map_task, &o, &ac, 0, 1);
 	if (n < 0 || !o.head) {
 		lwsl_warn("%s: bailing as nothing with state != 4\n", __func__);
-		sais_event_db_close(vhd, &pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		lwsac_free(&ac);
 		return -1;
 	}
@@ -808,7 +814,7 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 	temp_task = malloc(sizeof(sai_task_t));
 	if (!temp_task) {
 		lwsac_free(&ac);
-		sais_event_db_close(vhd, &pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		return -1;
 	}
 
@@ -828,7 +834,7 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 				       &temp_task->ac_task_container, 0, 1);
 	if (n < 0 || !o_event.head) {
 		lwsl_warn("%s: bailing as nothing with uuid %s\n", __func__, esc_uuid);
-		sais_event_db_close(vhd, &pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		free(temp_task);
 		return -1;
 	}
@@ -954,12 +960,12 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 	lws_dll2_add_tail(&temp_task->pending_assign_list, &pss->issue_task_owner);
 	lws_callback_on_writable(pss->wsi);
 
-	sais_event_db_close(vhd, &pdb);
+	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 	return 0;
 
 bail:
-	sais_event_db_close(vhd, &pdb);
+sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 	lwsac_free(&temp_task->ac_task_container);
 	free(temp_task);
 

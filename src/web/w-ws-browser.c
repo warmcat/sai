@@ -289,7 +289,8 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 
 	/* open the event-specific database object */
 
-	if (sais_event_db_ensure_open(pss->vhd, event_uuid, 0, &pdb)) {
+	if (sai_event_db_ensure_open(pss->vhd->context, &pss->vhd->sqlite3_cache,
+			      pss->vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
 		/* no longer exists, nothing to do */
 		saiw_dealloc_sched(sch);
 		return 0;
@@ -305,7 +306,7 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
 	n = lws_struct_sq3_deserialize(pdb, qu, NULL, lsm_schema_sq3_map_task,
 				       &o, &sch->query_ac, 0, 1);
-	sais_event_db_close(pss->vhd, &pdb);
+	sai_event_db_close(&pss->vhd->sqlite3_cache, &pdb);
 	if (n < 0 || !o.head)
 		goto bail;
 
@@ -492,7 +493,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		if (saiw_pss_schedule_taskinfo(pss, ti->task_hash, !!ti->logs))
 			goto soft_error;
 
-		break;
+		goto ok;
 
 	case SAIM_WS_BROWSER_RX_EVENTINFO:
 
@@ -501,7 +502,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		if (saiw_pss_schedule_eventinfo(pss, ei->event_hash))
 			goto soft_error;
 
-		break;
+		goto ok;
 
 	case SAIM_WS_BROWSER_RX_TASKRESET:
 
@@ -513,8 +514,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		 */
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
-
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 		break;
 
 	case SAIM_WS_BROWSER_RX_STAY:
@@ -528,8 +527,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		/*
 		 * User is asking us to set or release a stay on a builder
 		 */
-
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 		break;
 
 	case SAIM_WS_BROWSER_RX_TASKREBUILDLASTSTEP:
@@ -541,8 +538,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		 */
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
-
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 		break;
 
 	case SAIM_WS_BROWSER_RX_EVENTRESET:
@@ -558,8 +553,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		lwsl_notice("%s: received request to reset event %s\n",
 			    __func__, ei->event_hash);
-
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 		break;
 
 	case SAIM_WS_BROWSER_RX_EVENTDELETE:
@@ -574,9 +567,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		lwsl_notice("%s: received request to delete event %s\n",
 			    __func__, ei->event_hash);
-
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
-		lwsac_free(&a.ac);
 
 		break;
 
@@ -595,7 +585,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			    __func__, can->task_uuid);
 
 		saiw_task_cancel(vhd, can->task_uuid);
-		break;
+		goto ok;
 
 	case SAIM_WS_BROWSER_RX_REBUILD:
 		if (!sais_conn_auth(pss))
@@ -604,8 +594,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		/*
 		 * User is asking us to rebuild a builder
 		 */
-
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 		break;
 
 	case SAIM_WS_BROWSER_RX_PLATRESET:
@@ -615,8 +603,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		/*
 		 * User is asking us to reset / rebuild a whole platform
 		 */
-
-		saiw_websrv_queue_tx(vhd->h_ss_websrv, buf, bl, ss_flags);
 		break;
 
 	default:
@@ -624,6 +610,11 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		break;
 	}
 
+	sai_ss_queue_frag_on_buflist_REQUIRES_LWS_PRE(vhd->h_ss_websrv,
+		&((saiw_websrv_t *)lws_ss_to_user_object(vhd->h_ss_websrv))->wbltx,
+		buf, bl, ss_flags);
+
+ok:
 	ret = 0;
 
 bail:
@@ -686,8 +677,6 @@ again:
 	// lwsl_notice("%s: send_state %d, pss %p, wsi %p\n", __func__,
 	// pss->send_state, pss, pss->wsi);
 
-	// lwsl_warn("%s: pss->sched.count %d, pss->sched.head %p\n", __func__, pss->sched.count, pss->sched.head);
-
 	sch = NULL;
 	if (pss->sched.head)
 		sch = lws_container_of(pss->sched.head, saiw_scheduled_t, list);
@@ -729,7 +718,8 @@ again:
 				lwsl_info("%s: collecting logs %s\n",
 					  __func__, esc);
 
-				if (sais_event_db_ensure_open(vhd, event_uuid, 0,
+				if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+						      vhd->sqlite3_path_lhs, event_uuid, 0,
 							      &pdb)) {
 					lwsl_notice("%s: unable to open event-specific database\n",
 							__func__);
@@ -743,7 +733,7 @@ again:
 								&pss->logs_owner,
 								&pss->logs_ac, 0, 100);
 
-				sais_event_db_close(vhd, &pdb);
+				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 				if (sr) {
 
@@ -1033,7 +1023,8 @@ enum_tasks:
 		do {
 			task_ac = NULL;
 
-			if (sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
+			if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+					      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
 				lwsl_err("%s: unable to open event-specific database\n",
 						__func__);
 
@@ -1045,11 +1036,11 @@ enum_tasks:
 					lsm_schema_sq3_map_task, &task_owner,
 					&task_ac, sch->task_index, 1)) {
 				lwsl_err("%s: OVERVIEW 1 failed\n", __func__);
-				sais_event_db_close(vhd, &pdb);
+				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 				break;
 			}
-			sais_event_db_close(vhd, &pdb);
+			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 			if (!task_owner.count)
 				break;
@@ -1265,7 +1256,8 @@ b_finish:
 			//		__func__, event_uuid);
 
 			lws_dll2_owner_clear(&sch->owner);
-			if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+			if (!sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+					      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
 
 				lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s')",
 					     sch->one_task->uuid);
@@ -1281,7 +1273,7 @@ b_finish:
 							&sch->ac, 0, 10)) {
 					lwsl_err("%s: get afcts failed\n", __func__);
 				}
-				sais_event_db_close(vhd, &pdb);
+				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			}
 		}
 

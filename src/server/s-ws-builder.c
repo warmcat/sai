@@ -107,7 +107,8 @@ sais_dump_logs_to_db(lws_sorted_usec_list_t *sul)
 		sai_task_uuid_to_event_uuid(event_uuid, lcpt->uuid);
 
 		pdb = NULL;
-		if (!sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb)) {
+		if (!sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+				      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
 
 			/*
 			 * Empty the task-specific log cache into the event-
@@ -125,7 +126,7 @@ sais_dump_logs_to_db(lws_sorted_usec_list_t *sul)
 			sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
 			if (err)
 				sqlite3_free(err);
-			sais_event_db_close(vhd, &pdb);
+			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 		} else
 			lwsl_err("%s: unable to open event-specific database\n",
@@ -240,7 +241,8 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 
 	sai_task_uuid_to_event_uuid(event_uuid, log->task_uuid);
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb))
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb))
 		return;
 
 	lws_sql_purify(esc_uuid, log->task_uuid, sizeof(esc_uuid));
@@ -252,7 +254,7 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 	if (sai_sqlite3_statement(pdb, q, "update build_step"))
 		lwsl_err("%s: failed to update build_step\n", __func__);
 
-	sais_event_db_close(vhd, &pdb);
+	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 }
 
 sai_plat_t *
@@ -400,7 +402,8 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 					sai_event_t *e = lws_container_of(pe, sai_event_t, list);
 					sqlite3 *pdb = NULL;
 
-					if (!sais_event_db_ensure_open(vhd, e->uuid, 0, &pdb)) {
+					if (!sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+							      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
 						sqlite3_stmt *sm;
 
 						lws_snprintf(q, sizeof(q),
@@ -422,7 +425,7 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 							}
 							sqlite3_finalize(sm);
 						}
-						sais_event_db_close(vhd, &pdb);
+						sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 					}
 				} lws_end_foreach_dll(pe);
 
@@ -495,7 +498,8 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 		/* start build duration only from first step accepted */
 
 		sai_task_uuid_to_event_uuid(event_uuid, rej->task_uuid);
-		if (sais_event_db_ensure_open(vhd, event_uuid, 0, &pdb))
+		if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+				      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb))
 			break;
 
 		lws_sql_purify(esc_uuid, rej->task_uuid, sizeof(esc_uuid));
@@ -530,7 +534,7 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 
 		lwsl_notice("%s: exiting, setting build_step %d\n", __func__, build_step);
 
-		sais_event_db_close(vhd, &pdb);
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 		if (sais_set_task_state(vhd,
 					rej->task_uuid,
@@ -968,7 +972,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				 * reason.
 				 */
 
-				if (sais_event_db_ensure_open(pss->vhd, event_uuid, 0,
+				if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+						      vhd->sqlite3_path_lhs, event_uuid, 0,
 							      &pss->pdb_artifact)) {
 					lwsl_err("%s: unable to open event-specific "
 						 "database\n", __func__);
@@ -987,7 +992,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 							       NULL, lsm_schema_sq3_map_task,
 							       &o, &ac, 0, 1);
 				if (n < 0 || !o.head) {
-					sais_event_db_close(vhd, &pss->pdb_artifact);
+					sai_event_db_close(&vhd->sqlite3_cache, &pss->pdb_artifact);
 					lwsl_notice("%s: no task of that id\n", __func__);
 					lwsac_free(&pss->a.ac);
 					return -1;
@@ -1273,7 +1278,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				lws_dll2_owner_clear(&o);
 				lws_dll2_add_head(&metric->list, &o);
 
-				sai_dump_stderr((const char *)xbuf + LWS_PRE, used);
+				sai_dump_stderr(xbuf + LWS_PRE, used);
 
 				if (sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info) < 0)
 					lwsl_warn("%s: unable to broadcast to web\n", __func__);
@@ -1307,7 +1312,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 afail:
 	lwsac_free(&ac);
 	lwsac_free(&pss->a.ac);
-	sais_event_db_close(vhd, &pss->pdb_artifact);
+	sai_event_db_close(&vhd->sqlite3_cache, &pss->pdb_artifact);
 
 	return -1;
 }
@@ -1459,7 +1464,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	lwsac_free(&task->ac_task_container);
 	free(task);
 
-	sai_dump_stderr((const char *)start, w);
+	sai_dump_stderr(start, w);
 
 	lwsl_err("%s: ########## ATTACH TASK --^\n", __func__);
 

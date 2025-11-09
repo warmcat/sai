@@ -464,7 +464,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		}
 
 		if (pss->pdb_artifact) {
-			sais_event_db_close(pss->vhd, &pss->pdb_artifact);
+			sai_event_db_close(&pss->vhd->sqlite3_cache, &pss->pdb_artifact);
 			pss->pdb_artifact = NULL;
 		}
 
@@ -520,11 +520,8 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			break;
 		}
 
-		if (pss->is_power || pss->stay_owner.head) {
-			lwsl_notice("%s: going down power tx path\n", __func__);
-
+		if (pss->is_power || pss->stay_owner.head)
 			return sais_power_tx(vhd, pss, buf, sizeof(buf));
-		}
 
 		return sais_ws_json_tx_builder(vhd, pss, buf, sizeof(buf));
 

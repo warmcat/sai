@@ -195,14 +195,6 @@ struct pss {
 	uint8_t			ovstate; /* SOS_ substate when doing overview */
 };
 
-typedef struct sais_sqlite_cache {
-	lws_dll2_t	list;
-	char		uuid[65];
-	sqlite3		*pdb;
-	lws_usec_t	idle_since;
-	int		refcount;
-} sais_sqlite_cache_t;
-
 typedef struct sais_plat {
 	lws_dll2_t	list;
 	const char	*plat;
@@ -254,21 +246,6 @@ int
 sai_notification_file_upload_cb(void *data, const char *name,
 				const char *filename, char *buf, int len,
 				enum lws_spa_fileupload_states state);
-
-int
-sai_sqlite3_statement(sqlite3 *pdb, const char *cmd, const char *desc);
-
-int
-sais_event_db_ensure_open(struct vhd *vhd, const char *event_uuid, char can_create, sqlite3 **ppdb);
-
-void
-sais_event_db_close(struct vhd *vhd, sqlite3 **ppdb);
-
-int
-sais_event_db_delete_database(struct vhd *vhd, const char *event_uuid);
-
-int
-sais_event_db_close_all_now(struct vhd *vhd);
 
 int
 sai_sq3_event_lookup(sqlite3 *pdb, uint64_t start, lws_struct_args_cb cb, void *ca);

@@ -83,7 +83,8 @@ saiw_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,
 
 	/* open the event-specific database object */
 
-	if (sais_event_db_ensure_open(vhd, event_uuid, 0, pdb)) {
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, pdb)) {
 		lwsl_info("%s: unable to open event-specific database\n",
 				__func__);
 
@@ -143,7 +144,7 @@ saiw_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,
 
 fail:
 	lwsac_free(&ac);
-	sais_event_db_close(vhd, pdb);
+	sai_event_db_close(&vhd->sqlite3_cache, pdb);
 
 	lwsl_notice("%s: couldn't find blob %s\n", __func__, url);
 

@@ -1,7 +1,7 @@
 /*
  * Sai - ./src/common/include/private.h
  *
- * Copyright (C) 2019 - 2021 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -18,7 +18,7 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  *  MA  02110-1301  USA
  *
- * structs common to builder and server
+ * structs common across the various different sai daemons and tools
  */
 
 #if defined(WIN32)
@@ -61,6 +61,14 @@ enum {
 	SAISPRF_EXIT		= 0x8000,
 	SAISPRF_SIGNALLED	= 0x4000,
 };
+
+typedef struct sais_sqlite_cache {
+	lws_dll2_t	list;
+	char		uuid[65];
+	sqlite3		*pdb;
+	lws_usec_t	idle_since;
+	int		refcount;
+} sais_sqlite_cache_t;
 
 /* The top-level load report message from a builder */
 typedef struct sai_active_task_info {
@@ -448,6 +456,38 @@ typedef struct sai_uuid_list {
  *
  * It's also used as the object on server side that represents a builder /
  * platform instance and status.
+ *
+ *
+ * Caution: about the naming, there are `builder platform triplets`, which bind
+ * to the .sai.json description of the type of builder needed for particular
+ * tasks.  These look like, eg:
+ *
+ * rocky9/x86_64-amd/gcc
+ * coverity/x86_64/gcc
+ *
+ * and then there are `builder device names` which represent individual physical
+ * builder devices which can be powered up and down.  These look like, eg
+ *
+ * l2
+ * ubuntu_rpi4
+ *
+ * One builder can offer multiple different platform triplets.  In the examples
+ * above, the builder l2 offers both rocky9/x86_64-amd/gcc and
+ * coverity/x86_64/gcc on the same box.
+ *
+ * When sai-server looks for a matching builder platform triplet needed by a
+ * task, it's not bothered which device it binds the job to, if more than one
+ * offer the platform.  So you can have multiple builder devices offering
+ * popular platforms and jobs should be shared between them.  At other times
+ * sai has to disambiguate the device + platform triplet, in these cases it
+ * looks like:
+ *
+ * l2.rocky9/x86_64-amd/gcc
+ * l2.coverity/x86_64/gcc
+ *
+ * For power purposes, only the builder device name is considered, since we can
+ * only turn the whole device on or off.  If any platform offered by the builder
+ * is in use, the builder device is kept on.
  */
 
 typedef struct sai_plat {
@@ -561,6 +601,19 @@ typedef struct sai_stay {
 	char			stay_on; /* 0 = release, 1 = set */
 } sai_stay_t;
 
+typedef struct sai_controlled_builder {
+	lws_dll2_t		list;
+	char			name[64];
+} sai_controlled_builder_t;
+
+/* sai-power -> sai-server, tells it about power controllers */
+typedef struct sai_power_controller {
+	lws_dll2_t		list;
+	lws_dll2_owner_t 	controlled_builders_owner;
+	char			name[64];
+	char			on;
+} sai_power_controller_t;
+
 /* sai-power -> sai-server, tells it the builders it can manage */
 typedef struct sai_power_managed_builder {
 	lws_dll2_t		list;
@@ -571,6 +624,7 @@ typedef struct sai_power_managed_builder {
 typedef struct sai_power_managed_builders {
 	lws_dll2_t		list;
 	lws_dll2_owner_t 	builders; /* sai_power_managed_builder_t */
+	lws_dll2_owner_t 	power_controllers; /* sai_power_controller_t */
 } sai_power_managed_builders_t;
 
 
@@ -580,13 +634,22 @@ typedef struct sai_stay_state_update {
 	char			stay_on;
 } sai_stay_state_update_t;
 
+/*
+ * Because the definitions of these arrays of map structs are mostly in
+ * common/struct-metadata.c, we are forced to repeat the length of the struct
+ * so we can know the length at the usage.
+ *
+ * We must take care to also maintain these lengths when the struct definitions
+ * change length.
+ */
 
 extern const lws_struct_map_t
 	lsm_stay[2],
 	lsm_schema_stay[1],
 	lsm_power_managed_builder[2],
-	lsm_power_managed_builders_list[1],
+	lsm_power_managed_builders_list[2],
 	lsm_schema_power_managed_builders[1],
+	lsm_power_controller[3],
 	lsm_schema_json_map_task[],
 	lsm_schema_sq3_map_task[],
 	lsm_schema_sq3_map_event[],
@@ -654,4 +717,37 @@ const char *
 sai_get_ref(const char *fullref);
 
 void
-sai_dump_stderr(const char *buf, size_t w);
+sai_dump_stderr(const uint8_t *buf, size_t w);
+
+int
+sai_ss_queue_frag_on_buflist_REQUIRES_LWS_PRE(struct lws_ss_handle *h,
+					      struct lws_buflist **buflist,
+					      void *buf, size_t len,
+					      unsigned int ss_flags);
+
+int
+sai_ss_serialize_queue_helper(struct lws_ss_handle *h,
+			      struct lws_buflist **buflist,
+			      const lws_struct_map_t *map,
+			      size_t map_len, void *root);
+
+lws_ss_state_return_t
+sai_ss_tx_from_buflist_helper(struct lws_ss_handle *ss, struct lws_buflist **buflist,
+			      uint8_t *buf, size_t *len, int *flags);
+
+int
+sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache,
+			 const char *sqlite3_path_lhs, const char *event_uuid,
+			  char create_if_needed, sqlite3 **ppdb);
+void
+sai_event_db_close(lws_dll2_owner_t *sqlite3_cache, sqlite3 **ppdb);
+
+int
+sai_event_db_close_all_now(lws_dll2_owner_t *sqlite3_cache);
+
+int
+sai_event_db_delete_database(const char *sqlite3_path_lhs, const char *event_uuid);
+
+int
+sai_sqlite3_statement(sqlite3 *pdb, const char *cmd, const char *desc);
+

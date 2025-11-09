@@ -121,7 +121,7 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 			return -1;
 		}
 
-		sai_dump_stderr((const char *)buf + LWS_PRE, w);
+		sai_dump_stderr(buf + LWS_PRE, w);
 
 		if (saib_srv_queue_tx(h, buf + LWS_PRE, w, ssf))
 			return -1;

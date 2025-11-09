@@ -54,7 +54,7 @@ enum {
 };
 
 int
-parse_tasmota_status(tasmota_parse_t *tp)
+saip_parse_tasmota_status(tasmota_parse_t *tp)
 {
 	lws_tokenize_elem e;
 	unsigned int *i;
@@ -110,11 +110,14 @@ parse_tasmota_status(tasmota_parse_t *tp)
 		case LWS_TOKZE_INTEGER:
 			if ((tp->match & 0xff) == TOKORD_VOLTAGE)
 				tp->td.voltage_v = (unsigned int)atoi(tp->ts.token);
-			if ((tp->match >> 8) == TOKORD_ACTIVE   && (tp->match & 0xff) == TOKORD_POWER)
+			if ((tp->match >> 8)   == TOKORD_ACTIVE   &&
+			    (tp->match & 0xff) == TOKORD_POWER)
 				tp->td.active_power_w = (unsigned int)atoi(tp->ts.token);
-			if ((tp->match >> 8) == TOKORD_APPARENT && (tp->match & 0xff) == TOKORD_POWER)
+			if ((tp->match >> 8)   == TOKORD_APPARENT &&
+			    (tp->match & 0xff) == TOKORD_POWER)
 				tp->td.apparent_power_va = (unsigned int)atoi(tp->ts.token);
-			if ((tp->match >> 8) == TOKORD_REACTIVE && (tp->match & 0xff) == TOKORD_POWER)
+			if ((tp->match >> 8)   == TOKORD_REACTIVE &&
+			    (tp->match & 0xff) == TOKORD_POWER)
 				tp->td.reactive_power_var = (unsigned int)atoi(tp->ts.token);
 			break;
 
@@ -123,13 +126,17 @@ parse_tasmota_status(tasmota_parse_t *tp)
 
 			if ((tp->match & 0xff) == TOKORD_CURRENT)
 				i = &tp->td.current_ma;
-			if ((tp->match >> 8) == TOKORD_POWER  && (tp->match & 0xff) == TOKORD_FACTOR)
+			if ((tp->match >> 8)   == TOKORD_POWER  &&
+			    (tp->match & 0xff) == TOKORD_FACTOR)
 				i = &tp->td.power_factor_scaled_1000;
-			if ((tp->match >> 8) == TOKORD_ENERGY && (tp->match & 0xff) == TOKORD_TODAY)
+			if ((tp->match >> 8)   == TOKORD_ENERGY &&
+			    (tp->match & 0xff) == TOKORD_TODAY)
 				i = &tp->td.energy_today_wh;
-			if ((tp->match >> 8) == TOKORD_ENERGY && (tp->match & 0xff) == TOKORD_YESTERDAY)
+			if ((tp->match >> 8)   == TOKORD_ENERGY &&
+			    (tp->match & 0xff) == TOKORD_YESTERDAY)
 				i = &tp->td.energy_yesterday_wh;
-			if ((tp->match >> 8) == TOKORD_ENERGY && (tp->match & 0xff) == TOKORD_TOTAL)
+			if ((tp->match >> 8)   == TOKORD_ENERGY &&
+			    (tp->match & 0xff) == TOKORD_TOTAL)
 				i = &tp->td.energy_total_wh;
 
 			if (i) {

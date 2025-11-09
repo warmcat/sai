@@ -427,7 +427,8 @@ next_plat: ;
 		 * configuration's tasks for each platform
 		 */
 
-		if (sais_event_db_ensure_open(pss->vhd, pss->sn.e.uuid, 1, &pdb)) {
+		if (sai_event_db_ensure_open(pss->vhd->context, &pss->vhd->sqlite3_cache,
+				      pss->vhd->sqlite3_path_lhs, pss->sn.e.uuid, 1, &pdb)) {
 			lwsl_err("%s: unable to open event-specific db\n", __func__);
 			return -1;
 		}
@@ -537,7 +538,7 @@ next_plat: ;
 					sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
 					if (err)
 						sqlite3_free(err);
-					sais_event_db_close(pss->vhd, &pdb);
+					sai_event_db_close(&pss->vhd->sqlite3_cache, &pdb);
 					return -1;
 				}
 
@@ -602,7 +603,7 @@ next_plat: ;
 		if (err)
 			sqlite3_free(err);
 
-		sais_event_db_close(pss->vhd, &pdb);
+		sai_event_db_close(&pss->vhd->sqlite3_cache, &pdb);
 
 		/*
 		 * Recompute startable task platforms and broadcast to all sai-power,
@@ -1009,7 +1010,8 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		 */
 
 		sai_uuid16_create(lws_get_context(pss->wsi), pss->sn.e.uuid);
-		m = sais_event_db_ensure_open(pss->vhd, pss->sn.e.uuid, 1,
+		m = sai_event_db_ensure_open(pss->vhd->context, &pss->vhd->sqlite3_cache,
+				      pss->vhd->sqlite3_path_lhs, pss->sn.e.uuid, 1,
 					      (sqlite3 **)&pss->sn.e.pdb);
 		if (m) {
 			lwsl_err("%s: XX %d unable to open event-specific database\n",
@@ -1023,7 +1025,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 			       LWS_ARRAY_SIZE(saifile_paths));
 		m = lejp_parse(&saictx, (uint8_t *)pss->sn.saifile,
 			       (int)pss->sn.saifile_out_pos);
-		sais_event_db_close(pss->vhd, (sqlite3 **)&pss->sn.e.pdb);
+		sai_event_db_close(&pss->vhd->sqlite3_cache, (sqlite3 **)&pss->sn.e.pdb);
 		if (m < 0) {
 			lwsl_notice("%s: saifile JSON 1 decode failed '%s' (%d)\n",
 				    __func__, lejp_error_to_string(m), m);

@@ -67,6 +67,13 @@ static const lws_struct_map_t lsm_viewercount_members[] = {
 	LSM_UNSIGNED(sai_viewer_state_t, viewers,		"count"),
 };
 
+static lws_struct_map_t lsm_browser_taskinfo[] = {
+	LSM_CARRAY	(sai_browse_rx_taskinfo_t, task_hash,		"task_hash"),
+	LSM_UNSIGNED	(sai_browse_rx_taskinfo_t, logs,		"logs"),
+	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, js_api_version,	"js_api_version"),
+	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, last_log_ts,		"last_log_ts"),
+};
+
 static const lws_struct_map_t lsm_schema_json_map[] = {
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.taskreset"),
@@ -86,6 +93,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 					      "com.warmcat.sai.platreset"),
 	LSM_SCHEMA	(sai_stay_t,		 NULL, lsm_stay,
 					      "com.warmcat.sai.stay"),
+	LSM_SCHEMA	(sai_browse_rx_taskinfo_t, NULL, lsm_browser_taskinfo,
+						"com.warmcat.sai.taskinfo")
 };
 
 enum {
@@ -98,6 +107,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_REBUILD,
 	SAIS_WS_WEBSRV_RX_PLATRESET,
 	SAIS_WS_WEBSRV_RX_STAY,
+	SAIS_WS_WEBSRV_RX_TASKINFO,
 };
 
 static int
@@ -154,10 +164,10 @@ sais_list_builders(struct vhd *vhd)
 	     subsequent = 0;
 	unsigned int ss_flags = LWSSS_FLAG_SOM;
 	lws_dll2_owner_t db_builders_owner;
-	sai_plat_t *builder_from_db;
 	lws_struct_serialize_t *js;
 	struct lwsac *ac = NULL;
 	lws_wsmsg_info_t info;
+	sai_plat_t *sp;
 	size_t w;
 
 	memset(&db_builders_owner, 0, sizeof(db_builders_owner));
@@ -178,40 +188,48 @@ sais_list_builders(struct vhd *vhd)
 		lws_struct_json_serialize_result_t r;
 		sai_plat_t *live_builder;
 
-		builder_from_db = lws_container_of(walk, sai_plat_t, sai_plat_list);
-		live_builder = sais_builder_from_uuid(vhd, builder_from_db->name);
+		sp = lws_container_of(walk, sai_plat_t, sai_plat_list);
+		live_builder = sais_builder_from_uuid(vhd, sp->name);
 
 		if (live_builder) {
-			builder_from_db->online		= 1;
-			lws_strncpy(builder_from_db->peer_ip, live_builder->peer_ip,
-				    sizeof(builder_from_db->peer_ip));
-			builder_from_db->stay_on	= live_builder->stay_on;
+			sp->online		= 1;
+			lws_strncpy(sp->peer_ip, live_builder->peer_ip,
+				    sizeof(sp->peer_ip));
+			sp->stay_on	= live_builder->stay_on;
 		} else
-			builder_from_db->online		= 0;
+			sp->online		= 0;
 
-		builder_from_db->powering_up		= 0;
-		builder_from_db->powering_down		= 0;
+		sp->powering_up			= 0;
+		sp->powering_down		= 0;
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
 			sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);
-			size_t host_len = strlen(ps->host), pl = strlen(builder_from_db->name);
+			size_t host_len = strlen(ps->host), pl = strlen(sp->name);
 
-			lwsl_notice("%s: %s vs %s\n", __func__, builder_from_db->name, ps->host);
-
-			if ((!strncmp(builder_from_db->name, ps->host, host_len) &&
-			    builder_from_db->name[host_len] == '.') || (pl > host_len &&
-					    !strncmp(builder_from_db->name + (pl - host_len), ps->host, host_len)))
+			if ((!strncmp(sp->name, ps->host, host_len) &&
+			    sp->name[host_len] == '.') || (pl > host_len &&
+					    !strncmp(sp->name + (pl - host_len), ps->host, host_len)))
 			{
+				lwsl_notice("%s: %s vs %s, sp->online %d, pup %d, pdwn %d\n", __func__, sp->name, ps->host, sp->online, ps->powering_up, ps->powering_down);
+				/*
+				 * powering_up/down comes to us as a one-shot
+				 * notification, we have to clear our copy of it
+				 */
+				if (sp->online)
+					ps->powering_up		= 0;
+				else
+					ps->powering_down	= 0;
+
 				lwsl_notice("%s: adjusting powering_ %d %d\n", __func__, ps->powering_up, ps->powering_down);
-				builder_from_db->powering_up = ps->powering_up;
-				builder_from_db->powering_down = ps->powering_down;
+				sp->powering_up		= ps->powering_up;
+				sp->powering_down	= ps->powering_down;
 				break;
 			}
 		} lws_end_foreach_dll(p);
 
 		js = lws_struct_json_serialize_create(lsm_schema_map_plat_simple,
 						      LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),
-						      0, builder_from_db);
+						      0, sp);
 		if (!js)
 			goto bail;
 
@@ -300,6 +318,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 	memset(&a, 0, sizeof(a));
 	a.map_st[0]		= lsm_schema_json_map;
+	a.map_st[1]		= lsm_schema_json_map;
 	a.map_entries_st[0]	= LWS_ARRAY_SIZE(lsm_schema_json_map);
 	a.map_entries_st[1]	= LWS_ARRAY_SIZE(lsm_schema_json_map);
 	a.ac_block_size		= 128;
@@ -495,71 +514,9 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	       size_t *len, int *flags)
 {
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
-	int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&m->bl_srv_to_web), depi, fl;
-	char som, som1, eom, final = 1;
-	size_t fsl, used;
 
-	if (!m->bl_srv_to_web)
-		return LWSSSSRET_TX_DONT_SEND;
-
-	depi = *pi;
-
-	/*
-	 * We can only issue *len at a time.
-	 *
-	 * Notice we are getting the stored flags from the START of the fragment each time.
-	 * that means we can still see the right flags stored with the fragment, even if we
-	 * have partially used the buflist frag and are partway through it.
-	 *
-	 * Ergo, only something to skip if we are at som=1.  And also notice that although
-	 * *pi will be right, after the lws_buflist..._use() api, what it points to has been
-	 * destroyed.  So we also dereference *pi into depi for use below.
-	 */
-
-	fsl = lws_buflist_next_segment_len(&m->bl_srv_to_web, NULL);
-
-	lws_buflist_fragment_use(&m->bl_srv_to_web, NULL, 0, &som, &eom);
-	if (som) {
-		fsl -= sizeof(int);
-		lws_buflist_fragment_use(&m->bl_srv_to_web, buf, sizeof(int), &som1, &eom);
-	}
-	if (!(depi & LWSSS_FLAG_SOM))
-		som = 0;
-
-	used = (size_t)lws_buflist_fragment_use(&m->bl_srv_to_web, (uint8_t *)buf, *len, &som1, &eom);
-	if (!used)
-		return LWSSSSRET_TX_DONT_SEND;
-
-	if (used < fsl || !(depi & LWSSS_FLAG_EOM)) /* we saved SS flags at the start of the buf */
-		final = 0;
-
-	*len = used;
-	fl = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
-
-	// lwsl_ss_notice(m->ss, "Sending %d srv->web: ssflags %d", (int)*len, fl);
-
-	if ((fl & LWSSS_FLAG_SOM) && (((*flags) & 3) == 2)) {
-		lwsl_ss_err(m->ss, "TX: Illegal LWSSS_FLAG_SOM after previous frame without LWSSS_FLAG_EOM");
-		assert(0);
-	}
-	if (!(fl & LWSSS_FLAG_SOM) && ((*flags) & 3) == 3) {
-		lwsl_ss_err(m->ss, "TX: Missing LWSSS_FLAG_SOM after previous frame with LWSSS_FLAG_EOM");
-		assert(0);
-	}
-	if (!(fl & LWSSS_FLAG_SOM) && !((*flags) & 2)) {
-		lwsl_ss_err(m->ss, "TX: Missing LWSSS_FLAG_SOM on first frame");
-		assert(0);
-	}	
-
-	*flags = fl;
-
-
-	// lwsl_hexdump_notice(buf, *len);
-
-	if (m->bl_srv_to_web)
-		return lws_ss_request_tx(m->ss);
-
-	return 0;
+	return sai_ss_tx_from_buflist_helper(m->ss, &m->bl_srv_to_web,
+					     buf, len, flags);
 }
 
 

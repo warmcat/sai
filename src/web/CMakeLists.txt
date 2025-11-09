@@ -24,6 +24,7 @@ if (requirements)
 	if (APPLE)
 		set_property(TARGET sai-web PROPERTY MACOSX_RPATH YES)
 	endif()
+	#	set(CMAKE_C_FLAGS "-ffunction-sections -Wl,--gc-sections -Wl,--print-gc-sections ${CMAKE_C_FLAGS}" )
 
 	#
 	# sqlite3 paths (web)
