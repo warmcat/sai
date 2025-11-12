@@ -18,8 +18,7 @@
  *  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston,
  *  MA  02110-1301  USA
  *
- * The same ws interface is connected-to by builders (on path /builder), and
- * provides the query transport for browsers (on path /browse).
+ * This ws interface is provides the transport for browsers (on path /browse).
  *
  * There's a single server slite3 database containing events, and a separate
  * sqlite3 database file for each event, it only contains tasks and logs for
@@ -91,16 +90,6 @@ saiw_task_cancel(struct vhd *vhd, const char *task_uuid)
 
 	lws_dll2_add_tail(&can->list, &vhd->web_to_srv_owner);
 
-
-	return 0;
-}
-
-int
-saiw_sched_destroy(struct lws_dll2 *d, void *user)
-{
-	saiw_scheduled_t *sch = lws_container_of(d, saiw_scheduled_t, list);
-
-	saiw_dealloc_sched(sch);
 
 	return 0;
 }
@@ -587,7 +576,8 @@ http_resp:
 				 * It means, logout then
 				 */
 
-				n = lws_snprintf(temp, sizeof(temp), "__Host-sai_jwt=deleted;"
+				n = lws_snprintf(temp, sizeof(temp),
+						 "__Host-sai_jwt=deleted;"
 						 "HttpOnly;"
 						 "Secure;"
 						 "SameSite=strict;"
@@ -596,8 +586,9 @@ http_resp:
 
 				sr = "x/..";
 
-				if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_SET_COOKIE,
-								 (uint8_t *)temp, n, &p, end)) {
+				if (lws_add_http_header_by_token(wsi,
+						WSI_TOKEN_HTTP_SET_COOKIE,
+						(uint8_t *)temp, n, &p, end)) {
 					lwsl_err("%s: failed to add JWT cookie header\n", __func__);
 					return 1;
 				}
@@ -697,7 +688,8 @@ back:
 			return 0;
 
 final:
-			lwsl_notice("%s: auth failed, login_form %d\n", __func__, pss->login_form);
+			lwsl_notice("%s: auth failed, login_form %d\n",
+					__func__, pss->login_form);
 			/*
 			 * Auth failed, go back to /
 			 */
@@ -745,7 +737,7 @@ clean_spa:
                /*
                 * This protocol is for browsers on /browse... URLs.
                 * Builders connect on /builder... URLs and should be handled
-                * by a different protocol. Explicitly reject them here.
+                * by sai-server. Explicitly reject them here.
                 *
                 * Returning 0 accepts the connection for this protocol.
                 * Returning non-zero rejects it.
@@ -851,6 +843,7 @@ clean_spa:
 					if (!strncmp(tbuf, "task=", 5)) {
 						lws_strncpy(pss->specific_task, tbuf + 5, sizeof(pss->specific_task));
 						pss->specificity = SAIM_SPECIFIC_TASK;
+						saiw_broadcast_logs_batch(vhd, pss);
 					}
 					if (!strncmp(tbuf, "h=", 2)) {
 						memcpy(pss->specific_ref, "refs/heads/", 11);
@@ -897,8 +890,8 @@ clean_spa:
 		lws_buflist_destroy_all_segments(&pss->raw_tx);
 		saiw_browser_state_changed(pss, 0);
 		lws_dll2_remove(&pss->subs_list);
+		lws_sul_cancel(&pss->sul_logcache);
 
-		lws_dll2_foreach_safe(&pss->sched, NULL, saiw_sched_destroy);
 		lwsac_free(&pss->logs_ac);
 		break;
 
@@ -921,12 +914,34 @@ clean_spa:
 		break;
 
 	case LWS_CALLBACK_SERVER_WRITEABLE:
-		if (!vhd) {
-			lwsl_notice("%s: no vhd\n", __func__);
+		if (!vhd || !pss->raw_tx)
 			break;
+
+		{
+			int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&pss->raw_tx), depi = *pi;
+			char som, eom, rb[1200];
+			int used, final = 1;
+			size_t fsl = lws_buflist_next_segment_len(&pss->raw_tx, NULL);
+
+			/* this is the only buflist user on pss->raw_tx */
+			used = lws_buflist_fragment_use(&pss->raw_tx, (uint8_t *)rb, sizeof(rb), &som, &eom);
+			if (!used)
+				return 0;
+			if (used < (int)fsl || (depi & LWS_WRITE_NO_FIN))
+				final = 0;
+
+			if (lws_write(pss->wsi, (uint8_t *)rb + ((size_t)som * sizeof(int)),
+						(size_t)used  - ((size_t)som * sizeof(int)),
+						(lws_ws_sending_multifragment(pss->wsi) ? LWS_WRITE_CONTINUATION : LWS_WRITE_TEXT) |
+							(!final * LWS_WRITE_NO_FIN)) < 0) {
+				lwsl_wsi_err(pss->wsi, "attempt to write %d failed", (int)used - (int)sizeof(int));
+
+				return -1;
+			}
 		}
 
-		saiw_ws_json_tx_browser(vhd, pss, buf, sizeof(buf));
+		if (pss->raw_tx)
+			lws_callback_on_writable(pss->wsi);
 		break;
 
 	default:

@@ -46,22 +46,6 @@ typedef struct sai_platform {
 	/* build and name over-allocated here */
 } sai_platform_t;
 
-typedef enum {
-	WSS_IDLE1,
-	WSS_IDLE2,
-	WSS_IDLE3,
-	WSS_PREPARE_OVERVIEW,
-	WSS_SEND_OVERVIEW,
-	WSS_PREPARE_BUILDER_SUMMARY,
-	WSS_SEND_BUILDER_SUMMARY,
-
-	WSS_PREPARE_TASKINFO,
-	WSS_SEND_ARTIFACT_INFO,
-
-	WSS_PREPARE_EVENTINFO,
-	WSS_SEND_EVENTINFO,
-} ws_state;
-
 typedef struct sai_builder {
 	sais_t c;
 } saib_t;
@@ -74,32 +58,6 @@ enum {
 	SAIM_SPECIFIC_ID,
 	SAIM_SPECIFIC_TASK,
 };
-
-typedef struct saiw_scheduled {
-	lws_dll2_t		list;
-
-	char			task_uuid[65];
-
-	sai_task_t		*one_task; /* only for browser */
-	const sai_event_t	*one_event;
-
-	lws_dll2_t		*walk;
-
-	lws_dll2_owner_t	owner;
-
-	struct lwsac		*ac;
-	struct lwsac		*query_ac; /* taskinfo event only */
-
-	ws_state		action;
-	int			task_index;
-
-	uint8_t			ovstate; /* SOS_ substate when doing overview */
-
-	uint8_t			subsequent:1; /* for individual JSON */
-	uint8_t			ov_db_done:1; /* for individual JSON */
-	uint8_t			logsub:1; /* for individual JSON */
-
-} saiw_scheduled_t;
 
 struct pss {
 	struct vhd		*vhd;
@@ -123,6 +81,7 @@ struct pss {
 	sqlite3_blob		*blob_artifact;
 
 	lws_dll2_owner_t	logs_owner;
+	lws_sorted_usec_list_t	sul_logcache;
 	lws_struct_args_t	a;
 
 	union {
@@ -154,8 +113,6 @@ struct pss {
 	uint64_t		initial_log_timestamp;
 	uint64_t		artifact_offset;
 	uint64_t		artifact_length;
-
-	ws_state		send_state;
 
 	unsigned int		spa_failed:1;
 	unsigned int		dry:1;
@@ -194,7 +151,6 @@ struct vhd {
 
 	lws_dll2_owner_t		sqlite3_cache; /* sais_sqlite_cache_t */
 	lws_dll2_owner_t		tasklog_cache;
-	lws_sorted_usec_list_t		sul_logcache;
 };
 
 typedef struct saiw_websrv {
@@ -264,18 +220,9 @@ saiw_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,
 int
 saiw_browsers_task_state_change(struct vhd *vhd, const char *task_uuid);
 
-saiw_scheduled_t *
-saiw_alloc_sched(struct pss *pss, ws_state action);
 
 void
-saiw_dealloc_sched(saiw_scheduled_t *sch);
-
-int
-saiw_sched_destroy(struct lws_dll2 *d, void *user);
-
-
-void
-saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len,
+saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(struct vhd *vhd, const void *buf, size_t len,
 		      enum lws_write_protocol flags);
 
 void
@@ -283,4 +230,14 @@ saiw_browser_state_changed(struct pss *pss, int established);
 
 void
 saiw_update_viewer_count(struct vhd *vhd);
+
+int
+saiw_broadcast_logs_batch(struct vhd *vhd, struct pss *pss);
+
+int
+saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss);
+
+int
+saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss);
+
 

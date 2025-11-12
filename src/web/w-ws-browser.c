@@ -135,6 +135,43 @@ enum sai_overview_state {
 	SOS_TASKS,
 };
 
+int
+saiw_ws_browser_queue_REQUIRES_LWS_PRE(struct pss *pss, const void *buf,
+				       size_t len, enum lws_write_protocol flags)
+{
+	int *pi = (int *)((const char *)buf - sizeof(int)), r = 0;
+
+	*pi = (int)flags;
+
+	if (lws_buflist_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) < 0) {
+		lwsl_wsi_err(pss->wsi, "unable to buflist_append"); /* still ask to drain */
+		r = 1;
+	}
+
+	lws_callback_on_writable(pss->wsi);
+
+	return r;
+}
+
+/*
+ * This allows other parts of sai-web to queue a raw buffer to be sent to
+ * all connected browsers, eg, for load reports.
+ *
+ * The flags are lws_write() flags.
+ */
+void
+saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(struct vhd *vhd, const void *buf,
+					    size_t len, enum lws_write_protocol flags)
+{
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
+		struct pss *pss = lws_container_of(p, struct pss, same);
+
+		saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, buf, len, flags);
+
+	} lws_end_foreach_dll(p);
+}
+
+
 
 int
 sai_sql3_get_uint64_cb(void *user, int cols, char **values, char **name)
@@ -179,44 +216,11 @@ saiw_subs_request_writeable(struct vhd *vhd, const char *task_uuid)
 	return 0;
 }
 
-saiw_scheduled_t *
-saiw_alloc_sched(struct pss *pss, ws_state action)
-{
-	saiw_scheduled_t *sch = malloc(sizeof(*sch));
-
-	if (sch) {
-		memset(sch, 0, sizeof(*sch));
-		sch->action = action;
-		lws_dll2_add_tail(&sch->list, &pss->sched);
-		lws_callback_on_writable(pss->wsi);
-	}
-
-	return sch;
-}
-
-void
-saiw_dealloc_sched(saiw_scheduled_t *sch)
-{
-	if (!sch)
-		return;
-
-	lws_dll2_remove(&sch->list);
-
-	lwsac_free(&sch->ac);
-	lwsac_free(&sch->query_ac);
-
-	free(sch);
-}
-
 static int
 saiw_pss_schedule_eventinfo(struct pss *pss, const char *event_uuid)
 {
-	saiw_scheduled_t *sch = saiw_alloc_sched(pss, WSS_PREPARE_OVERVIEW);
-	char qu[180], esc[66], esc2[96];
-	int n;
-
-	if (!sch)
-		return -1;
+//	char qu[180], esc[66], esc2[96];
+//	int n;
 
 	/*
 	 * This pss may be locked to a specific event
@@ -231,7 +235,7 @@ saiw_pss_schedule_eventinfo(struct pss *pss, const char *event_uuid)
 	 *
 	 * Just collect the event struct into pss->query_owner to dump
 	 */
-
+#if 0
 	lws_sql_purify(esc, event_uuid, sizeof(esc));
 
 	if (pss->specific_project[0]) {
@@ -244,15 +248,16 @@ saiw_pss_schedule_eventinfo(struct pss *pss, const char *event_uuid)
 				       &sch->owner, &sch->ac, 0, 1);
 	if (n < 0 || !sch->owner.head)
 		goto bail;
-
-	sch->ov_db_done = 1;
-	// lwsl_warn("%s: doing WSS_PREPARE_BUILDER_SUMMARY\n", __func__);
-	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
+#endif
+	saiw_browser_queue_overview(pss->vhd, pss);
+	saiw_browser_broadcast_queue_builders(pss->vhd, pss);
 
 	return 0;
 
 bail:
-	saiw_dealloc_sched(sch);
+	saiw_browser_queue_overview(pss->vhd, pss);
+	saiw_browser_broadcast_queue_builders(pss->vhd, pss);
+
 	return 1;
 }
 
@@ -261,15 +266,22 @@ bail:
 static int
 saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 {
-	saiw_scheduled_t *sch = saiw_alloc_sched(pss, WSS_PREPARE_TASKINFO);
-	char qu[192], esc[66], event_uuid[33], esc2[96];
+	char qu[192], event_uuid[33], esc2[96];
 	sqlite3 *pdb = NULL;
 	lws_dll2_owner_t o;
 	sai_task_t *pt;
-	int n, m;
-
-	if (!sch)
-		return -1;
+	int m, n;
+	sai_task_t		*one_task = NULL; /* only for browser */
+	const sai_event_t	*one_event = NULL;
+	char esc[256], filt[128];
+	sai_browse_taskreply_t task_reply;
+	struct lwsac *query_ac = NULL;
+	lws_dll2_owner_t owner;
+	lws_struct_serialize_t *js;
+	char buf[4096 + LWS_PRE], *start = buf + LWS_PRE, *p = start,
+	     *end = buf + sizeof(buf);
+	char fi = 1;
+	size_t w;
 
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 
@@ -290,11 +302,8 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	/* open the event-specific database object */
 
 	if (sai_event_db_ensure_open(pss->vhd->context, &pss->vhd->sqlite3_cache,
-			      pss->vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
-		/* no longer exists, nothing to do */
-		saiw_dealloc_sched(sch);
+			      pss->vhd->sqlite3_path_lhs, event_uuid, 0, &pdb))
 		return 0;
-	}
 
 	/*
 	 * get the related task object into its own ac... there might
@@ -305,17 +314,17 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	lws_sql_purify(esc, task_uuid, sizeof(esc));
 	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
 	n = lws_struct_sq3_deserialize(pdb, qu, NULL, lsm_schema_sq3_map_task,
-				       &o, &sch->query_ac, 0, 1);
+				       &o, &query_ac, 0, 1);
 	sai_event_db_close(&pss->vhd->sqlite3_cache, &pdb);
 	if (n < 0 || !o.head)
 		goto bail;
 
 	pt = lws_container_of(o.head, sai_task_t, list);
-	sch->one_task = pt;
+	one_task = pt;
 
 	/* let the pss take over the task info ac and schedule sending */
 
-	lws_dll2_remove((struct lws_dll2 *)&sch->one_task->list);
+	lws_dll2_remove((struct lws_dll2 *)&one_task->list);
 
 	/*
 	 * let's also get the event object the task relates to into
@@ -348,25 +357,157 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 
 	n = lws_struct_sq3_deserialize(pss->vhd->pdb, qu, NULL,
 				       lsm_schema_sq3_map_event, &o,
-				       &sch->query_ac, 0, 1);
+				       &query_ac, 0, 1);
 	if (n < 0 || !o.head)
 		/*
 		 * It's OK if the parent event is not visible in the current
 		 * filtered view, we can still update the task state where it
 		 * appears inside other visible events
 		 */
-		sch->one_event = NULL;
+		one_event = NULL;
 	else
-		sch->one_event = lws_container_of(o.head, sai_event_t, list);
+		one_event = lws_container_of(o.head, sai_event_t, list);
 
-	sch->logsub = !!logsub;
+	memset(&task_reply, 0, sizeof(task_reply));
 
-	saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
+	/*
+	 * We're sending a browser the specific task info that he
+	 * asked for.
+	 *
+	 * We already got the task struct out of the db in .one_task
+	 * (all in .query_ac)... we're responsible for destroying it
+	 * when we go out of scope...
+	 */
+
+	task_reply.event		= one_event;
+	task_reply.task			= one_task;
+	one_task->rebuildable		= (one_task->state == SAIES_FAIL ||
+					   one_task->state == SAIES_CANCELLED) &&
+					  (lws_now_secs() - (one_task->started +
+					   (one_task->duration / 1000000)) < 24 * 3600);
+	task_reply.auth_secs		= (int)(pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0);
+	task_reply.authorized		= pss->authorized;
+	lws_strncpy(task_reply.auth_user, pss->auth_user, sizeof(task_reply.auth_user));
+
+	js = lws_struct_json_serialize_create(lsm_schema_json_map_taskreply,
+					      LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply),
+					      0, &task_reply);
+	if (!js) {
+		lwsl_warn("%s: couldn't create\n", __func__);
+		goto bail;
+	}
+
+	do {
+		n = (int)lws_struct_json_serialize(js, (uint8_t *)p, lws_ptr_diff_size_t(end, p), &w);
+
+		if (lws_ptr_diff_size_t(end, (uint8_t *)p) < 512) {
+			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(pss->vhd, start,
+								    lws_ptr_diff_size_t(p, start),
+								    lws_write_ws_flags(LWS_WRITE_TEXT, fi, 0));
+			p = start;
+			fi = 0;
+		}
+
+	} while (n == LSJS_RESULT_CONTINUE);
+
+	lws_struct_json_serialize_destroy(&js);
+
+	/*
+	 * Let's also try to fetch any artifacts into pss->aft_owner...
+	 * no db or no artifacts can also be a normal situation...
+	 */
+
+	if (one_task) {
+
+		sai_task_uuid_to_event_uuid(event_uuid, one_task->uuid);
+
+		lws_dll2_owner_clear(&owner);
+		if (!sai_event_db_ensure_open(pss->vhd->context, &pss->vhd->sqlite3_cache,
+					      pss->vhd->sqlite3_path_lhs, event_uuid,
+					      0, &pdb)) {
+
+			lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s')",
+				     one_task->uuid);
+
+			if (lws_struct_sq3_deserialize(pdb, filt, NULL,
+						       lsm_schema_sq3_map_artifact,
+						       &owner,
+						       &query_ac, 0, 10))
+				lwsl_err("%s: get afcts failed\n", __func__);
+
+			sai_event_db_close(&pss->vhd->sqlite3_cache, &pdb);
+		}
+	}
+
+	if (n == LSJS_RESULT_ERROR) {
+		lwsl_notice("%s: taskinfo: error generating json\n", __func__);
+		goto bail;
+	}
+	p += w;
+
+	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
+					       lws_ptr_diff_size_t(p, start),
+					       lws_write_ws_flags(LWS_WRITE_TEXT, fi, 1));
+
+	/* does he want to subscribe to logs? */
+	if (logsub && one_task && !pss->subs_list.owner) {
+		strcpy(pss->sub_task_uuid, one_task->uuid);
+		lws_dll2_add_head(&pss->subs_list, &pss->vhd->subs_owner);
+		pss->sub_timestamp = pss->initial_log_timestamp; /* where we got up to */
+		saiw_broadcast_logs_batch(pss->vhd, pss);
+	}
+
+	saiw_browser_broadcast_queue_builders(pss->vhd, pss);
+
+	if (owner.head) {
+		sai_artifact_t *aft = (sai_artifact_t *)owner.head;
+
+		p = start;
+		fi = 1;
+
+		lwsl_info("%s: WSS_SEND_ARTIFACT_INFO: consuming artifact\n", __func__);
+
+		lws_dll2_remove(&aft->list);
+
+		/* we don't want to disclose this to browsers */
+		aft->artifact_up_nonce[0] = '\0';
+
+		js = lws_struct_json_serialize_create(lsm_schema_json_map_artifact,
+				LWS_ARRAY_SIZE(lsm_schema_json_map_artifact),
+				0, aft);
+		if (!js) {
+			lwsl_err("%s ----------------- failed to render artifact json\n", __func__);
+			goto bail;
+		}
+
+		do {
+			n = (int)lws_struct_json_serialize(js, (uint8_t *)p, lws_ptr_diff_size_t(end, p), &w);
+			if (n == LSJS_RESULT_ERROR) {
+				lws_struct_json_serialize_destroy(&js);
+				lwsl_notice("%s: taskinfo: ---------- error generating json\n", __func__);
+				goto bail;
+			}
+			p += w;
+			if (lws_ptr_diff_size_t(end, p) < 512) {
+				saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(pss->vhd, start,
+									    lws_ptr_diff_size_t(p, start),
+									    lws_write_ws_flags(LWS_WRITE_TEXT, fi, 0));
+				p = start;
+				fi = 0;
+			}
+
+		} while (n == LSJS_RESULT_CONTINUE);
+
+		lws_struct_json_serialize_destroy(&js);
+	}
+
+	lwsac_free(&query_ac);
 
 	return 0;
 
 bail:
-	saiw_dealloc_sched(sch);
+	lwsac_free(&query_ac);
+
 	return 1;
 }
 
@@ -474,8 +615,8 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			if (ti->js_api_version)
 				pss->js_api_version = ti->js_api_version;
 
-			saiw_alloc_sched(pss, WSS_PREPARE_OVERVIEW);
-			saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
+			saiw_browser_broadcast_queue_builders(pss->vhd, pss);
+			saiw_browser_queue_overview(pss->vhd, pss);
 			break;
 		}
 
@@ -638,386 +779,266 @@ soft_error:
 	return 0;
 }
 
+static void
+saiw_retry_logs(lws_sorted_usec_list_t *sul)
+{
+	struct pss *pss = lws_container_of(sul, struct pss, sul_logcache);
 
-/*
- * We're sending something on a browser ws connection.  Returning nonzero from
- * here drops the connection, necessary if we fail partway through a message
- * but undesirable if a browser tab will keep reconnecting and asking for the
- * same, no-longer-existant thing.
- */
+	saiw_broadcast_logs_batch(pss->vhd, pss);
+}
 
 int
-saiw_ws_json_tx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
+saiw_broadcast_logs_batch(struct vhd *vhd, struct pss *pss)
 {
-	uint8_t *start = buf + LWS_PRE, *p = start, *end = p + bl - LWS_PRE - 1;
-	int n, flags = LWS_WRITE_TEXT, first = 0, iu, endo;
-	char esc[256], esc1[33], filt[128];
-	sai_browse_taskreply_t task_reply;
-	struct lwsac *task_ac = NULL;
-	lws_dll2_owner_t task_owner;
-	lws_struct_serialize_t *js;
-	saiw_scheduled_t *sch;
 	char event_uuid[33];
+
+	if (!pss->subs_list.owner)
+		return 0;
+
+	/*
+	 * For efficiency, let's try to grab the next 100 at
+	 * once from sqlite and work our way through sending
+	 * them
+	 */
+
+	//if (pss->log_cache_index == pss->log_cache_size)
+	{
+		sqlite3 *pdb = NULL;
+		char esc[256];
+		int sr;
+
+		sai_task_uuid_to_event_uuid(event_uuid, pss->sub_task_uuid);
+
+		lwsac_free(&pss->logs_ac);
+
+		lws_snprintf(esc, sizeof(esc),
+		     "and task_uuid='%s' and timestamp > %llu",
+		     pss->sub_task_uuid,
+		     (unsigned long long)pss->sub_timestamp);
+
+		// lwsl_notice("%s: collecting logs %s\n", __func__, esc);
+
+		if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+					     vhd->sqlite3_path_lhs, event_uuid,
+					     0, &pdb)) {
+			lwsl_notice("%s: unable to open event-specific database\n",
+					__func__);
+
+			return 0;
+		}
+
+		sr = lws_struct_sq3_deserialize(pdb, esc,
+						"uid,timestamp ",
+						lsm_schema_sq3_map_log,
+						&pss->logs_owner,
+						&pss->logs_ac, 0, 50);
+
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+
+		if (sr) {
+
+			lwsl_err("%s: subs failed\n", __func__);
+
+			return 0;
+		}
+
+		pss->log_cache_index = 0;
+		pss->log_cache_size = (int)pss->logs_owner.count;
+	}
+
+	while (pss->log_cache_index++ < pss->log_cache_size) {
+		sai_log_t *log = lws_container_of(pss->logs_owner.head,
+						  sai_log_t, list);
+		lws_struct_serialize_t *js;
+		char buf[1200 + LWS_PRE];
+		char fi = 1;
+		int n;
+
+		lws_dll2_remove(&log->list);
+
+		/*
+		 * Turn it back into JSON so we can give it to
+		 * the browser
+		 */
+
+		js = lws_struct_json_serialize_create(lsm_schema_json_map_log,
+						      1, 0, log);
+		if (!js) {
+			lwsl_notice("%s: json ser fail\n", __func__);
+			return 0;
+		}
+
+		do {
+			size_t w;
+			n = lws_struct_json_serialize(js, (uint8_t *)buf + LWS_PRE,
+						      sizeof(buf) - LWS_PRE, &w);
+
+			if (n != LSJS_RESULT_CONTINUE)
+				lws_struct_json_serialize_destroy(&js);
+			if (n == LSJS_RESULT_ERROR)
+				return 1;
+
+			saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, buf + LWS_PRE, w,
+					lws_write_ws_flags(LWS_WRITE_TEXT,
+						fi, n == LSJS_RESULT_FINISH));
+
+			fi = 0;
+			pss->sub_timestamp = log->timestamp;
+		} while (n != LSJS_RESULT_FINISH);
+	}
+
+	lwsac_free(&pss->logs_ac);
+
+	lws_sul_schedule(vhd->context, 0, &pss->sul_logcache,
+			 saiw_retry_logs,
+			 pss->log_cache_size == 50 ? 500 : 250 * LWS_US_PER_MS);
+
+	return 0;
+}
+
+int
+saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
+{
+	char buf[4096 + LWS_PRE], *start = buf + LWS_PRE, *p = start,
+	     *end = buf + sizeof(buf);
+	char esc[256], esc1[33], filt[128], subsequent;
+	struct lwsac *task_ac = NULL, *ac = NULL;
+	lws_dll2_owner_t task_owner, owner;
+	unsigned int task_index = 0;
+	lws_struct_serialize_t *js;
 	sqlite3 *pdb = NULL;
-	sai_event_t *e;
+	lws_dll2_t *walk;
 	sai_task_t *t;
-	char any, lg;
+	int n, iu;
 	size_t w;
 
-again:
+	filt[0] = '\0';
+	esc[0] = '\0';
 
-	start = buf + LWS_PRE;
+	if (pss->specific_project[0]) {
+		lws_sql_purify(esc, pss->specific_project, sizeof(esc) - 1);
+		lws_snprintf(filt, sizeof(filt), " and repo_name=\"%s\"", esc);
+	}
+	if (!pss->authorized)
+		lws_snprintf(filt + strlen(filt), sizeof(filt) - strlen(filt), " and sec=0");
+
+	pss->wants_event_updates = 1;
+	if (lws_struct_sq3_deserialize(vhd->pdb, filt[0] ? filt : NULL,
+				       "created ", lsm_schema_sq3_map_event,
+				       &owner, &ac, 0, -8)) {
+		lwsl_notice("%s: OVERVIEW 2 failed\n", __func__);
+
+		return 0;
+	}
+
+	/*
+	 * we get zero or more sai_event_t laid out in pss->query_ac,
+	 * and listed in pss->query_owner
+	 */
+
+	p += (size_t)lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+		"{\"schema\":\"sai.warmcat.com.overview\","
+		" \"api_version\":%u,"
+		" \"alang\":\"%s\","
+		" \"authorized\": %d,"
+		" \"auth_secs\": %ld,"
+		" \"auth_user\": \"%s\","
+		"\"overview\":[", SAIW_API_VERSION,
+		lws_json_purify(esc, pss->alang, sizeof(esc) - 1, &iu),
+		pss->authorized, pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0,
+		lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu)
+	);
+
+	saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, start,
+					       lws_ptr_diff_size_t(p, start),
+					       lws_write_ws_flags(LWS_WRITE_TEXT, 1, 0));
 	p = start;
-	end = p + bl - LWS_PRE - 1;
-	flags = LWS_WRITE_TEXT;
-	first = 0;
-	lg = 0;
-	endo = 0;
 
-	// lwsl_notice("%s: send_state %d, pss %p, wsi %p\n", __func__,
-	// pss->send_state, pss, pss->wsi);
 
-	sch = NULL;
-	if (pss->sched.head)
-		sch = lws_container_of(pss->sched.head, saiw_scheduled_t, list);
+	/*
+	 * "authorized" here is used to decide whether to render the
+	 * additional controls clientside.  The events the controls
+	 * cause if used are separately checked for coming from an
+	 * authorized pss when they are received.
+	 *
+	 * If you're not authorized, you're only going to see events
+	 * that have sec=0.  Otherwise you can see all events.
+	 */
 
-	switch (pss->send_state) {
-	case WSS_IDLE1:
+	if (pss->specificity)
+		walk = lws_dll2_get_head(&owner);
+	else
+		walk = lws_dll2_get_tail(&owner);
 
-		/*
-		 * Anything from a task log he's subscribed to?
-		 *
-		 * If so, let's prioritize that first...
-		 */
+	subsequent = 0;
 
-		if ((!pss->sched.head || !pss->toggle_favour_sch) &&
-				pss->subs_list.owner) {
+	if (!owner.count) /* nothing to do */
+		goto so_finish;
 
-			sch = NULL;
+	while (walk) {
+		sai_event_t *e = lws_container_of(walk, sai_event_t, list);
 
-			/*
-			 * For efficiency, let's try to grab the next 100 at
-			 * once from sqlite and work our way through sending
-			 * them
-			 */
-
-			if (pss->log_cache_index == pss->log_cache_size) {
-				int sr;
-
-				sai_task_uuid_to_event_uuid(event_uuid,
-							    pss->sub_task_uuid);
-
-				lws_dll2_owner_clear(&task_owner);
-				lwsac_free(&pss->logs_ac);
-
-				lws_snprintf(esc, sizeof(esc),
-				     "and task_uuid='%s' and timestamp > %llu",
-				     pss->sub_task_uuid,
-				     (unsigned long long)pss->sub_timestamp);
-
-				lwsl_info("%s: collecting logs %s\n",
-					  __func__, esc);
-
-				if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
-						      vhd->sqlite3_path_lhs, event_uuid, 0,
-							      &pdb)) {
-					lwsl_notice("%s: unable to open event-specific database\n",
-							__func__);
-
-					return 0;
+		if (pss->specificity) {
+			if (!strcmp(pss->specific_ref, "refs/heads/master") &&
+			    !strcmp(e->ref, "refs/heads/main"))
+				; // any = 1;
+			else {
+				if (strcmp(e->hash, pss->specific_ref) &&
+				    strcmp(e->ref, pss->specific_ref)) {
+					walk = walk->next;
+					continue;
 				}
-
-				sr = lws_struct_sq3_deserialize(pdb, esc,
-								"uid,timestamp ",
-								lsm_schema_sq3_map_log,
-								&pss->logs_owner,
-								&pss->logs_ac, 0, 100);
-
-				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
-
-				if (sr) {
-
-					lwsl_err("%s: subs failed\n", __func__);
-
-					return 0;
-				}
-
-				pss->log_cache_index = 0;
-				pss->log_cache_size = (int)pss->logs_owner.count;
-			}
-
-			if (pss->log_cache_index < pss->log_cache_size) {
-				sai_log_t *log = lws_container_of(
-						pss->logs_owner.head,
-						sai_log_t, list);
-
-				lws_dll2_remove(&log->list);
-				pss->log_cache_index++;
-
-				/*
-				 * Turn it back into JSON so we can give it to
-				 * the browser
-				 */
-
-				js = lws_struct_json_serialize_create(
-					lsm_schema_json_map_log, 1, 0, log);
-				if (!js) {
-					lwsl_notice("%s: json ser fail\n", __func__);
-					return 0;
-				}
-
-				n = (int)lws_struct_json_serialize(js, p,
-						lws_ptr_diff_size_t(end, p), &w);
-				lws_struct_json_serialize_destroy(&js);
-				if (n == LSJS_RESULT_ERROR) {
-					lwsl_notice("%s: json ser error\n", __func__);
-					return 0;
-				}
-
-				p += w;
-				first = 1;
-				lg = 1;
-				pss->toggle_favour_sch = 1;
-
-				/*
-				 * Record that this was the most recent log we
-				 * saw so far
-				 */
-				pss->sub_timestamp = log->timestamp;
-				goto send_it;
+				// any = 1;
 			}
 		}
 
-		/*
-		 * Stay in this state if we're in the middle of a
-		 * multi-fragment message
-		 */
-		if (lws_ws_sending_multifragment(pss->wsi)) {
-			lws_callback_on_writable(pss->wsi);
+		js = lws_struct_json_serialize_create(
+			lsm_schema_json_map_event,
+			LWS_ARRAY_SIZE(lsm_schema_json_map_event), 0, e);
+		if (!js) {
+			lwsl_err("%s: json ser fail\n", __func__);
+			return 1;
+		}
+		if (subsequent)
+			*p++ = ',';
+		subsequent = 1;
 
-			return 0;
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "{\"e\":");
+
+		if (lws_ptr_diff_size_t(end, p) < 256) {
+			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, start,
+							       lws_ptr_diff_size_t(p, start),
+							       lws_write_ws_flags(LWS_WRITE_TEXT, 0, 0));
+			p = start;
 		}
 
-		/* fallthru */
+		n = (int)lws_struct_json_serialize(js, (uint8_t *)p, lws_ptr_diff_size_t(end, p), &w);
+		lws_struct_json_serialize_destroy(&js);
+		switch (n) {
+		case LSJS_RESULT_ERROR:
+			lwsl_err("%s: json ser error\n", __func__);
+			return 1;
 
-	case WSS_IDLE2:
+		case LSJS_RESULT_FINISH:
+		case LSJS_RESULT_CONTINUE:
+			p += w;
+			task_index = 0;
+			p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), ", \"t\":[");
+			break;
+		}
 
-		pss->send_state = WSS_IDLE2;
-
-		/*
-		 * Send anything waiting on broadcast_raw buflist first
-		 */
-
-		if (pss->raw_tx) {
-			/*
-			 * Notice we are getting the stored flags from the START of the fragment each time.
-			 * that means we can still see the right flags stored with the fragment, even if we
-			 * have partially used the buflist frag and are partway through it.
-			 *
-			 * Ergo, only something to skip if we are at som=1.  And also notice that although
-			 * *pi will be right, after the lws_buflist..._use() api, what it points to has been
-			 * destroyed.  So we also dereference *pi into depi for use below.
-			 */
-			int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&pss->raw_tx), depi = *pi;
-			char som, eom, rb[1200];
-			int used, final = 1;
-			size_t fsl = lws_buflist_next_segment_len(&pss->raw_tx, NULL);
-
-			/* this is the only buflist user on pss->raw_tx */
-			used = lws_buflist_fragment_use(&pss->raw_tx, (uint8_t *)rb, sizeof(rb), &som, &eom);
-			if (!used)
-				return 0;
-			if (used < (int)fsl || (depi & LWS_WRITE_NO_FIN))
-				final = 0;
-
-			if (lws_write(pss->wsi, (uint8_t *)rb + ((size_t)som * sizeof(int)),
-						(size_t)used  - ((size_t)som * sizeof(int)),
-						(lws_ws_sending_multifragment(pss->wsi) ? LWS_WRITE_CONTINUATION : LWS_WRITE_TEXT) |
-							(!final * LWS_WRITE_NO_FIN)) < 0) {
-				lwsl_wsi_err(pss->wsi, "attempt to write %d failed", (int)used - (int)sizeof(int));
-
-				return -1;
-			}
-
-			if (lws_buflist_next_segment_len(&pss->raw_tx, NULL))
-				lws_callback_on_writable(pss->wsi);
-
-			if (!lws_ws_sending_multifragment(pss->wsi))
-				pss->send_state = WSS_IDLE1;
-
-			return 0;
+		if (lws_ptr_diff_size_t(end, p) < 2560) {
+			saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
+							       lws_ptr_diff_size_t(p, start),
+							       lws_write_ws_flags(LWS_WRITE_TEXT, 0, 0));
+			p = start;
 		}
 
 		/*
-		 * Stay in this state if we're in the middle of a
-		 * multi-fragment message, otherwise do whatever the
-		 * sch proposes
+		 * Enumerate the tasks associated with this event...
 		 */
 
-		if (lws_ws_sending_multifragment(pss->wsi) ||
-		    !sch)
-			return 0;
-
-		/* switch to the pending sch */
-
-		pss->toggle_favour_sch = 0;
-		pss->send_state = sch->action;
-		goto again;
-
-	case WSS_PREPARE_OVERVIEW:
-
-		if (!sch) /* coverity */
-			goto no_sch;
-
-		filt[0] = '\0';
-		if (pss->specific_project[0]) {
-			lws_sql_purify(esc, pss->specific_project, sizeof(esc) - 1);
-			lws_snprintf(filt, sizeof(filt), " and repo_name=\"%s\"", esc);
-		}
-		if (!pss->authorized)
-			lws_snprintf(filt + strlen(filt), sizeof(filt) - strlen(filt), " and sec=0");
-
-		pss->wants_event_updates = 1;
-		if (!sch->ov_db_done && lws_struct_sq3_deserialize(vhd->pdb,
-				    filt[0] ? filt : NULL, "created ",
-				lsm_schema_sq3_map_event, &sch->owner,
-				&sch->ac, 0, -8)) {
-			lwsl_notice("%s: OVERVIEW 2 failed\n", __func__);
-
-			pss->send_state = WSS_IDLE1;
-			saiw_dealloc_sched(sch);
-
-			return 0;
-		}
-
-		/*
-		 * we get zero or more sai_event_t laid out in pss->query_ac,
-		 * and listed in pss->query_owner
-		 */
-
-		lwsl_debug("%s: WSS_PREPARE_OVERVIEW: %d results %p\n",
-			    __func__, sch->owner.count, sch->ac);
-
-		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
-			"{\"schema\":\"sai.warmcat.com.overview\","
-			" \"api_version\":%u,"
-			" \"alang\":\"%s\","
-			" \"authorized\": %d,"
-			" \"auth_secs\": %ld,"
-			" \"auth_user\": \"%s\","
-			"\"overview\":[",
-			SAIW_API_VERSION,
-			lws_json_purify(esc, pss->alang, sizeof(esc) - 1, &iu),
-			pss->authorized, pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0,
-			lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu)
-			);
-
-		/*
-		 * "authorized" here is used to decide whether to render the
-		 * additional controls clientside.  The events the controls
-		 * cause if used are separately checked for coming from an
-		 * authorized pss when they are received.
-		 *
-		 * If you're not authorized, you're only going to see events
-		 * that have sec=0.  Otherwise you can see all events.
-		 */
-
-		if (pss->specificity)
-			sch->walk = lws_dll2_get_head(&sch->owner);
-		else
-			sch->walk = lws_dll2_get_tail(&sch->owner);
-		sch->subsequent = 0;
-		first = 1;
-
-		pss->send_state = WSS_SEND_OVERVIEW;
-
-		if (!sch->owner.count)
-			goto so_finish;
-
-		/* fallthru */
-
-	case WSS_SEND_OVERVIEW:
-
-		if (!sch) /* coverity */
-			goto no_sch;
-
-		if (sch->ovstate == SOS_TASKS)
-			goto enum_tasks;
-
-		any = 0;
-		while (end - p > 2048 && sch->walk &&
-		       pss->send_state == WSS_SEND_OVERVIEW) {
-
-			e = lws_container_of(sch->walk, sai_event_t, list);
-
-			if (pss->specificity) {
-				lwsl_debug("%s: Specificity: e->hash: %s, "
-					   "e->ref: '%s', pss->specific_ref: '%s'\n",
-					   __func__, e->hash, e->ref,
-					   pss->specific_ref);
-
-				if (!strcmp(pss->specific_ref, "refs/heads/master") &&
-				    !strcmp(e->ref, "refs/heads/main")) {
-					// lwsl_notice("master->main\n");
-					any = 1;
-				} else {
-
-					if (strcmp(e->hash, pss->specific_ref) &&
-					    strcmp(e->ref, pss->specific_ref)) {
-						sch->walk = sch->walk->next;
-						continue;
-					}
-					//lwsl_notice("%s: match\n", __func__);
-					any = 1;
-				}
-			}
-
-			js = lws_struct_json_serialize_create(
-				lsm_schema_json_map_event,
-				LWS_ARRAY_SIZE(lsm_schema_json_map_event), 0, e);
-			if (!js) {
-				lwsl_err("%s: json ser fail\n", __func__);
-				return 1;
-			}
-			if (sch->subsequent)
-				*p++ = ',';
-			sch->subsequent = 1;
-
-			p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "{\"e\":");
-
-			n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
-			lws_struct_json_serialize_destroy(&js);
-			switch (n) {
-			case LSJS_RESULT_ERROR:
-				pss->send_state = WSS_IDLE1;
-				saiw_dealloc_sched(sch);
-				lwsl_err("%s: json ser error\n", __func__);
-				return 1;
-
-			case LSJS_RESULT_FINISH:
-			case LSJS_RESULT_CONTINUE:
-				p += w;
-				sch->ovstate = SOS_TASKS;
-				sch->task_index = 0;
-				p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), ", \"t\":[");
-				goto enum_tasks;
-			}
-		}
-		if (!any) {
-			pss->send_state = WSS_IDLE1;
-			saiw_dealloc_sched(sch);
-
-			return 0;
-		}
-		break;
-
-enum_tasks:
-		/*
-		 * Enumerate the tasks associated with this event... we will
-		 * come back here as often as needed to dump all the tasks
-		 */
-
-		e = lws_container_of(sch->walk, sai_event_t, list);
+		e = lws_container_of(walk, sai_event_t, list);
 		lws_dll2_owner_clear(&task_owner);
 
 		do {
@@ -1034,7 +1055,7 @@ enum_tasks:
 			lws_dll2_owner_clear(&task_owner);
 			if (lws_struct_sq3_deserialize(pdb, NULL, NULL,
 					lsm_schema_sq3_map_task, &task_owner,
-					&task_ac, sch->task_index, 1)) {
+					&task_ac, (int)task_index, 1)) {
 				lwsl_err("%s: OVERVIEW 1 failed\n", __func__);
 				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
@@ -1045,7 +1066,7 @@ enum_tasks:
 			if (!task_owner.count)
 				break;
 
-			if (sch->task_index)
+			if (task_index)
 				*p++ = ',';
 
 			/*
@@ -1074,316 +1095,116 @@ enum_tasks:
 				lsm_schema_json_map_task,
 				LWS_ARRAY_SIZE(lsm_schema_json_map_task), 0, t);
 
-			n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+			t->build[0] = '\0';
+			n = (int)lws_struct_json_serialize(js, (uint8_t *)p, lws_ptr_diff_size_t(end, p), &w);
 			lws_struct_json_serialize_destroy(&js);
 			lwsac_free(&task_ac);
 			p += w;
 
-			sch->task_index++;
-		} while ((end - p > 2048) && task_owner.count);
+			if (lws_ptr_diff_size_t(end, p) < 2560) {
+				saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
+								       lws_ptr_diff_size_t(p, start),
+								       lws_write_ws_flags(LWS_WRITE_TEXT, 0, 0));
+				p = start;
+			}
 
-		if (task_owner.count)
-			/* may be more left to do */
-			break;
+			task_index++;
+		} while (1);
 
 		/* none left to do, go back up a level */
 
 		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
 
-		sch->ovstate = SOS_EVENT;
 		if (pss->specificity)
-			sch->walk = sch->walk->next;
+			walk = walk->next;
 		else
-			sch->walk = sch->walk->prev;
-		if (!sch->walk || pss->specificity) {
-			while (sch->walk)
-				sch->walk = sch->walk->next;
-			goto so_finish;
-		}
-		break;
+			walk = walk->prev;
+
+		if (walk && !pss->specificity)
+			continue;
+	}
 
 so_finish:
-		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
-		pss->send_state = WSS_IDLE1;
-		endo = 1;
-		break;
+	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
 
-	case WSS_PREPARE_BUILDER_SUMMARY:
-
-		if (!sch) /* coverity */
-			goto no_sch;
-
-		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
-			"{\"schema\":\"com.warmcat.sai.builders\","
-			" \"alang\":\"%s\","
-			" \"authorized\":%d,"
-			" \"auth_secs\":%ld,"
-			" \"auth_user\": \"%s\","
-			" \"builders\":[",
-			lws_sql_purify(esc, pss->alang, sizeof(esc) - 1),
-			pss->authorized, pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0,
-			lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu));
-
-		if (vhd && vhd->builders) {
-	//		lwsac_reference(vhd->builders);
-			sch->walk = lws_dll2_get_head(&vhd->builders_owner);
-
-			/* HEAD of the owner list must be inside the vhd->builders ac */
-		//	if (sch->walk && lwsac_assert_valid(vhd->builders, sch->walk, sizeof(sai_plat_t)))
-		//		break;
-		} else {
-			lwsl_notice("%s: BUILDER_SUMMARY: can't start walk\n", __func__);
-			sch->walk = 0;
-		}
-
-//		sch->walk = 0;
-
-		sch->subsequent = 0;
-		pss->send_state = WSS_SEND_BUILDER_SUMMARY;
-		first = 1;
-
-		/* fallthru */
-
-	case WSS_SEND_BUILDER_SUMMARY:
-
-		if (!sch) /* coverity */
-			goto no_sch;
-
-		if (!sch->walk)
-			goto b_finish;
-
-		/*
-		 * We're going to send the browser some JSON about all the
-		 * builders / platforms we feel are connected to us
-		 */
-
-		while (end - p > 512 && sch->walk &&
-		       pss->send_state == WSS_SEND_BUILDER_SUMMARY) {
-
-			/* every builder must be inside the vhd->builders ac */
-			//if (lwsac_assert_valid(vhd->builders, sch->walk, sizeof(sai_plat_t)))
-			//	break;
-
-			sai_plat_t *b = lws_container_of(sch->walk, sai_plat_t,
-						     sai_plat_list);
-
-			js = lws_struct_json_serialize_create(
-				lsm_schema_map_plat_simple,
-				LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),
-				0, b);
-			if (!js) {
-				lwsac_unreference(&vhd->builders);
-				return 1;
-			}
-			if (sch->subsequent)
-				*p++ = ',';
-			sch->subsequent = 1;
-
-			switch (lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w)) {
-			case LSJS_RESULT_ERROR:
-				lws_struct_json_serialize_destroy(&js);
-				pss->send_state = WSS_IDLE1;
-				saiw_dealloc_sched(sch);
-				return 1;
-
-			case LSJS_RESULT_FINISH:
-			case LSJS_RESULT_CONTINUE:
-				p += w;
-				lws_struct_json_serialize_destroy(&js);
-				sch->walk = sch->walk->next;
-				if (!sch->walk)
-					goto b_finish;
-				break;
-			}
-		}
-		break;
-b_finish:
-		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
-
-	//	lwsac_unreference(&vhd->builders);
-		endo = 1;
-		break;
-
-
-	case WSS_PREPARE_TASKINFO:
-
-		if (!sch) /* coverity */
-			goto no_sch;
-
-		/*
-		 * We're sending a browser the specific task info that he
-		 * asked for.
-		 *
-		 * We already got the task struct out of the db in .one_task
-		 * (all in .query_ac)... we're responsible for destroying it
-		 * when we go out of scope...
-		 */
-
-		task_reply.event		= sch->one_event;
-		task_reply.task			= sch->one_task;
-		sch->one_task->rebuildable	= (sch->one_task->state == SAIES_FAIL ||
-						   sch->one_task->state == SAIES_CANCELLED) &&
-						  (lws_now_secs() - (sch->one_task->started +
-						   (sch->one_task->duration / 1000000)) < 24 * 3600);
-		task_reply.auth_secs		= (int)(pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0);
-		task_reply.authorized		= pss->authorized;
-		lws_strncpy(task_reply.auth_user, pss->auth_user,
-			    sizeof(task_reply.auth_user));
-
-		js = lws_struct_json_serialize_create(lsm_schema_json_map_taskreply,
-				LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply),
-				0, &task_reply);
-		if (!js) {
-			saiw_dealloc_sched(sch);
-			lwsl_warn("%s: couldn't create\n", __func__);
-			return 1;
-		}
-
-		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
-		lws_struct_json_serialize_destroy(&js);
-
-		/*
-		 * Let's also try to fetch any artifacts into pss->aft_owner...
-		 * no db or no artifacts can also be a normal situation...
-		 */
-
-		if (sch->one_task) {
-
-			sai_task_uuid_to_event_uuid(event_uuid,
-						    sch->one_task->uuid);
-
-			//lwsl_debug("%s: ---------------- event uuid '%s'\n",
-			//		__func__, event_uuid);
-
-			lws_dll2_owner_clear(&sch->owner);
-			if (!sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
-					      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
-
-				lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s')",
-					     sch->one_task->uuid);
-
-			//	if (!pss->authorized)
-			//		lws_snprintf(filt + strlen(filt), sizeof(filt) - strlen(filt), " and sec=0");
-
-				// lwsl_debug("%s: ---------------- %s\n", __func__, filt);
-
-				if (lws_struct_sq3_deserialize(pdb, filt, NULL,
-							lsm_schema_sq3_map_artifact,
-							&sch->owner,
-							&sch->ac, 0, 10)) {
-					lwsl_err("%s: get afcts failed\n", __func__);
-				}
-				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
-			}
-		}
-
-		first = 1;
-		sch->walk = NULL;
-		pss->send_state = WSS_SEND_ARTIFACT_INFO;
-		if (!sch->owner.head) {
-			// lwsl_debug("%s: ---------------- no artifacts\n", __func__);
-			/* there's no artifact stuff to do */
-			endo = 1;
-		} else
-			lwsl_debug("%s: WSS_PREPARE_TASKINFO: planning on artifacts\n", __func__);
-		// sch->one_task = NULL;
-		if (n == LSJS_RESULT_ERROR) {
-			saiw_dealloc_sched(sch);
-			lwsl_notice("%s: taskinfo: error generating json\n", __func__);
-			return 1;
-		}
-		p += w;
-		if (!lws_ptr_diff(p, start)) {
-			saiw_dealloc_sched(sch);
-			pss->send_state = WSS_IDLE1;
-			lwsl_notice("%s: taskinfo: empty json\n", __func__);
-			return 0;
-		}
-
-//		sai_dump_stderr((const char *)start, lws_ptr_diff_size_t(p, start));
-		break;
-
-	case WSS_SEND_ARTIFACT_INFO:
-
-		if (!sch) /* coverity */
-			goto no_sch;
-
-		if (sch->owner.head) {
-			sai_artifact_t *aft = (sai_artifact_t *)sch->owner.head;
-
-			lwsl_info("%s: WSS_SEND_ARTIFACT_INFO: consuming artifact\n", __func__);
-
-			lws_dll2_remove(&aft->list);
-
-			/* we don't want to disclose this to browsers */
-			aft->artifact_up_nonce[0] = '\0';
-
-			js = lws_struct_json_serialize_create(lsm_schema_json_map_artifact,
-					LWS_ARRAY_SIZE(lsm_schema_json_map_artifact),
-					0, aft);
-			if (!js) {
-				saiw_dealloc_sched(sch);
-				lwsl_err("%s ----------------- failed to render artifact json\n", __func__);
-				return 1;
-			}
-
-			n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
-			lws_struct_json_serialize_destroy(&js);
-			if (n == LSJS_RESULT_ERROR) {
-				saiw_dealloc_sched(sch);
-				lwsl_notice("%s: taskinfo: ---------- error generating json\n", __func__);
-				return 1;
-			}
-			first = 1;
-			p += w;
-			// lwsl_warn("%s: --------------------- %.*s\n", __func__, (int)w, start);
-		}
-
-		if (!sch->owner.head)
-			endo = 1;
-		break;
-
-	default:
-		lwsl_err("%s: pss state %d\n", __func__, pss->send_state);
-		return 0;
-	}
-
-send_it:
-
-	flags = lws_write_ws_flags(LWS_WRITE_TEXT, first, endo || lg || (sch && !sch->walk));
-
-	if (lg ||
-	    endo ||
-	    (pss->send_state == WSS_IDLE1 && sch) ||
-	    (pss->send_state != WSS_SEND_ARTIFACT_INFO && sch && !sch->walk) ||
-	    (pss->send_state == WSS_SEND_ARTIFACT_INFO && (!sch || !sch->owner.head))) {
-
-		/* does he want to subscribe to logs? */
-		if (sch && sch->logsub && sch->one_task && !pss->subs_list.owner) {
-			strcpy(pss->sub_task_uuid, sch->one_task->uuid);
-			lws_dll2_add_head(&pss->subs_list, &pss->vhd->subs_owner);
-			pss->sub_timestamp = pss->initial_log_timestamp; /* where we got up to */
-			lws_callback_on_writable(pss->wsi);
-
-			lwsl_info("%s: subscribed to logs for %s\n", __func__,
-				    pss->sub_task_uuid);
-		}
-
-		pss->send_state = WSS_IDLE1;
-		saiw_dealloc_sched(sch);
-	}
-
-	if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
-					(enum lws_write_protocol)flags) < 0)
-		return -1;
-
-	lws_callback_on_writable(pss->wsi);
+	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
+					       lws_ptr_diff_size_t(p, start),
+					       lws_write_ws_flags(LWS_WRITE_TEXT, 0, 1));
 
 	return 0;
+}
 
-no_sch:
-	pss->send_state = WSS_IDLE1;
+int
+saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
+{
+	char buf[4096 + LWS_PRE], *start = buf + LWS_PRE, *p = start,
+	     *end = buf + sizeof(buf);
+	lws_struct_serialize_t *js;
+	char esc[256], esc1[33];
+	lws_dll2_t *walk = NULL;
+	char fi = 1, subsequent;
+	size_t w;
+	int iu;
 
+	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+			  "{\"schema\":\"com.warmcat.sai.builders\","
+			  " \"alang\":\"%s\","
+			  " \"authorized\":%d,"
+			  " \"auth_secs\":%ld,"
+			  " \"auth_user\": \"%s\","
+			  " \"builders\":[",
+			  lws_sql_purify(esc, pss->alang, sizeof(esc) - 1),
+			  pss->authorized, pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0,
+			  lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu));
+
+	if (vhd && vhd->builders)
+		walk = lws_dll2_get_head(&vhd->builders_owner);
+
+	subsequent = 0;
+
+	while (walk) {
+		sai_plat_t *b = lws_container_of(walk, sai_plat_t, sai_plat_list);
+
+		js = lws_struct_json_serialize_create(
+			lsm_schema_map_plat_simple,
+			LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),
+			0, b);
+		if (!js) {
+			lwsac_unreference(&vhd->builders);
+			return 1;
+		}
+		if (subsequent)
+			*p++ = ',';
+		subsequent = 1;
+
+		switch (lws_struct_json_serialize(js, (uint8_t *)p, lws_ptr_diff_size_t(end, p), &w)) {
+		case LSJS_RESULT_ERROR:
+			lws_struct_json_serialize_destroy(&js);
+			return 1;
+
+		case LSJS_RESULT_FINISH:
+			lws_struct_json_serialize_destroy(&js);
+			/* fallthru */
+		case LSJS_RESULT_CONTINUE:
+			p += w;
+			walk = walk->next;
+			break;
+		}
+
+		if (lws_ptr_diff_size_t(end, p) < 256) {
+			saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
+								    lws_ptr_diff_size_t(p, start),
+								    lws_write_ws_flags(LWS_WRITE_TEXT, fi, 0));
+			fi = 0;
+			p = start;
+		}
+	}
+
+	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
+
+	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
+						    lws_ptr_diff_size_t(p, start),
+						    lws_write_ws_flags(LWS_WRITE_TEXT, fi, 1));
 	return 0;
 }
 
