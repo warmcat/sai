@@ -595,9 +595,17 @@ int main(int argc, const char **argv)
 	}
 
 	saib_power_init();
+
 #if defined(__linux__)
-		if (saib_suspender_fork(argv[0]))
-			return 1;
+	if (builder.power_off_type &&
+	    !strcmp(builder.power_off_type, "suspend") &&
+	    saib_suspender_fork(argv[0]))
+		return 1;
+#endif
+
+#if defined(__NetBSD__)
+	if (saib_suspender_fork(argv[0]))
+		return 1;
 #endif
 
 	while (!lws_service(builder.context, 0) && !interrupted)

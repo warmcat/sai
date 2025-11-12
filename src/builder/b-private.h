@@ -81,19 +81,6 @@ struct saib_opaque_spawn {
 #define SAI_CLEANUP_JOBS_INTERVAL_US		(60 * 60 * LWS_US_PER_SEC)
 #define SAI_CLEANUP_JOB_DIR_MIN_AGE_SECS	(24ull * 3600u)
 
-typedef enum {
-	PHASE_IDLE,
-
-	PFL_FIRST			= 	128,
-
-	PHASE_START_ATTACH		=	PFL_FIRST | 1,
-	PHASE_SUMM_PLATFORMS		=	2,
-
-	PHASE_BUILDING
-
-} cursor_phase_t;
-
-
 
 struct saib_ws_pss;
 
@@ -105,8 +92,6 @@ enum nsstate {
 	NSSTATE_UPLOADING_ARTIFACTS,
 	NSSTATE_FAILED,
 };
-
-
 
 /*
  * This represents this builder process as a whole
@@ -130,6 +115,7 @@ struct sai_builder {
 
 	lws_sorted_usec_list_t	sul_idle;
 	lws_sorted_usec_list_t	sul_do_suspend;
+	lws_sorted_usec_list_t	sul_do_shutdown;
 	lws_sorted_usec_list_t	sul_stay;
 	lws_sorted_usec_list_t	sul_cleanup_jobs;
 

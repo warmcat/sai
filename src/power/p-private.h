@@ -38,19 +38,7 @@
 #endif
 #include <pthread.h>
 
-#define SAI_IDLE_GRACE_US	(20 * LWS_US_PER_SEC)
-
-typedef enum {
-	PHASE_IDLE,
-
-	PFL_FIRST			= 	128,
-
-	PHASE_START_ATTACH		=	PFL_FIRST | 1,
-	PHASE_SUMM_PLATFORMS		=	2,
-
-	PHASE_BUILDING
-
-} cursor_phase_t;
+#define SAI_POWERDOWN_HOLDOFF_US	(50 * LWS_US_PER_SEC)
 
 typedef struct tasmota_data {
 	unsigned int		voltage_v;

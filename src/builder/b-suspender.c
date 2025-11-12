@@ -249,6 +249,9 @@ saib_suspender_start(void)
 		n = read(0, &d, 1);
 		lwsl_notice("%s: suspend process read returned %d\n", __func__, (int)n);
 
+#if defined(__APPLE__)
+		sleep(1);
+#endif
 		if (n <= 0)
 			continue;
 

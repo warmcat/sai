@@ -63,6 +63,7 @@ saib_reassess_idle_situation()
 				struct sai_nspawn *xns = lws_container_of(d,
 							struct sai_nspawn, list);
 
+				if (xns->task)
 				lwsl_notice("%s: ongoing task: %s\n", __func__,
 							xns->task->uuid);
 
@@ -258,6 +259,29 @@ sul_do_suspend_cb(lws_sorted_usec_list_t *sul)
 #endif
 }
 
+void
+sul_shutdown_cb(lws_sorted_usec_list_t *sul)
+{
+	int fd = saib_suspender_get_pipe();
+	uint8_t te = 0;
+	ssize_t n;
+
+	lwsl_warn("%s: device shutting down\n", __func__);
+
+	n = write(fd, &te, 1);
+
+	if (n != 1)
+		lwsl_err("%s: shutdown request failed\n", __func__);
+
+#if defined(WIN32)
+	Sleep(40000);
+#else
+	sleep(40);
+#endif
+
+	lwsl_err("%s: shutdown didn't happen\n", __func__);
+}
+
 /*
  * The grace time is up, ask for the suspend
  */
@@ -320,6 +344,14 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 	if (!builder.url_sai_power)
 		return;
 
+	/*
+	 * We're planning to get ourselves turned off after we have shutdown
+	 * cleanly.
+	 *
+	 * Send the request to sai-power to turn us off after 35s and then
+	 * request our suspender process to shutdown the device.
+	 */
+
 	snprintf(path, sizeof(path) - 1, "%s/auto-power-off/%s",
 		 builder.url_sai_power, builder.host);
 
@@ -333,6 +365,13 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 
 	if (lws_ss_request_tx(builder.ss_power_off))
 		lwsl_ss_warn(builder.ss_power_off, "Unable to request tx");
+
+	/* allow time for the sai-power transaction to happen */
+
+	lws_sul_schedule(builder.context, 0, &builder.sul_do_shutdown,
+			sul_shutdown_cb, 2 * LWS_US_PER_SEC);
+
+	/* let event loop continue for a couple of seconds, then shutdown */
 }
 
 int

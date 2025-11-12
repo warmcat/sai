@@ -66,30 +66,6 @@ enum {
 };
 
 /*
- * This allows other parts of sai-web to queue a raw buffer to be sent to
- * all connected browsers, eg, for load reports.
- *
- * The flags are lws_write() flags.
- */
-void
-saiw_ws_broadcast_raw(struct vhd *vhd, const void *buf, size_t len,
-		      enum lws_write_protocol flags)
-{
-	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
-		struct pss *pss = lws_container_of(p, struct pss, same);
-		int *pi = (int *)((const char *)buf - sizeof(int));
-
-		*pi = (int)flags;
-
-		if (lws_buflist_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) < 0)
-			lwsl_wsi_err(pss->wsi, "unable to buflist_append"); /* still ask to drain */
-
-		lws_callback_on_writable(pss->wsi);
-
-	} lws_end_foreach_dll(p);
-}
-
-/*
  * sai-web is receiving from sai-server
  *
  * This may come in chunks and is statefully parsed
@@ -139,17 +115,17 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		 */
 		switch (m->a.top_schema_index) {
 		case SAIS_WS_WEBSRV_RX_LOADREPORT:
-			saiw_ws_broadcast_raw(vhd, buf, len,
+			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, buf, len,
 				lws_write_ws_flags(LWS_WRITE_TEXT,
 						   flags & LWSSS_FLAG_SOM, 0));
 			break;
 		case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
-			saiw_ws_broadcast_raw(vhd, buf, len,
+			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, buf, len,
 				lws_write_ws_flags(LWS_WRITE_TEXT,
 						   flags & LWSSS_FLAG_SOM, 0));
 			break;
 		case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
-			saiw_ws_broadcast_raw(vhd, buf, len,
+			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, buf, len,
 				lws_write_ws_flags(LWS_WRITE_TEXT,
 						   flags & LWSSS_FLAG_SOM,
 						   flags & LWSSS_FLAG_EOM));
@@ -165,7 +141,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		case SAIS_WS_WEBSRV_RX_TASKCHANGE:
 		case SAIS_WS_WEBSRV_RX_EVENTCHANGE:
 		case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
-			saiw_ws_broadcast_raw(vhd, buf, len,
+			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, buf, len,
 				lws_write_ws_flags(LWS_WRITE_TEXT,
 						   flags & LWSSS_FLAG_SOM,
 						   flags & LWSSS_FLAG_EOM));
@@ -216,7 +192,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 			struct pss *pss = lws_container_of(p, struct pss, same);
 
-			saiw_alloc_sched(pss, WSS_PREPARE_BUILDER_SUMMARY);
+			saiw_browser_broadcast_queue_builders(pss->vhd, pss);
 		} lws_end_foreach_dll(p);
 		break;
 
@@ -225,7 +201,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 			struct pss *pss = lws_container_of(p, struct pss, same);
 
-			saiw_alloc_sched(pss, WSS_PREPARE_OVERVIEW);
+			saiw_browser_queue_overview(pss->vhd, pss);
 		} lws_end_foreach_dll(p);
 		break;
 
@@ -234,18 +210,18 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->subs_owner.head) {
 			struct pss *pss = lws_container_of(p, struct pss, subs_list);
 			if (!strcmp(pss->sub_task_uuid, ei->event_hash))
-				lws_callback_on_writable(pss->wsi);
+				saiw_broadcast_logs_batch(vhd, pss);
 		} lws_end_foreach_dll(p);
 		break;
 
 	case SAIS_WS_WEBSRV_RX_LOADREPORT:
 		// lwsl_notice("%s: ^^^^^^^^^^^^^^ SAIS_WS_WEBSRV_RX_LOADREPORT forwarding to browser\n", __func__);
 		// lwsl_hexdump_notice(buf, len);
-		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n,
+		saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, buf, len - (unsigned int)n,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 	case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
-		saiw_ws_broadcast_raw(vhd, buf, len - (unsigned int)n,
+		saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, buf, len - (unsigned int)n,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 	}

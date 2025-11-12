@@ -355,18 +355,23 @@ power_off:
 				 */
 
 				needs[0] = '\0';
-				lws_start_foreach_dll(struct lws_dll2 *, px1, sp->dependencies_owner.head) {
-					saip_server_plat_t *sp1 = lws_container_of(px1, saip_server_plat_t, dependencies_list);
+				lws_start_foreach_dll(struct lws_dll2 *, px1,
+						sp->dependencies_owner.head) {
+					saip_server_plat_t *sp1 = lws_container_of(px1,
+						saip_server_plat_t, dependencies_list);
 
 					if (sp1->needed)
-						lws_snprintf(needs, sizeof(needs) - 1 - strlen(needs), "%s ", sp1->name);
+						lws_snprintf(needs,
+							     sizeof(needs) - 1 - strlen(needs),
+							     "%s ", sp1->name);
 
 				} lws_end_foreach_dll(px1);
 
 				if (needs[0] || sp->needed) {
-					g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-								"NAK: %s needed: %d, deps needed: '%s'",
-								pn, sp->needed, needs);
+					g->size = (size_t)lws_snprintf(g->payload,
+						sizeof(g->payload),
+						"NAK: %s needed: %d, deps needed: '%s'",
+						pn, sp->needed, needs);
 					goto bail;
 				}
 			}
@@ -377,13 +382,16 @@ power_off:
 			lws_sul_schedule(lws_ss_cx_from_user(g), 0,
 						&sp->sul_delay_off,
 						saip_sul_action_power_off,
-					3 * LWS_USEC_PER_SEC);
+						SAI_POWERDOWN_HOLDOFF_US);
 
-			lwsl_warn("%s: scheduled powering off host %s\n",
-					__func__, sp->host);
+			lwsl_warn("%s: scheduled powering off host %s in %ds\n",
+				  __func__, sp->host,
+				  (int)(SAI_POWERDOWN_HOLDOFF_US / LWS_USEC_PER_SEC));
 
 			g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-				"ACK: Scheduled powering off host %s", sp->host);
+				"ACK: Scheduled powering off host %s in %ds",
+				sp->host,
+				(int)(SAI_POWERDOWN_HOLDOFF_US / LWS_USEC_PER_SEC));
 
 			sp->stay = 0; /* reset any manual power up */
 		}

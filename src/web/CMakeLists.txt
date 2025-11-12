@@ -10,6 +10,7 @@ set(SRCS
 	w-ws-server.c
 	w-ws-browser.c
 	../common/c-utils.c
+	../common/c-sqlite3.c
 	../common/struct-metadata.c
 )
 
