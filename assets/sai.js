@@ -595,38 +595,43 @@ function agify(now, secs)
 
 function aging()
 {
-        var n, next = 24 * 3600,
-            now_ut = Math.round((new Date().getTime() / 1000));
+	var n, next = 24 * 3600,
+	    now_ut = Math.round((new Date().getTime() / 1000));
 
-        for (n = 0; n < age_names.length; n++) {
-                var m, elems = document.getElementsByClassName(
-                				"age-" + n), ne = elems.length,
-                				a = new Array(), ee = new Array();
+	var selector = [];
+	for (n = 0; n < age_names.length; n++)
+		selector.push(".age-" + n);
 
-                if (elems.length && age_upd[n] < next)
-                        next = age_upd[n];
+	var elems = document.querySelectorAll(selector.join(", "));
+	var list = [];
+	for (n = 0; n < elems.length; n++)
+		list.push(elems[n]);
 
-                for (m = 0; m < ne; m++) {
-                        var e = elems[m], secs = elems[m].getAttribute("ut");
+	for (n = 0; n < list.length; n++) {
+		var e = list[n];
+		var secs = e.getAttribute("ut");
+		var d = Math.abs(now_ut - secs);
 
-                        a.push(agify(now_ut, secs));
-                        ee.push(e);
-                }
-                
-                for (m = 0; m < ee.length; m++) {
-                	ee[m].innerHTML = a[m]; 
-                }
-        }
+		for (var j = 0; j < age_limit.length; j++) {
+			if (d < age_limit[j] || age_limit[j] === 0) {
+				if (age_upd[j] < next)
+					next = age_upd[j];
+				break;
+			}
+		}
+
+		e.outerHTML = agify(now_ut, secs);
+	}
 
 	if (next < 5)
 		next = 5;
 
-        /*
-         * We only need to come back when the age might have changed.
-         * Eg, if everything is counted in hours already, once per
-         * 5 minutes is accurate enough.
-         */
-        window.setTimeout(aging, next * 1000);
+	/*
+	 * We only need to come back when the age might have changed.
+	 * Eg, if everything is counted in hours already, once per
+	 * 5 minutes is accurate enough.
+	 */
+	window.setTimeout(aging, next * 1000);
 }
 var sai, jso, s, sai_arts = "";
 
