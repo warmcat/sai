@@ -56,43 +56,43 @@ typedef enum {
 } sai_event_state_t;
 
 enum {
-	SAISPRF_TIMEDOUT	= 0x1000,
-	SAISPRF_TERMINATED	= 0x2000,
-	SAISPRF_EXIT		= 0x8000,
-	SAISPRF_SIGNALLED	= 0x4000,
+	SAISPRF_TIMEDOUT		= 0x1000,
+	SAISPRF_TERMINATED		= 0x2000,
+	SAISPRF_EXIT			= 0x8000,
+	SAISPRF_SIGNALLED		= 0x4000,
 };
 
 typedef struct sais_sqlite_cache {
-	lws_dll2_t	list;
-	char		uuid[65];
-	sqlite3		*pdb;
-	lws_usec_t	idle_since;
-	int		refcount;
+	lws_dll2_t			list;
+	char				uuid[65];
+	sqlite3				*pdb;
+	lws_usec_t			idle_since;
+	int				refcount;
 } sais_sqlite_cache_t;
 
 /* The top-level load report message from a builder */
 typedef struct sai_active_task_info {
-	lws_dll2_t		list;
-	char			task_uuid[65];
-	char			task_name[96];
-	int			build_step;
-	int			total_steps;
-	unsigned int		est_peak_mem_kib;
-	unsigned int		est_disk_kib;
-	uint64_t		started;
+	lws_dll2_t			list;
+	char				task_uuid[65];
+	char				task_name[96];
+	int				build_step;
+	int				total_steps;
+	unsigned int			est_peak_mem_kib;
+	unsigned int			est_disk_kib;
+	uint64_t			started;
 } sai_active_task_info_t;
 
 typedef struct sai_load_report {
-	lws_dll2_t		list; /* For queuing on sai_plat_server */
-	char			builder_name[64];
-	int			core_count;
-	unsigned int		initial_free_ram_kib;
-	unsigned int		reserved_ram_kib;
-	unsigned int		initial_free_disk_kib;
-	unsigned int		reserved_disk_kib;
-	unsigned int		active_steps;
-	unsigned int		cpu_percent;
-	lws_dll2_owner_t	active_tasks;
+	lws_dll2_t			list; /* For queuing on sai_plat_server */
+	char				builder_name[64];
+	int				core_count;
+	unsigned int			initial_free_ram_kib;
+	unsigned int			reserved_ram_kib;
+	unsigned int			initial_free_disk_kib;
+	unsigned int			reserved_disk_kib;
+	unsigned int			active_steps;
+	unsigned int			cpu_percent;
+	lws_dll2_owner_t		active_tasks;
 } sai_load_report_t;
 
 /*
@@ -100,14 +100,14 @@ typedef struct sai_load_report {
  * Sent from server -> builder.
  */
 typedef struct sai_viewer_state {
-	lws_dll2_t		list;        /* Not used, for schema mapping */
-	unsigned int		viewers;
+	lws_dll2_t			list;        /* Not used, for schema mapping */
+	unsigned int			viewers;
 } sai_viewer_state_t;
 
 typedef struct sai_platform_load {
-       lws_dll2_t              list;        /* Not used, for schema mapping */
-       char                    platform_name[128];
-       lws_dll2_owner_t        loads;
+       lws_dll2_t			list;        /* Not used, for schema mapping */
+       char				platform_name[128];
+       lws_dll2_owner_t			loads;
 } sai_platform_load_t;
 
 
@@ -116,64 +116,64 @@ struct sai_nspawn;
 typedef struct sai_plat sai_plat_t;
 
 typedef struct {
-	lws_dll2_t		list; /* managed by an owner via LSM_SCHEMA_DLL2 / lsm_task */
-	lws_dll2_t		pending_assign_list;
+	lws_dll2_t			list; /* managed by an owner via LSM_SCHEMA_DLL2 / lsm_task */
+	lws_dll2_t			pending_assign_list;
 
-	const struct sai_event	*one_event; /* event we are associated with */
+	const struct sai_event		*one_event; /* event we are associated with */
 
-	char			platform[96];
-	char			build[4096]; /* strsubst and serialized */
-	char			taskname[96];
-	char			packages[2048];
-	char			artifacts[256];
-	char			prep[4096];  /* only build is serialized */
-	char			cmake[4096];  /* only build is serialized */
-	char			builder[65 + 5];
-	char			event_uuid[65];
-	char			art_up_nonce[33];
-	char			art_down_nonce[33];
-	char			uuid[65];
-	char			builder_name[96];
-	char			cpack[512];
-	char			script[4096];
-	char			branches[256];
+	char				platform[96];
+	char				build[4096]; /* strsubst and serialized */
+	char				taskname[96];
+	char				packages[2048];
+	char				artifacts[256];
+	char				prep[4096];  /* only build is serialized */
+	char				cmake[4096];  /* only build is serialized */
+	char				builder[65 + 5];
+	char				event_uuid[65];
+	char				art_up_nonce[33];
+	char				art_down_nonce[33];
+	char				uuid[65];
+	char				builder_name[96];
+	char				cpack[512];
+	char				script[4096];
+	char				branches[256];
 
-	struct lwsac		*ac_task_container;
+	struct lwsac			*ac_task_container;
 
-	const char		*server_name;		/* used in offer */
-	const char		*repo_name;		/* used in offer */
-	const char		*git_ref;		/* used in offer */
-	const char		*git_hash;		/* used in offer */
-	const char		*git_repo_url;		/* used in offer */
-	uint64_t		last_updated;
-	uint64_t		started;
-	uint64_t		duration;
-	int			state;
-	int			uid;
-	int			build_step;
-	int			build_step_count;
+	const char			*server_name;		/* used in offer */
+	const char			*repo_name;		/* used in offer */
+	const char			*git_ref;		/* used in offer */
+	const char			*git_hash;		/* used in offer */
+	const char			*git_repo_url;		/* used in offer */
+	uint64_t			last_updated;
+	uint64_t			started;
+	uint64_t			duration;
+	int				state;
+	int				uid;
+	int				build_step;
+	int				build_step_count;
 
 	/* estimations for builder resource consumption */
-	unsigned int		est_peak_mem_kib;
-	unsigned int		est_disk_kib;
-	unsigned int		est_wallclock_ms;
-	unsigned int		est_compute_ms;
+	unsigned int			est_peak_mem_kib;
+	unsigned int			est_disk_kib;
+	unsigned int			est_wallclock_ms;
+	unsigned int			est_compute_ms;
 
-	int			parallel;
-	char			told_ongoing;
+	int				parallel;
+	char				told_ongoing;
 
-	char			rebuildable;
+	char				rebuildable;
 } sai_task_t;
 
 struct saib_logproxy {
-	char			sockpath[128];
-	struct sai_nspawn	*ns;
-	int			log_channel_idx;
+	char				sockpath[128];
+	struct sai_nspawn		*ns;
+	int				log_channel_idx;
 };
 
 struct saib_resproxy {
-	char			sockpath[128];
-	struct sai_nspawn	*ns;
+	char				sockpath[128];
+	struct sai_nspawn		*ns;
 };
 
 struct sai_nspawn {
@@ -181,9 +181,7 @@ struct sai_nspawn {
 	char				inp_vn[16];
 	char				path[384];
 	char				script_path[290];
-	char				pending_mirror_log[128];
 
-	/* convenient place to store it */
 	struct saib_logproxy		slp_control;
 	struct saib_logproxy		slp[2];
 	struct lws_vhost		*vhosts[3];
@@ -398,53 +396,53 @@ struct sai_plat;
  */
 
 typedef struct sai_plat_server {
-	lws_dll2_t		list;
+	lws_dll2_t			list;
 
-	lws_dll2_owner_t	resource_pss_list; /* so we can find the cookie */
+	lws_dll2_owner_t		resource_pss_list; /* so we can find the cookie */
 
-	struct lws_buflist	*bl_to_srv;
+	struct lws_buflist		*bl_to_srv;
 
-	char			resproxy_path[128];
+	char				resproxy_path[128];
 
 	/* for load reporting */
-	lws_sorted_usec_list_t	sul_load_report;
-	unsigned int		viewer_count;
+	lws_sorted_usec_list_t		sul_load_report;
+	unsigned int			viewer_count;
 
-	const char		*url;
-	const char		*name;
+	const char			*url;
+	const char			*name;
 
-	struct lws_ss_handle 	*ss;
-	void			*opaque_data;
+	struct lws_ss_handle 		*ss;
+	void				*opaque_data;
 
-	lws_dll2_t		*last_logging_nspawn;
-	struct sai_plat		*last_logging_platform;
+	lws_dll2_t			*last_logging_nspawn;
+	struct sai_plat			*last_logging_platform;
 
-	int			refcount;
+	int				refcount;
 
-	int			index;  /* used to create unique build dir path */
+	int				index;  /* used to create unique build dir path */
 
-	uint16_t		retries;
+	uint16_t			retries;
 } sai_plat_server_t;
 
 struct sai_env {
-	lws_dll2_t		list;
+	lws_dll2_t			list;
 
-	const char		*name;
-	const char		*value;
+	const char			*name;
+	const char			*value;
 };
 
 typedef struct sai_plat_server_ref {
-	lws_dll2_t		list;
-	sai_plat_server_t	*spm;
-	char			was_active;
+	lws_dll2_t			list;
+	sai_plat_server_t		*spm;
+	char				was_active;
 } sai_plat_server_ref_t;
 
 /* common struct for lists of task uuids on a builder */
 typedef struct sai_uuid_list {
-	lws_dll2_t		list;
-	lws_usec_t		us_time_listed;
-	char			uuid[65];
-	char			started;
+	lws_dll2_t			list;
+	lws_usec_t			us_time_listed;
+	char				uuid[65];
+	char				started;
 } sai_uuid_list_t;
 
 /*
@@ -491,59 +489,59 @@ typedef struct sai_uuid_list {
  */
 
 typedef struct sai_plat {
-	lws_dll2_t		sai_plat_list;
+	lws_dll2_t			sai_plat_list;
 
-	lws_dll2_owner_t	servers; /* list of sai_plat_server_ref_t */
+	lws_dll2_owner_t		servers; /* list of sai_plat_server_ref_t */
 
-	lws_sorted_usec_list_t	sul_find_jobs; /* server */
+	lws_sorted_usec_list_t		sul_find_jobs; /* server */
 
-	char			peer_ip[48];
+	char				peer_ip[48];
 
-	const char		*name;
-	const char		*platform;
+	const char			*name;
+	const char			*platform;
 
-	struct lejp_ctx		ctx;
-	lws_dll2_owner_t	nspawn_owner;
-	struct lwsac		*deserialization_ac;
+	struct lejp_ctx			ctx;
+	lws_dll2_owner_t		nspawn_owner;
+	struct lwsac			*deserialization_ac;
 
-	struct lws_context	*cx;
-	struct lws		*wsi; /* server side only */
-	void			*vhd;
+	struct lws_context		*cx;
+	struct lws			*wsi; /* server side only */
+	void				*vhd;
 
-	lws_dll2_owner_t	env_head;
-	char			sai_hash[41];
-	char			lws_hash[41];
-	uint64_t		uid;
-	lws_dll2_owner_t	loads;
-	int			online; /* 1 = connected, 0 = offline */
-	uint64_t		last_seen; /* unix time */
-	int			powering_up; /* 1 = sai-power is booting it */
-	int			powering_down;
-	unsigned int		job_limit;
+	lws_dll2_owner_t		env_head;
+	char				sai_hash[41];
+	char				lws_hash[41];
+	uint64_t			uid;
+	lws_dll2_owner_t		loads;
+	int				online; /* 1 = connected, 0 = offline */
+	uint64_t			last_seen; /* unix time */
+	int				powering_up; /* 1 = sai-power is booting it */
+	int				powering_down;
+	unsigned int			job_limit;
 
 	/* server side only: builder resource tracking */
-	lws_dll2_owner_t	inflight_owner; /* sai_uuid_list_t */
-	int			avail_slots;
-	unsigned int		avail_mem_kib;
-	unsigned int		avail_sto_kib;
+	lws_dll2_owner_t		inflight_owner; /* sai_uuid_list_t */
+	int				avail_slots;
+	unsigned int			avail_mem_kib;
+	unsigned int			avail_sto_kib;
 
-	char			windows;
-	char			power_managed;
-	char			stay_on;
-	char			busy;
+	char				windows;
+	char				power_managed;
+	char				stay_on;
+	char				busy;
 
-	int			index; /* used to create unique build dir path */
+	int				index; /* used to create unique build dir path */
 } sai_plat_t;
 
 typedef struct sai_plat_owner {
-	lws_dll2_owner_t	plat_owner;
+	lws_dll2_owner_t		plat_owner;
 
 } sai_plat_owner_t;
 
 typedef struct sai_repo {
-	char *name;
-	char *fetch_url;
-	char *notification_key;
+	char				*name;
+	char				*fetch_url;
+	char				*notification_key;
 } sai_repo_t;
 
 typedef enum {
@@ -551,42 +549,42 @@ typedef enum {
 } sai_log_action_t;
 
 typedef struct sai_browse_rx_evinfo {
-	char		event_hash[65];
-	int		state;
+	char				event_hash[65];
+	int				state;
 } sai_browse_rx_evinfo_t;
 
 typedef struct sai_browse_rx_taskinfo {
-	char		task_hash[65];
-	uint64_t	last_log_ts;
-	unsigned int	log_start;
-	unsigned int	js_api_version;
-	uint8_t		logs;
+	char				task_hash[65];
+	uint64_t			last_log_ts;
+	unsigned int			log_start;
+	unsigned int			js_api_version;
+	uint8_t				logs;
 } sai_browse_rx_taskinfo_t;
 
 /* sai-power -> sai-server, tells it that a platform is being powered up */
 typedef struct sai_power_state {
-	lws_dll2_t	list; /* for parser */
-	char		host[256];
-	int		powering_up;
-	int		powering_down;
+	lws_dll2_t			list; /* for parser */
+	char				host[256];
+	int				powering_up;
+	int				powering_down;
 } sai_power_state_t;
 
 typedef struct sai_build_metric {
-	lws_dll2_t	list;
-	char		key[65];
-	char		task_uuid[65];
-	char		builder_name[96];
-	char		project_name[96];
-	char		ref[96];
-	uint64_t	unixtime;/* actually autoincrement index in sql3 */
-	uint64_t	unix_time;
-	uint64_t	us_cpu_user;
-	uint64_t	us_cpu_sys;
-	uint64_t	wallclock_us;
-	uint64_t	peak_mem_rss;
-	uint64_t	stg_bytes;
-	int		parallel;
-	int		step;
+	lws_dll2_t			list;
+	char				key[65];
+	char				task_uuid[65];
+	char				builder_name[96];
+	char				project_name[96];
+	char				ref[96];
+	uint64_t			unixtime;/* actually autoincrement index in sql3 */
+	uint64_t			unix_time;
+	uint64_t			us_cpu_user;
+	uint64_t			us_cpu_sys;
+	uint64_t			wallclock_us;
+	uint64_t			peak_mem_rss;
+	uint64_t			stg_bytes;
+	int				parallel;
+	int				step;
 } sai_build_metric_t;
 
 /*
@@ -596,42 +594,42 @@ typedef struct sai_build_metric {
  * power down automatically when idle.
  */
 typedef struct sai_stay {
-	lws_dll2_t		list;
-	char			builder_name[64];
-	char			stay_on; /* 0 = release, 1 = set */
+	lws_dll2_t			list;
+	char				builder_name[64];
+	char				stay_on; /* 0 = release, 1 = set */
 } sai_stay_t;
 
 typedef struct sai_controlled_builder {
-	lws_dll2_t		list;
-	char			name[64];
+	lws_dll2_t			list;
+	char				name[64];
 } sai_controlled_builder_t;
 
 /* sai-power -> sai-server, tells it about power controllers */
 typedef struct sai_power_controller {
-	lws_dll2_t		list;
-	lws_dll2_owner_t 	controlled_builders_owner;
-	char			name[64];
-	char			on;
+	lws_dll2_t			list;
+	lws_dll2_owner_t 		controlled_builders_owner;
+	char				name[64];
+	char				on;
 } sai_power_controller_t;
 
 /* sai-power -> sai-server, tells it the builders it can manage */
 typedef struct sai_power_managed_builder {
-	lws_dll2_t		list;
-	char			name[64];
-	char			stay_on;
+	lws_dll2_t			list;
+	char				name[64];
+	char				stay_on;
 } sai_power_managed_builder_t;
 
 typedef struct sai_power_managed_builders {
-	lws_dll2_t		list;
-	lws_dll2_owner_t 	builders; /* sai_power_managed_builder_t */
-	lws_dll2_owner_t 	power_controllers; /* sai_power_controller_t */
+	lws_dll2_t			list;
+	lws_dll2_owner_t 		builders; /* sai_power_managed_builder_t */
+	lws_dll2_owner_t 		power_controllers; /* sai_power_controller_t */
 } sai_power_managed_builders_t;
 
 
 typedef struct sai_stay_state_update {
-	lws_dll2_t		list;
-	char			builder_name[64];
-	char			stay_on;
+	lws_dll2_t			list;
+	char				builder_name[64];
+	char				stay_on;
 } sai_stay_state_update_t;
 
 /*

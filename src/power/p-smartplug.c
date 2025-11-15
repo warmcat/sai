@@ -70,7 +70,7 @@ saip_ss_create_tasmota()
 	lws_start_foreach_dll(struct lws_dll2 *, px, power.sai_pcon_owner.head) {
 		saip_pcon_t *pc = lws_container_of(px, saip_pcon_t, list);
 
-		if (!strcmp(pc->type, "tasmota") && pc->url) {
+		if (pc->type && !strcmp(pc->type, "tasmota") && pc->url) {
 			lws_snprintf(pc->url_on, sizeof(pc->url_on),
 				     "%s/cm?cmnd=Power%%20On", pc->url);
 			if (lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,

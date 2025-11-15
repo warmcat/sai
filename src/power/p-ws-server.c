@@ -97,7 +97,7 @@ saip_queue_stay_info(saip_server_t *sps)
 		saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
 		sai_power_controller_t *pc1 = lwsac_use_zero(&ac, sizeof(*pc1), 2048);
 
-		if (pc1) {
+		if (pc1 && pc->name) {
 			lws_strncpy(pc1->name, pc->name, sizeof(pc1->name));
 			pc1->on		= pc->on;
 

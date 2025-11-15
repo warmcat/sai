@@ -413,12 +413,10 @@ int main(int argc, const char **argv)
 		realpath(argv[0], rpath);
 
 		memset(&info, 0, sizeof(info));
-		memset(&power.wol_nspawn, 0, sizeof(power.wol_nspawn));
 
 		info.vh			= power.vhost;
 		info.exec_array		= ea;
 		info.max_log_lines	= 100;
-		info.opaque		= (void *)&power.wol_nspawn;
 		info.protocol_name	= "protocol_std";
 
 		lsp_wol = lws_spawn_piped(&info);

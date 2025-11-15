@@ -499,8 +499,10 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 
 		sai_task_uuid_to_event_uuid(event_uuid, rej->task_uuid);
 		if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
-				      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb))
+				      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
+			lwsl_err("%s: unable to open db for event %s\n", __func__, event_uuid);
 			break;
+		}
 
 		lws_sql_purify(esc_uuid, rej->task_uuid, sizeof(esc_uuid));
 		lws_snprintf(q, sizeof(q),
@@ -522,11 +524,16 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 			     build_step, esc_uuid);
 		sqlite3_exec(pdb, q, NULL, NULL, NULL);
 
+		lwsl_notice("%s: &&&&&&&& build_step set to %d\n", __func__, build_step);
+
 		if (build_step == 1) {
 			pss->first_log_timestamp = (uint64_t)lws_now_secs();
 			lws_snprintf(q, sizeof(q),
 			     "update tasks set started=%llu where uuid='%s'",
 			     (unsigned long long)pss->first_log_timestamp, esc_uuid);
+
+			lwsl_warn("%s: &&&&&&&&&&&&&&&&&&&&&&&&&& setting task %s started to %llu\n",
+				  __func__, esc_uuid, (unsigned long long)pss->first_log_timestamp);
 
 			if (sqlite3_exec(pdb, q, NULL, NULL, NULL) != SQLITE_OK)
 				lwsl_notice("%s: unable to set started\n", __func__);

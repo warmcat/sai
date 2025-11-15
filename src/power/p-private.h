@@ -128,8 +128,6 @@ struct sai_power {
 	struct lws_context	*context;
 	struct lws_vhost	*vhost;
 
-	struct sai_nspawn	wol_nspawn;
-
 	lws_sorted_usec_list_t	sul_idle;
 
 	const char		*power_off;
