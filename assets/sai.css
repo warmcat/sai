@@ -68,7 +68,6 @@ img.zup {
 
 .fading-out {
 	opacity: 0;
-	transition: opacity 3s linear;
 }
 [type=radio]:checked ~ label {
   background: white;
@@ -985,6 +984,9 @@ body.overlay-active {
   padding: 2px;
   font-size: 7pt;
   text-align: left;
+}
+.spreadsheet tr {
+	transition: opacity 3s linear;
 }
 .spreadsheet th {
   background-color: #f2f2f2;
