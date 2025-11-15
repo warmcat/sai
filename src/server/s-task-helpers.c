@@ -217,8 +217,9 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 
 	if (started) {
 		if (started == 1)
-			started = 0;
-		lws_snprintf(esc3, sizeof(esc3), ",started=%llu",
+			lws_snprintf(esc3, sizeof(esc3), ",started=0");
+		else
+			lws_snprintf(esc3, sizeof(esc3), ",started=%llu",
 			     (unsigned long long)started);
 	}
 	if (duration) {
