@@ -508,40 +508,93 @@ function hsanitize(s)
 	}).replace(/\r\n/g, '\n').replace(/\n/g, '<br>');
 }
 
-function renderSpreadsheet(tasks) {
-	if (!tasks || tasks.length === 0) {
-		return '';
-	}
+function createTaskRow(task, now_ut) {
+    const tr = document.createElement("tr");
+    tr.id = "task-row-" + task.task_uuid;
 
-	tasks.sort((a, b) => b.started - a.started || a.task_name.localeCompare(b.task_name));
+    let s1 = "";
+    let qc;
+    for (qc = 0; qc <= task.build_step; qc++)
+        s1 += "&#9635;";
+    while (qc <= task.total_steps) {
+        s1 += "&#9633;";
+        qc++;
+    }
 
-	var now_ut = Math.round((new Date().getTime() / 1000));
-	let html = '<table class="spreadsheet">' +
-			   '<thead><tr>' +
-			   '<th>Build Step</th>' +
-			   '<th>Since</th>' +
-			   '<th>Task</th>' +
-			   '</tr></thead><tbody>';
+    tr.innerHTML = `<td>${s1}</td>` +
+                   `<td>${agify(now_ut, task.started)} ago</td>` +
+                   `<td><a href="index.html?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>`;
+    return tr;
+}
 
-	for (const task of tasks) {
-		var s1 = "", qc;
+function updateTaskRow(tr, task, now_ut) {
+    let s1 = "";
+    let qc;
+    for (qc = 0; qc <= task.build_step; qc++)
+        s1 += "&#9635;";
+    while (qc <= task.total_steps) {
+        s1 += "&#9633;";
+        qc++;
+    }
+    tr.innerHTML = `<td>${s1}</td>` +
+                   `<td>${agify(now_ut, task.started)} ago</td>` +
+                   `<td><a href="index.html?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>`;
+}
 
-		for (qc = 0; qc <= task.build_step; qc++)
-			s1 += "&#9635";
+function updateSpreadsheetDOM(container, tasks) {
+    if (!tasks) {
+        tasks = [];
+    }
 
-		while (qc <= task.total_steps) {
-			s1 += "&#9633";
-			qc++;
-		}
-		html += '<tr>' +
-			`<td>` + s1 + `</td>` +
-			`<td>${agify(now_ut, task.started)} ago</td>` +
-			`<td><a href="index.html?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>` +
-			'</tr>';
-	}
+    tasks.sort((a, b) => b.started - a.started || a.task_name.localeCompare(b.task_name));
 
-	html += '</tbody></table>';
-	return html;
+    let table = container.querySelector("table.spreadsheet");
+    if (!table) {
+        container.innerHTML = '<table class="spreadsheet">' +
+            '<thead><tr><th>Build Step</th><th>Since</th><th>Task</th></tr></thead>' +
+            '<tbody></tbody></table>';
+        table = container.querySelector("table.spreadsheet");
+    }
+    const tbody = table.querySelector("tbody");
+    const now_ut = Math.round((new Date().getTime() / 1000));
+
+    const existingRows = new Map();
+    for (const row of tbody.children) {
+        existingRows.set(row.id, row);
+    }
+
+    const newOrUpdatedTaskIds = new Set();
+    for (const task of tasks) {
+        const taskRowId = "task-row-" + task.task_uuid;
+        newOrUpdatedTaskIds.add(taskRowId);
+        const row = existingRows.get(taskRowId);
+
+        if (row) {
+            updateTaskRow(row, task, now_ut);
+        } else {
+            tbody.appendChild(createTaskRow(task, now_ut));
+        }
+    }
+
+    for (const [rowId, row] of existingRows) {
+        if (!newOrUpdatedTaskIds.has(rowId)) {
+            tbody.removeChild(row);
+        }
+    }
+
+    const rows = Array.from(tbody.children);
+    const taskMap = new Map(tasks.map(t => ["task-row-" + t.task_uuid, t]));
+
+    rows.sort((rowA, rowB) => {
+        const taskA = taskMap.get(rowA.id);
+        const taskB = taskMap.get(rowB.id);
+        if (!taskA || !taskB) return 0;
+        return (taskB.started - taskA.started) || taskA.task_name.localeCompare(taskB.task_name);
+    });
+
+    for (const row of rows) {
+        tbody.appendChild(row);
+    }
 }
 
 var pos = 0, lli = 1, lines = "", times = "", locked = 1, tfirst = 0,
@@ -1157,6 +1210,56 @@ function createBuilderDiv(plat) {
 	return platDiv;
 }
 
+function updateSpreadsheetCell(cell, platName) {
+	let best_match_key = null;
+	for (const short_name in spreadsheet_data_cache) {
+		if (platName.startsWith(short_name)) {
+			if (!best_match_key || short_name.length > best_match_key.length) {
+				best_match_key = short_name;
+			}
+		}
+	}
+
+	if (best_match_key) {
+		cell.innerHTML = renderSpreadsheet(spreadsheet_data_cache[best_match_key]);
+		aging();
+	} else {
+		cell.innerHTML = ""; // Clear it if no data
+	}
+}
+
+function createBuilderRow(plat) {
+	const tr = document.createElement("tr");
+	tr.id = "row-" + plat.name;
+
+	const tdInfo = document.createElement("td");
+	tdInfo.className = "builder-info";
+	const builderDiv = createBuilderDiv(plat);
+	tdInfo.appendChild(builderDiv);
+	tr.appendChild(tdInfo);
+
+	const tdSpreadsheet = document.createElement("td");
+	tdSpreadsheet.className = "spreadsheet-container";
+	tdSpreadsheet.id = "spreadsheet-" + plat.name;
+	updateSpreadsheetCell(tdSpreadsheet, plat.name);
+	tr.appendChild(tdSpreadsheet);
+
+	return tr;
+}
+
+function updateBuilderRow(row, plat) {
+	const tdInfo = row.querySelector(".builder-info");
+	const tdSpreadsheet = row.querySelector(".spreadsheet-container");
+
+	// Update builder info div
+	// This is simple enough that a full replacement is fine and ensures listeners are correct.
+	tdInfo.innerHTML = "";
+	tdInfo.appendChild(createBuilderDiv(plat));
+
+	// Update spreadsheet view for this builder
+	updateSpreadsheetCell(tdSpreadsheet, plat.name);
+}
+
 function ws_open_sai()
 {	
 	var s = "", q, qa, qi, q5, q5s;
@@ -1324,66 +1427,62 @@ function ws_open_sai()
 				const buildersContainer = document.getElementById("sai_builders");
 				if (!buildersContainer) { break; }
 
-				let platformsArray = null;
-				if (jso.platforms && Array.isArray(jso.platforms)) {
-					platformsArray = jso.platforms;
-				} else if (jso.builders && Array.isArray(jso.builders)) {
-					platformsArray = jso.builders;
-				}
+				let platformsArray = (jso.platforms && Array.isArray(jso.platforms)) ? jso.platforms :
+				                     (jso.builders && Array.isArray(jso.builders)) ? jso.builders : null;
+
 				if (!platformsArray) {
 					buildersContainer.innerHTML = ""; // Clear display if data is invalid
 					break;
 				}
 
+				platformsArray.sort((a, b) => (a.name && b.name) ? a.name.localeCompare(b.name) : 0);
+
+				let table = buildersContainer.querySelector("table.builders");
+				if (!table) {
+					buildersContainer.innerHTML = ""; // Clear placeholder
+					table = document.createElement("table");
+					table.className = "builders";
+					table.appendChild(document.createElement("tbody"));
+					buildersContainer.appendChild(table);
+				}
+				const tbody = table.querySelector("tbody");
 
 				// --- Reconciliation Logic ---
+				let platIdx = 0;
+				let currentRow = tbody.firstChild;
 
-				buildersContainer.innerHTML = "&nbsp;"; // Clear for safety
-				const table = document.createElement("table");
-				table.className = "builders";
-				const tbody = document.createElement("tbody");
-				table.appendChild(tbody);
+				while (platIdx < platformsArray.length) {
+					const plat = platformsArray[platIdx];
 
-				platformsArray.sort((a, b) => {
-					if (a.name && b.name) {
-						return a.name.localeCompare(b.name);
-					}
-					return 0; // Don't sort if names are missing
-				});
-
-				for (const plat of platformsArray) {
-					const tr = document.createElement("tr");
-
-					const tdInfo = document.createElement("td");
-					tdInfo.className = "builder-info";
-					const builderDiv = createBuilderDiv(plat);
-					tdInfo.appendChild(builderDiv);
-					tr.appendChild(tdInfo);
-
-					const tdSpreadsheet = document.createElement("td");
-					tdSpreadsheet.className = "spreadsheet-container";
-					tdSpreadsheet.id = "spreadsheet-" + plat.name;
-
-					let best_match_key = null;
-					for (const short_name in spreadsheet_data_cache) {
-						if (plat.name.startsWith(short_name)) {
-							if (!best_match_key || short_name.length > best_match_key.length) {
-								best_match_key = short_name;
-							}
-						}
+					if (!currentRow) {
+						tbody.appendChild(createBuilderRow(plat));
+						platIdx++;
+						continue;
 					}
 
-					if (best_match_key) {
-						tdSpreadsheet.innerHTML = renderSpreadsheet(spreadsheet_data_cache[best_match_key]);
-						aging();
+					const rowPlatName = currentRow.id.substring(4); // "row-..."
+					const comparison = plat.name.localeCompare(rowPlatName);
+
+					if (comparison === 0) {
+						updateBuilderRow(currentRow, plat);
+						platIdx++;
+						currentRow = currentRow.nextSibling;
+					} else if (comparison < 0) {
+						tbody.insertBefore(createBuilderRow(plat), currentRow);
+						platIdx++;
+					} else { // comparison > 0
+						const nextRow = currentRow.nextSibling;
+						tbody.removeChild(currentRow);
+						currentRow = nextRow;
 					}
-
-					tr.appendChild(tdSpreadsheet);
-
-					tbody.appendChild(tr);
 				}
 
-				buildersContainer.appendChild(table);
+				// Remove any remaining old rows at the end
+				while (currentRow) {
+					const nextRow = currentRow.nextSibling;
+					tbody.removeChild(currentRow);
+					currentRow = nextRow;
+				}
  				break;
 
 			case "com.warmcat.sai.build-metric":
@@ -1757,9 +1856,10 @@ function ws_open_sai()
 
 				const spreadsheetContainer = document.getElementById('spreadsheet-' + jso.builder_name);
 				if (spreadsheetContainer) {
-					spreadsheetContainer.innerHTML = renderSpreadsheet(spreadsheet_data_cache[jso.builder_name]);
-					if (spreadsheet_data_cache[jso.builder_name])
+					updateSpreadsheetDOM(spreadsheetContainer, spreadsheet_data_cache[jso.builder_name]);
+					if (spreadsheet_data_cache[jso.builder_name]) {
 						aging();
+					}
 				}
 				break;
 
