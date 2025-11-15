@@ -65,6 +65,11 @@ img.zup {
   padding: 20px;
   border: 1px solid #ccc; 
 }
+
+.fading-out {
+	opacity: 0;
+	transition: opacity 3s linear;
+}
 [type=radio]:checked ~ label {
   background: white;
   border-bottom: 1px solid white;

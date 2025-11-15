@@ -396,7 +396,8 @@ var lang_zhs = "{" +
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
 	logAnsiState = {},
-	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {};
+	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {},
+	fadingTasks = new Map();
 
 function update_task_activities() {
 	for (const uuid in ongoing_task_activities) {
@@ -542,9 +543,10 @@ function updateTaskRow(tr, task, now_ut) {
 }
 
 function updateSpreadsheetDOM(container, tasks) {
-    if (!tasks) {
-        tasks = [];
-    }
+	if (!tasks || !tasks.length) {
+		container.innerHTML = "";
+		return;
+	}
 
     tasks.sort((a, b) => b.started - a.started || a.task_name.localeCompare(b.task_name));
 
@@ -570,6 +572,11 @@ function updateSpreadsheetDOM(container, tasks) {
         const row = existingRows.get(taskRowId);
 
         if (row) {
+            if (fadingTasks.has(task.task_uuid)) {
+                clearTimeout(fadingTasks.get(task.task_uuid));
+                fadingTasks.delete(task.task_uuid);
+                row.classList.remove("fading-out");
+            }
             updateTaskRow(row, task, now_ut);
         } else {
             tbody.appendChild(createTaskRow(task, now_ut));
@@ -578,7 +585,15 @@ function updateSpreadsheetDOM(container, tasks) {
 
     for (const [rowId, row] of existingRows) {
         if (!newOrUpdatedTaskIds.has(rowId)) {
-            tbody.removeChild(row);
+            const task_uuid = rowId.substring(9);
+            if (!fadingTasks.has(task_uuid)) {
+                row.classList.add("fading-out");
+                const timer = setTimeout(() => {
+                    tbody.removeChild(row);
+                    fadingTasks.delete(task_uuid);
+                }, 3000);
+                fadingTasks.set(task_uuid, timer);
+            }
         }
     }
 
