@@ -597,8 +597,8 @@ int main(int argc, const char **argv)
 	saib_power_init();
 
 #if defined(__linux__)
-	if (builder.power_off_type &&
-	    !strcmp(builder.power_off_type, "suspend") &&
+	if (//builder.power_off_type &&
+	    //!strcmp(builder.power_off_type, "suspend") &&
 	    saib_suspender_fork(argv[0]))
 		return 1;
 #endif
