@@ -147,6 +147,40 @@ sais_central_clean_abandoned(struct vhd *vhd)
 	lwsac_free(&ac);
 }
 
+/* Check if we need to create new tables or add columns */
+static void
+sais_ensure_tables(struct vhd *vhd)
+{
+	char *err = NULL;
+
+	/* We already added power_controllers and pcon_builders,
+	 * but we need to make sure 'builders' table has 'pcon' column.
+	 */
+
+	/* Try adding the column, ignore error if it exists */
+	sqlite3_exec(vhd->server.pdb, "ALTER TABLE builders ADD COLUMN pcon varchar(64);", NULL, NULL, &err);
+	if (err) {
+		/* lwsl_notice("%s: (stateless) %s\n", __func__, err); */
+		sqlite3_free(err);
+	}
+
+	sai_sqlite3_statement(vhd->server.pdb,
+		"CREATE TABLE IF NOT EXISTS power_controllers ("
+		" name varchar(64) primary key,"
+		" type varchar(32),"
+		" url varchar(128),"
+		" depends_on varchar(64),"
+		" state integer"
+		");", "create pcon table");
+
+	sai_sqlite3_statement(vhd->server.pdb,
+		"CREATE TABLE IF NOT EXISTS pcon_builders ("
+		" pcon_name varchar(64),"
+		" builder_name varchar(64)"
+		");", "create pcon_builders table");
+
+}
+
 void
 sais_central_cb(lws_sorted_usec_list_t *sul)
 {
@@ -161,6 +195,10 @@ sais_central_cb(lws_sorted_usec_list_t *sul)
 			       (3 * 60 * LWS_USEC_PER_SEC))) {
 
 		sais_central_clean_abandoned(vhd);
+
+		/* Also ensure tables exist periodically/on startup */
+		if (!vhd->last_check_abandoned_tasks)
+			sais_ensure_tables(vhd);
 
 		vhd->last_check_abandoned_tasks = lws_now_usecs();
 	}

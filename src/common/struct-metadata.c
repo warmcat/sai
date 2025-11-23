@@ -81,6 +81,7 @@ const lws_struct_map_t lsm_plat[] = {
 	LSM_UNSIGNED	(sai_plat_t, uid,		"uid"),
 	LSM_STRING_PTR	(sai_plat_t, name,		"name"),
 	LSM_STRING_PTR	(sai_plat_t, platform,		"platform"),
+	LSM_STRING_PTR	(sai_plat_t, pcon,		"pcon"),
 	LSM_JO_SIGNED	(sai_plat_t, online,		"online"),
 	LSM_UNSIGNED	(sai_plat_t, last_seen,		"last_seen"),
 	LSM_JO_SIGNED	(sai_plat_t, powering_up,	"powering_up"),
@@ -314,6 +315,8 @@ const lws_struct_map_t lsm_controlled_builder[] = {
 
 const lws_struct_map_t lsm_power_controller[] = {
 	LSM_CARRAY(sai_power_controller_t, name, "name"),
+	LSM_CARRAY(sai_power_controller_t, type, "type"),
+	LSM_CARRAY(sai_power_controller_t, depends_on, "depends_on"),
 	LSM_UNSIGNED(sai_power_controller_t, on, "on"),
 	LSM_LIST(sai_power_controller_t, controlled_builders_owner,
 		 sai_controlled_builder_t, list, NULL,
@@ -348,4 +351,22 @@ const lws_struct_map_t lsm_stay_state_update[] = {
 const lws_struct_map_t lsm_schema_stay_state_update[] = {
 	LSM_SCHEMA(sai_stay_state_update_t, NULL, lsm_stay_state_update,
 		   "com.warmcat.sai.stay_state_update"),
+};
+
+const lws_struct_map_t lsm_builder_platform[] = {
+	LSM_CARRAY(sai_builder_platform_t, name, "name"),
+};
+
+const lws_struct_map_t lsm_builder_registration[] = {
+	LSM_LIST(sai_builder_registration_t, platforms_owner,
+		 sai_builder_platform_t, list, NULL,
+		 lsm_builder_platform, "platforms"),
+	LSM_CARRAY(sai_builder_registration_t, builder_name, "builder_name"),
+	LSM_CARRAY(sai_builder_registration_t, power_controller_name, "power_controller_name"),
+};
+
+const lws_struct_map_t lsm_schema_builder_registration[] = {
+	LSM_SCHEMA(sai_builder_registration_t, NULL,
+		   lsm_builder_registration,
+		   "com.warmcat.sai.builder_registration"),
 };

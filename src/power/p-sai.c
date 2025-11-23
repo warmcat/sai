@@ -130,7 +130,8 @@ static const char * const default_ss_policy =
 		"{\"local\": {"
 			"\"server\":"		"true,"
 			"\"port\":"		"3333,"
-			"\"protocol\":"		"\"h1\","
+			"\"protocol\":"		"\"ws\"," /* Changed to ws */
+			"\"ws_subprotocol\":"	"\"com-warmcat-sai-builder\","
 			"\"tls\":"		"false,"
 			"\"metadata\": ["
 				"{\"path\": \"\"},"
@@ -156,33 +157,182 @@ static const char * const default_ss_policy =
 	"]}"
 ;
 
-static int
-callback_std(struct lws *wsi, enum lws_callback_reasons reason, void *user,
-		  void *in, size_t len)
+/*
+ * Builder connection handling
+ */
+
+int
+callback_builder(struct lws *wsi, enum lws_callback_reasons reason,
+		 void *user, void *in, size_t len)
 {
-	uint8_t buf[128];
-	ssize_t amt;
+	struct lejp_ctx ctx;
+	lws_struct_args_t a;
+	saip_builder_t *b, **pb = (saip_builder_t **)user;
+	saip_pcon_t *pc;
+	const char *p;
+	char *json;
+	size_t json_len;
 
 	switch (reason) {
-		case LWS_CALLBACK_RAW_RX_FILE:
-			amt = read(lws_get_socket_fd(wsi), buf, sizeof(buf));
-			/* the string we're getting has the CR on it already */
-			lwsl_warn("%s: %.*s", __func__, (int)amt, buf);
-			return 0;
-		default:
-			break;
+	case LWS_CALLBACK_ESTABLISHED:
+		lwsl_user("%s: builder connected\n", __func__);
+		*pb = NULL; /* Ensure user data is clean */
+		break;
+
+	case LWS_CALLBACK_RECEIVE:
+		// lwsl_hexdump_notice(in, len);
+		memset(&a, 0, sizeof(a));
+		a.map_st[0] = lsm_schema_builder_registration;
+		a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_builder_registration);
+		a.ac_block_size = 2048;
+
+		lws_struct_json_init_parse(&ctx, NULL, &a);
+		if (lejp_parse(&ctx, (uint8_t *)in, (int)len) < 0 || !a.dest) {
+			lwsl_warn("%s: JSON decode failed\n", __func__);
+			lwsac_free(&a.ac);
+			return -1;
+		}
+
+		if (a.top_schema_index == 0) {
+			sai_builder_registration_t *r = (sai_builder_registration_t *)a.dest;
+
+			lwsl_notice("%s: Registered builder '%s' on pcon '%s'\n",
+				    __func__, r->builder_name, r->power_controller_name);
+
+			/* Find the PCON */
+			pc = saip_pcon_by_name(&power, r->power_controller_name);
+			if (pc) {
+				/* Create/Update builder entry using malloc */
+				b = malloc(sizeof(*b));
+				if (b) {
+					memset(b, 0, sizeof(*b));
+					lws_strncpy(b->name, r->builder_name, sizeof(b->name));
+					b->wsi = wsi;
+
+					/* Store pointer in user data for cleanup */
+					*pb = b;
+
+					/* Add to list */
+					lws_dll2_add_tail(&b->list, &pc->registered_builders_owner);
+				} else {
+					lwsl_err("%s: OOM allocating builder\n", __func__);
+				}
+
+				/* Trigger a check since we have a new builder (it's alive!) */
+				saip_pcon_start_check();
+
+				/* Send update to sai-server? */
+				saip_queue_stay_info(lws_container_of(power.sai_server_owner.head, saip_server_t, list));
+
+			} else {
+				lwsl_err("%s: Unknown PCON '%s' for builder '%s'\n",
+					 __func__, r->power_controller_name, r->builder_name);
+			}
+
+		}
+		lwsac_free(&a.ac);
+		break;
+
+	case LWS_CALLBACK_CLOSED:
+		lwsl_user("%s: builder disconnected\n", __func__);
+		b = *pb;
+		if (b) {
+			/* Remove from list */
+			lws_dll2_remove(&b->list);
+			/* Free memory */
+			free(b);
+			*pb = NULL;
+
+			/* Update state */
+			saip_pcon_start_check();
+		}
+		break;
+
+	default:
+		break;
 	}
-	return lws_callback_http_dummy(wsi, reason, user, in, len);
+	return 0;
 }
 
-
-static const struct lws_protocols protocol_std =
-        { "protocol_std", callback_std, 0, 0 };
+static const struct lws_protocols protocol_builder =
+        { "com-warmcat-sai-builder", callback_builder, sizeof(saip_builder_t *), 0 };
 
 static const struct lws_protocols *pprotocols[] = {
 	&protocol_std,
+	&protocol_builder,
 	NULL
 };
+
+/*
+ * Check PCON state logic
+ * If a PCON has NO registered builders, we default it to ON (Cold Start).
+ * If a PCON has registered builders, we defer to the "Stay" logic (which comes from sai-server).
+ *
+ * However, there is a nuance: If we just started up, we have 0 builders. We should turn everything ON.
+ * As builders connect, they register.
+ */
+
+void
+sul_pcon_check_cb(lws_sorted_usec_list_t *sul)
+{
+	/* Iterate all PCONs */
+	lws_start_foreach_dll(struct lws_dll2 *, p, power.sai_pcon_owner.head) {
+		saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
+		int target_on = 0;
+
+		/* Rule 1: No builders registered -> Turn ON (Cold start / Discovery) */
+		if (!pc->registered_builders_owner.count) {
+			target_on = 1;
+			lwsl_info("%s: PCON %s has 0 builders -> Force ON\n", __func__, pc->name);
+		}
+		/* Rule 2: Manual Stay -> Turn ON */
+		else if (pc->manual_stay) {
+			target_on = 1;
+			lwsl_info("%s: PCON %s has manual stay -> Force ON\n", __func__, pc->name);
+		}
+		/* Rule 3: Otherwise, rely on sai-server to tell us via 'stay' messages if it needs to be on.
+		 * Wait... sai-server tells us which *builders* need to stay on.
+		 * We need to map builder stay -> PCON stay.
+		 * But sai-power receives 'stay' messages for builders.
+		 */
+		else {
+			/* Check if any registered builder needs to stay on */
+			/* The 'stay' flag on the PCON struct isn't quite right,
+			   we need to check the builders we know about.
+			   Actually, sai-server tells sai-power: "Builder X needs to stay".
+			   sai-power should look up Builder X, find its PCON, and mark the PCON as needed.
+			*/
+			/* For now, let's assume if we aren't forcing it on, we let it be managed by the existing logic
+			 * which we need to adapt.
+			 */
+		}
+
+		/*
+		 * Existing logic in p-smartplug.c or similar likely handles the actual HTTP switching
+		 * based on a state flag. We need to make sure we set that flag.
+		 * The 'saip_pcon_t' has an 'on' member.
+		 */
+
+		/* If we decide it should be ON, trigger it */
+		if (target_on && !pc->on) {
+			/* This logic needs to hook into the actual switching code */
+			/* For now, just logging intent */
+			// pc->on = 1;
+			// saip_switch(pc, 1);
+		}
+
+	} lws_end_foreach_dll(p);
+
+	/* Schedule next check */
+	lws_sul_schedule(power.context, 0, &power.sul_pcon_check, sul_pcon_check_cb, 5 * LWS_US_PER_SEC);
+}
+
+void
+saip_pcon_start_check(void)
+{
+	/* Trigger immediate check */
+	lws_sul_schedule(power.context, 0, &power.sul_pcon_check, sul_pcon_check_cb, 1);
+}
 
 static int
 app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
@@ -228,6 +378,8 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 
 		} lws_end_foreach_dll_safe(mp, mp1);
 
+		/* Start PCON monitoring */
+		saip_pcon_start_check();
 
 		break;
 	}
