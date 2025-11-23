@@ -157,6 +157,29 @@ static const char * const default_ss_policy =
 	"]}"
 ;
 
+static int
+callback_std(struct lws *wsi, enum lws_callback_reasons reason, void *user,
+		  void *in, size_t len)
+{
+	uint8_t buf[128];
+	ssize_t amt;
+
+	switch (reason) {
+		case LWS_CALLBACK_RAW_RX_FILE:
+			amt = read(lws_get_socket_fd(wsi), buf, sizeof(buf));
+			/* the string we're getting has the CR on it already */
+			lwsl_warn("%s: %.*s", __func__, (int)amt, buf);
+			return 0;
+		default:
+			break;
+	}
+	return lws_callback_http_dummy(wsi, reason, user, in, len);
+}
+
+
+static const struct lws_protocols protocol_std =
+        { "protocol_std", callback_std, 0, 0 };
+
 /*
  * Builder connection handling
  */

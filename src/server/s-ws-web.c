@@ -165,7 +165,7 @@ sais_list_pcons(struct vhd *vhd)
 	struct lwsac *ac = NULL;
 	lws_wsmsg_info_t info;
 	size_t w;
-	lws_struct_serialize_result_t r;
+	lws_struct_json_serialize_result_t r;
 
 	sai_power_managed_builders_t pmb;
 
