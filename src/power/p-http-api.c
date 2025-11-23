@@ -47,48 +47,71 @@ extern struct sai_power power;
 static void
 saip_sul_action_power_off(struct lws_sorted_usec_list *sul)
 {
-	saip_server_plat_t *sp = lws_container_of(sul,
-					saip_server_plat_t, sul_delay_off);
+	saip_pcon_t *pc = lws_container_of(sul, saip_pcon_t, sul_delay_off);
 	lws_ss_state_return_t r;
-	saip_pcon_t *pc;
 
-	if (!sp->pcon_list.owner) {
-		lwsl_notice("%s: no power-controller ss for %s\n", __func__, sp->host);
-		return;
+	saip_notify_server_power_state(pc->name, 0, 1);
+
+	lwsl_warn("%s: powering OFF pcon %s\n", __func__, pc->name);
+
+	/* If type is WOL, we might suspend? Or nothing for now. */
+	if (pc->ss_tasmota_off) {
+		r = lws_ss_client_connect(pc->ss_tasmota_off);
+		if (r)
+			lwsl_ss_err(pc->ss_tasmota_off, "failed to connect tasmota OFF secure stream: %d", r);
 	}
-
-	pc = lws_container_of(sp->pcon_list.owner, saip_pcon_t,
-						   controlled_plats_owner);
-
-	saip_notify_server_power_state(sp->host, 0, 1);
-
-	lwsl_warn("%s: powering OFF host %s via power-control %s\n", __func__, sp->host, pc->name);
-
-	r = lws_ss_client_connect(pc->ss_tasmota_off);
-	if (r)
-		lwsl_ss_err(pc->ss_tasmota_off, "failed to connect tasmota OFF secure stream: %d", r);
 }
 
-saip_server_plat_t *
-find_platform(struct sai_power *pwr, const char *host)
+/* Helper to find PCON by builder name */
+saip_pcon_t *
+find_pcon_by_builder_name(struct sai_power *pwr, const char *builder_name)
 {
-	lws_start_foreach_dll(struct lws_dll2 *, px, pwr->sai_server_owner.head) {
-		saip_server_t *s = lws_container_of(px, saip_server_t, list);
+	lws_start_foreach_dll(struct lws_dll2 *, p, pwr->sai_pcon_owner.head) {
+		saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
 
-		lws_start_foreach_dll(struct lws_dll2 *, px1, s->sai_plat_owner.head) {
-			saip_server_plat_t *sp = lws_container_of(px1, saip_server_plat_t, list);
+		lws_start_foreach_dll(struct lws_dll2 *, b_node, pc->registered_builders_owner.head) {
+			saip_builder_t *sb = lws_container_of(b_node, saip_builder_t, list);
+			if (!strcmp(sb->name, builder_name))
+				return pc;
+		} lws_end_foreach_dll(b_node);
 
-			if (!strcmp(host, sp->host))
-				return sp;
-
-		} lws_end_foreach_dll(px1);
-	} lws_end_foreach_dll(px);
-
+	} lws_end_foreach_dll(p);
 	return NULL;
 }
 
+/* Helper to find PCON by name */
+saip_pcon_t *
+find_pcon(struct sai_power *pwr, const char *pcon_name)
+{
+	return saip_pcon_by_name(pwr, pcon_name);
+}
+
 void
-saip_notify_server_stay_state(const char *plat_name, int stay_on)
+saip_builder_bringup(saip_server_t *sps, saip_pcon_t *pc)
+{
+	saip_notify_server_power_state(pc->name, 1, 0);
+
+	if (pc->type && !strcmp(pc->type, "wol")) {
+		if (pc->mac) {
+			lwsl_notice("%s:   triggering WOL for %s\n", __func__, pc->name);
+			write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
+			      pc->mac, strlen(pc->mac));
+		} else {
+			lwsl_err("%s: WOL type but no MAC for %s\n", __func__, pc->name);
+		}
+	}
+
+	if (pc->ss_tasmota_on) {
+		lwsl_ss_notice(pc->ss_tasmota_on, "starting tasmota");
+		if (lws_ss_client_connect(pc->ss_tasmota_on))
+			lwsl_ss_err(pc->ss_tasmota_on, "failed to connect tasmota ON secure stream");
+	}
+
+	saip_queue_stay_info(sps);
+}
+
+void
+saip_notify_server_stay_state(const char *builder_name, int stay_on)
 {
 	sai_stay_state_update_t ssu;
 	saip_server_link_t *m;
@@ -108,7 +131,7 @@ saip_notify_server_stay_state(const char *plat_name, int stay_on)
 	m = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
 
 	memset(&ssu, 0, sizeof(ssu));
-	lws_strncpy(ssu.builder_name, plat_name, sizeof(ssu.builder_name));
+	lws_strncpy(ssu.builder_name, builder_name, sizeof(ssu.builder_name));
 	ssu.stay_on = (char)stay_on;
 
 	sai_ss_serialize_queue_helper(sps->ss, &m->bl_pwr_to_srv,
@@ -120,31 +143,30 @@ saip_notify_server_stay_state(const char *plat_name, int stay_on)
 void
 saip_set_stay(const char *builder_name, int stay_on)
 {
-	saip_server_plat_t *sp = find_platform(&power, builder_name);
-	saip_server_link_t *pss;
+	saip_pcon_t *pc = find_pcon_by_builder_name(&power, builder_name);
+	/* saip_server_link_t *pss; */ /* Unused? */
 	saip_server_t *sps;
 
-	if (!sp)
+	if (!pc) {
+		lwsl_warn("%s: Unknown builder %s\n", __func__, builder_name);
 		return;
+	}
 
 	sps = lws_container_of(power.sai_server_owner.head, saip_server_t, list);
-	pss = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
-	sp->stay = (char)stay_on;
-	saip_notify_server_stay_state(builder_name, stay_on | sp->needed);
+	/* pss = (saip_server_link_t *)lws_ss_to_user_object(sps->ss); */
 
-	if (stay_on | sp->needed)
-		saip_builder_bringup(sps, sp, pss);
-	else
-		/*
-		 * power-off is delayed, so we just set the stay flag...
-		 * but let's cancel any pending power-off
-		 */
-		lws_sul_cancel(&sp->sul_delay_off);
+	pc->manual_stay = (char)stay_on;
+	saip_notify_server_stay_state(builder_name, stay_on | pc->needed);
 
-	/* Find the first (usually only) configured sai-server connection */
-	if (!power.sai_server_owner.head) {
-		lwsl_warn("%s: No sai-server configured to notify\n", __func__);
-		return;
+	/* Trigger state re-eval */
+	saip_pcon_start_check();
+
+	if (stay_on | pc->needed) {
+		/* Ensure it's on immediately if needed */
+		saip_builder_bringup(sps, pc);
+	} else {
+		/* Cancel pending off */
+		lws_sul_cancel(&pc->sul_delay_off);
 	}
 
 	saip_queue_stay_info(sps);
@@ -196,7 +218,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 {
         local_srv_t *g = (local_srv_t *)userobj;
 	char *path = NULL, pn[128];
-	saip_server_plat_t *sp;
+	saip_pcon_t *pc;
 	saip_server_t *sps;
 	int apo = 0;
 	size_t len;
@@ -231,21 +253,17 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 		g->pos = 0;
 
 		if (len == 1 && path[0] == '/') {
-			/* print controllable platforms */
+			/* print controllable PCONs */
 
 			g->size = 0;
 
-			lws_start_foreach_dll(struct lws_dll2 *, px, power.sai_server_owner.head) {
-				saip_server_t *s = lws_container_of(px, saip_server_t, list);
+			lws_start_foreach_dll(struct lws_dll2 *, px, power.sai_pcon_owner.head) {
+				saip_pcon_t *pc = lws_container_of(px, saip_pcon_t, list);
 
-				lws_start_foreach_dll(struct lws_dll2 *, px1, s->sai_plat_owner.head) {
-					saip_server_plat_t *sp = lws_container_of(px1, saip_server_plat_t, list);
+				if (g->size)
+					g->payload[g->size++] = ',';
+				g->size = g->size + (size_t)lws_snprintf(g->payload + g->size, sizeof(g->payload) - g->size - 3, "%s", pc->name);
 
-					if (g->size)
-						g->payload[g->size++] = ',';
-					g->size = g->size + (size_t)lws_snprintf(g->payload + g->size, sizeof(g->payload) - g->size - 3, "%s", sp->host);
-
-				} lws_end_foreach_dll(px1);
 			} lws_end_foreach_dll(px);
 
 			g->payload[g->size] = '\0';
@@ -255,48 +273,49 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 		if (len > 6 && !strncmp(path, "/stay/", 6)) {
 			lws_strnncpy(pn, &path[6], len - 6, sizeof(pn));
 
-			sp = find_platform(&power, pn);
+			/* Assuming 'pn' is a builder name for legacy compatibility */
+			pc = find_pcon_by_builder_name(&power, pn);
 
-			if (sp)
+			if (pc)
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-								"%c", '0' + (sp->stay | sp->needed));
+								"%c", '0' + (pc->manual_stay | pc->needed));
 			else
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-								"unknown host %s", pn);
+								"unknown builder %s", pn);
 			goto bail;
 		}
 
 		if (len > 10 && !strncmp(path, "/power-on/", 10)) {
 
 			lws_strnncpy(pn, &path[10], len - 10, sizeof(pn));
-			sp = find_platform(&power, pn);
-			if (!sp) {
+			/* Assume builder name */
+			pc = find_pcon_by_builder_name(&power, pn);
+			if (!pc) {
 				g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-                                               "Unable to find host %s", pn);
+                                               "Unable to find PCON for %s", pn);
 				goto bail;
 			}
-			if (sp->power_on_mac) {
-				saip_notify_server_power_state(sp->host, 1, 0);
+
+			saip_notify_server_power_state(pc->name, 1, 0);
+
+			if (pc->mac) {
 				if (write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
-					      sp->power_on_mac, strlen(sp->power_on_mac)) !=
-						(ssize_t)strlen(sp->power_on_mac))
+					      pc->mac, strlen(pc->mac)) !=
+						(ssize_t)strlen(pc->mac))
 					g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
 						"Write to resume %s failed %d", pn, errno);
 				else
 					g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
 						"Resumed %s with stay", pn);
-				sp->stay = 1;
+				pc->manual_stay = 1;
 				goto bail;
 			}
 
-			if (sp->pcon_list.owner) {
-				saip_pcon_t *pc = lws_container_of(sp->pcon_list.owner,
-								   saip_pcon_t,
-								   controlled_plats_owner);
+			if (pc->ss_tasmota_on) {
 				if (lws_ss_client_connect(pc->ss_tasmota_on)) {
 					lwsl_ss_err(pc->ss_tasmota_on, "failed to connect tasmota ON secure stream");
 					g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-						"power-on ss failed create %s", sp->host);
+						"power-on ss failed create %s", pc->name);
 					goto bail;
 				}
 			} else {
@@ -305,10 +324,10 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 				goto bail;
 			}
 
-			lwsl_warn("%s: powered on host %s\n", __func__, sp->host);
+			lwsl_warn("%s: powered on %s\n", __func__, pc->name);
 
-			sp->stay = 1; /* so builder can understand it's manual */
-			saip_notify_server_power_state(sp->host, 1, 0);
+			pc->manual_stay = 1; /* so builder can understand it's manual */
+			saip_notify_server_power_state(pc->name, 1, 0);
 
 			sps = lws_container_of(power.sai_server_owner.head,
 						saip_server_t, list);
@@ -316,7 +335,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 			saip_queue_stay_info(sps);
 
 			g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-				"Manually powered on %s", sp->host);
+				"Manually powered on %s", pc->name);
 			goto bail;
 		}
 
@@ -343,8 +362,8 @@ power_off:
 		g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
                                                "Unable to find host %s", pn);
 
-		sp = find_platform(&power, pn);
-		if (sp) {
+		pc = find_pcon_by_builder_name(&power, pn);
+		if (pc) {
 
 			if (apo) {
 				char needs[128];
@@ -353,8 +372,16 @@ power_off:
 				 * Since it's not a manual request,
 				 * we should deny it if any deps still need us
 				 */
+				/* Deps logic needs to check PARENT or DEPENDENTS?
+				   Original logic checked: "if any deps still need us" (us = dependency_list).
+				   Current PCON struct has 'parent' and 'depends_on'.
+				   If *we* are needed by someone else... we don't have a list of dependents easily.
+				   But 'needed' flag should be set if we are needed.
+				   Let's trust 'pc->needed' which we update in rx.
+				*/
 
 				needs[0] = '\0';
+				/*
 				lws_start_foreach_dll(struct lws_dll2 *, px1,
 						sp->dependencies_owner.head) {
 					saip_server_plat_t *sp1 = lws_container_of(px1,
@@ -366,12 +393,13 @@ power_off:
 							     "%s ", sp1->name);
 
 				} lws_end_foreach_dll(px1);
+				*/
 
-				if (needs[0] || sp->needed) {
+				if (needs[0] || pc->needed) {
 					g->size = (size_t)lws_snprintf(g->payload,
 						sizeof(g->payload),
 						"NAK: %s needed: %d, deps needed: '%s'",
-						pn, sp->needed, needs);
+						pn, pc->needed, needs);
 					goto bail;
 				}
 			}
@@ -380,20 +408,20 @@ power_off:
 			 * OK this is it, schedule it to happen
 			 */
 			lws_sul_schedule(lws_ss_cx_from_user(g), 0,
-						&sp->sul_delay_off,
+						&pc->sul_delay_off,
 						saip_sul_action_power_off,
 						SAI_POWERDOWN_HOLDOFF_US);
 
-			lwsl_warn("%s: scheduled powering off host %s in %ds\n",
-				  __func__, sp->host,
+			lwsl_warn("%s: scheduled powering off pcon %s in %ds\n",
+				  __func__, pc->name,
 				  (int)(SAI_POWERDOWN_HOLDOFF_US / LWS_USEC_PER_SEC));
 
 			g->size = (size_t)lws_snprintf(g->payload, sizeof(g->payload),
-				"ACK: Scheduled powering off host %s in %ds",
-				sp->host,
+				"ACK: Scheduled powering off pcon %s in %ds",
+				pc->name,
 				(int)(SAI_POWERDOWN_HOLDOFF_US / LWS_USEC_PER_SEC));
 
-			sp->stay = 0; /* reset any manual power up */
+			pc->manual_stay = 0; /* reset any manual power up */
 		}
 
 bail:

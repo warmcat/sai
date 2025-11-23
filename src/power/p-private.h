@@ -67,12 +67,15 @@ typedef struct saip_pcon {
 	/* List of builders registered to this PCON (dynamic) */
 	lws_dll2_owner_t	registered_builders_owner; /* saip_builder_t */
 
+	lws_sorted_usec_list_t	sul_delay_off;
+
 	struct saip_pcon	*parent; /* if we depend on another pcon */
 	const char		*depends_on; /* name from config */
 
 	const char		*name;
 	const char		*type;
 	const char		*url;
+	const char		*mac; /* For WOL */
 
 	char			url_on[128];
 	char			url_off[128];
@@ -84,6 +87,7 @@ typedef struct saip_pcon {
 
 	char			on;
 	char			manual_stay; /* user asked to keep this PCON on via UI */
+	char			needed; /* transiently set by deps analysis */
 } saip_pcon_t;
 
 /* Represents a builder connected to us */
@@ -190,3 +194,9 @@ saip_pcon_start_check(void);
 int
 callback_builder(struct lws *wsi, enum lws_callback_reasons reason,
                  void *user, void *in, size_t len);
+
+saip_pcon_t *
+find_pcon_by_builder_name(struct sai_power *pwr, const char *builder_name);
+
+void
+saip_builder_bringup(saip_server_t *sps, saip_pcon_t *pc);

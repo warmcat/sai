@@ -36,6 +36,7 @@ static const char * const paths_global[] = {
 	"power_controllers[].name",
 	"power_controllers[].type",
 	"power_controllers[].url",
+	"power_controllers[].mac",
 	"power_controllers[].depends_on",
 	"power_controllers[]",
 	"servers[]"
@@ -48,6 +49,7 @@ enum enum_paths_global {
 	LEJPM_PCON_NAME,
 	LEJPM_PCON_TYPE,
 	LEJPM_PCON_URL,
+	LEJPM_PCON_MAC,
 	LEJPM_PCON_DEPENDS_ON,
 	LEJPM_PCON,
 	LEJPM_SERVERS
@@ -127,6 +129,10 @@ saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 
 	case LEJPM_PCON_URL:
 		pp = &a->sai_pcon->url;
+		break;
+
+	case LEJPM_PCON_MAC:
+		pp = &a->sai_pcon->mac;
 		break;
 
 	case LEJPM_PCON_DEPENDS_ON:
