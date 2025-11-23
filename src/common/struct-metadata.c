@@ -313,6 +313,11 @@ const lws_struct_map_t lsm_controlled_builder[] = {
 	LSM_CARRAY(sai_controlled_builder_t, name,		"name"),
 };
 
+/* SQLite specific map for controlled builder: map 'name' to 'builder_name' column */
+const lws_struct_map_t lsm_sq3_controlled_builder[] = {
+	LSM_CARRAY(sai_controlled_builder_t, name,		"builder_name"),
+};
+
 const lws_struct_map_t lsm_power_controller[] = {
 	LSM_CARRAY(sai_power_controller_t, name, "name"),
 	LSM_CARRAY(sai_power_controller_t, type, "type"),
@@ -321,6 +326,14 @@ const lws_struct_map_t lsm_power_controller[] = {
 	LSM_LIST(sai_power_controller_t, controlled_builders_owner,
 		 sai_controlled_builder_t, list, NULL,
 		 lsm_controlled_builder, "controlled_builders"),
+};
+
+/* SQLite specific map for power controller: 'on' -> 'state' and no list */
+const lws_struct_map_t lsm_sq3_power_controller[] = {
+	LSM_CARRAY(sai_power_controller_t, name, "name"),
+	LSM_CARRAY(sai_power_controller_t, type, "type"),
+	LSM_CARRAY(sai_power_controller_t, depends_on, "depends_on"),
+	LSM_UNSIGNED(sai_power_controller_t, on, "state"),
 };
 
 const lws_struct_map_t lsm_power_managed_builder[] = {
@@ -341,6 +354,16 @@ const lws_struct_map_t lsm_schema_power_managed_builders[] = {
 	LSM_SCHEMA(sai_power_managed_builders_t, NULL,
 		   lsm_power_managed_builders_list,
 		   "com.warmcat.sai.power_managed_builders"),
+};
+
+const lws_struct_map_t lsm_schema_sq3_map_power_controller[] = {
+	LSM_SCHEMA_DLL2(sai_power_controller_t, list, NULL,
+			lsm_sq3_power_controller, "power_controllers"),
+};
+
+const lws_struct_map_t lsm_schema_sq3_map_controlled_builder[] = {
+	LSM_SCHEMA_DLL2(sai_controlled_builder_t, list, NULL,
+			lsm_sq3_controlled_builder, "pcon_builders"),
 };
 
 const lws_struct_map_t lsm_stay_state_update[] = {
