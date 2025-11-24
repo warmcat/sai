@@ -185,7 +185,7 @@ sais_list_pcons(struct vhd *vhd)
 		char filter[128];
 
 		/* Map 'builder_name' column to 'name' field in struct */
-		lws_snprintf(filter, sizeof(filter), "where pcon_name = '%s'", pc->name);
+		lws_snprintf(filter, sizeof(filter), "and pcon_name = '%s'", pc->name);
 		lws_struct_sq3_deserialize(vhd->server.pdb, filter, "builder_name ",
 					   lsm_schema_sq3_map_controlled_builder,
 					   &pc->controlled_builders_owner, &ac, 0, 100);
