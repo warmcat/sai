@@ -38,6 +38,7 @@ static const char * const paths_global[] = {
 	"metrics_secret",
 	"sai-power",
 	"power_controller",
+	"power-controller",
 	"power-on.type",
 	"power-on.url",
 	"power-on.mac",
@@ -56,6 +57,7 @@ enum enum_paths_global {
 	LEJPM_METRICS_SECRET,
 	LEJPM_SAI_POWER,
 	LEJPM_POWER_CONTROLLER,
+	LEJPM_POWER_CONTROLLER_ALIAS,
 	LEJPM_POWER_ON_TYPE,
 	LEJPM_POWER_ON_URL,
 	LEJPM_POWER_ON_MAC,
@@ -281,6 +283,7 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		break;
 
 	case LEJPM_POWER_CONTROLLER:
+	case LEJPM_POWER_CONTROLLER_ALIAS:
 		pp = &a->builder->power_controller_name;
 		break;
 

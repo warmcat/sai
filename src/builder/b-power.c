@@ -80,8 +80,10 @@ saib_power_client_state(void *userobj, void *sh, lws_ss_constate_t state,
 		lws_strncpy(r.builder_name, builder.host, sizeof(r.builder_name));
 		if (builder.power_controller_name)
 			lws_strncpy(r.power_controller_name, builder.power_controller_name, sizeof(r.power_controller_name));
-		else
+		else {
 			lws_strncpy(r.power_controller_name, "unknown", sizeof(r.power_controller_name));
+			lwsl_warn("%s: No power_controller defined in config, registering as 'unknown'\n", __func__);
+		}
 
 		/* Add platforms */
 		lws_start_foreach_dll(struct lws_dll2 *, d, builder.sai_plat_owner.head) {
