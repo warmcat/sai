@@ -800,6 +800,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 						     "UPDATE builders SET pcon = (SELECT pcon_name FROM pcon_builders WHERE builder_name = '%s') "
 						     "WHERE name = '%s' OR name LIKE '%s.%%'",
 						     host, build->name, build->name);
+					lwsl_notice("%s: Syncing pcon for host '%s' (plat '%s'): %s\n", __func__, host, build->name, q);
 					sai_sqlite3_statement(vhd->server.pdb, q, "sync builder pcon");
 				}
 

@@ -120,6 +120,7 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 				lws_snprintf(q, sizeof(q),
 					     "INSERT INTO pcon_builders (pcon_name, builder_name) VALUES ('%s', '%s')",
 					     pc->name, cb->name);
+				lwsl_notice("%s: Inserting pcon_builder: pcon='%s', builder='%s'\n", __func__, pc->name, cb->name);
 				sai_sqlite3_statement(vhd->server.pdb, q, "insert pcon_builder");
 
 				/* Update builders table with pcon name */

@@ -275,6 +275,8 @@ sais_list_builders(struct vhd *vhd)
 		sai_plat_t *live_builder;
 
 		sp = lws_container_of(walk, sai_plat_t, sai_plat_list);
+		lwsl_notice("%s: listing builder '%s', pcon='%s'\n", __func__, sp->name, sp->pcon ? sp->pcon : "(null)");
+
 		live_builder = sais_builder_from_uuid(vhd, sp->name);
 
 		if (live_builder) {
