@@ -66,8 +66,14 @@ saip_sul_action_power_off(struct lws_sorted_usec_list *sul)
 saip_pcon_t *
 find_pcon_by_builder_name(struct sai_power *pwr, const char *builder_name)
 {
+	/* First try finding PCON directly by name */
+	saip_pcon_t *pc = saip_pcon_by_name(pwr, builder_name);
+	if (pc)
+		return pc;
+
+	/* Fallback: look for builder in PCON's registered list */
 	lws_start_foreach_dll(struct lws_dll2 *, p, pwr->sai_pcon_owner.head) {
-		saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
+		pc = lws_container_of(p, saip_pcon_t, list);
 
 		lws_start_foreach_dll(struct lws_dll2 *, b_node, pc->registered_builders_owner.head) {
 			saip_builder_t *sb = lws_container_of(b_node, saip_builder_t, list);

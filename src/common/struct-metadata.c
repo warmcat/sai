@@ -108,8 +108,25 @@ const lws_struct_map_t lsm_schema_map_plat[] = {
 							"com-warmcat-sai-ba"),
 };
 
+const lws_struct_map_t lsm_sq3_plat[] = {
+	LSM_UNSIGNED	(sai_plat_t, uid,		"uid"),
+	LSM_STRING_PTR	(sai_plat_t, name,		"name"),
+	LSM_STRING_PTR	(sai_plat_t, platform,		"platform"),
+	LSM_STRING_PTR	(sai_plat_t, pcon,		"pcon"),
+	LSM_JO_SIGNED	(sai_plat_t, online,		"online"),
+	LSM_UNSIGNED	(sai_plat_t, last_seen,		"last_seen"),
+	LSM_JO_SIGNED	(sai_plat_t, powering_up,	"powering_up"),
+	LSM_JO_SIGNED	(sai_plat_t, powering_down,	"powering_down"),
+	LSM_CARRAY	(sai_plat_t, peer_ip,		"peer_ip"),
+	LSM_CARRAY	(sai_plat_t, sai_hash,		"sai_hash"),
+	LSM_CARRAY	(sai_plat_t, lws_hash,		"lws_hash"),
+	LSM_UNSIGNED	(sai_plat_t, windows,		"windows"),
+	LSM_UNSIGNED	(sai_plat_t, power_managed,	"power_managed"),
+	LSM_UNSIGNED	(sai_plat_t, stay_on,		"stay_on"),
+};
+
 const lws_struct_map_t lsm_schema_sq3_map_plat[] = {
-	LSM_SCHEMA_DLL2	(sai_plat_t, sai_plat_list, NULL, lsm_plat,
+	LSM_SCHEMA_DLL2	(sai_plat_t, sai_plat_list, NULL, lsm_sq3_plat,
 							"builders"),
 };
 

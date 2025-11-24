@@ -161,9 +161,10 @@ static const char * const default_ss_policy =
 		 */
 		"{\"sai_power\": {"
 			"\"endpoint\":"		"\"${url}\","
-			"\"protocol\":"		"\"h1\","
+			"\"port\":"		"3333,"
+			"\"protocol\":"		"\"ws\","
+			"\"ws_subprotocol\":"	"\"com-warmcat-sai-builder\","
 			"\"http_url\":"		"\"\"," /* filled in by url */
-			"\"http_method\":"	"\"GET\","
 			"\"retry\":"		"\"default\","
 			"\"metadata\": ["
 				"{\"url\": \"\"}"

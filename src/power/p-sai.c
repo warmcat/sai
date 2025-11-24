@@ -339,9 +339,8 @@ sul_pcon_check_cb(lws_sorted_usec_list_t *sul)
 		/* If we decide it should be ON, trigger it */
 		if (target_on && !pc->on) {
 			/* This logic needs to hook into the actual switching code */
-			/* For now, just logging intent */
-			// pc->on = 1;
-			// saip_switch(pc, 1);
+			pc->on = 1;
+			saip_switch(pc, 1);
 		}
 
 	} lws_end_foreach_dll(p);

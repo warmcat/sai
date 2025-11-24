@@ -34,6 +34,15 @@
 
 #include "s-private.h"
 
+static int
+sais_get_string_cb(void *user, int cols, char **values, char **name)
+{
+	if (cols > 0 && values[0])
+		lws_strncpy((char *)user, values[0], 64);
+
+	return 0;
+}
+
 const lws_struct_map_t lsm_schema_map_ta[] = {
 	LSM_SCHEMA (sai_task_t,	    NULL, lsm_task,    "com-warmcat-sai-ta"),
 };
@@ -788,7 +797,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				 * before the builder connected.
 				 */
 				{
-					char host[128];
+					char host[128], pcon_buf[65] = "";
 					const char *dot = strchr(build->name, '.');
 
 					if (dot)
@@ -802,7 +811,10 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 						     host, build->name, build->name);
 					lwsl_notice("%s: Syncing pcon for host '%s' (plat '%s'): %s\n", __func__, host, build->name, q);
 					sai_sqlite3_statement(vhd->server.pdb, q, "sync builder pcon");
-				}
+
+					/* Fetch authoritative pcon name for in-memory update */
+					lws_snprintf(q, sizeof(q), "SELECT pcon_name FROM pcon_builders WHERE builder_name = '%s'", host);
+					sqlite3_exec(vhd->server.pdb, q, sais_get_string_cb, pcon_buf, NULL);
 
 				/*
 				 * Step 2: Update the long-lived, malloc'd in-memory list.
@@ -814,6 +826,11 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					lwsl_err("%s: found live builder for %s\n", __func__, build->name);
 					live_sp->wsi				= pss->wsi;
 					live_sp->cx				= lws_get_context(pss->wsi);
+
+					/* Update PCON */
+					if (live_sp->pcon)
+						free((void *)live_sp->pcon);
+					live_sp->pcon = pcon_buf[0] ? strdup(pcon_buf) : NULL;
 					live_sp->vhd				= vhd;
 					lws_strncpy(live_sp->peer_ip, pss->peer_ip, sizeof(live_sp->peer_ip));
 					lws_strncpy(live_sp->sai_hash, build->sai_hash,
@@ -853,8 +870,12 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 						live_sp->online				= 1;
 						lws_strncpy(live_sp->peer_ip, pss->peer_ip, sizeof(live_sp->peer_ip));
 
+						/* Set PCON */
+						live_sp->pcon = pcon_buf[0] ? strdup(pcon_buf) : NULL;
+
 						lws_dll2_add_tail(&live_sp->sai_plat_list, &vhd->server.builder_owner);
 					}
+				}
 				}
 
 				lws_sul_schedule(live_sp->cx, 0, &live_sp->sul_find_jobs,
