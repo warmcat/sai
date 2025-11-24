@@ -507,13 +507,14 @@ saib_power_init(void)
 		lwsl_err("%s: failed to create sai-power client ss\n", __func__);
 	} else {
 		/* Set metadata for URL so ${url} is substituted in policy endpoint */
-		char *p = builder.url_sai_power;
+		const char *p = builder.url_sai_power;
 		if (!strncmp(p, "http://", 7))
 			p += 7;
 		else if (!strncmp(p, "https://", 8))
 			p += 8;
 
-		lws_ss_set_metadata(ss_power_client, "url", p, strlen(p));
+		if (lws_ss_set_metadata(ss_power_client, "url", p, strlen(p)))
+			lwsl_warn("%s: unable to set url metadata\n", __func__);
 	}
 
 
