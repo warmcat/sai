@@ -33,6 +33,12 @@ static const char * const paths_global[] = {
 	"perms",
 	"wol-if",
 	"servers[].url",
+	"servers[].power_controllers[].name",
+	"servers[].power_controllers[].type",
+	"servers[].power_controllers[].url",
+	"servers[].power_controllers[].mac",
+	"servers[].power_controllers[].depends_on",
+	"servers[].power_controllers[]",
 	"power_controllers[].name",
 	"power_controllers[].type",
 	"power_controllers[].url",
@@ -46,6 +52,12 @@ enum enum_paths_global {
 	LEJPM_PERMS,
 	LEJPM_WOL_IF,
 	LEJPM_SERVERS_URL,
+	LEJPM_SRV_PCON_NAME,
+	LEJPM_SRV_PCON_TYPE,
+	LEJPM_SRV_PCON_URL,
+	LEJPM_SRV_PCON_MAC,
+	LEJPM_SRV_PCON_DEPENDS_ON,
+	LEJPM_SRV_PCON,
 	LEJPM_PCON_NAME,
 	LEJPM_PCON_TYPE,
 	LEJPM_PCON_URL,
@@ -82,6 +94,7 @@ saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 			break;
 
 		case LEJPM_PCON:
+		case LEJPM_SRV_PCON:
 			/*
 			 * Create the saip_pcon_t object
 			 */
@@ -120,22 +133,27 @@ saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		break;
 
 	case LEJPM_PCON_NAME:
+	case LEJPM_SRV_PCON_NAME:
 		pp = &a->sai_pcon->name;
 		break;
 
 	case LEJPM_PCON_TYPE:
+	case LEJPM_SRV_PCON_TYPE:
 		pp = &a->sai_pcon->type;
 		break;
 
 	case LEJPM_PCON_URL:
+	case LEJPM_SRV_PCON_URL:
 		pp = &a->sai_pcon->url;
 		break;
 
 	case LEJPM_PCON_MAC:
+	case LEJPM_SRV_PCON_MAC:
 		pp = &a->sai_pcon->mac;
 		break;
 
 	case LEJPM_PCON_DEPENDS_ON:
+	case LEJPM_SRV_PCON_DEPENDS_ON:
 		pp = &a->sai_pcon->depends_on;
 		break;
 
