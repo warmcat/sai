@@ -85,6 +85,8 @@ saib_power_client_state(void *userobj, void *sh, lws_ss_constate_t state,
 			lwsl_warn("%s: No power_controller defined in config, registering as 'unknown'\n", __func__);
 		}
 
+		lwsl_notice("%s: Registering with PCON: '%s'\n", __func__, r.power_controller_name);
+
 		/* Add platforms */
 		lws_start_foreach_dll(struct lws_dll2 *, d, builder.sai_plat_owner.head) {
 			sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);

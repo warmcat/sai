@@ -816,6 +816,11 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					lws_snprintf(q, sizeof(q), "SELECT pcon_name FROM pcon_builders WHERE builder_name = '%s'", host);
 					sqlite3_exec(vhd->server.pdb, q, sais_get_string_cb, pcon_buf, NULL);
 
+					if (pcon_buf[0])
+						lwsl_notice("%s: Builder %s synced to PCON %s from DB\n", __func__, build->name, pcon_buf);
+					else
+						lwsl_warn("%s: Builder %s has NO PCON mapping in DB yet\n", __func__, build->name);
+
 				/*
 				 * Step 2: Update the long-lived, malloc'd in-memory list.
 				 */

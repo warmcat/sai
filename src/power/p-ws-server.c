@@ -97,6 +97,7 @@ saip_queue_stay_info(saip_server_t *sps)
 			lws_dll2_add_tail(&pc1->list, &pmb.power_controllers);
 
 			/* Attach registered builders */
+			lwsl_notice("%s: PCON %s has %u registered builders\n", __func__, pc->name, pc->registered_builders_owner.count);
 			lws_start_foreach_dll(struct lws_dll2 *, p1,
 					      pc->registered_builders_owner.head) {
 				saip_builder_t *sb = lws_container_of(p1,

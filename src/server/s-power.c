@@ -98,23 +98,22 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		sai_sqlite3_statement(vhd->server.pdb, "BEGIN TRANSACTION", "txn begin");
 
-		/* Clear old PCONs? Or Upsert?
-		 * We probably want to replace since this is authoritative from sai-power.
-		 * But maybe just clear everything first?
-		 */
-		sai_sqlite3_statement(vhd->server.pdb, "DELETE FROM power_controllers", "delete pcons");
-		sai_sqlite3_statement(vhd->server.pdb, "DELETE FROM pcon_builders", "delete pcon_builders");
-
 		lws_start_foreach_dll(struct lws_dll2 *, p, pmb->power_controllers.head) {
 			sai_power_controller_t *pc = lws_container_of(p, sai_power_controller_t, list);
 			
-			/* Insert PCON */
+			/* Upsert PCON */
 			lws_snprintf(q, sizeof(q),
-				     "INSERT INTO power_controllers (name, type, url, depends_on, state) VALUES ('%s', '%s', '', '%s', %d)",
+				     "INSERT INTO power_controllers (name, type, url, depends_on, state) VALUES ('%s', '%s', '', '%s', %d) "
+				     "ON CONFLICT(name) DO UPDATE SET type=excluded.type, depends_on=excluded.depends_on, state=excluded.state",
 				     pc->name, pc->type ? pc->type : "", pc->depends_on ? pc->depends_on : "", pc->on);
-			sai_sqlite3_statement(vhd->server.pdb, q, "insert pcon");
+			sai_sqlite3_statement(vhd->server.pdb, q, "upsert pcon");
+
+			/* Delete stale relationships for this PCON */
+			lws_snprintf(q, sizeof(q), "DELETE FROM pcon_builders WHERE pcon_name = '%s'", pc->name);
+			sai_sqlite3_statement(vhd->server.pdb, q, "clear pcon_builders for pcon");
 
 			/* Insert Controlled Builders */
+			lwsl_notice("%s: PCON %s has %u controlled builders\n", __func__, pc->name, pc->controlled_builders_owner.count);
 			lws_start_foreach_dll(struct lws_dll2 *, pb, pc->controlled_builders_owner.head) {
 				sai_controlled_builder_t *cb = lws_container_of(pb, sai_controlled_builder_t, list);
 				lws_snprintf(q, sizeof(q),

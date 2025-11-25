@@ -225,6 +225,7 @@ callback_builder(struct lws *wsi, enum lws_callback_reasons reason,
 			/* Find the PCON */
 			pc = saip_pcon_by_name(&power, r->power_controller_name);
 			if (pc) {
+				lwsl_notice("%s: Adding builder '%s' to PCON '%s'\n", __func__, r.builder_name, pc->name);
 				/* Create/Update builder entry using malloc */
 				b = malloc(sizeof(*b));
 				if (b) {
@@ -252,6 +253,9 @@ callback_builder(struct lws *wsi, enum lws_callback_reasons reason,
 					 __func__, r->power_controller_name, r->builder_name);
 			}
 
+		}
+		else {
+			lwsl_warn("%s: received unknown schema index %d\n", __func__, a.top_schema_index);
 		}
 		lwsac_free(&a.ac);
 		break;
