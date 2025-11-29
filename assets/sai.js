@@ -1237,7 +1237,7 @@ function updateSpreadsheetCell(cell, platName) {
 	}
 
 	if (best_match_key) {
-		cell.innerHTML = renderSpreadsheet(spreadsheet_data_cache[best_match_key]);
+		updateSpreadsheetDOM(cell, spreadsheet_data_cache[best_match_key]);
 		aging();
 	} else {
 		cell.innerHTML = ""; // Clear it if no data
