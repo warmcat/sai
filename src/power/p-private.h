@@ -19,6 +19,9 @@
  *  MA  02110-1301  USA
  */
 
+#ifndef SAI_POWER_P_PRIVATE_H
+#define SAI_POWER_P_PRIVATE_H
+
 #include "../common/include/private.h"
 
 #include <sys/stat.h>
@@ -206,6 +209,8 @@ saip_switch(saip_pcon_t *pc, int on);
 int
 callback_builder(struct lws *wsi, enum lws_callback_reasons reason,
                  void *user, void *in, size_t len);
+
+#endif
 
 saip_pcon_t *
 find_pcon_by_builder_name(struct sai_power *pwr, const char *builder_name);
