@@ -169,7 +169,14 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 						    __func__, sb->name, pc->name);
 					/* Update PCON stay state */
 					pc->manual_stay = stay->stay_on;
-					saip_pcon_start_check();
+
+					/* If stay is cleared, schedule power off check */
+					if (!stay->stay_on)
+						saip_pcon_start_check();
+					else {
+						/* If stay is set, ensure it is on immediately */
+						saip_switch(pc, 1);
+					}
 					goto found;
 				}
 			} lws_end_foreach_dll(b_node);
