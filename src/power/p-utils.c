@@ -39,3 +39,22 @@ saip_pcon_by_name(struct sai_power *power, const char *name)
 
 	return NULL;
 }
+
+saip_pcon_t *
+saip_pcon_create(struct sai_power *power, const char *name)
+{
+	saip_pcon_t *pc = lwsac_use_zero(&power->ac_conf_head, sizeof(*pc), 4096);
+	if (!pc)
+		return NULL;
+
+	pc->name = lwsac_use(&power->ac_conf_head, strlen(name) + 1, 512);
+	if (!pc->name)
+		return NULL;
+	strcpy((char *)pc->name, name);
+
+	lws_dll2_add_tail(&pc->list, &power->sai_pcon_owner);
+
+	lwsl_notice("%s: Created dynamic PCON '%s'\n", __func__, name);
+
+	return pc;
+}
