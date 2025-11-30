@@ -499,6 +499,7 @@ typedef struct sai_plat {
 
 	const char			*name;
 	const char			*platform;
+	const char			*pcon; /* PCON name */
 
 	struct lejp_ctx			ctx;
 	lws_dll2_owner_t		nspawn_owner;
@@ -609,6 +610,8 @@ typedef struct sai_power_controller {
 	lws_dll2_t			list;
 	lws_dll2_owner_t 		controlled_builders_owner;
 	char				name[64];
+	char				type[32];
+	char				depends_on[64];
 	char				on;
 } sai_power_controller_t;
 
@@ -632,6 +635,21 @@ typedef struct sai_stay_state_update {
 	char				stay_on;
 } sai_stay_state_update_t;
 
+/* Builder -> sai-power registration */
+
+typedef struct sai_builder_platform {
+	lws_dll2_t			list;
+	char				name[64];
+} sai_builder_platform_t;
+
+typedef struct sai_builder_registration {
+	lws_dll2_t			list;
+	lws_dll2_owner_t		platforms_owner; /* sai_builder_platform_t */
+	char				builder_name[64];
+	char				power_controller_name[64];
+} sai_builder_registration_t;
+
+
 /*
  * Because the definitions of these arrays of map structs are mostly in
  * common/struct-metadata.c, we are forced to repeat the length of the struct
@@ -647,7 +665,7 @@ extern const lws_struct_map_t
 	lsm_power_managed_builder[2],
 	lsm_power_managed_builders_list[2],
 	lsm_schema_power_managed_builders[1],
-	lsm_power_controller[3],
+	lsm_power_controller[5],
 	lsm_schema_json_map_task[],
 	lsm_schema_sq3_map_task[],
 	lsm_schema_sq3_map_event[],
@@ -681,7 +699,12 @@ extern const lws_struct_map_t
 	lsm_stay_state_update[2],
 	lsm_schema_stay_state_update[1],
 	lsm_build_metric[14],
-	lsm_plat[13];
+	lsm_plat[14], /* +1 for pcon */
+	lsm_builder_platform[1],
+	lsm_builder_registration[3],
+	lsm_schema_sq3_map_power_controller[1],
+	lsm_schema_sq3_map_controlled_builder[1],
+	lsm_schema_builder_registration[1];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];

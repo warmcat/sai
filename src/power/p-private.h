@@ -59,14 +59,23 @@ typedef struct tasmota_parse {
 	uint8_t			s;
 } tasmota_parse_t;
 
+struct saip_pcon;
+
 typedef struct saip_pcon {
 	struct lws_dll2		list; /* sai_power.sai_pcon_owner */
 
-	lws_dll2_owner_t	controlled_plats_owner; /* saip_server_plat_t */
+	/* List of builders registered to this PCON (dynamic) */
+	lws_dll2_owner_t	registered_builders_owner; /* saip_builder_t */
+
+	lws_sorted_usec_list_t	sul_delay_off;
+
+	struct saip_pcon	*parent; /* if we depend on another pcon */
+	const char		*depends_on; /* name from config */
 
 	const char		*name;
 	const char		*type;
 	const char		*url;
+	const char		*mac; /* For WOL */
 
 	char			url_on[128];
 	char			url_off[128];
@@ -77,37 +86,28 @@ typedef struct saip_pcon {
 	struct lws_ss_handle	*ss_tasmota_monitor;
 
 	char			on;
+	char			manual_stay; /* user asked to keep this PCON on via UI */
+	char			needed; /* transiently set by deps analysis */
 } saip_pcon_t;
 
+/* Represents a builder connected to us */
+typedef struct saip_builder {
+	struct lws_dll2		list; /* in saip_pcon.registered_builders_owner */
+
+	char			name[64];
+
+	/* The websocket wsi for this builder connection (if connected) */
+	struct lws		*wsi;
+} saip_builder_t;
+
+
 struct saip_ws_pss;
-
-typedef struct saip_server_plat {
-	lws_dll2_t		list;
-	lws_dll2_t		dependencies_list;
-	lws_dll2_t		pcon_list; /* saip_pcon->controlled_plats_owner */
-
-	lws_dll2_owner_t	dependencies_owner; /* saip_server_plat_t->dependencies_list */
-
-	lws_sorted_usec_list_t	sul_delay_off;
-
-	const char		*name;
-	const char		*host;
-	const char		*depends; /* depended-on plat must stay powered if we need power */
-	const char		*power_on_type;
-	const char		*power_on_url;
-	const char		*power_on_mac;
-	const char		*power_off_type;
-	const char		*power_off_url;
-
-	char			stay;
-	char			needed;
-
-} saip_server_plat_t;
 
 typedef struct saip_server {
 	lws_dll2_t		list;
 
-	lws_dll2_owner_t	sai_plat_owner; /* list of platforms we offer */
+	/* Removed sai_plat_owner as sai-power no longer manages platforms directly */
+	/* lws_dll2_owner_t	sai_plat_owner; */
 
 	struct lws_ss_handle	*ss;
 
@@ -129,6 +129,7 @@ struct sai_power {
 	struct lws_vhost	*vhost;
 
 	lws_sorted_usec_list_t	sul_idle;
+	lws_sorted_usec_list_t	sul_pcon_check; /* periodic check for cold start */
 
 	const char		*power_off;
 
@@ -140,15 +141,11 @@ struct sai_power {
 	const char		*port;		/* port we listen on */
 };
 
-saip_server_plat_t *
-find_platform(struct sai_power *pwr, const char *host);
-
 
 struct jpargs {
 	struct sai_power	*power;
 
 	saip_server_t		*sai_server;
-	saip_server_plat_t	*sai_server_plat;
 	saip_pcon_t		*sai_pcon;
 
 	sai_plat_server_ref_t	*mref;
@@ -166,7 +163,6 @@ LWS_SS_USER_TYPEDEF
 } saip_server_link_t;
 
 
-
 extern struct sai_power power;
 extern const lws_ss_info_t ssi_saip_server_link_t, ssi_saip_smartplug_t;
 extern const struct lws_protocols protocol_com_warmcat_sai;
@@ -176,10 +172,10 @@ saip_config_global(struct sai_power *power, const char *d);
 extern int saip_config(struct sai_power *power, const char *d);
 extern void saip_config_destroy(struct sai_power *power);
 extern void
-saip_notify_server_power_state(const char *plat_name, int up, int down);
+saip_notify_server_power_state(const char *pcon_name, int up, int down);
 
 void
-saip_set_stay(const char *builder_name, int stay_on);
+saip_set_stay(const char *pcon_name, int stay_on);
 int
 saip_queue_stay_info(saip_server_t *sps);
 saip_pcon_t *
@@ -187,8 +183,20 @@ saip_pcon_by_name(struct sai_power *power, const char *name);
 
 int
 saip_parse_tasmota_status(tasmota_parse_t *tp);
-int
-saip_builder_bringup(saip_server_t *sps, saip_server_plat_t *sp,
-		     saip_server_link_t *pss);
+
 void
 saip_ss_create_tasmota(void);
+
+void
+saip_pcon_start_check(void);
+
+/* Handler for builder WS connections */
+int
+callback_builder(struct lws *wsi, enum lws_callback_reasons reason,
+                 void *user, void *in, size_t len);
+
+saip_pcon_t *
+find_pcon_by_builder_name(struct sai_power *pwr, const char *builder_name);
+
+void
+saip_builder_bringup(saip_server_t *sps, saip_pcon_t *pc);

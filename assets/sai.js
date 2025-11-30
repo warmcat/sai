@@ -22,7 +22,7 @@ const SAI_JS_API_VERSION = 3;
     }
 
     Translator.prototype.translate = function(text, defaultNumOrFormatting,
-    			numOrFormattingOrContext, formattingOrContext, context) {
+			numOrFormattingOrContext, formattingOrContext, context) {
       var defaultText, formatting, isObject, num;
 
       if (context == null) {
@@ -75,10 +75,10 @@ const SAI_JS_API_VERSION = 3;
         _ref = d.values;
         var k;
         for (k in _ref) {
-      	  if ({}.hasOwnProperty.call(_ref, k)) {
+	  if ({}.hasOwnProperty.call(_ref, k)) {
           v = _ref[k];
           this.data.values[k] = v;
-      	  }
+	  }
         }
       }
       if ((d.contexts != null)) {
@@ -123,18 +123,18 @@ const SAI_JS_API_VERSION = 3;
       var k, v;
 
       for (k in hash) {
-    	  if ({}.hasOwnProperty.call(hash, k)) {
+	  if ({}.hasOwnProperty.call(hash, k)) {
 	        v = hash[k];
 	        if (typeof v === "string") {
 	          hash[k] = this.translateText(v, null, null, context);
 	        }
-    	  }
+	  }
       }
       return hash;
     };
 
     Translator.prototype.translateText = function(text, num, formatting,
-    						context, defaultText) {
+						context, defaultText) {
       var contextData, result;
 
       if (context == null) {
@@ -146,11 +146,11 @@ const SAI_JS_API_VERSION = 3;
       contextData = this.getContextData(this.data, context);
       if (contextData != null) {
         result = this.findTranslation(text, num, formatting, contextData.values,
-        				defaultText);
+					defaultText);
       }
       if (result == null) {
         result = this.findTranslation(text, num, formatting, this.data.values,
-        				defaultText);
+					defaultText);
       }
       if (result == null) {
         return this.useOriginalText(defaultText || text, num, formatting);
@@ -176,9 +176,9 @@ const SAI_JS_API_VERSION = 3;
             if ((num >= triple[0] || triple[0] === null) &&
                 (num <= triple[1] || triple[1] === null)) {
               result = this.applyFormatting(triple[2].replace("-%n",
-              					String(-num)), num, formatting);
+						String(-num)), num, formatting);
               return this.applyFormatting(result.replace("%n",
-              					String(num)), num, formatting);
+						String(num)), num, formatting);
             }
           }
         }
@@ -198,10 +198,10 @@ const SAI_JS_API_VERSION = 3;
         equal = true;
         _ref1 = c.matches;
         for (key in _ref1) {
-        	if ({}.hasOwnProperty.call(_ref1, key)) {
-        		value = _ref1[key];
-        		equal = equal && value === context[key];
-        	}
+		if ({}.hasOwnProperty.call(_ref1, key)) {
+			value = _ref1[key];
+			equal = equal && value === context[key];
+		}
         }
         if (equal) {
           return c;
@@ -215,17 +215,17 @@ const SAI_JS_API_VERSION = 3;
         return this.applyFormatting(text, num, formatting);
       }
       return this.applyFormatting(text.replace("%n", String(num)),
-      					num, formatting);
+					num, formatting);
     };
 
     Translator.prototype.applyFormatting = function(text, num, formatting) {
       var ind, regex;
 
       for (ind in formatting) {
-    	  if ({}.hasOwnProperty.call(formatting, ind)) {
+	  if ({}.hasOwnProperty.call(formatting, ind)) {
 	        regex = new RegExp("%{" + ind + "}", "g");
 	        text = text.replace(regex, formatting[ind]);
-    	  }
+	  }
       }
       return text;
     };
@@ -251,8 +251,8 @@ const SAI_JS_API_VERSION = 3;
     return trans.translate;
   };
 
-  (typeof module !== "undefined" && module !== null ? module.exports = i18n : void 0) || 
-  	(this.i18n = i18n);
+  (typeof module !== "undefined" && module !== null ? module.exports = i18n : void 0) ||
+	(this.i18n = i18n);
 
 }.call(this));
 
@@ -391,13 +391,125 @@ var lang_zhs = "{" +
 	"\"页面%{pf}前获取, 创作时间: %{ct}ms " +
 	   "(vhost etag 缓存命中: %{ve}%, 缓存命中: %{ch}%)\"," +
    "\"Created %{pf} ago, creation time: %{ct}ms \":" +
-	  	"\"%{pf}前创建, 创作时间: %{ct}ms \"" +	   
+		"\"%{pf}前创建, 创作时间: %{ct}ms \"" +
 "}}";
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
 	logAnsiState = {},
 	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {},
 	fadingTasks = new Map();
+
+/* Global caches for reconcilation */
+var pcon_topology = {};
+var last_builder_list = [];
+
+function createPconDiv(pcon) {
+    const pconDiv = document.createElement("div");
+    pconDiv.className = "pcon";
+    pconDiv.id = "pcon-" + pcon.name;
+    pconDiv.style.marginLeft = "10px";
+    pconDiv.style.borderLeft = "1px solid #ccc";
+    pconDiv.style.paddingLeft = "5px";
+
+    const header = document.createElement("div");
+    header.className = "pcon-header";
+
+    let stateClass = pcon.on ? "pcon-on" : "pcon-off";
+    let type = pcon.type ? `(${pcon.type})` : "";
+
+    header.innerHTML = `<span class="${stateClass}">&#x23FB;</span> <b>${hsanitize(pcon.name)}</b> <span class="pcon-type">${hsanitize(type)}</span>`;
+    pconDiv.appendChild(header);
+
+    const childrenDiv = document.createElement("div");
+    childrenDiv.className = "pcon-children";
+    pconDiv.appendChild(childrenDiv);
+
+    return pconDiv;
+}
+
+function renderPconHierarchy(container) {
+    if (!container) return;
+
+    /* Clear and redraw for now to ensure structure is correct */
+    container.innerHTML = "";
+
+    const pcons = Object.values(pcon_topology);
+    /* Build map for dependency resolution */
+    const pconMap = {};
+    pcons.forEach(p => {
+        p.children = []; /* Reset children */
+        pconMap[p.name] = p;
+    });
+
+    /* Link PCONs */
+    const roots = [];
+    pcons.forEach(p => {
+        if (p.depends_on && pconMap[p.depends_on]) {
+            pconMap[p.depends_on].children.push(p);
+        } else {
+            roots.push(p);
+        }
+    });
+
+    /* Sort roots and children by name */
+    const sortByName = (a, b) => a.name.localeCompare(b.name);
+    roots.sort(sortByName);
+    pcons.forEach(p => p.children.sort(sortByName));
+
+    /* Helper to recursively render PCONs and their builders */
+    function renderPcon(pcon, parentDiv) {
+        const div = createPconDiv(pcon);
+        parentDiv.appendChild(div);
+        const childrenContainer = div.querySelector(".pcon-children");
+
+        /* Render builders belonging to this PCON */
+        /* We search the global builder list for those matching this pcon */
+        const myBuilders = last_builder_list.filter(b => b.pcon === pcon.name);
+        myBuilders.sort((a, b) => a.name.localeCompare(b.name));
+
+        if (myBuilders.length > 0) {
+            const table = document.createElement("table");
+            table.className = "builders";
+            const tbody = document.createElement("tbody");
+            table.appendChild(tbody);
+            myBuilders.forEach(b => {
+                tbody.appendChild(createBuilderRow(b));
+            });
+            childrenContainer.appendChild(table);
+        }
+
+        /* Render child PCONs */
+        pcon.children.forEach(child => {
+            renderPcon(child, childrenContainer);
+        });
+    }
+
+    roots.forEach(root => {
+        renderPcon(root, container);
+    });
+
+    /* Render orphan builders (no pcon or unknown pcon) */
+    const orphanBuilders = last_builder_list.filter(b => !b.pcon || !pcon_topology[b.pcon]);
+    if (orphanBuilders.length > 0) {
+        const orphanDiv = document.createElement("div");
+        orphanDiv.className = "pcon-orphans";
+        orphanDiv.innerHTML = "<div class='pcon-header'><b>Unmanaged Builders</b></div>";
+        const childrenContainer = document.createElement("div");
+        childrenContainer.className = "pcon-children";
+        orphanDiv.appendChild(childrenContainer);
+
+        const table = document.createElement("table");
+        table.className = "builders";
+        const tbody = document.createElement("tbody");
+        table.appendChild(tbody);
+        orphanBuilders.forEach(b => {
+            tbody.appendChild(createBuilderRow(b));
+        });
+        childrenContainer.appendChild(table);
+
+        container.appendChild(orphanDiv);
+    }
+}
 
 function update_task_activities() {
 	for (const uuid in ongoing_task_activities) {
@@ -411,33 +523,33 @@ function update_task_activities() {
 		}
 	}
 }
-	
+
 function expiry()
 {
 	location.reload();
 }
-	
+
 function san(s)
 {
 	if (s.search("<") !== -1)
 		return "invalid string";
-	
+
 	return s;
 }
 
 function humanize(s)
 {
 	var i = parseInt(s, 10);
-	
+
 	if (i >= (1024 * 1024 * 1024))
 		return (i / (1024 * 1024 * 1024)).toFixed(3) + "Gi";
-	
+
 	if (i >= (1024 * 1024))
 		return (i / (1024 * 1024)).toFixed(3) + "Mi";
-	
+
 	if (i > 1024)
 		return (i / 1024).toFixed(3) + "Ki";
-	
+
 	return s;
 }
 
@@ -503,7 +615,7 @@ function hsanitize(s)
 		'\'': 'apos',
 		'&': 'amp'
 	};
-	
+
 	return s.toString().replace(/[<>"'&]/g, function(chr) {
 		return '&' + table[chr] + ';';
 	}).replace(/\r\n/g, '\n').replace(/\n/g, '<br>');
@@ -647,13 +759,13 @@ var age_upd   = [   5,   10,    300,    1800,     3600, 12 * 3600, 12 * 3600  ];
 function agify(now, secs)
 {
 	var d = now - secs, n;
-	
+
 	if (!secs)
 		return "";
-		
+
 	if (secs > now)
 		d = secs - now;
-	
+
 	for (n = 0; n < age_names.length; n++)
 		if (d < age_limit[n] || age_limit[n] === 0)
 			return "<span class='age-" + n + "' ut='" + secs +
@@ -706,17 +818,17 @@ var sai, jso, s, sai_arts = "";
 function sai_plat_icon(plat, size)
 {
 	var s, s1 = "";
-	
+
 	s = plat.split('/');
 	if (s[0]) {
 	// console.log("plat " + plat + " plat[0] " + s[0]);
 	s1 = "<img class=\"ip" + size + " zup\" src=\"/sai/" + san(s[0]) +
 		".svg\">";
-	
+
 	if (s[1])
 		s1 += "<img class=\"ip" + size + " tread1\" src=\"/sai/arch-" + san(s[1]) + ".svg\">";
 	}
-	
+
 	if (s[2]) {
 		s1 += "<img class=\"ip" + size + " tread2\" src=\"/sai/tc-" + san(s[2]) + ".svg\">";
 	}
@@ -730,18 +842,18 @@ function sai_stateful_taskname(state, nm, sf)
 	if (sf)
 		return "<span id=\"taskstate\" class=\"ti2 taskstate" +
 			state + "\">&nbsp;" + san(nm) + "&nbsp;&nbsp;</span>";
-			
+
 	if (state == 4 || state == 6)
 		tp = " ov_bad";
-			
-	return "<span id=\"taskstate\" class=\"ti2 " + tp + "\">" + san(nm) + "</span>";	 
+
+	return "<span id=\"taskstate\" class=\"ti2 " + tp + "\">" + san(nm) + "</span>";
 }
 
 function sai_taskinfo_render(t, now_ut)
 {
 	var now_ut = Math.round((new Date().getTime() / 1000));
 	var s = "";
-	
+
 	s = "<table><tr class=\"nomar\"><td class=\"atop\"><table>" +
 		sai_event_render(t, now_ut, 0) + "</table></td><td class=\"ti\">" +
 		"<span class=\"ti1\">" + sai_plat_icon(t.t.platform, 2) +
@@ -753,7 +865,7 @@ function sai_taskinfo_render(t, now_ut)
 		s += "<img class=\"rebuild\" alt=\"rebuild\" src=\"rebuild.png\" " +
 			"id=\"rebuild-" + san(t.t.uuid) + "\">&nbsp;" +
 			sai_stateful_taskname(t.t.state, t.t.taskname, 1);
-		
+
 	if (t.t.builder_name) {
 		var now_ut = Math.round((new Date().getTime() / 1000));
 
@@ -764,15 +876,15 @@ function sai_taskinfo_render(t, now_ut)
 		s += ", <span class=\"ti5\"> " +
 		     agify(now_ut, t.t.started) + " ago, Dur: " +
 		     (t.t.duration ? t.t.duration / 1000000 :
-		     	now_ut - t.t.started).toFixed(1) +
+			now_ut - t.t.started).toFixed(1) +
 			"s</span><div id=\"sai_arts\"></div><div id=\"metrics-summary-" + san(t.t.uuid) + "\"></div>";
 		sai_arts = "";
 	}
 
 	s += "</td></tr>";
-	
+
 	s += "</td></tr></table></table>";
-	
+
 	return s;
 }
 
@@ -835,10 +947,10 @@ function summarize_build_situation(event_uuid)
 	var good = 0, bad = 0, total = 0, ongoing = 0, pending = 0,
 		roo = document.getElementById("taskcont-" + event_uuid),
 		same;
-		
-	if (!roo) 
+
+	if (!roo)
 		return { text: "" };
-	
+
 	same = roo.querySelectorAll(".taskstate");
 	if (same)
 		total = same.length;
@@ -918,7 +1030,7 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		s += "<div class=\"" + cl + "\"><img src=\"/sai/passed.svg\"></div>";
 	if (e.state == 4)
 		s += "<div class=\"" + cl + "\"><img src=\"/sai/failed.svg\"></div>";
-		
+
 	s += "</a>";
 	if (reset_all_icon && !gitohashi_integ && authd) {
 		s += "<br><img class=\"rebuild\" alt=\"rebuild all\" src=\"/sai/rebuild.png\" " +
@@ -936,7 +1048,7 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		if (e.sec)
 			s += " <img class=\"bico\" src=\"/sai/locked.svg\">";
 		s += "</span></td></tr><tr><td class=\"nomar\" colspan=2><span class=\"e2\">";
-	
+
 		if (e.ref.substr(0, 11) === "refs/heads/") {
 			s += "<img class=\"branch\">" +
 				san(e.ref.substr(11));
@@ -946,7 +1058,7 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 					san(e.ref.substr(10));
 			} else
 				s += san(e.ref);
-	
+
 		s += "</span></td></tr><tr><td class=\"nomar e6\">" +
 		        san(e.hash.substr(0, 8)) +
 		     "</td><td class=\"e6 nomar\">" +
@@ -959,14 +1071,14 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		     "</table></td>";
 	}
 	s += "</tr><tr><td class=\"nomar e6\" colspan=\"2\" id=\"sumbs-" + e.uuid +"\"></td></tr></table>";
-	     
+
 	return s;
 }
 
 function sai_event_render(o, now_ut, reset_all_icon)
 {
 	var s, q, ctn = "", wai, s1 = "", n, e = o.e;
-	
+
 	s = "<tr><td class=\"waiting\"";
 	if (gitohashi_integ)
 		s += " id=\"gitohashi_sai_icon\"";
@@ -981,7 +1093,7 @@ function sai_event_render(o, now_ut, reset_all_icon)
 
 		for (q = 0; q < o.t.length; q++) {
 			var t = o.t[q];
-			
+
 			if (t.taskname !== ctn) {
 				if (ctn !== "") {
 					s += "<div class=\"ib\"><table class=\"nomar\">" +
@@ -992,7 +1104,7 @@ function sai_event_render(o, now_ut, reset_all_icon)
 				}
 				ctn = t.taskname;
 			}
-			
+
 			s1 += "<div id=\"taskstate_" + t.uuid + "\" class=\"taskstate taskstate" + t.state +
 				"\" data-event-uuid=\"" + san(e.uuid) + "\" data-platform=\"" + san(t.platform) +
 				"\" data-rebuildable=\"" + t.rebuildable + "\">";
@@ -1015,7 +1127,7 @@ function sai_event_render(o, now_ut, reset_all_icon)
 	}
 
 	s += "</tr>";
-	
+
 	return s;
 }
 
@@ -1035,7 +1147,7 @@ function getBuilderGroupKey(platName) {
 function refresh_state(task_uuid, task_state)
 {
 	var tsi = document.getElementById("taskstate_" + task_uuid);
-	
+
 	if (tsi) {
 		tsi.classList.remove("taskstate0");
 		tsi.classList.remove("taskstate1");
@@ -1236,7 +1348,7 @@ function updateSpreadsheetCell(cell, platName) {
 	}
 
 	if (best_match_key) {
-		cell.innerHTML = renderSpreadsheet(spreadsheet_data_cache[best_match_key]);
+		updateSpreadsheetDOM(cell, spreadsheet_data_cache[best_match_key]);
 		aging();
 	} else {
 		cell.innerHTML = ""; // Clear it if no data
@@ -1275,12 +1387,134 @@ function updateBuilderRow(row, plat) {
 	updateSpreadsheetCell(tdSpreadsheet, plat.name);
 }
 
+/* Global caches for reconcilation */
+var pcon_topology = {};
+var last_builder_list = [];
+
+function createPconDiv(pcon) {
+    const pconDiv = document.createElement("div");
+    pconDiv.className = "pcon";
+    pconDiv.id = "pcon-" + pcon.name;
+    pconDiv.style.marginLeft = "10px";
+    pconDiv.style.borderLeft = "1px solid #ccc";
+    pconDiv.style.paddingLeft = "5px";
+
+    const header = document.createElement("div");
+    header.className = "pcon-header";
+
+    let stateClass = pcon.on ? "pcon-on" : "pcon-off";
+    let type = pcon.type ? `(${pcon.type})` : "";
+
+    header.innerHTML = `<span class="${stateClass}">&#x23FB;</span> <b>${hsanitize(pcon.name)}</b> <span class="pcon-type">${hsanitize(type)}</span>`;
+    pconDiv.appendChild(header);
+
+    /* Context menu for PCON */
+    const menuItems = [
+        { label: `<b>PCON:</b> ${pcon.name}` }
+    ];
+
+    header.addEventListener("contextmenu", function(event) {
+        if (!authd) return;
+        createContextMenu(event, menuItems);
+    });
+
+    const childrenDiv = document.createElement("div");
+    childrenDiv.className = "pcon-children";
+    pconDiv.appendChild(childrenDiv);
+
+    return pconDiv;
+}
+
+function renderPconHierarchy(container) {
+    if (!container) return;
+
+    /* Clear and redraw for now to ensure structure is correct */
+    container.innerHTML = "";
+
+    const pcons = Object.values(pcon_topology);
+    /* Build map for dependency resolution */
+    const pconMap = {};
+    pcons.forEach(p => {
+        p.children = []; /* Reset children */
+        pconMap[p.name] = p;
+    });
+
+    /* Link PCONs */
+    const roots = [];
+    pcons.forEach(p => {
+        if (p.depends_on && pconMap[p.depends_on]) {
+            pconMap[p.depends_on].children.push(p);
+        } else {
+            roots.push(p);
+        }
+    });
+
+    /* Sort roots and children by name */
+    const sortByName = (a, b) => a.name.localeCompare(b.name);
+    roots.sort(sortByName);
+    pcons.forEach(p => p.children.sort(sortByName));
+
+    /* Helper to recursively render PCONs and their builders */
+    function renderPcon(pcon, parentDiv) {
+        const div = createPconDiv(pcon);
+        parentDiv.appendChild(div);
+        const childrenContainer = div.querySelector(".pcon-children");
+
+        /* Render builders belonging to this PCON */
+        /* We search the global builder list for those matching this pcon */
+        const myBuilders = last_builder_list.filter(b => b.pcon === pcon.name);
+        myBuilders.sort((a, b) => a.name.localeCompare(b.name));
+
+        if (myBuilders.length > 0) {
+            const table = document.createElement("table");
+            table.className = "builders";
+            const tbody = document.createElement("tbody");
+            table.appendChild(tbody);
+            myBuilders.forEach(b => {
+                tbody.appendChild(createBuilderRow(b));
+            });
+            childrenContainer.appendChild(table);
+        }
+
+        /* Render child PCONs */
+        pcon.children.forEach(child => {
+            renderPcon(child, childrenContainer);
+        });
+    }
+
+    roots.forEach(root => {
+        renderPcon(root, container);
+    });
+
+    /* Render orphan builders (no pcon or unknown pcon) */
+    const orphanBuilders = last_builder_list.filter(b => !b.pcon || !pcon_topology[b.pcon]);
+    if (orphanBuilders.length > 0) {
+        const orphanDiv = document.createElement("div");
+        orphanDiv.className = "pcon-orphans";
+        orphanDiv.innerHTML = "<div class='pcon-header'><b>Unmanaged Builders</b></div>";
+        const childrenContainer = document.createElement("div");
+        childrenContainer.className = "pcon-children";
+        orphanDiv.appendChild(childrenContainer);
+
+        const table = document.createElement("table");
+        table.className = "builders";
+        const tbody = document.createElement("tbody");
+        table.appendChild(tbody);
+        orphanBuilders.forEach(b => {
+            tbody.appendChild(createBuilderRow(b));
+        });
+        childrenContainer.appendChild(table);
+
+        container.appendChild(orphanDiv);
+    }
+}
+
 function ws_open_sai()
-{	
+{
 	var s = "", q, qa, qi, q5, q5s;
 
 	if (document.getElementById("apirev"))
-		document.getElementById("apirev").innerHTML = "API rev " + SAI_JS_API_VERSION; 
+		document.getElementById("apirev").innerHTML = "API rev " + SAI_JS_API_VERSION;
 
 	q = window.location.href;
 	console.log(q);
@@ -1300,12 +1534,12 @@ function ws_open_sai()
 		 * gitohashi has ?h=branch and ?id=hash possible
 		 */
 		qa = q.split("?");
-		if (qa[1]) 
+		if (qa[1])
 			s += "?" + qa[1];
 		console.log(s);
 		gitohashi_integ = 1;
 	}
-	
+
 	qi = q.indexOf("?task=");
 	if (qi != -1) {
 		/*
@@ -1313,7 +1547,7 @@ function ws_open_sai()
 		 */
 		s += "/specific?task=" + q.substring(qi + 6);
 	}
-	
+
 	var s1 = get_appropriate_ws_url() + "/sai/browse" + s;
 //	if (s1.split("?"))
 //	s1 = s1.split("?")[0];
@@ -1332,50 +1566,50 @@ function ws_open_sai()
 				tid, eid;
 			tid = par.get('task');
 			eid = par.get('event');
-		
-			
+
+
 			if (tid) {
 				/*
 				 * We're being the page monitoring / reporting
 				 * on what happened with a specific task... ask
 				 * about the specific task on the ws link
 				 */
-				 
+
 				 console.log("tid " + tid);
-				 
+
 				 sai.send("{\"schema\":" +
 					  "\"com.warmcat.sai.taskinfo\"," +
 					  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
 					  "\"logs\": 1," +
 					  "\"last_log_ts\":" + last_log_timestamp + "," +
 					  "\"task_hash\":" +
-				 	  JSON.stringify(tid) + "}");
-				 	  
+					  JSON.stringify(tid) + "}");
+
 				 return;
 			}
-			
+
 			if (eid) {
 				/*
 				 * We're being the page monitoring / reporting
 				 * on what happened with a specific event... ask
 				 * about the specific event on the ws link
 				 */
-				 
+
 				 console.log("eid " + eid);
-				 
+
 				 sai.send("{\"schema\":" +
 					  "\"com.warmcat.sai.eventinfo\"," +
 					  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
 					  "\"event_hash\":" +
-				 	  JSON.stringify(eid) + "}");
-				 	  
+					  JSON.stringify(eid) + "}");
+
 				 return;
 			}
-			
+
 			/*
 			 * request the overview schema
 			 */
-			
+
 			 sai.send("{\"schema\":" +
 				  "\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION + "}");
 		};
@@ -1389,10 +1623,10 @@ function ws_open_sai()
 		//		return;
 			jso = JSON.parse(msg.data);
 		//	console.log(jso.schema);
-			
+
 			if (jso.alang) {
 				var a = jso.alang.split(","), n;
-				
+
 				for (n = 0; n < a.length; n++) {
 					var b = a[n].split(";");
 					switch (b[0]) {
@@ -1436,69 +1670,31 @@ function ws_open_sai()
 
 			console.log(jso.schema);
 
-			switch (jso.schema) {                 
+			switch (jso.schema) {
 
- 			case "com.warmcat.sai.builders":
-				const buildersContainer = document.getElementById("sai_builders");
-				if (!buildersContainer) { break; }
-
+			case "com.warmcat.sai.builders":
+				/* Update builder list */
 				let platformsArray = (jso.platforms && Array.isArray(jso.platforms)) ? jso.platforms :
 				                     (jso.builders && Array.isArray(jso.builders)) ? jso.builders : null;
 
-				if (!platformsArray) {
-					buildersContainer.innerHTML = ""; // Clear display if data is invalid
-					break;
+				if (platformsArray) {
+					last_builder_list = platformsArray;
+					const container = document.getElementById("sai_builders");
+					if (container) renderPconHierarchy(container);
 				}
+				break;
 
-				platformsArray.sort((a, b) => (a.name && b.name) ? a.name.localeCompare(b.name) : 0);
-
-				let table = buildersContainer.querySelector("table.builders");
-				if (!table) {
-					buildersContainer.innerHTML = ""; // Clear placeholder
-					table = document.createElement("table");
-					table.className = "builders";
-					table.appendChild(document.createElement("tbody"));
-					buildersContainer.appendChild(table);
+			case "com.warmcat.sai.power_managed_builders":
+				/* Update PCON topology */
+				if (jso.power_controllers) {
+					jso.power_controllers.forEach(pc => {
+						pcon_topology[pc.name] = pc;
+					});
+					/* Trigger redraw if we have builders */
+					const container = document.getElementById("sai_builders");
+					if (container) renderPconHierarchy(container);
 				}
-				const tbody = table.querySelector("tbody");
-
-				// --- Reconciliation Logic ---
-				let platIdx = 0;
-				let currentRow = tbody.firstChild;
-
-				while (platIdx < platformsArray.length) {
-					const plat = platformsArray[platIdx];
-
-					if (!currentRow) {
-						tbody.appendChild(createBuilderRow(plat));
-						platIdx++;
-						continue;
-					}
-
-					const rowPlatName = currentRow.id.substring(4); // "row-..."
-					const comparison = plat.name.localeCompare(rowPlatName);
-
-					if (comparison === 0) {
-						updateBuilderRow(currentRow, plat);
-						platIdx++;
-						currentRow = currentRow.nextSibling;
-					} else if (comparison < 0) {
-						tbody.insertBefore(createBuilderRow(plat), currentRow);
-						platIdx++;
-					} else { // comparison > 0
-						const nextRow = currentRow.nextSibling;
-						tbody.removeChild(currentRow);
-						currentRow = nextRow;
-					}
-				}
-
-				// Remove any remaining old rows at the end
-				while (currentRow) {
-					const nextRow = currentRow.nextSibling;
-					tbody.removeChild(currentRow);
-					currentRow = nextRow;
-				}
- 				break;
+				break;
 
 			case "com.warmcat.sai.build-metric":
 				var summaryDiv = document.getElementById("metrics-summary-" + jso.task_uuid);
@@ -1521,9 +1717,9 @@ function ws_open_sai()
 				 * Sent with an array of e[] to start, but also
 				 * can send a single e[] if it just changed
 				 * state
-				 */ 
+				 */
 				s = "<table>";
-				
+
 				authd = jso.authorized;
 				if (jso.authorized === 0) {
 					if (document.getElementById("creds"))
@@ -1547,13 +1743,13 @@ function ws_open_sai()
 								san(auth_user) + " " + agify(now_ut, now_ut + jso.auth_secs);
 					}
 				}
-				
+
 				/*
 				 * Update existing?
 				 */
-			
+
 				// console.log("jso.overview.length " + jso.overview.length);
-				
+
 				if (jso.overview.length == 1 &&
 				    document.getElementById("esr-" + jso.overview[0].e.uuid)) {
 					/* this is just the summary box, not the tasks */
@@ -1561,12 +1757,12 @@ function ws_open_sai()
 						sai_event_summary_render(jso.overview[0], now_ut, 1);
 
 					/* if the task status icons exist, update their state */
-						
+
 					for (n = jso.overview[0].t.length - 1; n >= 0; n--)
 						refresh_state(jso.overview[0].t[n].uuid, jso.overview[0].t[n].state);
-					
+
 					update_summary_and_progress(jso.overview[0].e.uuid);
-						
+
 					aging();
 				} else
 				{
@@ -1576,12 +1772,12 @@ function ws_open_sai()
 					if (jso.overview.length) {
 						for (n = jso.overview.length - 1; n >= 0; n--)
 							s += sai_event_render(jso.overview[n], now_ut, 1);
-				
+
 						s = s + "</table>";
-					
+
 						if (document.getElementById("sai_sticky"))
 							document.getElementById("sai_sticky").innerHTML = s;
-						
+
 						for (n = jso.overview.length - 1; n >= 0; n--) {
 							document.getElementById("esr-" + jso.overview[n].e.uuid).innerHTML =
 								sai_event_summary_render(jso.overview[n], now_ut, 1);
@@ -1590,13 +1786,13 @@ function ws_open_sai()
 						}
 						aging();
 					}
-						
+
 					if (gitohashi_integ && document.getElementById("gitohashi_sai_icon")) {
 						var integ_state = 0;
 						document.getElementById("gitohashi_sai_icon").addEventListener("mouseenter", function( event ) {
-							document.getElementById("gitohashi_sai_icon").style.zIndex = 1999;  
+							document.getElementById("gitohashi_sai_icon").style.zIndex = 1999;
 							document.getElementById("gitohashi_sai_details").style.zIndex = 2000;
-							document.getElementById("gitohashi_sai_details").style.opacity = 1.0; 
+							document.getElementById("gitohashi_sai_details").style.opacity = 1.0;
 							integ_state = 1;
 						}, false);
 
@@ -1612,13 +1808,13 @@ function ws_open_sai()
 							}
 							document.getElementById("gitohashi_sai_details").style.opacity = 0.0;
 							document.getElementById("gitohashi_sai_details").style.zIndex = -1;
-						 	document.getElementById("gitohashi_sai_icon").style.zIndex = 2001;
+							document.getElementById("gitohashi_sai_icon").style.zIndex = 2001;
 						}, true);
-						
+
 						aging();
 					}
 				}
-				
+
 				if (jso.overview.length)
 					for (n = jso.overview.length - 1; n >= 0; n--) {
 						if (document.getElementById("rebuild-ev-" + san(jso.overview[n].e.uuid)))
@@ -1628,10 +1824,10 @@ function ws_open_sai()
 						var rs= "{\"schema\":" +
 						 "\"com.warmcat.sai.eventreset\"," +
 						 "\"uuid\": " +
-				 	  	 	JSON.stringify(san(e.srcElement.id.substring(11))) + "}";
-				 	  	 	
-				 	  	console.log(rs);
-				 	  	sai.send(rs);
+							JSON.stringify(san(e.srcElement.id.substring(11))) + "}";
+
+						console.log(rs);
+						sai.send(rs);
 					});
 					if (document.getElementById("delete-ev-" + san(jso.overview[n].e.uuid)))
 						document.getElementById("delete-ev-" + san(jso.overview[n].e.uuid)).
@@ -1640,15 +1836,15 @@ function ws_open_sai()
 						var rs= "{\"schema\":" +
 						 "\"com.warmcat.sai.eventdelete\"," +
 						 "\"uuid\": " +
-				 	  	 	JSON.stringify(san(e.srcElement.id.substring(10))) + "}";
-				 	  	 	
-				 	  	console.log(rs);
-				 	  	sai.send(rs);
+							JSON.stringify(san(e.srcElement.id.substring(10))) + "}";
+
+						console.log(rs);
+						sai.send(rs);
 						setTimeout(after_delete, 750);
 					});
 				}
 				break;
-			
+
 			case "com.warmcat.sai.taskinfo":
 
 				if (!jso.t)
@@ -1677,7 +1873,7 @@ function ws_open_sai()
 								san(auth_user) + " " + agify(now_ut, now_ut + jso.auth_secs);
 					}
 				}
-				
+
 				/*
 				 * We get told about changes to any task state,
 				 * it's up to us to figure out if the page we
@@ -1691,17 +1887,17 @@ function ws_open_sai()
 				 * First see if it appears as a tuple, and if
 				 * so, let's just update that
 				 */
-				
+
 				if (document.getElementById("taskstate_" + jso.t.uuid)) {
 					console.log("found taskstate_" + jso.t.uuid);
 					refresh_state(jso.t.uuid, jso.t.state);
-					
+
 					update_summary_and_progress(jso.t.uuid.substring(0, 32));
 
 				} else
-				
+
 					/* update task summary if shown anywhere */
-					
+
 					if (document.getElementById("taskinfo-" + jso.t.uuid)) {
 						console.log("FOUND taskinfo-" + jso.t.uuid);
 						document.getElementById("taskinfo-" + jso.t.uuid).innerHTML = sai_taskinfo_render(jso);
@@ -1711,20 +1907,20 @@ function ws_open_sai()
 						update_summary_and_progress(jso.e.uuid);
 
 					} else {
-						
+
 						console.log("NO taskinfo- or taskstate_" + jso.t.uuid);
-						
-						/* 
+
+						/*
 						 * Last chance if we might be
 						 * on a task-specific page, and
 						 * want to show the task info
 						 * at the top
 						 */
-					
+
 
 						const urlParams = new URLSearchParams(window.location.search);
 						const url_task_uuid = urlParams.get('task');
-						
+
 						if (url_task_uuid === jso.t.uuid &&
 						    document.getElementById("sai_sticky"))
 							document.getElementById("sai_sticky").innerHTML =
@@ -1732,8 +1928,8 @@ function ws_open_sai()
 								san(jso.t.uuid) + "\">" +
 								sai_taskinfo_render(jso) +
 								"</div>";
-					
-				
+
+
 						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
 						"<td class=\"atop\">" +
 						"<div id=\"dlogsn\" class=\"dlogsn\">" + lines + "</div></td>" +
@@ -1741,16 +1937,16 @@ function ws_open_sai()
 						"<div id=\"dlogst\" class=\"dlogst\">" + times + "</div></td>" +
 					     "<td class=\"atop\"><div id=\"dlogs\" class=\"dlogs\">" +
 					     "<span id=\"logs\" class=\"nowrap\">" + logs +
-					     	"</span>"+
+						"</span>"+
 						"</div></td></tr></table></pre>";
-					
+
 					if (document.getElementById("sai_overview")) {
 						document.getElementById("sai_overview").innerHTML = s;
-					
+
 						if (document.getElementById("esr-" + jso.e.uuid))
 							document.getElementById("esr-" + jso.e.uuid).innerHTML =
 								sai_event_summary_render(jso, now_ut, 1);
-								
+
 					}
 					update_summary_and_progress(jso.e.uuid);
 
@@ -1760,10 +1956,10 @@ function ws_open_sai()
 								var rs= "{\"schema\":" +
 								 "\"com.warmcat.sai.taskreset\"," +
 								 "\"uuid\": " +
-						 	  	 	JSON.stringify(san(e.srcElement.id.substring(8))) + "}";
-						 	  	 	
-						 	  	console.log(rs);
-						 	  	sai.send(rs);
+									JSON.stringify(san(e.srcElement.id.substring(8))) + "}";
+
+								console.log(rs);
+								sai.send(rs);
 
 								/*
 								 * and immediately re-request the task info, so we can get
@@ -1781,29 +1977,29 @@ function ws_open_sai()
 								console.log(rq);
 								sai.send(rq);
 
-						 	  	document.getElementById("dlogsn").innerHTML = "";
-						 	  	document.getElementById("dlogst").innerHTML = "";
-						 	  	document.getElementById("logs").innerHTML = "";
-						 	  	lines = times = logs = "";
+								document.getElementById("dlogsn").innerHTML = "";
+								document.getElementById("dlogst").innerHTML = "";
+								document.getElementById("logs").innerHTML = "";
+								lines = times = logs = "";
 								logAnsiState = {};
-						 	  	tfirst = 0;
-						 	  	lli = 1;
+								tfirst = 0;
+								lli = 1;
 								last_log_timestamp = 0;
-							}); 
+							});
 					}
-					
+
 					if (document.getElementById("stop-" + san(jso.t.uuid))) {
 						document.getElementById("stop-" + san(jso.t.uuid)).
 							addEventListener("click", function(e) {
 								var rs= "{\"schema\":" +
 								 "\"com.warmcat.sai.taskcan\"," +
 								 "\"task_uuid\": " +
-						 	  	 	JSON.stringify(san(e.srcElement.id.substring(5))) + "}";
-						 	  	 console.log(rs);
-						 	  	sai.send(rs);
-							}); 
+									JSON.stringify(san(e.srcElement.id.substring(5))) + "}";
+								 console.log(rs);
+								sai.send(rs);
+							});
 					}
-									
+
 					aging();
 				}
 				break;
@@ -1880,17 +2076,17 @@ function ws_open_sai()
 
 			case "com-warmcat-sai-artifact":
 				console.log(jso);
-				
+
 				sai_arts += "<div class=\"sai_arts\"><img src=\"artifact.svg\">&nbsp;<a href=\"artifacts/" +
 					san(jso.task_uuid) + "/" +
 					san(jso.artifact_down_nonce) + "/" +
 					san(jso.blob_filename) + "\">" +
 					san(jso.blob_filename) + "</a>&nbsp;" +
 					humanize(jso.len) + "B </div>";
-				
+
 				if (document.getElementById("sai_arts"))
 					document.getElementById("sai_arts").innerHTML = sai_arts;
-				
+
 				break;
 
 			case "com.warmcat.sai.taskactivity":
@@ -1918,14 +2114,14 @@ function ws_open_sai()
 				} catch (e) {
 					break;
 				}
-					
+
 				if (!tfirst)
 					tfirst = jso.timestamp;
 
 				last_log_timestamp = jso.timestamp;
-				
+
 				li = (s1.match(/\n/g)||[]).length;
-				
+
 				switch (jso.channel) {
 				case 1:
 					logs += s;
@@ -1948,13 +2144,13 @@ function ws_open_sai()
 
 
 				}
-				
+
 				if (cont && !cont[jso.channel] && jso.len)
 					tn = ((jso.timestamp - tfirst) / 1000000).toFixed(4);
 
 				if (cont)
 				cont[jso.channel] = (li == 0);
-					
+
 				while (li--) {
 					en += "<a id=\"#sn" + lli +
 						"\" href=\"#sn" + lli + "\">" +
@@ -1962,10 +2158,10 @@ function ws_open_sai()
 					tn += "<br>"
 					lli++;
 				}
-					
+
 				lines += en;
 				times += tn;
-				
+
 				if (!redpend) {
 					redpend = 1;
 					setTimeout(function() {
@@ -1992,7 +2188,7 @@ function ws_open_sai()
 							rightPane.clientHeight;
 					}, 500);
 				}
-			
+
 		break;
 	} /* switch */
 	} /* onmessage */
@@ -2010,18 +2206,18 @@ function ws_open_sai()
 			myVar = setTimeout(ws_open_sai, 4000);
 		};
 	} catch(exception) {
-		alert("<p>Error" + exception);  
+		alert("<p>Error" + exception);
 	}
 }
 
 function post_login_form()
 {
 	var xhr = new XMLHttpRequest(), s ="", q = window.location.pathname;
-	
+
 	s = "----boundo\x0d\x0acontent-disposition: form-data; name=\"lname\"\x0d\x0a\x0d\x0a" +
 		document.getElementById("lname").value +
 	    "\x0d\x0a----boundo\x0d\x0acontent-disposition: form-data; name=\"lpass\"\x0d\x0a\x0d\x0a" +
-		document.getElementById("lpass").value + 
+		document.getElementById("lpass").value +
 	    "\x0d\x0a----boundo\x0d\x0acontent-disposition: form-data; name=\"success_redir\"\x0d\x0a\x0d\x0a" +
 		document.getElementById("success_redir").value +
 	    "\x0d\x0a----boundo--";
@@ -2030,7 +2226,7 @@ function post_login_form()
 		q = q.substring(0, q.length - 10);
 	xhr.open("POST", q + "login", true);
 	xhr.setRequestHeader( 'content-type', "multipart/form-data; boundary=--boundo");
-	
+
 	console.log(s.length +" " + s);
 
 	xhr.onload = function (e) {
@@ -2048,7 +2244,7 @@ function post_login_form()
 	};
 
 	xhr.send(s);
-	
+
 	return false;
 }
 
@@ -2083,7 +2279,7 @@ window.addEventListener("load", function() {
 
 	if (document.getElementById("noscript"))
 		document.getElementById("noscript").display = "none";
-		
+
 	/* login form hidden success redirect */
 	if (document.getElementById("success_redir"))
 		document.getElementById("success_redir").value =
@@ -2095,16 +2291,16 @@ window.addEventListener("load", function() {
 		document.getElementById("login-button").addEventListener("click", post_login_form);
 		document.getElementById("logout-button").addEventListener("click", post_login_form);
 	}
-	
+
 	setInterval(function() {
 		update_task_activities();
 
 	    var locked = document.body.scrollHeight -
-	    	document.body.clientHeight <= document.body.scrollTop + 1;
-	
+		document.body.clientHeight <= document.body.scrollTop + 1;
+
 	    if (locked)
 	     document.body.scrollTop = document.body.scrollHeight -
-	     	document.body.clientHeight;
+		document.body.clientHeight;
 
 	}, 500)
 

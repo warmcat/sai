@@ -87,42 +87,54 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 	case 1: {
 		sai_power_managed_builders_t *pmb = (sai_power_managed_builders_t *)a.dest;
-		uint64_t bf_set = 0;
-		
-		lws_start_foreach_dll(struct lws_dll2 *, p, pmb->builders.head) {
-			sai_power_managed_builder_t *b = lws_container_of(p,
-				sai_power_managed_builder_t, list);
-			char q[256];
-			int shi = 0;
+		char q[256];
 
-			lwsl_notice("%s: Marking builder %s as power-managed\n",
-				    __func__, b->name);
-			lws_snprintf(q, sizeof(q),
-				     "UPDATE builders SET power_managed=1 WHERE name = '%s' OR name LIKE '%s.%%'",
-				     b->name, b->name);
+		/*
+		 * We received the PCON topology and registered builders from sai-power.
+		 *
+		 * 1. Store PCONs in DB.
+		 * 2. Update builders' PCON association (if we have a table or column for it).
+		 */
 
-			if (sai_sqlite3_statement(vhd->server.pdb, q, "set power_managed"))
-				lwsl_err("%s: Failed to mark builder %s as power-managed\n",
-					 __func__, b->name);
+		sai_sqlite3_statement(vhd->server.pdb, "BEGIN TRANSACTION", "txn begin");
 
-			lws_start_foreach_dll(struct lws_dll2 *, p2,
-					vhd->server.builder_owner.head) {
+		/* Clear old PCONs? Or Upsert?
+		 * We probably want to replace since this is authoritative from sai-power.
+		 * But maybe just clear everything first?
+		 */
+		sai_sqlite3_statement(vhd->server.pdb, "DELETE FROM power_controllers", "delete pcons");
+		sai_sqlite3_statement(vhd->server.pdb, "DELETE FROM pcon_builders", "delete pcon_builders");
+
+		lws_start_foreach_dll(struct lws_dll2 *, p, pmb->power_controllers.head) {
+			sai_power_controller_t *pc = lws_container_of(p, sai_power_controller_t, list);
 			
-				sai_plat_t *sp = lws_container_of(p2, sai_plat_t, sai_plat_list);
-				const char *dot = strchr(sp->name, '.');
+			/* Insert PCON */
+			lws_snprintf(q, sizeof(q),
+				     "INSERT INTO power_controllers (name, type, url, depends_on, state) VALUES ('%s', '%s', '', '%s', %d)",
+				     pc->name, pc->type, pc->depends_on, pc->on);
+			sai_sqlite3_statement(vhd->server.pdb, q, "insert pcon");
 
-				// lwsl_notice("%s: builder entry: %s\n", __func__, cb->name);
+			/* Insert Controlled Builders */
+			lws_start_foreach_dll(struct lws_dll2 *, pb, pc->controlled_builders_owner.head) {
+				sai_controlled_builder_t *cb = lws_container_of(pb, sai_controlled_builder_t, list);
+				lws_snprintf(q, sizeof(q),
+					     "INSERT INTO pcon_builders (pcon_name, builder_name) VALUES ('%s', '%s')",
+					     pc->name, cb->name);
+				lwsl_notice("%s: Inserting pcon_builder: pcon='%s', builder='%s'\n", __func__, pc->name, cb->name);
+				sai_sqlite3_statement(vhd->server.pdb, q, "insert pcon_builder");
 
-				if (dot && !(bf_set & (1 << shi)) && strlen(b->name) <= (size_t)(dot - sp->name) &&
-				    !strncmp(sp->name + (dot - sp->name) - strlen(b->name), b->name, strlen(b->name))) {
-					lwsl_notice("%s: ++++++++++++ Setting %s .stay_on=%d\n", __func__, sp->name, b->stay_on);
-					sp->stay_on = b->stay_on;
-					bf_set |= (1 << shi);
-				}
-				shi++;
-			} lws_end_foreach_dll(p2);
+				/* Update builders table with pcon name */
+				/* Note: builders table key is 'name'. */
+				lws_snprintf(q, sizeof(q),
+					     "UPDATE builders SET pcon = '%s' WHERE name = '%s' OR name LIKE '%s.%%'",
+					     pc->name, cb->name, cb->name);
+				sai_sqlite3_statement(vhd->server.pdb, q, "update builder pcon");
+
+			} lws_end_foreach_dll(pb);
 
 		} lws_end_foreach_dll(p);
+
+		sai_sqlite3_statement(vhd->server.pdb, "COMMIT", "txn commit");
 
 		sais_list_builders(vhd);
 
