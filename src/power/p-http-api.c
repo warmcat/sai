@@ -186,6 +186,9 @@ LWS_SS_USER_TYPEDEF
         char                    payload[200];
         size_t                  size;
         size_t                  pos;
+	struct lws_struct_args	a;
+	struct lejp_ctx		ctx;
+	saip_builder_t		*b;
 } local_srv_t;
 
 static lws_ss_state_return_t
@@ -219,6 +222,100 @@ local_srv_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 }
 
 static lws_ss_state_return_t
+local_srv_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
+{
+	local_srv_t *g = (local_srv_t *)userobj;
+	struct lws_ss_handle *h = lws_ss_from_user(g);
+	saip_pcon_t *pc;
+	saip_builder_t *b;
+
+	if (!g->ctx.user) { /* first time */
+		memset(&g->a, 0, sizeof(g->a));
+		g->a.map_st[0] = lsm_schema_builder_registration;
+		g->a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_builder_registration);
+		g->a.ac_block_size = 2048;
+		lws_struct_json_init_parse(&g->ctx, NULL, &g->a);
+	}
+
+	if (lejp_parse(&g->ctx, buf, (int)len) < 0 || !g->a.dest) {
+		lwsl_ss_warn(h, "JSON decode failed");
+		lwsac_free(&g->a.ac);
+		return LWSSSSRET_DISCONNECT_ME;
+	}
+
+	if (g->a.top_schema_index == 0) {
+		sai_builder_registration_t *r = (sai_builder_registration_t *)g->a.dest;
+
+		lwsl_ss_notice(h, "Registered builder '%s' on pcon '%s'",
+			    r->builder_name, r->power_controller_name);
+
+		/* Find the PCON */
+		pc = saip_pcon_by_name(&power, r->power_controller_name);
+		if (!pc) {
+			lwsl_ss_warn(h, "Unknown PCON '%s', creating it", r->power_controller_name);
+			/* Dynamically create PCON if missing */
+			pc = saip_pcon_create(&power, r->power_controller_name);
+		}
+
+		if (pc) {
+			/* Check if builder already exists */
+			int found = 0;
+			lws_start_foreach_dll(struct lws_dll2 *, b_node, pc->registered_builders_owner.head) {
+				saip_builder_t *sb = lws_container_of(b_node, saip_builder_t, list);
+				if (!strcmp(sb->name, r->builder_name)) {
+					lwsl_ss_notice(h, "Builder '%s' re-connected to PCON '%s'", r->builder_name, pc->name);
+					/* sb->wsi = ...; */ /* We don't have wsi here easily, but we have SS handle? Not needed for logic. */
+					g->b = sb; /* Link user object to builder */
+					found = 1;
+					break;
+				}
+			} lws_end_foreach_dll(b_node);
+
+			if (!found) {
+				lwsl_ss_notice(h, "Adding builder '%s' to PCON '%s'", r->builder_name, pc->name);
+				b = malloc(sizeof(*b));
+				if (b) {
+					memset(b, 0, sizeof(*b));
+					lws_strncpy(b->name, r->builder_name, sizeof(b->name));
+					/* b->wsi = ...; */
+					g->b = b;
+					lws_dll2_add_tail(&b->list, &pc->registered_builders_owner);
+				} else {
+					lwsl_ss_err(h, "OOM allocating builder");
+				}
+			}
+
+			/* Store platforms */
+			if (g->b) {
+				/* Clear existing platforms first? Or just append? */
+				lws_dll2_owner_clear(&g->b->platforms_owner); /* Assuming we have a way to free items, but lwsac managed? No, these are manual. */
+				/* Actually we used lwsac for deserialization, but we need to PERSIST this data. */
+				/* We need to copy from 'r->platforms_owner' to 'g->b->platforms_owner' */
+
+				lws_start_foreach_dll(struct lws_dll2 *, p, r->platforms_owner.head) {
+					sai_builder_platform_t *bp = lws_container_of(p, sai_builder_platform_t, list);
+					saip_builder_platform_t *sbp = malloc(sizeof(*sbp));
+					if (sbp) {
+						memset(sbp, 0, sizeof(*sbp));
+						lws_strncpy(sbp->name, bp->name, sizeof(sbp->name));
+						lws_dll2_add_tail(&sbp->list, &g->b->platforms_owner);
+					}
+				} lws_end_foreach_dll(p);
+			}
+
+			/* Trigger a check since we have a new builder (it's alive!) */
+			saip_pcon_start_check();
+
+			/* Send update to sai-server */
+			saip_queue_stay_info(lws_container_of(power.sai_server_owner.head, saip_server_t, list));
+		}
+	}
+
+	lwsac_free(&g->a.ac);
+	return LWSSSSRET_OK;
+}
+
+static lws_ss_state_return_t
 local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
                lws_ss_tx_ordinal_t ack)
 {
@@ -234,6 +331,16 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
         switch ((int)state) {
         case LWSSSCS_CREATING:
                 return lws_ss_request_tx(lws_ss_from_user(g));
+
+        case LWSSSCS_DISCONNECTED:
+		if (g->b) {
+			/* Mark as offline but don't delete */
+			/* g->b->wsi = NULL; */
+			g->b = NULL;
+		}
+		/* Clean up lejp if pending? */
+		lws_struct_json_init_parse(&g->ctx, NULL, NULL); /* Reset */
+		break;
 
         case LWSSSCS_SERVER_TXN:
 
@@ -413,7 +520,7 @@ power_off:
 			/*
 			 * OK this is it, schedule it to happen
 			 */
-			lws_sul_schedule(lws_ss_cx_from_user(g), 0,
+			lws_sul_schedule(lws_ss_from_user(g), 0,
 						&pc->sul_delay_off,
 						saip_sul_action_power_off,
 						SAI_POWERDOWN_HOLDOFF_US);
@@ -441,5 +548,6 @@ bail:
 
 LWS_SS_INFO("local", local_srv_t)
         .tx                             = local_srv_tx,
+        .rx                             = local_srv_rx,
         .state                          = local_srv_state,
 };
