@@ -58,3 +58,19 @@ saip_pcon_create(struct sai_power *power, const char *name)
 
 	return pc;
 }
+
+void
+saip_switch(saip_pcon_t *pc, int on)
+{
+	struct lws_ss_handle *h = on ? pc->ss_tasmota_on : pc->ss_tasmota_off;
+
+	if (!h) {
+		lwsl_err("%s: %s: no ss handle for %s\n", __func__,
+			 pc->name, on ? "ON" : "OFF");
+		return;
+	}
+
+	if (lws_ss_client_connect(h))
+		lwsl_ss_err(h, "failed to connect tasmota %s secure stream",
+			    on ? "ON" : "OFF");
+}
