@@ -55,6 +55,9 @@ typedef struct sai_platm {
 	/* the list of well-known, configured resources */
 	lws_dll2_owner_t resource_wellknown_owner; /* sai_resource_wellknown_t */
 
+	/* Live PCON topology from sai-power */
+	lws_dll2_owner_t power_controllers; /* sai_power_controller_t */
+
 	sqlite3 *pdb;
 	sqlite3 *pdb_auth;
 } sais_t;
@@ -380,6 +383,9 @@ sai_detach_resource(struct lws_dll2 *d, void *user);
 
 int
 sai_destroy_resource_wellknown(struct lws_dll2 *d, void *user);
+
+int
+sai_pcon_destroy_cb(struct lws_dll2 *d, void *user);
 
 void
 sais_server_destroy(struct vhd *vhd, sais_t *server);

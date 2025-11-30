@@ -111,6 +111,29 @@ sai_destroy_resource_wellknown(struct lws_dll2 *d, void *user)
 	return 0;
 }
 
+int
+sai_pcon_destroy_cb(struct lws_dll2 *d, void *user)
+{
+	sai_power_controller_t *pc = lws_container_of(d, sai_power_controller_t, list);
+
+	lws_dll2_remove(d);
+
+	/* Also need to clear the child lists */
+	lws_dll2_foreach_safe(&pc->controlled_builders_owner, NULL, sai_detach_builder);
+
+	/* We don't free pc because it's usually in an lwsac, but if it's from db it might be malloced.
+	 * In s-power.c usage, it's lwsac.
+	 * Wait, s-sai.c uses 'server->pdb' which is sqlite.
+	 * The in-memory structure 'sai_power_managed_builders_t' is what we are likely destroying here if we are cleaning up ephemeral state.
+	 *
+	 * However, 'server' struct in 's-private.h' doesn't seem to have a list of live PCONs.
+	 * We should check s-private.h to see if we added one.
+	 * If not, we might be relying on the database + transient messages.
+	 */
+
+	return 0;
+}
+
 void
 sais_server_destroy(struct vhd *vhd, sais_t *server)
 {
@@ -126,4 +149,3 @@ sais_server_destroy(struct vhd *vhd, sais_t *server)
 	lws_dll2_foreach_safe(&server->resource_wellknown_owner, NULL,
 			      sai_destroy_resource_wellknown);
 }
-

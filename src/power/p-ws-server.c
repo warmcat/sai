@@ -35,7 +35,7 @@ static const lws_struct_map_t lsm_schema_power_state[] = {
 };
 
 void
-saip_notify_server_power_state(const char *plat_name, int up, int down)
+saip_notify_server_power_state(const char *pcon_name, int up, int down)
 {
 	saip_server_link_t *m;
 	sai_power_state_t ps;
@@ -56,7 +56,7 @@ saip_notify_server_power_state(const char *plat_name, int up, int down)
 
 	memset(&ps, 0, sizeof(ps));
 
-	lws_strncpy(ps.host, plat_name, sizeof(ps.host));
+	lws_strncpy(ps.host, pcon_name, sizeof(ps.host));
 	ps.powering_up		= (char)up;
 	ps.powering_down	= (char)down;
 
@@ -74,24 +74,13 @@ saip_queue_stay_info(saip_server_t *sps)
 	saip_server_link_t *m;
 	int r;
 
-	lwsl_ss_notice(sps->ss, "@@@@@@@@@@@@@@ sai-power CONNECTED to server");
+	/* lwsl_ss_notice(sps->ss, "@@@@@@@@@@@@@@ sai-power CONNECTED to server"); */
 
 	m = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
 
 	memset(&pmb, 0, sizeof(pmb));
 
-	lws_start_foreach_dll(struct lws_dll2 *, p, sps->sai_plat_owner.head) {
-		saip_server_plat_t *sp = lws_container_of(p,
-					saip_server_plat_t, list);
-		sai_power_managed_builder_t *b = lwsac_use_zero(&ac, sizeof(*b), 2048);
-
-		if (b) {
-			lws_strncpy(b->name, sp->host, sizeof(b->name));
-			b->stay_on	= sp->stay;
-
-			lws_dll2_add_tail(&b->list, &pmb.builders);
-		}
-	} lws_end_foreach_dll(p);
+	/* Send the PCON configuration and connected builders */
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, power.sai_pcon_owner.head) {
 		saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
@@ -100,20 +89,23 @@ saip_queue_stay_info(saip_server_t *sps)
 		if (pc1 && pc->name) {
 			lws_strncpy(pc1->name, pc->name, sizeof(pc1->name));
 			pc1->on		= pc->on;
+			if (pc->depends_on)
+				lws_strncpy(pc1->depends_on, pc->depends_on, sizeof(pc1->depends_on));
+			if (pc->type)
+				lws_strncpy(pc1->type, pc->type, sizeof(pc1->type));
 
 			lws_dll2_add_tail(&pc1->list, &pmb.power_controllers);
 
+			/* Attach registered builders */
 			lws_start_foreach_dll(struct lws_dll2 *, p1,
-					      pc->controlled_plats_owner.head) {
-				saip_server_plat_t *sp = lws_container_of(p1,
-						saip_server_plat_t, pcon_list);
+					      pc->registered_builders_owner.head) {
+				saip_builder_t *sb = lws_container_of(p1,
+						saip_builder_t, list);
 				sai_controlled_builder_t *c = lwsac_use_zero(&ac,
 							      sizeof(*c), 2048);
 
 				if (c) {
-					if (sp->host)
-						lws_strncpy(c->name, sp->host,
-								sizeof(c->name));
+					lws_strncpy(c->name, sb->name, sizeof(c->name));
 
 					lws_dll2_add_tail(&c->list,
 						&pc1->controlled_builders_owner);
@@ -121,6 +113,11 @@ saip_queue_stay_info(saip_server_t *sps)
 			} lws_end_foreach_dll(p1);
 		}
 	} lws_end_foreach_dll(p);
+
+	/* The 'builders' list in pmb was for "power managed builders" (legacy).
+	 * We now put builders *inside* power controllers.
+	 * So we leave pmb.builders empty.
+	 */
 
 	r = sai_ss_serialize_queue_helper(sps->ss, &m->bl_pwr_to_srv,
 				          lsm_schema_power_managed_builders,
@@ -131,44 +128,16 @@ saip_queue_stay_info(saip_server_t *sps)
 	return r;
 }
 
-int
-saip_builder_bringup(saip_server_t *sps, saip_server_plat_t *sp,
-		     saip_server_link_t *pss)
-{
-	saip_notify_server_power_state(sp->name, 1, 0);
-
-	if (sp->power_on_type && !strcmp(sp->power_on_type, "wol")) {
-		lwsl_notice("%s:   triggering WOL\n", __func__);
-		write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
-		      sp->power_on_mac, strlen(sp->power_on_mac));
-	}
-
-	if (sp->pcon_list.owner) {
-		saip_pcon_t *pc = lws_container_of(sp->pcon_list.owner,
-						   saip_pcon_t,
-						   controlled_plats_owner);
-
-		lwsl_ss_notice(pc->ss_tasmota_on, "starting tasmota");
-		if (lws_ss_client_connect(pc->ss_tasmota_on))
-			lwsl_ss_err(pc->ss_tasmota_on, "failed to connect tasmota ON secure stream");
-	}
-
-	return saip_queue_stay_info(sps);
-}
-
 static lws_ss_state_return_t
 saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
 	saip_server_link_t *pss = (saip_server_link_t *)userobj;
 	saip_server_t *sps = (saip_server_t *)lws_ss_opaque_from_user(pss);
-	const char *p = (const char *)buf, *end = (const char *)buf + len;
-	char plat[128], benched[4096];
-	size_t n, bp = 0;
 	lws_struct_args_t a;
 	struct lejp_ctx ctx;
 
 	lwsl_notice("%s: len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
-	lwsl_hexdump_notice(buf, len);
+	/* lwsl_hexdump_notice(buf, len); */
 
 	memset(&a, 0, sizeof(a));
 	a.map_st[0] = lsm_schema_stay;
@@ -183,111 +152,43 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		lwsl_warn("%s: received stay %s: %d\n", __func__, stay->builder_name, stay->stay_on);
 
-		saip_set_stay(stay->builder_name, stay->stay_on);
+		/*
+		 * We received a stay request for a builder.
+		 * We need to find which PCON controls this builder and update its manual_stay.
+		 * But wait, 'sai_stay_t' is typically per-builder.
+		 * We should map this back to the PCON.
+		 */
+
+		lws_start_foreach_dll(struct lws_dll2 *, p, power.sai_pcon_owner.head) {
+			saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
+			lws_start_foreach_dll(struct lws_dll2 *, b_node, pc->registered_builders_owner.head) {
+				saip_builder_t *sb = lws_container_of(b_node, saip_builder_t, list);
+				if (!strcmp(sb->name, stay->builder_name)) {
+					lwsl_notice("%s: Mapping stay for builder '%s' to PCON '%s'\n",
+						    __func__, sb->name, pc->name);
+					/* Update PCON stay state */
+					pc->manual_stay = stay->stay_on;
+					saip_pcon_start_check();
+					goto found;
+				}
+			} lws_end_foreach_dll(b_node);
+		} lws_end_foreach_dll(p);
+
+found:
 		lwsac_free(&a.ac);
 		return 0;
 	}
 	lwsac_free(&a.ac);
 
-	/* starting position is that no server-plat is needed */
-
-	lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
-		saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
-		sp->needed = 0;
-	} lws_end_foreach_dll(px);
-
-	fprintf(stderr, "|||||||||||||||||||||||||||||||| Server says needed: '%.*s'\n", (int)len, buf);
-
-	while (p < end) {
-		n = 0;
-		while (p < end && *p != ',')
-			if (n < sizeof(plat) - 1)
-				plat[n++] = *p++;
-
-		plat[n] = '\0';
-		if (p < end && *p == ',')
-			p++;
-
-		/*
-		 * Does this server list this platform as having startable or ongoing
-		 * tasks?
-		 */
-
-		lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
-			saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
-
-			/*
-			 * How about any dependency listed?
-			 */
-
-			lws_start_foreach_dll(struct lws_dll2 *, px1, sp->dependencies_owner.head) {
-				saip_server_plat_t *sp1 = lws_container_of(px1, saip_server_plat_t, dependencies_list);
-
-				lwsl_notice("%s: setting %s as needed dep\n", __func__, sp1->name);
-				sp1->needed = 2;
-				saip_set_stay(sp1->name, sp1->stay);
-
-			} lws_end_foreach_dll(px1);
-
-			/*
-			 * Directly listed as needed?
-			 */
-
-			if (!strcmp(sp->name, plat))
-				sp->needed |= 1;
-
-		} lws_end_foreach_dll(px);
-	}
-
 	/*
-	 * Cascade dependencies up the platforms
+	 * The old logic parsed comma-separated platform names to determine needed state.
+	 * We are moving away from that. Sai-server should explicitly request power state
+	 * or we should rely on the builder being "needed" implies PCON on.
+	 * Actually, the requirement said: "You can no longer ask that a platform stays on, instead, you ask that the power controller stays on"
+	 * So sai-server might send stay requests for PCONs directly if we update the UI.
+	 * But for now, sai-server logic (s-power.c) sends stay for *builders*.
+	 * So the mapping logic above is correct for transition.
 	 */
-
-	lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
-		saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
-
-		if (sp->needed) {
-			lws_start_foreach_dll(struct lws_dll2 *, py, sp->dependencies_owner.head) {
-				saip_server_plat_t *spd = lws_container_of(py,
-					saip_server_plat_t, dependencies_list);
-
-				spd->needed |= 2;
-
-			} lws_end_foreach_dll(py);
-		}
-	} lws_end_foreach_dll(px);
-
-	/*
-	 * Bringup any directly needed or needed by dependency builders
-	 */
-
-	lws_start_foreach_dll(struct lws_dll2 *, px, sps->sai_plat_owner.head) {
-		saip_server_plat_t *sp = lws_container_of(px, saip_server_plat_t, list);
-
-		if (sp->needed) {
-			lwsl_notice("%s: Needed builders: %s\n", __func__, sp->name);
-
-			/*
-			 * Server said this platform or at least one dependency
-			 * has pending jobs. sai-power config says this builder
-			 * can do jobs on that platform.  Let's make sure it
-			 * is powered on.
-			 */
-
-			saip_builder_bringup(sps, sp, pss);
-
-		} else {
-			bp += (size_t)lws_snprintf(&benched[bp], sizeof(benched) - bp - 1,
-					"%s%s", !bp ? "" : ", ", sp->name);
-			benched[sizeof(benched) - 1] = '\0';
-		}
-
-	} lws_end_foreach_dll(px);
-
-	if (bp)
-		lwsl_notice("%s:  Benched builders: %s\n", __func__, benched);
-
-	(void)sps;
 
 	return 0;
 }

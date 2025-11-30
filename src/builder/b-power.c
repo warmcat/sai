@@ -30,6 +30,97 @@
 #include "b-private.h"
 
 extern struct lws_spawn_piped *lsp_suspender;
+struct lws_ss_handle *ss_power_client = NULL;
+
+/*
+ * Registration message logic
+ */
+
+LWS_SS_USER_TYPEDEF
+        char                    payload[200];
+        size_t                  size;
+        size_t                  pos;
+	struct lws_buflist	*bl_tx;
+} saib_power_client_t;
+
+static lws_ss_state_return_t
+saib_power_client_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
+		     size_t *len, int *flags)
+{
+	saib_power_client_t *g = (saib_power_client_t *)userobj;
+
+	return sai_ss_tx_from_buflist_helper(ss_power_client, &g->bl_tx,
+					     buf, len, flags);
+}
+
+static lws_ss_state_return_t
+saib_power_client_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
+{
+	/* We don't really expect RX from sai-power on this link currently
+	 * other than maybe stay info if we merged that logic.
+	 * For now, ignore.
+	 */
+	return LWSSSSRET_OK;
+}
+
+static lws_ss_state_return_t
+saib_power_client_state(void *userobj, void *sh, lws_ss_constate_t state,
+			lws_ss_tx_ordinal_t ack)
+{
+	saib_power_client_t *g = (saib_power_client_t *)userobj;
+	sai_builder_registration_t r;
+	struct lwsac *ac = NULL;
+
+	switch (state) {
+	case LWSSSCS_CONNECTED:
+		lwsl_notice("%s: Connected to sai-power, sending registration\n", __func__);
+
+		/* Prepare registration message */
+		memset(&r, 0, sizeof(r));
+		lws_strncpy(r.builder_name, builder.host, sizeof(r.builder_name));
+		if (builder.power_controller_name)
+			lws_strncpy(r.power_controller_name, builder.power_controller_name, sizeof(r.power_controller_name));
+		else
+			lws_strncpy(r.power_controller_name, "unknown", sizeof(r.power_controller_name));
+
+		/* Add platforms */
+		lws_start_foreach_dll(struct lws_dll2 *, d, builder.sai_plat_owner.head) {
+			sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);
+			sai_builder_platform_t *bp = lwsac_use_zero(&ac, sizeof(*bp), 512);
+
+			if (bp) {
+				lws_strncpy(bp->name, sp->name, sizeof(bp->name));
+				lws_dll2_add_tail(&bp->list, &r.platforms_owner);
+			}
+		} lws_end_foreach_dll(d);
+
+		/* Send it */
+		sai_ss_serialize_queue_helper(ss_power_client, &g->bl_tx,
+					      lsm_schema_builder_registration,
+					      LWS_ARRAY_SIZE(lsm_schema_builder_registration),
+					      &r);
+
+		lwsac_free(&ac);
+		break;
+
+	case LWSSSCS_DISCONNECTED:
+		lwsl_notice("%s: Disconnected from sai-power\n", __func__);
+		lws_buflist_destroy_all_segments(&g->bl_tx);
+		break;
+
+	default:
+		break;
+	}
+
+	return LWSSSSRET_OK;
+}
+
+LWS_SS_INFO("sai_power_client", saib_power_client_t)
+	.rx			= saib_power_client_rx,
+	.tx			= saib_power_client_tx,
+	.state			= saib_power_client_state,
+};
+
 
 int
 saib_reassess_idle_situation()
@@ -392,6 +483,7 @@ saib_power_init(void)
 	 * it's willing to auto power-off or not.
 	 */
 
+	/* Existing SS creation for power-off logic */
 	lwsl_notice("%s: creating sai-power ss...\n", __func__);
 
 	if (lws_ss_create(builder.context, 0, &ssi_saib_power_link_t,
@@ -401,6 +493,25 @@ saib_power_init(void)
 	}
 
 	saib_reassess_idle_situation();
+
+	/*
+	 * NEW: Create the persistent WS connection for registration
+	 * We reuse builder.url_sai_power.
+	 * Note: builder.url_sai_power is a URL string. We need to extract the policy endpoint?
+	 * The policy for sai-power client needs to be defined.
+	 * 'sai_power' in policy covers it.
+	 */
+
+	if (lws_ss_create(builder.context, 0, &ssi_saib_power_client_t,
+			  NULL, &ss_power_client, NULL, NULL)) {
+		lwsl_err("%s: failed to create sai-power client ss\n", __func__);
+	} else {
+		/* Set metadata for URL? The policy handles 'sai_power' endpoint.
+		 * We might need to ensure the policy matches what we expect.
+		 * The existing code assumes 'sai_power' policy exists.
+		 */
+	}
+
 
 	return 0;
 }

@@ -52,6 +52,9 @@ const lws_struct_map_t lsm_schema_json_map[] = {
 			 "com.warmcat.sai.taskactivity"),
 	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric,
 			 "com.warmcat.sai.build-metric"),
+	LSM_SCHEMA(sai_power_managed_builders_t, NULL,
+			lsm_power_managed_builders_list,
+			"com.warmcat.sai.power_managed_builders"),
 };
 
 enum {
@@ -63,6 +66,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_LOADREPORT,	/* builder's cpu load report */
 	SAIS_WS_WEBSRV_RX_TASKACTIVITY,
 	SAIS_WS_WEBSRV_RX_BUILD_METRIC,
+	SAIS_WS_WEBSRV_RX_POWER_MANAGED_BUILDERS,
 };
 
 /*
@@ -115,16 +119,9 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		 */
 		switch (m->a.top_schema_index) {
 		case SAIS_WS_WEBSRV_RX_LOADREPORT:
-			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, buf, len,
-				lws_write_ws_flags(LWS_WRITE_TEXT,
-						   flags & LWSSS_FLAG_SOM, 0));
-			break;
 		case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
-			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, buf, len,
-				lws_write_ws_flags(LWS_WRITE_TEXT,
-						   flags & LWSSS_FLAG_SOM, 0));
-			break;
 		case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
+		case SAIS_WS_WEBSRV_RX_POWER_MANAGED_BUILDERS:
 			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, buf, len,
 				lws_write_ws_flags(LWS_WRITE_TEXT,
 						   flags & LWSSS_FLAG_SOM,
@@ -141,6 +138,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		case SAIS_WS_WEBSRV_RX_TASKCHANGE:
 		case SAIS_WS_WEBSRV_RX_EVENTCHANGE:
 		case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
+		case SAIS_WS_WEBSRV_RX_POWER_MANAGED_BUILDERS:
 			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, buf, len,
 				lws_write_ws_flags(LWS_WRITE_TEXT,
 						   flags & LWSSS_FLAG_SOM,
@@ -221,6 +219,51 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;
 	case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
+		saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, buf, len - (unsigned int)n,
+			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
+		break;
+	case SAIS_WS_WEBSRV_RX_POWER_MANAGED_BUILDERS:
+		/* Just forward to browser */
+		/* We already forwarded fragments in the LEJP_CONTINUE block?
+		 * Wait, in the LEJP_CONTINUE block above, we handle partial forwarding.
+		 * But if it arrives in one chunk (n >= 0 immediately), we must forward it here.
+		 * The existing logic for other types does this.
+		 * Wait, the LOADREPORT/TASKACTIVITY/BUILDERS cases below just call broadcast.
+		 * But they use 'len - n' which assumes n is the length processed?
+		 * Lejp returns LEJP_CONTINUE or a positive integer representing the number of bytes used?
+		 * No, lejp_parse returns LEJP_CONTINUE or 0 (success) or error code.
+		 *
+		 * Wait, lejp_parse returns a negative error code on failure.
+		 * On success, it returns 0.
+		 *
+		 * The code `len - (unsigned int)n` suggests n is bytes consumed?
+		 * Ah, older versions of lejp/lws might behave differently.
+		 * But if n == 0 (success), `len - 0` = len.
+		 * So it broadcasts the whole buffer.
+		 *
+		 * The `else` block of `if (n == LEJP_CONTINUE)` handles the `flags & EOM` case for fragments?
+		 * No, `if (n == LEJP_CONTINUE)` handles forwarding intermediate fragments.
+		 * The `else` block handles the FINAL fragment (where n == 0).
+		 * But wait, the `else` block logic is:
+		 *
+		 * ```c
+		 * } else {
+		 *   switch (m->a.top_schema_index) {
+		 *   case SAIS_WS_WEBSRV_RX_TASKCHANGE: ... broadcast ...
+		 *   }
+		 * }
+		 * ```
+		 *
+		 * It seems correct. I added `SAIS_WS_WEBSRV_RX_POWER_MANAGED_BUILDERS` to the `else` block switch as well.
+		 * But I should check if I need to add a case in the final switch (where parsing is complete).
+		 *
+		 * In the final switch (m->a.top_schema_index), `SAIS_WS_WEBSRV_RX_LOADREPORT` etc are handled.
+		 * I should add `SAIS_WS_WEBSRV_RX_POWER_MANAGED_BUILDERS` there too if I want to ensure the final chunk is sent if it wasn't handled by the `else` block?
+		 *
+		 * Actually, look at `SAIS_WS_WEBSRV_RX_SAI_BUILDERS` in the final switch. It does complex logic (updating vhd state).
+		 * `com.warmcat.sai.power_managed_builders` is just passthrough to the browser, sai-web doesn't need to statefully track PCONs (browsers do).
+		 * So treating it like LOADREPORT (passthrough) is correct.
+		 */
 		saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, buf, len - (unsigned int)n,
 			lws_write_ws_flags(LWS_WRITE_TEXT, flags & LWSSS_FLAG_SOM, flags & LWSSS_FLAG_EOM));
 		break;

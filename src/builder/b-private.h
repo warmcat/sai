@@ -129,6 +129,7 @@ struct sai_builder {
 	const char		*metrics_secret;
 
 	const char		*url_sai_power;
+	const char		*power_controller_name;
 
 	const char		*power_off_type;
 	const char		*power_off_url;

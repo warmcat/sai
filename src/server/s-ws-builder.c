@@ -783,6 +783,28 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 						 __func__, build->name);
 
 				/*
+				 * Step 1.5: Synchronize PCON binding from pcon_builders table if available.
+				 * This handles the case where sai-power registered the PCON relationship
+				 * before the builder connected.
+				 */
+				{
+					char host[128];
+					const char *dot = strchr(build->name, '.');
+
+					if (dot)
+						lws_strnncpy(host, build->name, dot - build->name, sizeof(host));
+					else
+						lws_strncpy(host, build->name, sizeof(host));
+
+					lws_snprintf(q, sizeof(q),
+						     "UPDATE builders SET pcon = (SELECT pcon_name FROM pcon_builders WHERE builder_name = '%s') "
+						     "WHERE name = '%s' OR name LIKE '%s.%%'",
+						     host, build->name, build->name);
+					lwsl_notice("%s: Syncing pcon for host '%s' (plat '%s'): %s\n", __func__, host, build->name, q);
+					sai_sqlite3_statement(vhd->server.pdb, q, "sync builder pcon");
+				}
+
+				/*
 				 * Step 2: Update the long-lived, malloc'd in-memory list.
 				 */
 
