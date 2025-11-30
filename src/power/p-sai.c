@@ -222,20 +222,35 @@ callback_builder(struct lws *wsi, enum lws_callback_reasons reason,
 			/* Find the PCON */
 			pc = saip_pcon_by_name(&power, r->power_controller_name);
 			if (pc) {
-				/* Create/Update builder entry using malloc */
-				b = malloc(sizeof(*b));
-				if (b) {
-					memset(b, 0, sizeof(*b));
-					lws_strncpy(b->name, r->builder_name, sizeof(b->name));
-					b->wsi = wsi;
+				/* Check if builder already exists */
+				int found = 0;
+				lws_start_foreach_dll(struct lws_dll2 *, b_node, pc->registered_builders_owner.head) {
+					saip_builder_t *sb = lws_container_of(b_node, saip_builder_t, list);
+					if (!strcmp(sb->name, r->builder_name)) {
+						lwsl_notice("%s: Builder '%s' re-connected to PCON '%s'\n", __func__, r->builder_name, pc->name);
+						sb->wsi = wsi;
+						*pb = sb;
+						found = 1;
+						break;
+					}
+				} lws_end_foreach_dll(b_node);
 
-					/* Store pointer in user data for cleanup */
-					*pb = b;
+				if (!found) {
+					lwsl_notice("%s: Adding builder '%s' to PCON '%s'\n", __func__, r->builder_name, pc->name);
+					/* Create/Update builder entry using malloc */
+					b = malloc(sizeof(*b));
+					if (b) {
+						memset(b, 0, sizeof(*b));
+						lws_strncpy(b->name, r->builder_name, sizeof(b->name));
+						b->wsi = wsi;
 
-					/* Add to list */
-					lws_dll2_add_tail(&b->list, &pc->registered_builders_owner);
-				} else {
-					lwsl_err("%s: OOM allocating builder\n", __func__);
+						/* Store pointer in user data for cleanup */
+						*pb = b;
+
+						/* Add to list */
+						lws_dll2_add_tail(&b->list, &pc->registered_builders_owner);
+					} else
+						lwsl_err("%s: OOM allocating builder\n", __func__);
 				}
 
 				/* Trigger a check since we have a new builder (it's alive!) */
@@ -257,11 +272,10 @@ callback_builder(struct lws *wsi, enum lws_callback_reasons reason,
 		lwsl_user("%s: builder disconnected\n", __func__);
 		b = *pb;
 		if (b) {
-			/* Remove from list */
-			lws_dll2_remove(&b->list);
-			/* Free memory */
-			free(b);
-			*pb = NULL;
+			/* Just mark it as offline, don't remove or free */
+			b->wsi = NULL;
+			/* Don't free *pb, we want to keep the struct */
+			/* *pb = NULL; */
 
 			/* Update state */
 			saip_pcon_start_check();
