@@ -30,6 +30,12 @@ same first 11 chars in their name!
 
 Pick your machine name, in this example `xenial-amd64`.
 
+### Step 0: Install systemd-nspawn on host
+
+```
+Host # sudo dnf install systemd-container
+```
+
 ### Step 1: Create the initial host config for the machine
 
 On the host, `mkdir /etc/systemd/nspawn` and then create in
@@ -73,6 +79,12 @@ Replace the debootstrap part above with
 
 ```
 Host # debootstrap --arch=amd64 stable buster-amd64
+```
+
+or,
+
+```
+Host # debootstrap --arch=arm64 --variant=buildd stable debian-stable https://deb.debian.org/debian
 ```
 
 #### Variations: Centos 8

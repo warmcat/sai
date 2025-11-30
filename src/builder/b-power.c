@@ -71,12 +71,16 @@ saib_power_client_state(void *userobj, void *sh, lws_ss_constate_t state,
 	sai_builder_registration_t r;
 	struct lwsac *ac = NULL;
 
+	lwsl_user("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
+		  (unsigned int)ack);
+
 	switch (state) {
 	case LWSSSCS_CONNECTED:
-		lwsl_notice("%s: Connected to sai-power, sending registration\n", __func__);
+		lwsl_notice("%s: Connected to sai-power, sending registration: '%s' '%s'\n", __func__, builder.host, builder.power_controller_name);
 
 		/* Prepare registration message */
 		memset(&r, 0, sizeof(r));
+
 		lws_strncpy(r.builder_name, builder.host, sizeof(r.builder_name));
 		if (builder.power_controller_name)
 			lws_strncpy(r.power_controller_name, builder.power_controller_name, sizeof(r.power_controller_name));
@@ -472,46 +476,47 @@ saib_power_init(void)
 	 * Do we have a url for sai-power?  If not, nothing we can do.
 	 */
 
-	if (!builder.url_sai_power)
+	if (!builder.url_sai_power) {
+		lwsl_err("%s: *** missing URL for url_sai_power\n", __func__);
 		return 1;
-
-	/*
-	 * The plan is ask sai-power to turn us off... we don't know our
-	 * dependency situation since we're just a standalone builder.
-	 *
-	 * We will have to let sai-power figure the deps out and say if
-	 * it's willing to auto power-off or not.
-	 */
+	}
 
 	/* Existing SS creation for power-off logic */
-	lwsl_notice("%s: creating sai-power ss...\n", __func__);
+	lwsl_notice("%s: *** creating sai-power ss...\n", __func__);
 
 	if (lws_ss_create(builder.context, 0, &ssi_saib_power_link_t,
 			  (void *)builder.host, &builder.ss_power_off, NULL, NULL)) {
-		lwsl_err("%s: failed to create sai-power ss\n", __func__);
+		lwsl_err("%s: *** failed to create sai-power ss\n", __func__);
 		return 1;
 	}
 
 	saib_reassess_idle_situation();
 
-	/*
-	 * NEW: Create the persistent WS connection for registration
-	 * We reuse builder.url_sai_power.
-	 * Note: builder.url_sai_power is a URL string. We need to extract the policy endpoint?
-	 * The policy for sai-power client needs to be defined.
-	 * 'sai_power' in policy covers it.
-	 */
+	lwsl_notice("%s: *** creating sai-power client ss...\n", __func__);
 
 	if (lws_ss_create(builder.context, 0, &ssi_saib_power_client_t,
 			  NULL, &ss_power_client, NULL, NULL)) {
-		lwsl_err("%s: failed to create sai-power client ss\n", __func__);
-	} else {
-		/* Set metadata for URL? The policy handles 'sai_power' endpoint.
-		 * We might need to ensure the policy matches what we expect.
-		 * The existing code assumes 'sai_power' policy exists.
-		 */
+		lwsl_err("%s: *** failed to create sai-power client ss\n", __func__);
+
+		return 1;
 	}
 
+	/*
+	 * Set metadata for URL? The policy handles 'sai_power' endpoint.
+	 * We might need to ensure the policy matches what we expect.
+	 * The existing code assumes 'sai_power' policy exists.
+	 */
+	lws_ss_state_return_t r;
+
+	lwsl_notice("%s: ****** starting sai-power-client link %s\n", __func__, builder.url_sai_power);
+
+	if (lws_ss_set_metadata(ss_power_client, "url", builder.url_sai_power,
+				strlen(builder.url_sai_power)))
+		lwsl_warn("%s: unable to set url metadata\n", __func__);
+
+	r = lws_ss_request_tx(ss_power_client);
+	if (r)
+		lwsl_notice("%s: initial tx request says %d\n", __func__, (int)r);
 
 	return 0;
 }
