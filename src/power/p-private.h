@@ -93,12 +93,18 @@ typedef struct saip_pcon {
 /* Represents a builder connected to us */
 typedef struct saip_builder {
 	struct lws_dll2		list; /* in saip_pcon.registered_builders_owner */
+	lws_dll2_owner_t	platforms_owner; /* saip_builder_platform_t */
 
 	char			name[64];
 
 	/* The websocket wsi for this builder connection (if connected) */
 	struct lws		*wsi;
 } saip_builder_t;
+
+typedef struct saip_builder_platform {
+	lws_dll2_t		list;
+	char			name[64];
+} saip_builder_platform_t;
 
 
 struct saip_ws_pss;
