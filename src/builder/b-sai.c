@@ -168,6 +168,18 @@ static const char * const default_ss_policy =
 			"\"metadata\": ["
 				"{\"url\": \"\"}"
 			"]"
+		"}},"
+		/*
+		 * Used to register with sai-power
+		 */
+		"{\"sai_power_client\": {"
+			"\"endpoint\":"		"\"${url}\","
+			"\"protocol\":"		"\"ws\","
+			"\"http_url\":"		"\"\"," /* filled in by url */
+			"\"retry\":"		"\"default\","
+			"\"metadata\": ["
+				"{\"url\": \"\"}"
+			"]"
 		"}}"
 	"]}"
 ;

@@ -202,6 +202,9 @@ saip_ss_create_tasmota(void);
 void
 saip_pcon_start_check(void);
 
+void
+saip_switch(saip_pcon_t *pc, int on);
+
 /* Handler for builder WS connections */
 int
 callback_builder(struct lws *wsi, enum lws_callback_reasons reason,

@@ -223,16 +223,34 @@ local_srv_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
 	local_srv_t *g = (local_srv_t *)userobj;
 	struct lws_ss_handle *h = lws_ss_from_user(g);
-	saip_pcon_t *pc;
 	saip_builder_t *b;
+	saip_pcon_t *pc;
+
+	lwsl_err("%s: %%%%%%%%%%%%%%%%%%%%%% %.*s\n", __func__, (int)len, (const char *)buf);
 
 	if (!g->ctx.user) { /* first time */
 		memset(&g->a, 0, sizeof(g->a));
-		g->a.map_st[0] = lsm_schema_builder_registration;
-		g->a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_schema_builder_registration);
-		g->a.ac_block_size = 2048;
+
+		g->a.map_st[0]		= lsm_schema_builder_registration;
+		g->a.map_entries_st[0] 	= LWS_ARRAY_SIZE(lsm_schema_builder_registration);
+		g->a.ac_block_size	= 2048;
+
 		lws_struct_json_init_parse(&g->ctx, NULL, &g->a);
 	}
+
+	/*
+	 * Dec 02 05:45:31 warmcat.com sai-power[2690328]: 0000: 7B 22 73 63 68 65 6D 61 22 3A 22 63 6F 6D 2E 77    {"schema":"com.w
+	Dec 02 05:45:31 warmcat.com sai-power[2690328]: 0010: 61 72 6D 63 61 74 2E 73 61 69 2E 62 75 69 6C 64    armcat.sai.build
+	Dec 02 05:45:31 warmcat.com sai-power[2690328]: 0020: 65 72 5F 72 65 67 69 73 74 72 61 74 69 6F 6E 22    er_registration"
+	Dec 02 05:45:31 warmcat.com sai-power[2690328]: 0030: 2C 22 70 6C 61 74 66 6F 72 6D 73 22 3A 5B 7B 22    ,"platforms":[{"
+	Dec 02 05:45:31 warmcat.com sai-power[2690328]: 0040: 6E 61 6D 65 22 3A 22 66 72 65 65 62 73 64 2E 66    name":"freebsd.f
+	Dec 02 05:45:31 warmcat.com sai-power[2690328]: 0050: 72 65 65 62 73 64 2F 61 61 72 63 68 36 34 2F 6C    reebsd/aarch64/l
+	Dec 02 05:45:31 warmcat.com sai-power[2690328]: 0060: 6C 76 6D 22 7D 5D 2C 22 62 75 69 6C 64 65 72 5F    lvm"}],"builder_
+	Dec 02 05:45:31 warmcat.com sai-power[2690328]: 0070: 6E 61 6D 65 22 3A 22 66 72 65 65 62 73 64 22 2C    name":"freebsd",
+	Dec 02 05:45:31 warmcat.com sai-power[2690328]: 0080: 22 70 6F 77 65 72 5F 63 6F 6E 74 72 6F 6C 6C 65    "power_controlle
+	Dec 02 05:45:31 warmcat.com sai-power[2690328]: 0090: 72 5F 6E 61 6D 65 22 3A 22 70 31 22 7D             r_name":"p1"}
+	 *
+	 */
 
 	if (lejp_parse(&g->ctx, buf, (int)len) < 0 || !g->a.dest) {
 		lwsl_ss_warn(h, "JSON decode failed");
@@ -335,8 +353,6 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 			/* g->b->wsi = NULL; */
 			g->b = NULL;
 		}
-		/* Clean up lejp if pending? */
-		lws_struct_json_init_parse(&g->ctx, NULL, NULL); /* Reset */
 		break;
 
         case LWSSSCS_SERVER_TXN:

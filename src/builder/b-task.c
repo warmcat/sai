@@ -107,7 +107,7 @@ const char *git_helper_bat =
 	"    mkdir \"!MIRROR_PATH!\" 2>nul\n"
 	"    if errorlevel 1 (\n"
 	"        echo \"git mirror locked, waiting...\"\n"
-	"        timeout /t 1 /nobreak > nul\n"
+	"        C:\\Windows\\System32\\timeout.exe /t 1 /nobreak > nul\n"
 	"        goto :lock_wait\n"
 	"    )\n"
 	"    if exist \"!MIRROR_PATH!\\\\.git\" (\n"
