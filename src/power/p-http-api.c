@@ -201,7 +201,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 	int apo = 0;
 	size_t len;
 
-	// lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name((int)state));
+	lwsl_ss_user(lws_ss_from_user(g), "state %s", lws_ss_state_name((int)state));
 
         switch ((int)state) {
         case LWSSSCS_CREATING:

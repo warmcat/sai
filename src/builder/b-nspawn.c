@@ -38,12 +38,6 @@
 
 #include "b-private.h"
 
-#if !defined(WIN32)
-static char csep = '/';
-#else
-static char csep = '\\';
-#endif
-
 extern struct lws_vhost *builder_vhost;
 
 int
@@ -638,76 +632,3 @@ saib_spawn_script(struct sai_nspawn *ns)
 	return 0;
 }
 
-/*
- * This prepares the same filesystem layout whether we can use it for overlayfs,
- * or have to use it directly / with chroot
- */
-
-int
-saib_prepare_mount(struct sai_builder *b, struct sai_nspawn *ns)
-{
-	char homedir[384];
-	int n, m;
-
-	/* create the top level overlays container if not already there */
-
-	n = lws_snprintf(ns->fsm.mp, sizeof(ns->fsm.mp), "%s%coverlays",
-			 b->home, csep);
-
-	if (mkdir(ns->fsm.mp, 0770))
-		lwsl_notice("%s: mkdir %s failed\n", __func__, ns->fsm.mp);
-
-	/* create a subdir for our overlay pieces */
-
-	n += lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n, "%c%s", csep,
-			  ns->fsm.ovname);
-	m = mkdir(ns->fsm.mp, 0777);
-	if (m && errno != EEXIST)
-		goto bail_dir;
-	lws_strncpy(homedir, ns->fsm.mp, sizeof(homedir));
-
-	{
-
-		/* these are ephemeral on top of the mountpoint path, we snip
-		 * them off later */
-
-		n = (int)strlen(ns->fsm.mp);
-		lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n,
-			     "%chome", csep);
-		m = mkdir(ns->fsm.mp, 0700);
-		if (m && errno != EEXIST)
-			goto bail_dir;
-
-		lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n,
-			     "%chome%csai", csep, csep);
-		lws_strncpy(homedir, ns->fsm.mp, sizeof(homedir));
-
-		m = mkdir(ns->fsm.mp, 0700);
-		if (m && errno != EEXIST)
-			goto bail_dir;
-
-		lws_snprintf(ns->fsm.mp + n, sizeof(ns->fsm.mp) - (unsigned int)n,
-			     "%chome%csai%cgit-mirror", csep, csep, csep);
-		m = mkdir(ns->fsm.mp, 0755);
-		ns->fsm.mp[n] = '\0';
-		if (m && errno != EEXIST)
-			goto bail_dir;
-
-		return 0;
-	}
-#if defined(__linux__) && 0
-	else {
-		lwsl_err("%s: mount err %d, errno %d\n", __func__, n, errno);
-	}
-
-	return n;
-#else
-	return 0;
-#endif
-
-bail_dir:
-	lwsl_err("%s: failed to create dir %s: errno %d\n", __func__,
-		 ns->fsm.mp, errno);
-
-	return 1;
-}
