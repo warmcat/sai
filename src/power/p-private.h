@@ -187,6 +187,9 @@ saip_queue_stay_info(saip_server_t *sps);
 saip_pcon_t *
 saip_pcon_by_name(struct sai_power *power, const char *name);
 
+saip_pcon_t *
+saip_pcon_create(struct sai_power *power, const char *name);
+
 int
 saip_parse_tasmota_status(tasmota_parse_t *tp);
 

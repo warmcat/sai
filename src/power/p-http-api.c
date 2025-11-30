@@ -517,7 +517,7 @@ power_off:
 			/*
 			 * OK this is it, schedule it to happen
 			 */
-			lws_sul_schedule(lws_ss_from_user(g), 0,
+			lws_sul_schedule(lws_ss_get_context(lws_ss_from_user(g)), 0,
 						&pc->sul_delay_off,
 						saip_sul_action_power_off,
 						SAI_POWERDOWN_HOLDOFF_US);
