@@ -3,6 +3,7 @@ set(CPACK_DEBIAN_BUILDER_PACKAGE_NAME "sai-builder")
 
 set(SRCS
 	b-sai.c
+	b-win32-service.c
 	b-conf.c
 	b-ws-server.c
 	b-nspawn.c

@@ -320,6 +320,12 @@ suspender_destroy(void);
 int
 saib_reassess_idle_situation(void);
 
+int
+saib_app_run(int argc, const char **argv);
+
+void
+saib_app_stop(void);
+
 #if defined(__APPLE__)
 int
 saib_need_wakelock(void);
