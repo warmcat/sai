@@ -1621,7 +1621,13 @@ function ws_open_sai()
 		//	console.log(msg.data);
 		//	if (msg.data.length < 10)
 		//		return;
+		try {
 			jso = JSON.parse(msg.data);
+		} catch {
+			console.log("Bad JSON received:");
+			console.log(msg.data);
+			return
+		}
 		//	console.log(jso.schema);
 
 			if (jso.alang) {

@@ -950,7 +950,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu)
 	);
 
-	saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, start,
+	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
 					       lws_ptr_diff_size_t(p, start),
 					       lws_write_ws_flags(LWS_WRITE_TEXT, 1, 0));
 	p = start;
@@ -1007,7 +1007,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "{\"e\":");
 
 		if (lws_ptr_diff_size_t(end, p) < 256) {
-			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, start,
+			saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
 							       lws_ptr_diff_size_t(p, start),
 							       lws_write_ws_flags(LWS_WRITE_TEXT, 0, 0));
 			p = start;
