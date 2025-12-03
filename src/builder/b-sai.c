@@ -424,8 +424,14 @@ sai_ns_destroy(struct sai_nspawn *ns)
 	free(ns);
 }
 
+void saib_app_stop(void)
+{
+	interrupted = 1;
+	lws_cancel_service(builder.context);
+}
 
-int main(int argc, const char **argv)
+int
+saib_app_run(int argc, const char **argv)
 {
 	int logs = LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE;
 	struct lws_context_creation_info info;
@@ -663,4 +669,18 @@ bail:
 	lws_context_destroy(builder.context);
 
 	return 0;
+}
+
+#if defined(WIN32)
+extern int saib_service_run(int argc, const char **argv);
+#endif
+
+int main(int argc, const char **argv)
+{
+#if defined(WIN32)
+	if (lws_cmdline_option(argc, argv, "--service"))
+		return saib_service_run(argc, argv);
+#endif
+
+	return saib_app_run(argc, argv);
 }
