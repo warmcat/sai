@@ -58,3 +58,76 @@ As administrator
 
 Then create the config JSON in `\ProgramData\sai\builder\conf`, using the
 platform name `windows-10`.
+
+## Running as a service with sai user
+
+
+## Building
+
+Building on Windows follows the standard CMake flow. You can perform the build as a standard user.
+
+```cmd
+cd sai
+mkdir build
+cd build
+cmake ..
+cmake --build . --config Debug
+```
+
+Then in a Command Prompt with Administrator rights
+
+```cmd
+cd "\User\your-build-user\sai\build"
+cmake --install . --config Debug
+```
+
+This will collect the needed files into "C:\Program Files (x86)\sai\bin"
+
+## Setup for Service Execution
+
+To run `sai-builder` as a Windows Service under a specific unprivileged user (e.g., `.\sai`), follow these steps.
+
+### 1. Create the User
+
+If the `sai` user does not exist, create it. Open a Command Prompt **as Administrator**.
+
+```cmd
+net user sai <password> /add /passwordchg:no /expires:never
+```
+
+### 2. Grant Privileges
+
+The `sai` user needs permission to:
+1.  **Log on as a Service**: Windows usually grants this automatically when you register the service with a specific user, but you can check it in `secpol.msc`.
+2.  **Shut down the system**: If you want the builder to handle power management (suspend/shutdown).
+
+To grant rights:
+1.  Run `secpol.msc` (Local Security Policy).
+2.  Go to **Local Policies** -> **User Rights Assignment**.
+3.  Find **Shut down the system**.
+4.  Double-click, click **Add User or Group**, type `sai`, check Names, and OK.
+5.  (Optional) Ensure **Log on as a service** also includes `sai`.
+
+### 3. Install the Service
+
+Open a Command Prompt **as Administrator** (Right-click Start -> Command Prompt (Admin) or PowerShell (Admin)).
+
+Run the following `sc create` command. **Note:** The space after the `=` sign in options like `binPath=` is mandatory.
+
+Replace the paths and password with your actual values.
+
+```cmd
+sc create SaiBuilder binPath= "c:\Program Files (x86)\sai\bin\sai-builder.exe --service" DisplayName= "Sai Builder" start= auto obj= ".\sai" password="password-for-sai-account" 
+```
+
+### 4. Manage the Service
+
+You can now start and stop the builder using standard Windows commands (Administrator required):
+
+```cmd
+sc start SaiBuilder
+sc stop SaiBuilder
+```
+
+To view logs or status, check the standard `sai-builder` logs (configured in your JSON config) or the Event Viewer (Application log) if the service fails to start immediately.
+

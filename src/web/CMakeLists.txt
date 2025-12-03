@@ -149,6 +149,7 @@ if (requirements)
 			../../assets/virt-qemu.svg
 			../../assets/w10.svg
 			../../assets/w11.svg
+			../../assets/freebsd.svg
 
 		DESTINATION "${DATA_DIR}/sai/assets"
 		COMPONENT web)

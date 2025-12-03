@@ -20,7 +20,7 @@
  */
 
 #if defined(WIN32)
-
+#include <libwebsockets.h>
 #include <windows.h>
 #include <tchar.h>
 #include <stdio.h>
