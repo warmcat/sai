@@ -124,7 +124,21 @@ Add-Type -TypeDefinition $definition
 [LsaUtility]::GrantPrivilege("sai", "SeServiceLogonRight")
 ```
 
-### 3. Install the Service
+### 3. Grant File Access
+
+Since the service runs as the `sai` user, it must have permission to read and execute the files in your build directory (which are likely owned by your building user, e.g., 'andy'). Without this, the service will fail to start with an "Access is denied" error.
+
+Open a Command Prompt **as Administrator** and run:
+
+```cmd
+icacls "C:\path\to\sai" /grant sai:(OI)(CI)RX /T
+```
+
+*   Replace `C:\path\to\sai` with the top-level directory containing both your **source/build** directory (where `sai-builder.exe` is) and your **configuration** directory.
+*   `/grant sai:(OI)(CI)RX`: Grants Read and Execute (RX) permissions to user `sai`. `(OI)(CI)` ensures these permissions are inherited by all new files and subfolders.
+*   `/T`: Applies the change recursively to all existing files.
+
+### 4. Install the Service
 
 Open a Command Prompt **as Administrator** (Right-click Start -> Command Prompt (Admin) or PowerShell (Admin)).
 
@@ -145,7 +159,7 @@ sc create SaiBuilder ^
 *   `obj`: The user account to run as (`.\username`).
 *   `password`: The user's password.
 
-### 4. Manage the Service
+### 5. Manage the Service
 
 You can now start and stop the builder using standard Windows commands (Administrator required):
 
@@ -156,16 +170,16 @@ sc stop SaiBuilder
 
 To view logs or status, check the standard `sai-builder` logs (configured in your JSON config) or the Event Viewer (Application log) if the service fails to start immediately.
 
-### 5. Updating the Builder
+### 6. Updating the Builder
 
 To update the executable:
 1.  Stop the service: `sc stop SaiBuilder`
 2.  Rebuild as your normal user ("andy").
 3.  Start the service: `sc start SaiBuilder`
 
-### 6. Troubleshooting
+### 7. Troubleshooting
 
 If the service fails to start:
 1.  Check that the `sai` user has "Log on as a service" rights.
-2.  Verify the paths in `binPath` are correct and accessible by the `sai` user.
+2.  **Permissions:** Double-check that `sai` has Read/Execute access to the `binPath` executable and the config directory (Step 3).
 3.  Ensure `sai-builder.exe` arguments include `--service`.
