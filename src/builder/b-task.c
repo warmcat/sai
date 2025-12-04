@@ -90,6 +90,7 @@ const char *git_helper_sh =
 const char *git_helper_bat =
 	"@echo on\n"
 	"setlocal EnableDelayedExpansion\n"
+	"set \"PATH=%PATH%;C:\\Program Files\\Git\\cmd;C:\\Windows\\System32;C:\\Windows\"\n"
 	"echo \"git_helper_bat: starting\"\n"
 	"set \"OPERATION=%~1\"\n"
 	"echo \"OPERATION: !OPERATION!\"\n"
