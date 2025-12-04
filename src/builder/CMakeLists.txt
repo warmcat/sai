@@ -80,6 +80,12 @@ if (requirements)
 
 	if (MSVC OR WIN32)
 		target_link_libraries(${SUB} ws2_32.lib userenv.lib psapi.lib iphlpapi.lib)
+
+		# Auto-copy dependencies (DLLs) during install
+		install(CODE "
+			include(BundleUtilities)
+			fixup_bundle(\"\${CMAKE_INSTALL_PREFIX}/${BIN_DIR}/sai-builder.exe\" \"\" \"\")
+			" COMPONENT builder)
 	endif()
 
 	install(TARGETS "sai-builder"

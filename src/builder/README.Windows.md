@@ -12,7 +12,18 @@ cmake ..
 cmake --build . --config Release
 ```
 
-This will produce `sai-builder.exe` in `build\Release`.
+## Installation
+
+To ensure the service runs correctly with all dependencies (DLLs) and correct permissions, perform a system-wide installation. This requires Administrator privileges.
+
+Open a Command Prompt **as Administrator**:
+
+```cmd
+cd sai/sai-builder/build
+cmake --install . --config Release
+```
+
+By default, this installs to `C:\Program Files (x86)\sai`. The executable will be in `C:\Program Files (x86)\sai\bin\sai-builder.exe`, and all necessary DLLs (libwebsockets, OpenSSL) will be copied there.
 
 ## Setup for Service Execution
 
@@ -126,60 +137,46 @@ Add-Type -TypeDefinition $definition
 
 ### 3. Grant File Access
 
-Since the service runs as the `sai` user, it must have permission to read and execute the files in your build directory (which are likely owned by your building user, e.g., 'andy'). Without this, the service will fail to start with an "Access is denied" error.
+Since the service runs as the `sai` user, it must have permission to read and execute the files in your installation and configuration directories.
 
 Open a Command Prompt **as Administrator** and run:
 
-```cmd
-icacls "C:\path\to\sai" /grant sai:(OI)(CI)RX /T
-```
+1.  Grant access to the installation directory (e.g., `C:\Program Files (x86)\sai`):
+    ```cmd
+    icacls "C:\Program Files (x86)\sai" /grant sai:(OI)(CI)RX /T
+    ```
+2.  Grant access to your configuration directory (e.g., `C:\path\to\sai\etc`):
+    ```cmd
+    icacls "C:\path\to\sai\etc" /grant sai:(OI)(CI)RX /T
+    ```
 
-*   Replace `C:\path\to\sai` with the top-level directory containing both your **source/build** directory (where `sai-builder.exe` is) and your **configuration** directory.
-*   `/grant sai:(OI)(CI)RX`: Grants Read and Execute (RX) permissions to user `sai`. `(OI)(CI)` ensures these permissions are inherited by all new files and subfolders.
-*   `/T`: Applies the change recursively to all existing files.
+*   `/grant sai:(OI)(CI)RX`: Grants Read and Execute (RX) permissions to user `sai`. `(OI)(CI)` ensures inheritance.
+*   `/T`: Applies recursively.
 
 ### 4. Install the Service
 
-Open a Command Prompt **as Administrator** (Right-click Start -> Command Prompt (Admin) or PowerShell (Admin)).
+Open a Command Prompt **as Administrator**.
 
-Run the following `sc create` command. **Note:** The space after the `=` sign in options like `binPath=` is mandatory.
-
-Replace the paths and password with your actual values.
+Run the following `sc create` command. **Note:** The space after the `=` sign is mandatory.
 
 ```cmd
 sc create SaiBuilder ^
-  binPath= "C:\path\to\sai\sai-builder\build\Release\sai-builder.exe --service -c C:\path\to\sai\etc\conf" ^
+  binPath= "C:\Program Files (x86)\sai\bin\sai-builder.exe --service -c C:\path\to\sai\etc\conf" ^
   DisplayName= "Sai Builder" ^
   start= auto ^
   obj= ".\sai" ^
   password= "your_password_here"
 ```
 
-*   `binPath`: The full path to the executable *plus* the arguments needed (like `--service` and the config file path).
+*   `binPath`: The installed executable path + arguments.
 *   `obj`: The user account to run as (`.\username`).
 *   `password`: The user's password.
 
 ### 5. Manage the Service
 
-You can now start and stop the builder using standard Windows commands (Administrator required):
+Start and stop the service as Administrator:
 
 ```cmd
 sc start SaiBuilder
 sc stop SaiBuilder
 ```
-
-To view logs or status, check the standard `sai-builder` logs (configured in your JSON config) or the Event Viewer (Application log) if the service fails to start immediately.
-
-### 6. Updating the Builder
-
-To update the executable:
-1.  Stop the service: `sc stop SaiBuilder`
-2.  Rebuild as your normal user ("andy").
-3.  Start the service: `sc start SaiBuilder`
-
-### 7. Troubleshooting
-
-If the service fails to start:
-1.  Check that the `sai` user has "Log on as a service" rights.
-2.  **Permissions:** Double-check that `sai` has Read/Execute access to the `binPath` executable and the config directory (Step 3).
-3.  Ensure `sai-builder.exe` arguments include `--service`.
