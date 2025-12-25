@@ -88,6 +88,13 @@ typedef struct saip_pcon {
 	struct lws_ss_handle	*ss_tasmota_off;
 	struct lws_ss_handle	*ss_tasmota_monitor;
 
+	tasmota_data_t		latest_data;
+	lws_usec_t		last_monitor_time;
+
+	/* For RX accumulation */
+	char			monitor_rx_buf[1024];
+	size_t			monitor_rx_pos;
+
 	char			on;
 	char			manual_stay; /* user asked to keep this PCON on via UI */
 	char			needed; /* transiently set by deps analysis */

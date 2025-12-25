@@ -1702,6 +1702,29 @@ function ws_open_sai()
 				}
 				break;
 
+			case "com.warmcat.sai.pcon_energy":
+				if (jso.items) {
+					jso.items.forEach(item => {
+						const pconDiv = document.getElementById("pcon-" + item.name);
+						if (pconDiv) {
+							let header = pconDiv.querySelector(".pcon-header");
+							let stats = header.querySelector(".pcon-stats");
+							if (!stats) {
+								stats = document.createElement("span");
+								stats.className = "pcon-stats";
+								stats.style.marginLeft = "10px";
+								stats.style.fontSize = "0.9em";
+								stats.style.color = "#666";
+								header.appendChild(stats);
+							}
+
+							const d = item;
+							stats.textContent = `${d.voltage_v}V ${d.active_power_w}W ${d.current_ma}mA today:${(d.energy_today_wh/1000).toFixed(3)}kWh`;
+						}
+					});
+				}
+				break;
+
 			case "com.warmcat.sai.build-metric":
 				var summaryDiv = document.getElementById("metrics-summary-" + jso.task_uuid);
 				if (summaryDiv) {
