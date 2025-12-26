@@ -272,7 +272,7 @@ sul_broadcast_energy_cb(lws_sorted_usec_list_t *sul)
 				   power.sai_server_owner.head) {
 		saip_server_t *sps = lws_container_of(mp, struct saip_server, list);
 		saip_queue_energy_report(sps);
-		lws_ss_request_tx(sps->ss); /* Request write to send the report */
+		(void)lws_ss_request_tx(sps->ss); /* Request write to send the report */
 	} lws_end_foreach_dll_safe(mp, mp1);
 
 	/* Schedule next check (e.g., every 5 seconds) */

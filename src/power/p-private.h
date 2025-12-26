@@ -146,6 +146,7 @@ struct sai_power {
 
 	lws_sorted_usec_list_t	sul_idle;
 	lws_sorted_usec_list_t	sul_pcon_check; /* periodic check for cold start */
+	lws_sorted_usec_list_t	sul_monitor; /* periodic energy monitoring */
 
 	const char		*power_off;
 
@@ -194,6 +195,10 @@ void
 saip_set_stay(const char *pcon_name, int stay_on);
 int
 saip_queue_stay_info(saip_server_t *sps);
+
+int
+saip_queue_energy_report(saip_server_t *sps);
+
 saip_pcon_t *
 saip_pcon_by_name(struct sai_power *power, const char *name);
 
