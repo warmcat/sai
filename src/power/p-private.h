@@ -92,7 +92,7 @@ typedef struct saip_pcon {
 	lws_usec_t		last_monitor_time;
 
 	/* For RX accumulation */
-	char			monitor_rx_buf[1024];
+	char			monitor_rx_buf[4096];
 	size_t			monitor_rx_pos;
 
 	char			on;

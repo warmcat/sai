@@ -63,7 +63,7 @@ saip_spc_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				  LWS_TOKENIZE_F_MINUS_NONTERM);
 
 		int parse_ret = saip_parse_tasmota_status(&tp);
-		if (parse_ret == LWS_TOKZE_ENDED) {
+		if (parse_ret == 1) {
 			/* Success, update latest data and timestamp */
 			pc->latest_data = tp.td;
 			pc->last_monitor_time = lws_now_usecs();
