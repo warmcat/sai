@@ -53,6 +53,10 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		LSM_SCHEMA(sai_stay_state_update_t, NULL,
 			   lsm_stay_state_update,
 			   "com.warmcat.sai.stay_state_update"),
+		/* We just passthrough PCON energy reports to the web side */
+		LSM_SCHEMA(sai_stay_state_update_t, NULL, /* Dummy struct, we just need to match the schema */
+			   lsm_stay_state_update, /* Dummy map */
+			   "com.warmcat.sai.pcon_energy"),
 	};
 
 	/* This is a message from sai-power */
@@ -158,6 +162,45 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		break;
 	}
+	case 3: /* com.warmcat.sai.pcon_energy */
+		/*
+		 * This is an energy report from sai-power.
+		 * We want to broadcast it to all connected web interfaces (sai-web).
+		 * sai-web runs on the same server, connected via websrv protocol.
+		 * We can use sais_websrv_broadcast_REQUIRES_LWS_PRE to forward it.
+		 *
+		 * Since we already have the raw buffer 'buf' and length 'bl',
+		 * we can construct a wsmsg and send it.
+		 * But wait, sais_websrv_broadcast_REQUIRES_LWS_PRE expects LWS_PRE padding.
+		 * The incoming buffer 'buf' might not have it available before the pointer.
+		 * 'sais_power_rx' buf comes from lejp_parse call site? No, it comes from RX callback.
+		 *
+		 * If we cannot guarantee LWS_PRE, we must copy it.
+		 */
+		{
+			lws_wsmsg_info_t info;
+			uint8_t *p;
+
+			p = malloc(LWS_PRE + bl);
+			if (!p) {
+				lwsl_err("%s: OOM forwarding energy report\n", __func__);
+				break;
+			}
+
+			memcpy(p + LWS_PRE, buf, bl);
+
+			memset(&info, 0, sizeof(info));
+			info.private_source_idx = SAI_WEBSRV_PB__GENERATED; /* Not really generated, but external */
+			info.buf = p + LWS_PRE;
+			info.len = bl;
+			info.ss_flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+
+			/* Broadcast to all websrv connections (i.e. all sai-web instances) */
+			sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info);
+
+			free(p);
+		}
+		break;
 	default:
 		lwsl_warn("%s: unknown schema\n", __func__);
 		break;
@@ -167,6 +210,23 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	
 	return 0;
 }
+
+/* Schema for PCON control (TX to power) */
+typedef struct sai_pcon_control {
+	lws_dll2_t		list;
+	char			pcon_name[64];
+	char			on;
+} sai_pcon_control_t;
+
+static const lws_struct_map_t lsm_pcon_control_members[] = {
+	LSM_CARRAY	(sai_pcon_control_t, pcon_name,		"pcon_name"),
+	LSM_UNSIGNED	(sai_pcon_control_t, on,		"on"),
+};
+
+static const lws_struct_map_t lsm_schema_pcon_control[] = {
+	LSM_SCHEMA(sai_pcon_control_t, NULL, lsm_pcon_control_members,
+		   "com.warmcat.sai.pcon_control"),
+};
 
 int
 sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
@@ -196,6 +256,39 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 		lws_struct_json_serialize_destroy(&js);
 
 		lwsl_wsi_notice(pss->wsi, "%s: server issuing stay notice\n", __func__);
+		sai_dump_stderr(start, w);
+
+		lws_dll2_remove(&s->list);
+		free(s);
+
+		flags = lws_write_ws_flags(LWS_WRITE_TEXT, 1, 1);
+
+		if (lws_write(pss->wsi, start, w, flags) < 0)
+			return -1;
+
+		lws_callback_on_writable(pss->wsi);
+		return 0;
+	}
+
+	if (pss->pcon_control_owner.head) {
+		/*
+		 * Pending PCON control message to send to power
+		 */
+		sai_pcon_control_t *s = lws_container_of(pss->pcon_control_owner.head,
+						   sai_pcon_control_t, list);
+		lws_struct_serialize_t *js;
+
+		js = lws_struct_json_serialize_create(lsm_schema_pcon_control,
+				LWS_ARRAY_SIZE(lsm_schema_pcon_control), 0, s);
+		if (!js) {
+			lwsl_warn("%s: failed to serialize pcon control\n", __func__);
+			return 1;
+		}
+
+		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+		lws_struct_json_serialize_destroy(&js);
+
+		lwsl_wsi_notice(pss->wsi, "%s: server issuing pcon control notice\n", __func__);
 		sai_dump_stderr(start, w);
 
 		lws_dll2_remove(&s->list);

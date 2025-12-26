@@ -38,6 +38,16 @@
  * For decoding specific event data request from browser
  */
 
+typedef struct sai_pcon_control {
+	char			pcon_name[64];
+	char			on;
+} sai_pcon_control_t;
+
+static const lws_struct_map_t lsm_pcon_control[] = {
+	LSM_CARRAY	(sai_pcon_control_t, pcon_name,		"pcon_name"),
+	LSM_UNSIGNED	(sai_pcon_control_t, on,		"on"),
+};
+
 static lws_struct_map_t lsm_browser_evinfo[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"event_hash"),
 };
@@ -86,6 +96,8 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 					      "com.warmcat.sai.platreset"),
 	LSM_SCHEMA	(sai_stay_t,		 NULL, lsm_stay,
 					      "com.warmcat.sai.stay"),
+	LSM_SCHEMA	(sai_pcon_control_t,	 NULL, lsm_pcon_control,
+			/* shares struct */   "com.warmcat.sai.pcon_control"),
 };
 
 enum {
@@ -100,6 +112,7 @@ enum {
 	SAIM_WS_BROWSER_RX_REBUILD,
 	SAIM_WS_BROWSER_RX_PLATRESET,
 	SAIM_WS_BROWSER_RX_STAY,
+	SAIM_WS_BROWSER_RX_PCON_CONTROL,
 };
 
 
@@ -667,6 +680,17 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		/*
 		 * User is asking us to set or release a stay on a builder
 		 */
+		break;
+
+	case SAIM_WS_BROWSER_RX_PCON_CONTROL:
+		if (!sais_conn_auth(pss)) {
+			lwsl_err("%s: pcon control didn't like auth\n", __func__);
+			goto auth_error;
+		}
+		lwsl_notice("%s: web: received pcon control req\n", __func__);
+
+		/* Forward to sai-server via websrv link */
+		/* We rely on the fallthrough to queue the message buffer to websrv */
 		break;
 
 	case SAIM_WS_BROWSER_RX_TASKREBUILDLASTSTEP:

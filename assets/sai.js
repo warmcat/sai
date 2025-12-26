@@ -1413,6 +1413,34 @@ function createPconDiv(pcon) {
         { label: `<b>PCON:</b> ${pcon.name}` }
     ];
 
+    if (authd) {
+        if (pcon.on) {
+            menuItems.push({
+                label: "Turn Off",
+                callback: () => {
+                    const msg = {
+                        schema: "com.warmcat.sai.pcon_control",
+                        pcon_name: pcon.name,
+                        on: 0
+                    };
+                    sai.send(JSON.stringify(msg));
+                }
+            });
+        } else {
+             menuItems.push({
+                label: "Turn On",
+                callback: () => {
+                    const msg = {
+                        schema: "com.warmcat.sai.pcon_control",
+                        pcon_name: pcon.name,
+                        on: 1
+                    };
+                    sai.send(JSON.stringify(msg));
+                }
+            });
+        }
+    }
+
     header.addEventListener("contextmenu", function(event) {
         if (!authd) return;
         createContextMenu(event, menuItems);
