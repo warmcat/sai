@@ -252,27 +252,40 @@ sul_pcon_check_cb(lws_sorted_usec_list_t *sul)
 void
 sul_broadcast_energy_cb(lws_sorted_usec_list_t *sul)
 {
+	int polled = 0;
+
 	/* 1. Trigger monitoring on all Tasmota PCONs */
 	lws_start_foreach_dll(struct lws_dll2 *, p, power.sai_pcon_owner.head) {
 		saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
 
 		if (pc->ss_tasmota_monitor) {
+			polled++;
 			/* Reset RX position for new response */
 			pc->monitor_rx_pos = 0;
 			/* SS request triggers the HTTP GET */
 			if (lws_ss_request_tx(pc->ss_tasmota_monitor))
 				lwsl_warn("%s: Failed to trigger monitor request for %s\n", __func__, pc->name);
+			else
+				lwsl_notice("%s: Triggered polling for %s\n", __func__, pc->name);
+		} else {
+			lwsl_warn("%s: PCON %s has no monitor SS\n", __func__, pc->name);
 		}
 
 	} lws_end_foreach_dll(p);
+
+	if (!polled)
+		lwsl_notice("%s: No PCONs polled\n", __func__);
 
 	/* 2. Queue energy report to server (sends whatever latest data we have) */
 	/* We iterate servers, though usually only one */
 	lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
 				   power.sai_server_owner.head) {
 		saip_server_t *sps = lws_container_of(mp, struct saip_server, list);
-		saip_queue_energy_report(sps);
-		(void)lws_ss_request_tx(sps->ss); /* Request write to send the report */
+		int queued = saip_queue_energy_report(sps);
+		if (queued) {
+			lwsl_notice("%s: Queued energy report for server\n", __func__);
+			(void)lws_ss_request_tx(sps->ss); /* Request write to send the report */
+		}
 	} lws_end_foreach_dll_safe(mp, mp1);
 
 	/* Schedule next check (e.g., every 5 seconds) */

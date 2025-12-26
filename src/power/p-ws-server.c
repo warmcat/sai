@@ -117,10 +117,16 @@ saip_queue_energy_report(saip_server_t *sps)
 				lws_dll2_add_tail(&item->list, &report.items);
 				count++;
 			}
+		} else {
+			if (pc->last_monitor_time)
+				lwsl_notice("%s: Stale monitor data for %s (age %llus)\n", __func__, pc->name, (unsigned long long)(lws_now_usecs() - pc->last_monitor_time) / LWS_US_PER_SEC);
+			else
+				lwsl_notice("%s: No monitor data for %s\n", __func__, pc->name);
 		}
 	} lws_end_foreach_dll(p);
 
 	if (count) {
+		lwsl_notice("%s: Queuing energy report with %d items\n", __func__, count);
 		r = sai_ss_serialize_queue_helper(sps->ss, &m->bl_pwr_to_srv,
 						  lsm_schema_pcon_energy,
 						  LWS_ARRAY_SIZE(lsm_schema_pcon_energy),
@@ -234,6 +240,7 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	struct lejp_ctx ctx;
 
 	lwsl_notice("%s: len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
+	lwsl_hexdump_notice(buf, len);
 	/* lwsl_hexdump_notice(buf, len); */
 
 	memset(&a, 0, sizeof(a));

@@ -55,7 +55,7 @@ saip_spc_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	if (flags & LWSSS_FLAG_EOM) {
 		pc->monitor_rx_buf[pc->monitor_rx_pos] = '\0';
 
-		// lwsl_notice("%s: monitor rx: %s\n", __func__, pc->monitor_rx_buf);
+		lwsl_notice("%s: monitor rx: %s\n", __func__, pc->monitor_rx_buf);
 
 		memset(&tp, 0, sizeof(tp));
 		lws_tokenize_init(&tp.ts, pc->monitor_rx_buf,
@@ -66,8 +66,8 @@ saip_spc_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			/* Success, update latest data and timestamp */
 			pc->latest_data = tp.td;
 			pc->last_monitor_time = lws_now_usecs();
-			// lwsl_notice("%s: Parsed Tasmota data for %s: %u W, %u V\n",
-			// 	    __func__, pc->name, pc->latest_data.active_power_w, pc->latest_data.voltage_v);
+			lwsl_notice("%s: Parsed Tasmota data for %s: %u W, %u V\n",
+				    __func__, pc->name, pc->latest_data.active_power_w, pc->latest_data.voltage_v);
 		} else {
 			lwsl_warn("%s: Failed to parse Tasmota data for %s\n", __func__, pc->name);
 		}
