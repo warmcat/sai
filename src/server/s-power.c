@@ -37,46 +37,9 @@
 
 #include "s-private.h"
 
-typedef struct tasmota_data {
-	unsigned int		voltage_v;
-	unsigned int		current_ma;
-	unsigned int		active_power_w;
-	unsigned int		apparent_power_va;
-	unsigned int		reactive_power_var;
-	unsigned int		power_factor_scaled_1000;
-	unsigned int		energy_today_wh;
-	unsigned int		energy_yesterday_wh;
-	unsigned int		energy_total_wh;
-} tasmota_data_t;
-
-typedef struct sai_pcon_energy_report_item {
-	lws_dll2_t		list;
-	tasmota_data_t		data;
-	char			name[64];
-} sai_pcon_energy_report_item_t;
-
-typedef struct sai_pcon_energy_report {
-	lws_dll2_owner_t	items;
-} sai_pcon_energy_report_t;
-
-static const lws_struct_map_t lsm_pcon_energy_item[] = {
-	LSM_CARRAY	(sai_pcon_energy_report_item_t, name,			"name"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.voltage_v,		"voltage_v"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.current_ma,	"current_ma"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.active_power_w,	"active_power_w"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.apparent_power_va,	"apparent_power_va"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.reactive_power_var,"reactive_power_var"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.power_factor_scaled_1000, "power_factor_scaled_1000"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.energy_today_wh,	"energy_today_wh"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.energy_yesterday_wh,"energy_yesterday_wh"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.energy_total_wh,	"energy_total_wh"),
-};
-
-static const lws_struct_map_t lsm_pcon_energy_report[] = {
-	LSM_LIST	(sai_pcon_energy_report_t, items,
-			 sai_pcon_energy_report_item_t, list,
-			 NULL, lsm_pcon_energy_item, "items"),
-};
+/*
+ * (Structs and maps removed - now in common/include/private.h and common/struct-metadata.c)
+ */
 
 int
 sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
@@ -252,22 +215,9 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	return 0;
 }
 
-/* Schema for PCON control (TX to power) */
-typedef struct sai_pcon_control {
-	lws_dll2_t		list;
-	char			pcon_name[64];
-	char			on;
-} sai_pcon_control_t;
-
-static const lws_struct_map_t lsm_pcon_control_members[] = {
-	LSM_CARRAY	(sai_pcon_control_t, pcon_name,		"pcon_name"),
-	LSM_UNSIGNED	(sai_pcon_control_t, on,		"on"),
-};
-
-static const lws_struct_map_t lsm_schema_pcon_control[] = {
-	LSM_SCHEMA(sai_pcon_control_t, NULL, lsm_pcon_control_members,
-		   "com.warmcat.sai.pcon_control"),
-};
+/*
+ * (Structs and maps removed - now in common/include/private.h and common/struct-metadata.c)
+ */
 
 int
 sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)

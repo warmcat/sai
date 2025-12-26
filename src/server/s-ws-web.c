@@ -58,16 +58,9 @@ static lws_struct_map_t lsm_browser_taskreset[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"uuid"),
 };
 
-typedef struct sai_pcon_control {
-	lws_dll2_t		list;
-	char			pcon_name[64];
-	char			on;
-} sai_pcon_control_t;
-
-static const lws_struct_map_t lsm_pcon_control[] = {
-	LSM_CARRAY	(sai_pcon_control_t, pcon_name,		"pcon_name"),
-	LSM_UNSIGNED	(sai_pcon_control_t, on,		"on"),
-};
+/*
+ * (Structs and maps removed - now in common/include/private.h and common/struct-metadata.c)
+ */
 
 static lws_struct_map_t lsm_browser_platreset[] = {
 	LSM_CARRAY	(sai_browse_rx_platreset_t, event_uuid, "event_uuid"),

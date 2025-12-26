@@ -43,18 +43,6 @@
 
 #define SAI_POWERDOWN_HOLDOFF_US	(50 * LWS_US_PER_SEC)
 
-typedef struct tasmota_data {
-	unsigned int		voltage_v;
-	unsigned int		current_ma;
-	unsigned int		active_power_w;
-	unsigned int		apparent_power_va;
-	unsigned int		reactive_power_var;
-	unsigned int		power_factor_scaled_1000;
-	unsigned int		energy_today_wh;
-	unsigned int		energy_yesterday_wh;
-	unsigned int		energy_total_wh;
-} tasmota_data_t;
-
 typedef struct tasmota_parse {
 	tasmota_data_t		td;
 	struct lws_tokenize	ts;

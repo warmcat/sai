@@ -38,15 +38,9 @@
  * For decoding specific event data request from browser
  */
 
-typedef struct sai_pcon_control {
-	char			pcon_name[64];
-	char			on;
-} sai_pcon_control_t;
-
-static const lws_struct_map_t lsm_pcon_control[] = {
-	LSM_CARRAY	(sai_pcon_control_t, pcon_name,		"pcon_name"),
-	LSM_UNSIGNED	(sai_pcon_control_t, on,		"on"),
-};
+/*
+ * (Structs and maps removed - now in common/include/private.h and common/struct-metadata.c)
+ */
 
 static lws_struct_map_t lsm_browser_evinfo[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"event_hash"),

@@ -36,55 +36,9 @@ static const lws_struct_map_t lsm_schema_power_state[] = {
 		   "com.warmcat.sai.powerstate"),
 };
 
-typedef struct sai_pcon_energy_report_item {
-	lws_dll2_t		list;
-	tasmota_data_t		data;
-	char			name[64];
-} sai_pcon_energy_report_item_t;
-
-typedef struct sai_pcon_energy_report {
-	lws_dll2_owner_t	items;
-} sai_pcon_energy_report_t;
-
-static const lws_struct_map_t lsm_pcon_energy_item[] = {
-	LSM_CARRAY	(sai_pcon_energy_report_item_t, name,			"name"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.voltage_v,		"voltage_v"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.current_ma,	"current_ma"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.active_power_w,	"active_power_w"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.apparent_power_va,	"apparent_power_va"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.reactive_power_var,"reactive_power_var"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.power_factor_scaled_1000, "power_factor_scaled_1000"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.energy_today_wh,	"energy_today_wh"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.energy_yesterday_wh,"energy_yesterday_wh"),
-	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.energy_total_wh,	"energy_total_wh"),
-};
-
-static const lws_struct_map_t lsm_pcon_energy_report[] = {
-	LSM_LIST	(sai_pcon_energy_report_t, items,
-			 sai_pcon_energy_report_item_t, list,
-			 NULL, lsm_pcon_energy_item, "items"),
-};
-
-static const lws_struct_map_t lsm_schema_pcon_energy[] = {
-	LSM_SCHEMA(sai_pcon_energy_report_t, NULL, lsm_pcon_energy_report,
-		   "com.warmcat.sai.pcon_energy"),
-};
-
-/* Schema for PCON control (RX from server) */
-typedef struct sai_pcon_control {
-	char			pcon_name[64];
-	char			on;
-} sai_pcon_control_t;
-
-static const lws_struct_map_t lsm_pcon_control_members[] = {
-	LSM_CARRAY	(sai_pcon_control_t, pcon_name,		"pcon_name"),
-	LSM_UNSIGNED	(sai_pcon_control_t, on,		"on"),
-};
-
-static const lws_struct_map_t lsm_schema_pcon_control[] = {
-	LSM_SCHEMA(sai_pcon_control_t, NULL, lsm_pcon_control_members,
-		   "com.warmcat.sai.pcon_control"),
-};
+/*
+ * (Structs and maps removed - now in common/include/private.h and common/struct-metadata.c)
+ */
 
 int
 saip_queue_energy_report(saip_server_t *sps)
