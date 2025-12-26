@@ -92,6 +92,7 @@ saip_parse_tasmota_status(tasmota_parse_t *tp)
 
 		switch (e) {
 		case LWS_TOKZE_ENDED:
+			lwsl_notice("%s: LWS_TOKZE_ENDED\n", __func__);
 			return 1;
 
 		case LWS_TOKZE_TOKEN:
@@ -99,15 +100,19 @@ saip_parse_tasmota_status(tasmota_parse_t *tp)
 				if (strlen(tokens[n]) == tp->ts.token_len &&
 				    !strcmp(tokens[n], tp->ts.token)) {
 					tp->match = (uint16_t)((tp->match << 8) | n);
+					lwsl_notice("%s: matched token '%s' (0x%x)\n", __func__, tokens[n], tp->match);
 					break;
 				}
 			}
 
-			if (n == LWS_ARRAY_SIZE(tokens))
+			if (n == LWS_ARRAY_SIZE(tokens)) {
+				lwsl_notice("%s: unknown token '%.*s'\n", __func__, (int)tp->ts.token_len, tp->ts.token);
 				continue;
+			}
 			break;
 
 		case LWS_TOKZE_INTEGER:
+			lwsl_notice("%s: integer token '%.*s' (match 0x%x)\n", __func__, (int)tp->ts.token_len, tp->ts.token, tp->match);
 			if ((tp->match & 0xff) == TOKORD_VOLTAGE)
 				tp->td.voltage_v = (unsigned int)atoi(tp->ts.token);
 			if ((tp->match >> 8)   == TOKORD_ACTIVE   &&
