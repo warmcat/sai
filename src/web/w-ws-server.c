@@ -36,6 +36,47 @@ static lws_struct_map_t lsm_websrv_evinfo[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"event_hash"),
 };
 
+typedef struct tasmota_data {
+	unsigned int		voltage_v;
+	unsigned int		current_ma;
+	unsigned int		active_power_w;
+	unsigned int		apparent_power_va;
+	unsigned int		reactive_power_var;
+	unsigned int		power_factor_scaled_1000;
+	unsigned int		energy_today_wh;
+	unsigned int		energy_yesterday_wh;
+	unsigned int		energy_total_wh;
+} tasmota_data_t;
+
+typedef struct sai_pcon_energy_report_item {
+	lws_dll2_t		list;
+	tasmota_data_t		data;
+	char			name[64];
+} sai_pcon_energy_report_item_t;
+
+typedef struct sai_pcon_energy_report {
+	lws_dll2_owner_t	items;
+} sai_pcon_energy_report_t;
+
+static const lws_struct_map_t lsm_pcon_energy_item[] = {
+	LSM_CARRAY	(sai_pcon_energy_report_item_t, name,			"name"),
+	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.voltage_v,		"voltage_v"),
+	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.current_ma,	"current_ma"),
+	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.active_power_w,	"active_power_w"),
+	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.apparent_power_va,	"apparent_power_va"),
+	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.reactive_power_var,"reactive_power_var"),
+	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.power_factor_scaled_1000, "power_factor_scaled_1000"),
+	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.energy_today_wh,	"energy_today_wh"),
+	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.energy_yesterday_wh,"energy_yesterday_wh"),
+	LSM_UNSIGNED	(sai_pcon_energy_report_item_t, data.energy_total_wh,	"energy_total_wh"),
+};
+
+static const lws_struct_map_t lsm_pcon_energy_report[] = {
+	LSM_LIST	(sai_pcon_energy_report_t, items,
+			 sai_pcon_energy_report_item_t, list,
+			 NULL, lsm_pcon_energy_item, "items"),
+};
+
 const lws_struct_map_t lsm_schema_json_map[] = {
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
 			/* shares struct */   "sai-taskchange"),
@@ -55,7 +96,7 @@ const lws_struct_map_t lsm_schema_json_map[] = {
 	LSM_SCHEMA(sai_power_managed_builders_t, NULL,
 			lsm_power_managed_builders_list,
 			"com.warmcat.sai.power_managed_builders"),
-	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
+	LSM_SCHEMA	(sai_pcon_energy_report_t, NULL, lsm_pcon_energy_report,
 			 /* shares struct */ "com.warmcat.sai.pcon_energy"),
 };
 
