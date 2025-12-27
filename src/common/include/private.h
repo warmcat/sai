@@ -734,6 +734,7 @@ extern const lws_struct_map_t
 	lsm_schema_builder_registration[1],
 	lsm_pcon_energy_report[1],
 	lsm_schema_pcon_energy[1],
+	lsm_pcon_control[2],
 	lsm_schema_pcon_control[1];
 
 extern const lws_ss_info_t ssi_said_logproxy;

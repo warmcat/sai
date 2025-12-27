@@ -418,12 +418,12 @@ const lws_struct_map_t lsm_schema_pcon_energy[] = {
 		   "com.warmcat.sai.pcon_energy"),
 };
 
-static const lws_struct_map_t lsm_pcon_control_members[] = {
+const lws_struct_map_t lsm_pcon_control[] = {
 	LSM_CARRAY	(sai_pcon_control_t, pcon_name,		"pcon_name"),
 	LSM_UNSIGNED	(sai_pcon_control_t, on,		"on"),
 };
 
 const lws_struct_map_t lsm_schema_pcon_control[] = {
-	LSM_SCHEMA(sai_pcon_control_t, NULL, lsm_pcon_control_members,
+	LSM_SCHEMA(sai_pcon_control_t, NULL, lsm_pcon_control,
 		   "com.warmcat.sai.pcon_control"),
 };
