@@ -64,22 +64,27 @@ void
 saip_switch(saip_pcon_t *pc, int on)
 {
 	struct lws_ss_handle *h = on ? pc->ss_tasmota_on : pc->ss_tasmota_off;
+	int wol_fired = 0;
 
 	if (on && pc->mac) {
+		char buf[64];
+		size_t n = (size_t)lws_snprintf(buf, sizeof(buf), "%s\n", pc->mac);
+
 		if (write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
-			      pc->mac, strlen(pc->mac)) !=
-				(ssize_t)strlen(pc->mac))
+			      buf, n) != (ssize_t)n)
 			lwsl_err("%s: Write to resume %s failed %d\n",
 					__func__, pc->name, errno);
-		else
+		else {
 			lwsl_notice("%s: Resumed %s via WOL\n",
 					__func__, pc->name);
-		return;
+			wol_fired = 1;
+		}
 	}
 
 	if (!h) {
-		lwsl_err("%s: %s: no ss handle for %s\n", __func__,
-			 pc->name, on ? "ON" : "OFF");
+		if (!wol_fired)
+			lwsl_err("%s: %s: no ss handle for %s\n", __func__,
+				 pc->name, on ? "ON" : "OFF");
 		return;
 	}
 
