@@ -1173,7 +1173,8 @@ function createContextMenu(event, menuItems) {
     // Remove any existing context menu
     const existingMenus = document.querySelectorAll(".context-menu");
     existingMenus.forEach(menu => {
-        document.body.removeChild(menu);
+        if (document.body.contains(menu))
+            document.body.removeChild(menu);
     });
 
     const menu = document.createElement("div");
@@ -1184,26 +1185,49 @@ function createContextMenu(event, menuItems) {
     const ul = document.createElement("ul");
     menu.appendChild(ul);
 
+    /*
+     * We have to do this via a function because the event listener
+     * for the global click needs to be removable, but the click
+     * handler for the menu items also wants to use it.
+     */
+    const closeMenu = () => {
+        if (document.body.contains(menu)) {
+            document.body.removeChild(menu);
+        }
+        window.removeEventListener("click", closeMenu, true);
+    };
+
     menuItems.forEach(item => {
         const li = document.createElement("li");
         li.innerHTML = item.label;
         if (item.callback) {
-            li.addEventListener("click", item.callback);
+            li.addEventListener("click", (e) => {
+                item.callback(e);
+                closeMenu();
+            });
         }
         ul.appendChild(li);
     });
 
     document.body.appendChild(menu);
 
-    const closeMenu = () => {
-        if (document.body.contains(menu)) {
-            document.body.removeChild(menu);
-        }
-        document.removeEventListener("click", closeMenu);
-    };
+    /*
+     * Now we have the content, we can see how big it is.  If it
+     * is going off the right of the page, move it left so it ends
+     * at the click coordinates.
+     */
 
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth)
+         menu.style.left = (event.pageX - rect.width) + "px";
+
+    /*
+     * defer adding the click listener so the current click
+     * doesn't trigger it.  Use capture on window so we get
+     * it even if the click target stops propagation.
+     */
     setTimeout(() => {
-        document.addEventListener("click", closeMenu);
+        window.addEventListener("click", closeMenu, true);
     }, 0);
 }
 
