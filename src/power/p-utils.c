@@ -22,6 +22,7 @@
 #include <libwebsockets.h>
 #include <string.h>
 #include <signal.h>
+#include <errno.h>
 
 #include "p-private.h"
 
@@ -63,6 +64,18 @@ void
 saip_switch(saip_pcon_t *pc, int on)
 {
 	struct lws_ss_handle *h = on ? pc->ss_tasmota_on : pc->ss_tasmota_off;
+
+	if (on && pc->mac) {
+		if (write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
+			      pc->mac, strlen(pc->mac)) !=
+				(ssize_t)strlen(pc->mac))
+			lwsl_err("%s: Write to resume %s failed %d\n",
+					__func__, pc->name, errno);
+		else
+			lwsl_notice("%s: Resumed %s via WOL\n",
+					__func__, pc->name);
+		return;
+	}
 
 	if (!h) {
 		lwsl_err("%s: %s: no ss handle for %s\n", __func__,
