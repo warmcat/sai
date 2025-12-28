@@ -81,9 +81,22 @@ saip_switch(saip_pcon_t *pc, int on)
 	}
 
 	if (!h) {
-		if (!wol_fired)
-			lwsl_err("%s: %s: no ss handle for %s\n", __func__,
-				 pc->name, on ? "ON" : "OFF");
+		if (!wol_fired) {
+			if (pc->type && !strcmp(pc->type, "wol")) {
+				if (on && !pc->mac)
+					lwsl_err("%s: %s: WOL type but no MAC configured\n",
+						 __func__, pc->name);
+				else
+					if (!on)
+						lwsl_info("%s: %s: WOL pcon ignoring OFF\n",
+							  __func__, pc->name);
+			} else {
+				lwsl_err("%s: %s: no ss handle for %s (type: %s, mac: %s)\n",
+					 __func__, pc->name, on ? "ON" : "OFF",
+					 pc->type ? pc->type : "null",
+					 pc->mac ? pc->mac : "null");
+			}
+		}
 		return;
 	}
 
