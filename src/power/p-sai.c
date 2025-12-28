@@ -271,8 +271,8 @@ sul_broadcast_energy_cb(lws_sorted_usec_list_t *sul)
 			/* SS request triggers the HTTP GET */
 			if (lws_ss_request_tx(pc->ss_tasmota_monitor))
 				lwsl_warn("%s: Failed to trigger monitor request for %s\n", __func__, pc->name);
-			else
-				lwsl_notice("%s: Triggered polling for %s\n", __func__, pc->name);
+			// else
+			//	lwsl_notice("%s: Triggered polling for %s\n", __func__, pc->name);
 		} else {
 			lwsl_warn("%s: PCON %s has no monitor SS\n", __func__, pc->name);
 		}
@@ -289,7 +289,7 @@ sul_broadcast_energy_cb(lws_sorted_usec_list_t *sul)
 		saip_server_t *sps = lws_container_of(mp, struct saip_server, list);
 		int queued = saip_queue_energy_report(sps);
 		if (queued) {
-			lwsl_notice("%s: Queued energy report for server\n", __func__);
+			// lwsl_notice("%s: Queued energy report for server\n", __func__);
 			if (lws_ss_request_tx(sps->ss)) /* Request write to send the report */
 				lwsl_warn("%s: failed to request tx\n", __func__);
 		}

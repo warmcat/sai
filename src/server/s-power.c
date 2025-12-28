@@ -291,7 +291,6 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 {
 	uint8_t *start = buf + LWS_PRE, *p = start, *end = p + bl - LWS_PRE - 1;
 	enum lws_write_protocol flags;
-	char diff = 0;
 	size_t w;
 	int n;
 
@@ -385,9 +384,6 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 	if (strncmp(pss->last_power_report, (const char *)start, lws_ptr_diff_size_t(p, start) + 1)) {
 		struct lws_tokenize ts;
 		char pcon[64] = "";
-		sai_stay_t s;
-
-		diff = 1;
 
 		lwsl_notice("%s: pending plats changed: '%s' -> '%.*s'\n", __func__,
 			    pss->last_power_report, (int)lws_ptr_diff_size_t(p, start), start);

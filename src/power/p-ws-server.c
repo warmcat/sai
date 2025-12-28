@@ -88,7 +88,7 @@ saip_queue_energy_report(saip_server_t *sps)
 	} lws_end_foreach_dll(p);
 
 	if (count) {
-		lwsl_notice("%s: Queuing energy report with %d items\n", __func__, count);
+		// lwsl_notice("%s: Queuing energy report with %d items\n", __func__, count);
 		r = sai_ss_serialize_queue_helper(sps->ss, &m->bl_pwr_to_srv,
 						  lsm_schema_pcon_energy,
 						  LWS_ARRAY_SIZE(lsm_schema_pcon_energy),
@@ -203,7 +203,6 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 	lwsl_notice("%s: len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
 	lwsl_hexdump_notice(buf, len);
-	/* lwsl_hexdump_notice(buf, len); */
 
 	memset(&a, 0, sizeof(a));
 	a.map_st[0] = lsm_saip_rx_map;
