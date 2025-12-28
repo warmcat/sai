@@ -235,6 +235,7 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		} else {
 			/* Stay */
 			sai_stay_t *stay = (sai_stay_t *)a.dest;
+			saip_pcon_t *pc;
 
 			// {"schema":"com.warmcat.sai.power.stay","builder_name":"ubuntu_rpi4","stay_on":1}
 
@@ -247,8 +248,27 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			 * We should map this back to the PCON.
 			 */
 
+			if (stay->pcon_name[0]) {
+				pc = saip_pcon_by_name(&power, stay->pcon_name);
+				if (pc) {
+					lwsl_notice("%s: Direct map stay for PCON '%s'\n",
+						    __func__, pc->name);
+					/* Update PCON stay state */
+					pc->server_requested_on = stay->stay_on;
+
+					/* If stay is cleared, schedule power off check */
+					if (!stay->stay_on)
+						saip_pcon_start_check();
+					else {
+						/* If stay is set, ensure it is on immediately */
+						saip_switch(pc, 1);
+					}
+					goto found;
+				}
+			}
+
 			lws_start_foreach_dll(struct lws_dll2 *, p, power.sai_pcon_owner.head) {
-				saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
+				pc = lws_container_of(p, saip_pcon_t, list);
 				lws_start_foreach_dll(struct lws_dll2 *, b_node, pc->registered_builders_owner.head) {
 					saip_builder_t *sb = lws_container_of(b_node, saip_builder_t, list);
 					if (!strcmp(sb->name, stay->builder_name)) {

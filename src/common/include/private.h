@@ -597,6 +597,7 @@ typedef struct sai_build_metric {
 typedef struct sai_stay {
 	lws_dll2_t			list;
 	char				builder_name[64];
+	char				pcon_name[64];
 	char				stay_on; /* 0 = release, 1 = set */
 } sai_stay_t;
 
