@@ -1415,7 +1415,13 @@ function createPconDiv(pcon) {
         stats.style.marginLeft = "10px";
         stats.style.fontSize = "0.9em";
         stats.style.color = "#666";
-        stats.textContent = `${d.voltage_v}V ${d.active_power_w}W ${d.current_ma}mA today:${(d.energy_today_wh/1000).toFixed(3)}kWh`;
+	if (d.voltage_v < 70)
+		stats.textContent = "unpowered";
+	else if (!d.active_power_w)
+		stats.textContent = "OFF";
+	else
+		stats.textContent = `${d.active_power_w}W`;
+
         header.appendChild(stats);
     }
 
