@@ -841,6 +841,15 @@ img.branch {
 	background-color: #f2f2f2;
 }
 
+.context-menu li.read-only {
+    cursor: default;
+    color: #888;
+}
+
+.context-menu li.read-only:hover {
+    background-color: inherit;
+}
+
 .float-right {
 	float: right;
 }

@@ -1205,6 +1205,8 @@ function createContextMenu(event, menuItems) {
                 item.callback(e);
                 closeMenu();
             });
+        } else {
+            li.classList.add("read-only");
         }
         ul.appendChild(li);
     });
