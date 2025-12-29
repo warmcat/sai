@@ -42,16 +42,16 @@
  */
 
 static int
-sais_get_pcon_for_builder(struct vhd *vhd, const char *builder_name,
+sais_get_pcon_for_platform(struct vhd *vhd, const char *platform_name,
 			  char *pcon_buf, size_t len)
 {
 	char q[256], esc[96];
 	int r;
 
-	lws_sql_purify(esc, builder_name, sizeof(esc));
+	lws_sql_purify(esc, platform_name, sizeof(esc));
 
 	lws_snprintf(q, sizeof(q),
-		     "SELECT pcon_name FROM pcon_builders WHERE builder_name = '%s'",
+		     "SELECT pcon FROM builders WHERE platform = '%s' AND pcon IS NOT NULL AND pcon != '' LIMIT 1",
 		     esc);
 
 	r = sqlite3_exec(vhd->server.pdb, q, sql3_get_string_cb, pcon_buf, NULL);
@@ -433,7 +433,7 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 						s_alloc->stay_on = 0;
 
 						pcon[0] = '\0';
-						if (sais_get_pcon_for_builder(vhd, bname, pcon, sizeof(pcon)))
+						if (sais_get_pcon_for_platform(vhd, bname, pcon, sizeof(pcon)))
 							lws_strncpy(s_alloc->pcon_name, pcon, sizeof(s_alloc->pcon_name));
 
 						lws_dll2_add_tail(&s_alloc->list, &pss->stay_owner);
@@ -462,7 +462,7 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 					s_alloc->stay_on = 1;
 
 					pcon[0] = '\0';
-					if (sais_get_pcon_for_builder(vhd, bname, pcon, sizeof(pcon)))
+					if (sais_get_pcon_for_platform(vhd, bname, pcon, sizeof(pcon)))
 						lws_strncpy(s_alloc->pcon_name, pcon, sizeof(s_alloc->pcon_name));
 
 					lws_dll2_add_tail(&s_alloc->list, &pss->stay_owner);
