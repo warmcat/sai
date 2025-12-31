@@ -296,14 +296,103 @@ found:
 	lwsac_free(&a.ac);
 
 	/*
-	 * The old logic parsed comma-separated platform names to determine needed state.
-	 * We are moving away from that. Sai-server should explicitly request power state
-	 * or we should rely on the builder being "needed" implies PCON on.
-	 * Actually, the requirement said: "You can no longer ask that a platform stays on, instead, you ask that the power controller stays on"
-	 * So sai-server might send stay requests for PCONs directly if we update the UI.
-	 * But for now, sai-server logic (s-power.c) sends stay for *builders*.
-	 * So the mapping logic above is correct for transition.
+	 * It wasn't a JSON message... it's the comma-separated list of needed
+	 * platforms then
 	 */
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, power.sai_pcon_owner.head) {
+		saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
+
+		pc->needed = 0;
+	} lws_end_foreach_dll(p);
+
+	if (len) {
+		struct lws_tokenize ts;
+
+		memset(&ts, 0, sizeof(ts));
+		ts.start = (char *)buf;
+		ts.len = len;
+		ts.flags = LWS_TOKENIZE_F_COMMA_SEP_LIST |
+			   LWS_TOKENIZE_F_MINUS_NONTERM;
+
+		do {
+			ts.e = lws_tokenize(&ts);
+			if (ts.e == LWS_TOKZE_TOKEN) {
+				int matched = 0;
+				/*
+				 * map the platform name to pcons that can provide it
+				 */
+
+				lws_start_foreach_dll(struct lws_dll2 *, p,
+						      power.sai_pcon_owner.head) {
+					saip_pcon_t *pc = lws_container_of(p,
+							saip_pcon_t, list);
+
+					/*
+					 * The PCON has a list of builders bound to it.
+					 * Each builder has a list of platforms.
+					 */
+					lws_start_foreach_dll(struct lws_dll2 *, b_node,
+							      pc->registered_builders_owner.head) {
+						saip_builder_t *sb = lws_container_of(b_node,
+								saip_builder_t, list);
+
+						lws_start_foreach_dll(struct lws_dll2 *, p_node,
+								      sb->platforms_owner.head) {
+							saip_builder_platform_t *bp = lws_container_of(p_node,
+									saip_builder_platform_t, list);
+							if (ts.token_len == strlen(bp->name) &&
+							    !strncmp(ts.token, bp->name, ts.token_len)) {
+								pc->needed |= 1;
+								matched = 1;
+								/* keep going, multiple PCONs might support it */
+							}
+						} lws_end_foreach_dll(p_node);
+					} lws_end_foreach_dll(b_node);
+
+				} lws_end_foreach_dll(p);
+
+				if (!matched)
+					lwsl_notice("%s: unknown platform '%.*s' needed\n",
+						    __func__, (int)ts.token_len, ts.token);
+			}
+		} while (ts.e > 0);
+	}
+
+	/*
+	 * Propagate needed state up the dependency tree
+	 *
+	 * If a PCON is needed, and it depends on another PCON, that parent PCON
+	 * is also needed.
+	 */
+	{
+		int changed;
+
+		do {
+			changed = 0;
+			lws_start_foreach_dll(struct lws_dll2 *, p,
+					      power.sai_pcon_owner.head) {
+				saip_pcon_t *pc = lws_container_of(p,
+						saip_pcon_t, list);
+
+				if (pc->needed) {
+					/* check if this PCON depends on another */
+					if (pc->depends_on) {
+						saip_pcon_t *parent = saip_pcon_by_name(&power,
+									pc->depends_on);
+						if (parent && !parent->needed) {
+							parent->needed = 2;
+							changed = 1;
+							lwsl_notice("%s: PCON %s needed by dep %s\n",
+								    __func__, parent->name, pc->name);
+						}
+					}
+				}
+			} lws_end_foreach_dll(p);
+		} while (changed);
+	}
+
+	saip_pcon_start_check();
 
 	return 0;
 }
