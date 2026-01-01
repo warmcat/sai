@@ -382,98 +382,15 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 	 */
 
 	if (strncmp(pss->last_power_report, (const char *)start, lws_ptr_diff_size_t(p, start) + 1)) {
-		struct lws_tokenize ts;
-		char pcon[64] = "";
-
 		lwsl_notice("%s: pending plats changed: '%s' -> '%.*s'\n", __func__,
 			    pss->last_power_report, (int)lws_ptr_diff_size_t(p, start), start);
 
-		/*
-		 * 1. Calculate diff and queue messages
-		 */
-
-		/* Release items in Old list that are NOT in New list */
-		memset(&ts, 0, sizeof(ts));
-		ts.start = pss->last_power_report;
-		ts.len = strlen(pss->last_power_report);
-		ts.flags = LWS_TOKENIZE_F_COMMA_SEP_LIST | LWS_TOKENIZE_F_MINUS_NONTERM;
-
-		do {
-			ts.e = lws_tokenize(&ts);
-			if (ts.e == LWS_TOKZE_TOKEN) {
-				char bname[64];
-				int found = 0;
-				lws_strnncpy(bname, ts.token, ts.token_len, sizeof(bname));
-
-				/* Check if in new list (start, len p-start) */
-				{
-					struct lws_tokenize ts2;
-					memset(&ts2, 0, sizeof(ts2));
-					ts2.start = (char *)start;
-					ts2.len = lws_ptr_diff_size_t(p, start);
-					ts2.flags = LWS_TOKENIZE_F_COMMA_SEP_LIST | LWS_TOKENIZE_F_MINUS_NONTERM;
-					do {
-						ts2.e = lws_tokenize(&ts2);
-						if (ts2.e == LWS_TOKZE_TOKEN) {
-							if (ts2.token_len == ts.token_len &&
-							    !strncmp(ts2.token, ts.token, ts2.token_len)) {
-								found = 1;
-								break;
-							}
-						}
-					} while (ts2.e > 0);
-				}
-
-				if (!found) {
-					/* Release */
-					sai_stay_t *s_alloc = malloc(sizeof(*s_alloc));
-					if (s_alloc) {
-						memset(s_alloc, 0, sizeof(*s_alloc));
-						lws_strncpy(s_alloc->builder_name, bname, sizeof(s_alloc->builder_name));
-						s_alloc->stay_on = 0;
-
-						pcon[0] = '\0';
-						if (sais_get_pcon_for_platform(vhd, bname, pcon, sizeof(pcon)))
-							lws_strncpy(s_alloc->pcon_name, pcon, sizeof(s_alloc->pcon_name));
-
-						lws_dll2_add_tail(&s_alloc->list, &pss->stay_owner);
-					}
-				}
-			}
-		} while (ts.e > 0);
-
-		/* Assert ALL items in New list (to ensure shared PCONs stay on) */
-		memset(&ts, 0, sizeof(ts));
-		ts.start = (char *)start;
-		ts.len = lws_ptr_diff_size_t(p, start);
-		ts.flags = LWS_TOKENIZE_F_COMMA_SEP_LIST | LWS_TOKENIZE_F_MINUS_NONTERM;
-
-		do {
-			ts.e = lws_tokenize(&ts);
-			if (ts.e == LWS_TOKZE_TOKEN) {
-				char bname[64];
-				lws_strnncpy(bname, ts.token, ts.token_len, sizeof(bname));
-
-				/* Assert */
-				sai_stay_t *s_alloc = malloc(sizeof(*s_alloc));
-				if (s_alloc) {
-					memset(s_alloc, 0, sizeof(*s_alloc));
-					lws_strncpy(s_alloc->builder_name, bname, sizeof(s_alloc->builder_name));
-					s_alloc->stay_on = 1;
-
-					pcon[0] = '\0';
-					if (sais_get_pcon_for_platform(vhd, bname, pcon, sizeof(pcon)))
-						lws_strncpy(s_alloc->pcon_name, pcon, sizeof(s_alloc->pcon_name));
-
-					lws_dll2_add_tail(&s_alloc->list, &pss->stay_owner);
-				}
-			}
-		} while (ts.e > 0);
-
 		memcpy(pss->last_power_report, start, lws_ptr_diff_size_t(p, start) + 1);
 
-		if (lws_ptr_diff_size_t(p, start) || pss->stay_owner.count)
-			lws_callback_on_writable(pss->wsi);
+		flags = lws_write_ws_flags(LWS_WRITE_TEXT, 1, 1);
+
+		if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start), flags) < 0)
+			return -1;
 	}
 
 	return 0;
