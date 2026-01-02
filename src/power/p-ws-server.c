@@ -220,12 +220,14 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			lwsl_warn("%s: RX PCON Control '%s' -> %d\n", __func__, ctl->pcon_name, ctl->on);
 
 			if (pc) {
-				lwsl_warn("%s: Applying PCON Control '%s' -> %d (prev user_keep_on=%d)\n",
-					  __func__, pc->name, ctl->on, pc->user_keep_on);
-				pc->user_keep_on = ctl->on;
+				lwsl_warn("%s: Applying PCON Control '%s' -> %d (prev flags=0x%x)\n",
+					  __func__, pc->name, ctl->on, pc->flags);
+
 				if (ctl->on) {
+					pc->flags |= SAIP_PCON_F_MANUAL_STAY;
 					saip_switch(pc, 1);
 				} else {
+					pc->flags &= (uint8_t)~SAIP_PCON_F_MANUAL_STAY;
 					saip_pcon_start_check();
 				}
 			} else {
@@ -253,14 +255,15 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 					lwsl_notice("%s: Direct map stay for PCON '%s'\n",
 						    __func__, pc->name);
 					/* Update PCON stay state */
-					pc->server_requested_on = stay->stay_on;
 
-					/* If stay is cleared, schedule power off check */
-					if (!stay->stay_on)
-						saip_pcon_start_check();
-					else {
+					if (stay->stay_on) {
+						pc->flags |= SAIP_PCON_F_MANUAL_STAY;
 						/* If stay is set, ensure it is on immediately */
 						saip_switch(pc, 1);
+					} else {
+						pc->flags &= (uint8_t)~SAIP_PCON_F_MANUAL_STAY;
+						/* If stay is cleared, schedule power off check */
+						saip_pcon_start_check();
 					}
 					goto found;
 				}
@@ -274,14 +277,14 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 						lwsl_notice("%s: Mapping stay for builder '%s' to PCON '%s'\n",
 							    __func__, sb->name, pc->name);
 						/* Update PCON stay state */
-						pc->server_requested_on = stay->stay_on;
-
-						/* If stay is cleared, schedule power off check */
-						if (!stay->stay_on)
-							saip_pcon_start_check();
-						else {
+						if (stay->stay_on) {
+							pc->flags |= SAIP_PCON_F_MANUAL_STAY;
 							/* If stay is set, ensure it is on immediately */
 							saip_switch(pc, 1);
+						} else {
+							pc->flags &= (uint8_t)~SAIP_PCON_F_MANUAL_STAY;
+							/* If stay is cleared, schedule power off check */
+							saip_pcon_start_check();
 						}
 						goto found;
 					}
@@ -303,7 +306,7 @@ found:
 	lws_start_foreach_dll(struct lws_dll2 *, p, power.sai_pcon_owner.head) {
 		saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
 
-		pc->needed = 0;
+		pc->flags &= (uint8_t)~SAIP_PCON_F_NEEDED;
 	} lws_end_foreach_dll(p);
 
 	if (len) {
@@ -343,7 +346,7 @@ found:
 									saip_builder_platform_t, list);
 							if (ts.token_len == strlen(bp->name) &&
 							    !strncmp(ts.token, bp->name, ts.token_len)) {
-								pc->needed |= 1;
+								pc->flags |= SAIP_PCON_F_NEEDED;
 								matched = 1;
 								/* keep going, multiple PCONs might support it */
 							}
@@ -375,13 +378,13 @@ found:
 				saip_pcon_t *pc = lws_container_of(p,
 						saip_pcon_t, list);
 
-				if (pc->needed) {
+				if (pc->flags & SAIP_PCON_F_NEEDED) {
 					/* check if this PCON depends on another */
 					if (pc->depends_on) {
 						saip_pcon_t *parent = saip_pcon_by_name(&power,
 									pc->depends_on);
-						if (parent && !parent->needed) {
-							parent->needed = 2;
+						if (parent && !(parent->flags & SAIP_PCON_F_NEEDED)) {
+							parent->flags |= SAIP_PCON_F_NEEDED;
 							changed = 1;
 							lwsl_notice("%s: PCON %s needed by dep %s\n",
 								    __func__, parent->name, pc->name);
