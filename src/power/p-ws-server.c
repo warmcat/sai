@@ -322,42 +322,15 @@ found:
 				token_len = lws_ptr_diff_size_t(end, cp);
 
 			if (token_len) {
-				int matched = 0;
-				/*
-				 * map the platform name to pcons that can provide it
-				 */
+				char pcon[64];
+				saip_pcon_t *pc;
 
-				lws_start_foreach_dll(struct lws_dll2 *, p,
-						      power.sai_pcon_owner.head) {
-					saip_pcon_t *pc = lws_container_of(p,
-							saip_pcon_t, list);
-
-					/*
-					 * The PCON has a list of builders bound to it.
-					 * Each builder has a list of platforms.
-					 */
-					lws_start_foreach_dll(struct lws_dll2 *, b_node,
-							      pc->registered_builders_owner.head) {
-						saip_builder_t *sb = lws_container_of(b_node,
-								saip_builder_t, list);
-
-						lws_start_foreach_dll(struct lws_dll2 *, p_node,
-								      sb->platforms_owner.head) {
-							saip_builder_platform_t *bp = lws_container_of(p_node,
-									saip_builder_platform_t, list);
-							if (token_len == strlen(bp->name) &&
-							    !strncmp(cp, bp->name, token_len)) {
-								pc->flags |= SAIP_PCON_F_NEEDED;
-								matched = 1;
-								/* keep going, multiple PCONs might support it */
-							}
-						} lws_end_foreach_dll(p_node);
-					} lws_end_foreach_dll(b_node);
-
-				} lws_end_foreach_dll(p);
-
-				if (!matched)
-					lwsl_notice("%s: unknown platform '%.*s' needed\n",
+				lws_strnncpy(pcon, cp, token_len, sizeof(pcon));
+				pc = saip_pcon_by_name(&power, pcon);
+				if (pc)
+					pc->flags |= SAIP_PCON_F_NEEDED;
+				else
+					lwsl_notice("%s: unknown pcon '%.*s' needed\n",
 						    __func__, (int)token_len, cp);
 			}
 

@@ -364,17 +364,28 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 	n = 0;
 	lws_start_foreach_dll(struct lws_dll2 *, px, vhd->pending_plats.head) {
 		sais_plat_t *pl = lws_container_of(px, sais_plat_t, list);
-		size_t m;
+		char q[256], pcon[64];
+		int r;
 
-		if (n)
-			*p++ = ',';
-		m = strlen(pl->plat);
-		if (lws_ptr_diff_size_t(end, p) < m + 2)
-			break;
-		memcpy(p, pl->plat, m);
-		p += m;
-		*p = '\0';
-		n = 1;
+		lws_sql_purify(q, pl->plat, sizeof(q)); /* temp usage of q for escape */
+		lws_snprintf(pcon, sizeof(pcon),
+			     "SELECT DISTINCT pcon FROM builders WHERE platform = '%s'",
+			     q);
+
+		r = sqlite3_exec(vhd->server.pdb, pcon, sql3_get_string_cb, q, NULL);
+		if (r == SQLITE_OK && q[0]) {
+			size_t m = strlen(q);
+
+			if (n)
+				*p++ = ',';
+
+			if (lws_ptr_diff_size_t(end, p) < m + 2)
+				break;
+			memcpy(p, q, m);
+			p += m;
+			*p = '\0';
+			n = 1;
+		}
 
 	} lws_end_foreach_dll(px);
 
