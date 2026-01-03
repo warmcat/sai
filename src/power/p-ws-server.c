@@ -309,17 +309,19 @@ found:
 	} lws_end_foreach_dll(p);
 
 	if (len) {
-		struct lws_tokenize ts;
+		const char *cp = (const char *)buf;
+		const char *end = cp + len;
 
-		memset(&ts, 0, sizeof(ts));
-		ts.start = (char *)buf;
-		ts.len = len;
-		ts.flags = LWS_TOKENIZE_F_COMMA_SEP_LIST |
-			   LWS_TOKENIZE_F_MINUS_NONTERM;
+		while (cp < end) {
+			const char *comma = memchr(cp, ',', end - cp);
+			size_t token_len;
 
-		do {
-			ts.e = lws_tokenize(&ts);
-			if (ts.e == LWS_TOKZE_TOKEN) {
+			if (comma)
+				token_len = comma - cp;
+			else
+				token_len = end - cp;
+
+			if (token_len) {
 				int matched = 0;
 				/*
 				 * map the platform name to pcons that can provide it
@@ -343,8 +345,8 @@ found:
 								      sb->platforms_owner.head) {
 							saip_builder_platform_t *bp = lws_container_of(p_node,
 									saip_builder_platform_t, list);
-							if (ts.token_len == strlen(bp->name) &&
-							    !strncmp(ts.token, bp->name, ts.token_len)) {
+							if (token_len == strlen(bp->name) &&
+							    !strncmp(cp, bp->name, token_len)) {
 								pc->flags |= SAIP_PCON_F_NEEDED;
 								matched = 1;
 								/* keep going, multiple PCONs might support it */
@@ -356,9 +358,13 @@ found:
 
 				if (!matched)
 					lwsl_notice("%s: unknown platform '%.*s' needed\n",
-						    __func__, (int)ts.token_len, ts.token);
+						    __func__, (int)token_len, cp);
 			}
-		} while (ts.e > 0);
+
+			cp += token_len;
+			if (cp < end && *cp == ',')
+				cp++;
+		}
 	}
 
 	/*
