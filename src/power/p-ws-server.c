@@ -313,13 +313,13 @@ found:
 		const char *end = cp + len;
 
 		while (cp < end) {
-			const char *comma = memchr(cp, ',', end - cp);
+			const char *comma = memchr(cp, ',', lws_ptr_diff_size_t(end, cp));
 			size_t token_len;
 
 			if (comma)
-				token_len = comma - cp;
+				token_len = lws_ptr_diff_size_t(comma, cp);
 			else
-				token_len = end - cp;
+				token_len = lws_ptr_diff_size_t(end, cp);
 
 			if (token_len) {
 				int matched = 0;
