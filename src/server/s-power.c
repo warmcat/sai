@@ -287,6 +287,37 @@ bail:
  * (Structs and maps removed - now in common/include/private.h and common/struct-metadata.c)
  */
 
+struct pcon_lookup_ctx {
+	char *p;
+	const char *end;
+	int *n;
+};
+
+static int
+cb_lookup_pcon(void *user, int cols, char **values, char **name)
+{
+	struct pcon_lookup_ctx *ctx = (struct pcon_lookup_ctx *)user;
+	size_t m;
+
+	if (cols < 1 || !values[0])
+		return 0;
+
+	m = strlen(values[0]);
+
+	if (*ctx->n)
+		*ctx->p++ = ',';
+
+	if (lws_ptr_diff_size_t(ctx->end, ctx->p) < m + 2)
+		return 1; /* abort */
+
+	memcpy(ctx->p, values[0], m);
+	ctx->p += m;
+	*ctx->p = '\0';
+	*ctx->n = 1;
+
+	return 0;
+}
+
 int
 sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 {
@@ -364,30 +395,35 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 	n = 0;
 	lws_start_foreach_dll(struct lws_dll2 *, px, vhd->pending_plats.head) {
 		sais_plat_t *pl = lws_container_of(px, sais_plat_t, list);
-		char q[256], pcon[64];
+		struct pcon_lookup_ctx ctx;
+		char q[256], query[256];
 		int r;
 
-		lws_sql_purify(q, pl->plat, sizeof(q)); /* temp usage of q for escape */
-		lws_snprintf(pcon, sizeof(pcon),
+		ctx.p = (char *)p;
+		ctx.end = (const char *)end;
+		ctx.n = &n;
+
+		lws_sql_purify(q, pl->plat, sizeof(q));
+		lws_snprintf(query, sizeof(query),
 			     "SELECT DISTINCT pcon FROM builders WHERE platform = '%s'",
 			     q);
 
-		r = sqlite3_exec(vhd->server.pdb, pcon, sql3_get_string_cb, q, NULL);
-		if (r == SQLITE_OK && q[0]) {
-			size_t m = strlen(q);
+		r = sqlite3_exec(vhd->server.pdb, query, cb_lookup_pcon, &ctx, NULL);
 
-			if (n)
-				*p++ = ',';
+		lwsl_notice("%s: platform '%s' -> pcon query '%s': result %d\n",
+			    __func__, pl->plat, query, r);
 
-			if (lws_ptr_diff_size_t(end, p) < m + 2)
-				break;
-			memcpy(p, q, m);
-			p += m;
-			*p = '\0';
-			n = 1;
-		}
+		if (r != SQLITE_OK)
+			lwsl_err("%s: sqlite3 error: %s\n", __func__, sqlite3_errmsg(vhd->server.pdb));
+
+		p = (uint8_t *)ctx.p;
+		if (p >= (uint8_t *)end) /* buffer full */
+			break;
 
 	} lws_end_foreach_dll(px);
+
+	lwsl_notice("%s: final pcon list: '%.*s'\n", __func__,
+		    (int)lws_ptr_diff_size_t(p, start), start);
 
 	/*
 	 * Don't resend the same status over and over
