@@ -322,6 +322,12 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid)
 		return SAI_DB_RESULT_ERROR;
 	}
 
+	/*
+	 * Recompute startable task platforms and broadcast to all sai-power,
+	 * after there has been a change in tasks
+	 */
+	sais_platforms_with_tasks_pending(vhd);
+
 	return SAI_DB_RESULT_OK;
 }
 
