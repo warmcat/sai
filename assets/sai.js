@@ -395,7 +395,7 @@ var lang_zhs = "{" +
 "}}";
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
-	logAnsiState = {},
+	logAnsiState = {}, logs_pending = "", lines_pending = "", times_pending = "",
 	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {},
 	fadingTasks = new Map();
 
@@ -650,9 +650,13 @@ function updateTaskRow(tr, task, now_ut) {
         s1 += "&#9633;";
         qc++;
     }
-    tr.innerHTML = `<td>${s1}</td>` +
+    const newHTML = `<td>${s1}</td>` +
                    `<td>${agify(now_ut, task.started)} ago</td>` +
                    `<td><a href="index.html?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>`;
+    
+    if (tr.innerHTML !== newHTML) {
+        tr.innerHTML = newHTML;
+    }
 }
 
 function updateSpreadsheetDOM(container, tasks) {
@@ -720,8 +724,11 @@ function updateSpreadsheetDOM(container, tasks) {
         return (taskB.started - taskA.started) || taskA.task_name.localeCompare(taskB.task_name);
     });
 
-    for (const row of rows) {
-        tbody.appendChild(row);
+    for (let i = 0; i < rows.length; i++) {
+        const expectedRow = rows[i];
+        if (tbody.children[i] !== expectedRow) {
+            tbody.insertBefore(expectedRow, tbody.children[i] || null);
+        }
     }
 }
 
@@ -774,6 +781,8 @@ function agify(now, secs)
 				i18n(age_names[n]) + "</span>";
 }
 
+var aging_timer = null;
+
 function aging()
 {
 	var n, next = 24 * 3600,
@@ -812,7 +821,9 @@ function aging()
 	 * Eg, if everything is counted in hours already, once per
 	 * 5 minutes is accurate enough.
 	 */
-	window.setTimeout(aging, next * 1000);
+	if (aging_timer)
+		clearTimeout(aging_timer);
+	aging_timer = window.setTimeout(aging, next * 1000);
 }
 var sai, jso, s, sai_arts = "";
 
@@ -1158,6 +1169,7 @@ function refresh_state(task_uuid, task_state)
 		tsi.classList.remove("taskstate5");
 		tsi.classList.remove("taskstate6");
 		tsi.classList.remove("taskstate7");
+		tsi.classList.remove("taskstate10");
 		tsi.classList.add("taskstate" + task_state);
 		// console.log("refresh_state  taskstate" + task_state);
 	}
@@ -1173,7 +1185,8 @@ function createContextMenu(event, menuItems) {
     // Remove any existing context menu
     const existingMenus = document.querySelectorAll(".context-menu");
     existingMenus.forEach(menu => {
-        document.body.removeChild(menu);
+        if (document.body.contains(menu))
+            document.body.removeChild(menu);
     });
 
     const menu = document.createElement("div");
@@ -1184,26 +1197,51 @@ function createContextMenu(event, menuItems) {
     const ul = document.createElement("ul");
     menu.appendChild(ul);
 
+    /*
+     * We have to do this via a function because the event listener
+     * for the global click needs to be removable, but the click
+     * handler for the menu items also wants to use it.
+     */
+    const closeMenu = () => {
+        if (document.body.contains(menu)) {
+            document.body.removeChild(menu);
+        }
+        window.removeEventListener("click", closeMenu, true);
+    };
+
     menuItems.forEach(item => {
         const li = document.createElement("li");
         li.innerHTML = item.label;
         if (item.callback) {
-            li.addEventListener("click", item.callback);
+            li.addEventListener("click", (e) => {
+                item.callback(e);
+                closeMenu();
+            });
+        } else {
+            li.classList.add("read-only");
         }
         ul.appendChild(li);
     });
 
     document.body.appendChild(menu);
 
-    const closeMenu = () => {
-        if (document.body.contains(menu)) {
-            document.body.removeChild(menu);
-        }
-        document.removeEventListener("click", closeMenu);
-    };
+    /*
+     * Now we have the content, we can see how big it is.  If it
+     * is going off the right of the page, move it left so it ends
+     * at the click coordinates.
+     */
 
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth)
+         menu.style.left = (event.pageX - rect.width) + "px";
+
+    /*
+     * defer adding the click listener so the current click
+     * doesn't trigger it.  Use capture on window so we get
+     * it even if the click target stops propagation.
+     */
     setTimeout(() => {
-        document.addEventListener("click", closeMenu);
+        window.addEventListener("click", closeMenu, true);
     }, 0);
 }
 
@@ -1233,20 +1271,22 @@ function createBuilderDiv(plat) {
 	let plat_os = plat_parts[0] || 'generic';
 	let plat_arch = plat_parts[1] || 'generic';
 	let plat_tc = plat_parts[2] || 'generic';
+	let short_name = plat.name.split('.')[0];
 
 	let innerHTML = `<table class="nomar"><tbody><tr><td class="bn">`;
-	innerHTML += `<img class="ip1 zup" data-sai-src="/sai/${plat_os}.svg">`;
-	innerHTML += `<img class="ip1 tread1" data-sai-src="/sai/arch-${plat_arch}.svg">`;
-	innerHTML += `<img class="ip1 tread2" data-sai-src="/sai/tc-${plat_tc}.svg">`;
+	innerHTML += `<div class="builder-name-row">` +
+		     `<div class="builder-short-name">${hsanitize(short_name)}</div>` +
+		     `<div class="builder-icons">` +
+		     `<img class="ip1 zup" data-sai-src="/sai/${plat_os}.svg">` +
+		     `<img class="ip1 tread1" data-sai-src="/sai/arch-${plat_arch}.svg">` +
+		     `<img class="ip1 tread2" data-sai-src="/sai/tc-${plat_tc}.svg">` +
+		     `</div></div>`;
 	innerHTML += `<div class="resource-bars">` +
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-cpu w-0"></div></div>` +
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-ram w-0"></div></div>` +
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-disk w-0"></div></div>` +
 		     `</div>`;
 	innerHTML += `${plat.peer_ip}` + "  " + plat.stay_on;
-//	`<div class="server-state">` +
-//		     `Slots: ${plat.s_avail_slots}, In-flight: ${plat.s_inflight_count}<br>` +
-//		     `Last Reject: ${plat.s_last_rej_task_uuid ? plat.s_last_rej_task_uuid.substring(0, 8) : 'none'}` + "</div>" +
 	innerHTML +=  `</td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;
@@ -1415,7 +1455,13 @@ function createPconDiv(pcon) {
         stats.style.marginLeft = "10px";
         stats.style.fontSize = "0.9em";
         stats.style.color = "#666";
-        stats.textContent = `${d.voltage_v}V ${d.active_power_w}W ${d.current_ma}mA today:${(d.energy_today_wh/1000).toFixed(3)}kWh`;
+	if (d.voltage_v < 70)
+		stats.textContent = "unpowered";
+	else if (!d.active_power_w)
+		stats.textContent = "OFF";
+	else
+		stats.textContent = `${d.active_power_w}W`;
+
         header.appendChild(stats);
     }
 
@@ -1466,8 +1512,32 @@ function createPconDiv(pcon) {
     return pconDiv;
 }
 
+let last_renderPconHierarchy_state = "";
+
 function renderPconHierarchy(container) {
     if (!container) return;
+
+    const builders_no_time = last_builder_list.map(b => {
+        const { last_seen, ...rest } = b;
+        return rest;
+    });
+
+    const clean_pcons = {};
+    for (const [k, p] of Object.entries(pcon_topology)) {
+        const { children, ...rest } = p;
+        clean_pcons[k] = rest;
+    }
+
+    /* Serialize the inputs to quickly see if we actually need to redraw everything */
+    const currentState = JSON.stringify({
+        pcons: clean_pcons,
+        builders: builders_no_time
+    });
+
+    if (currentState === last_renderPconHierarchy_state) {
+        return;
+    }
+    last_renderPconHierarchy_state = currentState;
 
     /* Clear and redraw for now to ensure structure is correct */
     container.innerHTML = "";
@@ -2019,6 +2089,7 @@ function ws_open_sai()
 
 					if (document.getElementById("sai_overview")) {
 						document.getElementById("sai_overview").innerHTML = s;
+						logs_pending = times_pending = lines_pending = "";
 
 						if (document.getElementById("esr-" + jso.e.uuid))
 							document.getElementById("esr-" + jso.e.uuid).innerHTML =
@@ -2058,6 +2129,7 @@ function ws_open_sai()
 								document.getElementById("dlogst").innerHTML = "";
 								document.getElementById("logs").innerHTML = "";
 								lines = times = logs = "";
+								lines_pending = times_pending = logs_pending = "";
 								logAnsiState = {};
 								tfirst = 0;
 								lli = 1;
@@ -2201,22 +2273,30 @@ function ws_open_sai()
 
 				switch (jso.channel) {
 				case 1:
-					logs += s;
+					logs += s; logs_pending += s;
 					break;
 				case 2:
 					logs += "<span class=\"stderr\">" + s +
+							"</span>";
+					logs_pending += "<span class=\"stderr\">" + s +
 							"</span>";
 					break;
 				case 3:
 					logs += "<span class=\"saibuild\">\u{25a0} " + s +
 							"</span>";
+					logs_pending += "<span class=\"saibuild\">\u{25a0} " + s +
+							"</span>";
 					break;
 				case 4:
 					logs += "<span class=\"tty0\">" + s +
 							"</span>";
+					logs_pending += "<span class=\"tty0\">" + s +
+							"</span>";
 					break;
 				default:
 					logs += "<span class=\"tty1\">" + s +
+							"</span>";
+					logs_pending += "<span class=\"tty1\">" + s +
 							"</span>";
 
 
@@ -2236,8 +2316,8 @@ function ws_open_sai()
 					lli++;
 				}
 
-				lines += en;
-				times += tn;
+				lines += en; lines_pending += en;
+				times += tn; times_pending += tn;
 
 				if (!redpend) {
 					redpend = 1;
@@ -2250,13 +2330,20 @@ function ws_open_sai()
 								rightPane.scrollTop + 1;
 
 						if (document.getElementById("logs")) {
-							document.getElementById("logs").innerHTML = logs;
+							if (logs_pending) {
+								document.getElementById("logs").insertAdjacentHTML('beforeend', logs_pending);
+								logs_pending = "";
+							}
 
-							if (document.getElementById("dlogsn"))
-								document.getElementById("dlogsn").innerHTML = lines;
+							if (document.getElementById("dlogsn") && lines_pending) {
+								document.getElementById("dlogsn").insertAdjacentHTML('beforeend', lines_pending);
+								lines_pending = "";
+							}
 
-							if (document.getElementById("dlogst"))
-								document.getElementById("dlogst").innerHTML = times;
+							if (document.getElementById("dlogst") && times_pending) {
+								document.getElementById("dlogst").insertAdjacentHTML('beforeend', times_pending);
+								times_pending = "";
+							}
 						}
 
 						if (locked && rightPane)
@@ -2424,6 +2511,32 @@ window.addEventListener("load", function() {
 						}
 					}
 				];
+
+				const isFinalState = ["taskstate3", "taskstate4", "taskstate5", "taskstate7"].some(s => taskDiv.classList.contains(s));
+
+				if (!isFinalState) {
+					if (taskDiv.classList.contains("taskstate10")) {
+						menuItems.push({
+							label: "Continue task",
+							callback: () => {
+								sai.send(JSON.stringify({
+									schema: "com.warmcat.sai.taskresume",
+									uuid: taskUuid
+								}));
+							}
+						});
+					} else {
+						menuItems.push({
+							label: "Pause task",
+							callback: () => {
+								sai.send(JSON.stringify({
+									schema: "com.warmcat.sai.taskpause",
+									uuid: taskUuid
+								}));
+							}
+						});
+					}
+				}
 
 				if (taskDiv.dataset.rebuildable === "1")
 					menuItems.splice(1, 0, {
