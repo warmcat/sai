@@ -53,7 +53,7 @@ sais_event_check_for_plat_tasks(struct vhd *vhd, const char *event_uuid,
 
 	sai_event_db_close(&vhd->sqlite3_cache, &check_pdb);
 
-	lwsl_notice("%s: event %s, platform %s: count %u\n", __func__, event_uuid,
+	lwsl_info("%s: event %s, platform %s: count %u\n", __func__, event_uuid,
 		  platform, count);
 
 	return count > 0;
@@ -84,7 +84,7 @@ sais_is_task_inflight(struct vhd *vhd, sai_plat_t *build, const char *uuid,
 				if (hit)
 					*hit = ul;
 
-				lwsl_notice("%s: %s is inflight on %s (of %d)\n", __func__,
+				lwsl_info("%s: %s is inflight on %s (of %d)\n", __func__,
 						uuid, build->name, build->inflight_owner.count);
 
 				return 1;
@@ -209,7 +209,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		goto bail;
 	}
 
-	lwsl_notice("%s: plat %s, toplevel results %d\n", __func__, platform, o.count);
+	lwsl_info("%s: plat %s, toplevel results %d\n", __func__, platform, o.count);
 
 	lws_dll2_owner_clear(&failed_tasks_owner);
 
@@ -244,7 +244,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		// lwsl_notice("%s: %s: platform: '%s' startable tasks: %d\n", __func__, e->uuid, esc_plat, pending_count);
 
 		if (pending_count <= 0) {
-			lwsl_notice("%s: platform %s: no pending count\n", __func__, platform);
+			lwsl_info("%s: platform %s: no pending count\n", __func__, platform);
 			goto close_next;
 		}
 
@@ -390,7 +390,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 next1: ;
 		} lws_end_foreach_dll(p_fail);
 
-		lwsl_notice("%s: no priority\n", __func__);
+		lwsl_info("%s: no priority\n", __func__);
 
 		/* We have fallen back to doing tasks earliest-first */
 
@@ -408,7 +408,7 @@ next1: ;
 		if (!owner.count || !pss->ac_alloc_task)
 			goto close_next;
 
-		lwsl_notice("%s: orig exit\n", __func__);
+		lwsl_info("%s: orig exit\n", __func__);
 		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		lwsac_free(&ac);
 		lwsac_free(&failed_ac);
@@ -427,7 +427,7 @@ bail:
 	lwsac_free(&ac);
 	lwsac_free(&failed_ac);
 
-	lwsl_notice("%s: leaving by bail\n", __func__);
+	lwsl_info("%s: leaving by bail\n", __func__);
 
 	return NULL;
 }
@@ -608,7 +608,7 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *sp,
 
 	task_template = sais_task_pending(vhd, pss, sp, platform_name);
 	if (!task_template) {
-		lwsl_notice("%s: %s: can't identify pending task\n",
+		lwsl_info("%s: %s: can't identify pending task\n",
 			    __func__, sp->name);
 		return 1;
 	}
@@ -631,7 +631,7 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *sp,
 	}
 
 	if (sais_is_task_inflight(vhd, NULL, task_template->uuid, NULL)) {
-		lwsl_notice("%s: ~~~~~~~~ skipping %s as listed on inflight\n",
+		lwsl_info("%s: ~~~~~~~~ skipping %s as listed on inflight\n",
 				__func__, task_template->uuid);
 		return 1;
 	}
@@ -642,7 +642,7 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *sp,
 
 	sais_bind_task_to_builder(vhd, sp->name, sp->name, task_template->uuid);
 
-	lwsl_notice("%s: %s: task %s found for %s\n", __func__,
+	lwsl_info("%s: %s: task %s found for %s\n", __func__,
 		    platform_name, task_template->uuid, sp->name);
 
 	if (sais_create_and_offer_task_step(vhd, task_template->uuid))
@@ -990,7 +990,7 @@ sais_plat_find_jobs_cb(lws_sorted_usec_list_t *sul)
 {
 	sai_plat_t *sp = lws_container_of(sul, sai_plat_t, sul_find_jobs);
 
-	lwsl_notice("%s: %s: sp->busy: %d\n", __func__, sp->name, sp->busy);
+	lwsl_info("%s: %s: sp->busy: %d\n", __func__, sp->name, sp->busy);
 
 	if (!sp->busy && sp->wsi && lws_wsi_user(sp->wsi) &&
 		/*
@@ -1018,7 +1018,7 @@ sais_plat_busy(sai_plat_t *sp, char set)
 	}
 
 	sp->busy = 0;
-	lwsl_notice("%s: %s: CLEARING BUSY\n", __func__, sp->name);
+	lwsl_info("%s: %s: CLEARING BUSY\n", __func__, sp->name);
 
 	lws_sul_schedule(sp->cx, 0, &sp->sul_find_jobs,
 			 sais_plat_find_jobs_cb, 1);

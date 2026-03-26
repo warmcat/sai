@@ -1497,9 +1497,8 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	lwsac_free(&task->ac_task_container);
 	free(task);
 
-	sai_dump_stderr(start, w);
-
-	lwsl_err("%s: ########## ATTACH TASK --^\n", __func__);
+	// sai_dump_stderr(start, w);
+	// lwsl_info("%s: ########## ATTACH TASK --^\n", __func__);
 
 	first = 1;
 

@@ -1287,7 +1287,7 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 		lws_struct_json_serialize_result_t r;
 		char start_of_this_builder = 1;
 
-		lwsl_notice("%s: processing builder '%s' (online %d)\n", __func__, b->name, b->online);
+		lwsl_info("%s: processing builder '%s' (online %d)\n", __func__, b->name, b->online);
 
 		js = lws_struct_json_serialize_create(
 			lsm_schema_map_plat_simple,

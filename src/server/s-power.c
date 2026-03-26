@@ -410,7 +410,7 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 
 		r = sqlite3_exec(vhd->server.pdb, query, cb_lookup_pcon, &ctx, NULL);
 
-		lwsl_notice("%s: platform '%s' -> pcon query '%s': result %d\n",
+		lwsl_info("%s: platform '%s' -> pcon query '%s': result %d\n",
 			    __func__, pl->plat, query, r);
 
 		if (r != SQLITE_OK)
@@ -422,7 +422,7 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 
 	} lws_end_foreach_dll(px);
 
-	lwsl_notice("%s: final pcon list: '%.*s'\n", __func__,
+	lwsl_info("%s: final pcon list: '%.*s'\n", __func__,
 		    (int)lws_ptr_diff_size_t(p, start), start);
 
 	/*
@@ -438,7 +438,7 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
         }
 
         if (diff) {
-                lwsl_notice("%s: ************* detected jobs for %.*s\n", __func__,
+                lwsl_info("%s: ************* detected jobs for %.*s\n", __func__,
                                 (int)lws_ptr_diff_size_t(p, start), start);
 
                 if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
