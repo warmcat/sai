@@ -51,10 +51,13 @@ static const char * const well_known[] = {
 	"/sai/browse",
 };
 
-static const char *hmac_names[] = {
-	"sai sha256=",
-	"sai sha384=",
-	"sai sha512="
+static const struct {
+	const char *name;
+	enum lws_genhmac_types type;
+} hmac_names[] = {
+	{ "sai sha256=", LWS_GENHMAC_TYPE_SHA256 },
+	{ "sai sha384=", LWS_GENHMAC_TYPE_SHA384 },
+	{ "sai sha512=", LWS_GENHMAC_TYPE_SHA512 },
 };
 
 int
@@ -304,10 +307,9 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			pss->hmac_type = LWS_GENHMAC_TYPE_UNKNOWN;
 			for (n = 0; n < (int)LWS_ARRAY_SIZE(hmac_names); n++)
 				if (!strncmp(pss->notification_sig,
-					     hmac_names[n],
-					     strlen(hmac_names[n]))) {
-					pss->hmac_type =
-						(enum lws_genhmac_types)(n + 1);
+					     hmac_names[n].name,
+					     strlen(hmac_names[n].name))) {
+					pss->hmac_type = hmac_names[n].type;
 					break;
 				}
 
@@ -320,7 +322,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			/* convert it to binary */
 
 			n = lws_hex_to_byte_array(
-				pss->notification_sig + strlen(hmac_names[n]),
+				pss->notification_sig + strlen(hmac_names[n].name),
 				(uint8_t *)pss->notification_sig, 64);
 
 			if (n != (int)lws_genhmac_size(pss->hmac_type)) {
