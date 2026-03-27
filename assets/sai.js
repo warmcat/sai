@@ -532,10 +532,17 @@ function expiry()
 
 function san(s)
 {
-	if (s.search("<") !== -1)
-		return "invalid string";
+	var table = {
+		'<': 'lt',
+		'>': 'gt',
+		'"': 'quot',
+		'\'': 'apos',
+		'&': 'amp'
+	};
 
-	return s;
+	return s.toString().replace(/[<>"'&]/g, function(chr) {
+		return '&' + table[chr] + ';';
+	});
 }
 
 function humanize(s)
@@ -1286,7 +1293,7 @@ function createBuilderDiv(plat) {
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-ram w-0"></div></div>` +
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-disk w-0"></div></div>` +
 		     `</div>`;
-	innerHTML += `${plat.peer_ip}` + "  " + plat.stay_on;
+	innerHTML += `${hsanitize(plat.peer_ip)}` + "  " + hsanitize(plat.stay_on);
 	innerHTML +=  `</td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;

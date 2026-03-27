@@ -187,10 +187,17 @@ if (lwsgs_user.substring(0, 1) == "$") {
 }
 function lwsgs_san(s)
 {
-	if (s.search("<") != -1)
-		return "invalid string";
-	
-	return s;
+	var table = {
+		'<': 'lt',
+		'>': 'gt',
+		'"': 'quot',
+		'\'': 'apos',
+		'&': 'amp'
+	};
+
+	return s.toString().replace(/[<>"'&]/g, function(chr) {
+		return '&' + table[chr] + ';';
+	});
 }
 
 function lwsgs_update()

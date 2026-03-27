@@ -975,11 +975,13 @@ sai_notification_file_upload_cb(void *data, const char *name,
 
 		{
 			uint64_t rid = 0;
-			char qu[192];
+			char qu[192], esc_hash[96];
+
+			lws_sql_purify(esc_hash, pss->sn.e.hash, sizeof(esc_hash));
 
 			lws_snprintf(qu, sizeof(qu), "select rowid from events "
 						     "where hash='%s'",
-						     pss->sn.e.hash);
+						     esc_hash);
 
 			if (sqlite3_exec(pss->vhd->server.pdb, qu,
 					 sai_sql3_get_uint64_cb,
