@@ -117,9 +117,6 @@ enum {
 typedef struct sai_browse_taskreply {
 	const sai_event_t	*event;
 	const sai_task_t	*task;
-	char			auth_user[33];
-	int			authorized;
-	int			auth_secs;
 } sai_browse_taskreply_t;
 
 static lws_struct_map_t lsm_taskreply[] = {
@@ -127,9 +124,6 @@ static lws_struct_map_t lsm_taskreply[] = {
 			 lsm_event, "e"),
 	LSM_CHILD_PTR	(sai_browse_taskreply_t, task,	sai_task_t, NULL,
 			 lsm_task, "t"),
-	LSM_CARRAY	(sai_browse_taskreply_t, auth_user,	"auth_user"),
-	LSM_UNSIGNED	(sai_browse_taskreply_t, authorized,	"authorized"),
-	LSM_UNSIGNED	(sai_browse_taskreply_t, auth_secs,	"auth_secs"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_taskreply[] = {
@@ -190,18 +184,7 @@ sai_sql3_get_uint64_cb(void *user, int cols, char **values, char **name)
 	return 0;
 }
 
-/* 1 == authorized */
 
-static int
-sais_conn_auth(struct pss *pss)
-{
-	if (!pss->authorized)
-		return 0;
-	if (pss->expiry_unix_time < (unsigned long)lws_now_secs())
-		return 0;
-
-	return 1;
-}
 
 /*
  * Ask for writeable cb on all browser connections subscribed to a particular
@@ -344,8 +327,6 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 		lws_sql_purify(esc2, pss->specific_project, sizeof(esc2));
 		m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and repo_name='%s'", esc2);
 	}
-	if (!pss->authorized)
-		m += lws_snprintf(qu + m, sizeof(qu) - (unsigned int)m, " and sec=0");
 
 	if (pss->specific_ref[0] && pss->specificity != SAIM_SPECIFIC_TASK) {
 		lws_sql_purify(esc2, pss->specific_ref, sizeof(esc2));
@@ -391,9 +372,6 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 					   one_task->state == SAIES_CANCELLED) &&
 					  (lws_now_secs() - (one_task->started +
 					   (one_task->duration / 1000000)) < 24 * 3600);
-	task_reply.auth_secs		= (int)(pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0);
-	task_reply.authorized		= pss->authorized;
-	lws_strncpy(task_reply.auth_user, pss->auth_user, sizeof(task_reply.auth_user));
 
 	js = lws_struct_json_serialize_create(lsm_schema_json_map_taskreply,
 					      LWS_ARRAY_SIZE(lsm_schema_json_map_taskreply),
@@ -656,9 +634,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 	case SAIM_WS_BROWSER_RX_TASKRESET:
 
-		if (!sais_conn_auth(pss))
-			goto auth_error;
-
 		/*
 		 * User is asking us to reset / rebuild this task
 		 */
@@ -667,11 +642,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		break;
 
 	case SAIM_WS_BROWSER_RX_STAY:
-		if (!sais_conn_auth(pss)) {
-			lwsl_err("%s: stay didn't like auth\n", __func__);
-			goto auth_error;
-		}
-
 		lwsl_notice("%s: web: received stay req\n", __func__);
 
 		/*
@@ -680,10 +650,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		break;
 
 	case SAIM_WS_BROWSER_RX_PCON_CONTROL:
-		if (!sais_conn_auth(pss)) {
-			lwsl_err("%s: pcon control didn't like auth\n", __func__);
-			goto auth_error;
-		}
 		lwsl_warn("%s: web: received pcon control req (len %d)\n", __func__, (int)bl);
 
 		/* Forward to sai-server via websrv link */
@@ -697,8 +663,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		goto ok;
 
 	case SAIM_WS_BROWSER_RX_TASKREBUILDLASTSTEP:
-		if (!sais_conn_auth(pss))
-			goto auth_error;
 
 		/*
 		 * User is asking us to rebuild the last step of this task
@@ -708,9 +672,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		break;
 
 	case SAIM_WS_BROWSER_RX_EVENTRESET:
-
-		if (!sais_conn_auth(pss))
-			goto auth_error;
 
 		/*
 		 * User is asking us to reset / rebuild every task in the event
@@ -727,9 +688,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		 * User is asking us to delete the whole event
 		 */
 
-		if (!sais_conn_auth(pss))
-			goto auth_error;
-
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 
 		lwsl_notice("%s: received request to delete event %s\n",
@@ -738,9 +696,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		break;
 
 	case SAIM_WS_BROWSER_RX_TASKCANCEL:
-
-		if (!sais_conn_auth(pss))
-			goto auth_error;
 
 		/*
 		 * Browser is informing us of task's STOP button clicked, we
@@ -755,18 +710,12 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		goto ok;
 
 	case SAIM_WS_BROWSER_RX_REBUILD:
-		if (!sais_conn_auth(pss))
-			goto auth_error;
-
 		/*
 		 * User is asking us to rebuild a builder
 		 */
 		break;
 
 	case SAIM_WS_BROWSER_RX_PLATRESET:
-		if (!sais_conn_auth(pss))
-			goto auth_error;
-
 		/*
 		 * User is asking us to reset / rebuild a whole platform
 		 */
@@ -784,25 +733,11 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 ok:
 	ret = 0;
 
+soft_error:
 bail:
 	lwsac_free(&a.ac);
 
 	return ret;
-
-auth_error:
-	{
-		uint8_t buf[LWS_PRE + 128];
-		int n;
-
-		n = lws_snprintf((char *)buf + LWS_PRE, sizeof(buf) - LWS_PRE,
-			"{\"schema\":\"com.warmcat.sai.unauthorized\"}");
-		lws_write(pss->wsi, buf + LWS_PRE, (size_t)n, LWS_WRITE_TEXT);
-	}
-
-soft_error:
-	lwsac_free(&a.ac);
-
-	return 0;
 }
 
 static void
@@ -933,7 +868,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 {
 	char buf[4096 + LWS_PRE], *start = buf + LWS_PRE, *p = start,
 	     *end = buf + sizeof(buf);
-	char esc[256], esc1[33], filt[128], subsequent;
+	char esc[256], filt[128], subsequent;
 	struct lwsac *task_ac = NULL, *ac = NULL;
 	lws_dll2_owner_t task_owner, owner;
 	unsigned int task_index = 0;
@@ -941,7 +876,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 	sqlite3 *pdb = NULL;
 	lws_dll2_t *walk;
 	sai_task_t *t;
-	int n, iu;
+	int n;
 	size_t w;
 
 	filt[0] = '\0';
@@ -953,8 +888,6 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		lws_snprintf(filt, sizeof(filt), " and repo_name=\"%s\"", esc);
 		n = -1;
 	}
-	if (!pss->authorized)
-		lws_snprintf(filt + strlen(filt), sizeof(filt) - strlen(filt), " and sec=0");
 
 	pss->wants_event_updates = 1;
 	if (lws_struct_sq3_deserialize(vhd->pdb, filt[0] ? filt : NULL,
@@ -974,13 +907,8 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		"{\"schema\":\"sai.warmcat.com.overview\","
 		" \"api_version\":%u,"
 		" \"alang\":\"%s\","
-		" \"authorized\": %d,"
-		" \"auth_secs\": %ld,"
-		" \"auth_user\": \"%s\","
 		"\"overview\":[", SAIW_API_VERSION,
-		lws_json_purify(esc, pss->alang, sizeof(esc) - 1, &iu),
-		pss->authorized, pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0,
-		lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu)
+		lws_json_purify(esc, pss->alang, sizeof(esc) - 1, NULL)
 	);
 
 	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
@@ -990,13 +918,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 
 
 	/*
-	 * "authorized" here is used to decide whether to render the
-	 * additional controls clientside.  The events the controls
-	 * cause if used are separately checked for coming from an
-	 * authorized pss when they are received.
-	 *
-	 * If you're not authorized, you're only going to see events
-	 * that have sec=0.  Otherwise you can see all events.
+	 * Walk through events
 	 */
 
 	if (pss->specificity)
@@ -1260,22 +1182,16 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 	char buf[4096 + LWS_PRE], *start = buf + LWS_PRE, *p = start,
 	     *end = buf + sizeof(buf);
 	lws_struct_serialize_t *js;
-	char esc[256], esc1[33];
+	char esc[256];
 	lws_dll2_t *walk = NULL;
 	char fi = 1, subsequent;
 	size_t w;
-	int iu;
 
 	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
 			  "{\"schema\":\"com.warmcat.sai.builders\","
 			  " \"alang\":\"%s\","
-			  " \"authorized\":%d,"
-			  " \"auth_secs\":%ld,"
-			  " \"auth_user\": \"%s\","
 			  " \"builders\":[",
-			  lws_sql_purify(esc, pss->alang, sizeof(esc) - 1),
-			  pss->authorized, pss->authorized ? pss->expiry_unix_time - lws_now_secs() : 0,
-			  lws_json_purify(esc1, pss->auth_user, sizeof(esc1) - 1, &iu));
+			  lws_sql_purify(esc, pss->alang, sizeof(esc) - 1));
 
 	if (vhd && vhd->builders)
 		walk = lws_dll2_get_head(&vhd->builders_owner);

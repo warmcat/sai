@@ -75,7 +75,6 @@ struct pss {
 	char			specific_ref[65];
 	char			specific_task[65];
 	char			specific_project[96];
-	char			auth_user[33];
 
 	sqlite3			*pdb_artifact;
 	sqlite3_blob		*blob_artifact;
@@ -96,19 +95,15 @@ struct pss {
 
 	int			log_cache_index;
 	int			log_cache_size;
-	int			authorized;
 	int			specificity;
 	int			segment_flags;
 	unsigned int		js_api_version;
-	unsigned long		expiry_unix_time;
 
 	/* notification hmac information */
 	char			notification_sig[128];
 	char			alang[128];
-	struct lws_genhmac_ctx	hmac;
 	enum lws_genhmac_types	hmac_type;
 	char			our_form;
-	char			login_form;
 
 	uint64_t		first_log_timestamp;
 	uint64_t		initial_log_timestamp;
@@ -138,16 +133,9 @@ struct vhd {
 	struct lws_dll2_owner		pcons_owner;
 	struct lwsac			*pcons;
 
-	/* our keys */
-	struct lws_jwk			jwt_jwk_auth;
-	char				jwt_auth_alg[16];
-	const char			*jwt_issuer;
-	const char			*jwt_audience;
-
 	lws_dll2_owner_t		web_to_srv_owner;
 	lws_dll2_owner_t		subs_owner;
 	sqlite3				*pdb;
-	sqlite3				*pdb_auth;
 
 	struct lws_ss_handle		*h_ss_websrv; /* client */
 

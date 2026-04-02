@@ -1874,30 +1874,6 @@ function ws_open_sai()
 				 */
 				s = "<table>";
 
-				authd = jso.authorized;
-				if (jso.authorized === 0) {
-					if (document.getElementById("creds"))
-						document.getElementById("creds").classList.remove("hide");
-					if (document.getElementById("logout"))
-						document.getElementById("logout").classList.add("hide");
-				}
-				if (jso.authorized === 1) {
-					if (document.getElementById("creds"))
-						document.getElementById("creds").classList.add("hide");
-					if (document.getElementById("logout"))
-						document.getElementById("logout").classList.remove("hide");
-					if (jso.auth_user)
-						auth_user = jso.auth_user;
-					if (jso.auth_secs) {
-						var now_ut = Math.round((new Date().getTime() / 1000));
-						clearTimeout(exptimer);
-						exptimer = window.setTimeout(expiry, 1000 * jso.auth_secs);
-						if (document.getElementById("remauth"))
-							document.getElementById("remauth").innerHTML =
-								san(auth_user) + " " + agify(now_ut, now_ut + jso.auth_secs);
-					}
-				}
-
 				/*
 				 * Update existing?
 				 */
@@ -2003,30 +1979,6 @@ function ws_open_sai()
 
 				if (!jso.t)
 					break;
-
-				authd = jso.authorized;
-				if (jso.authorized === 0) {
-					if (document.getElementById("creds"))
-						document.getElementById("creds").classList.remove("hide");
-					if (document.getElementById("logout"))
-						document.getElementById("logout").classList.add("hide");
-				}
-				if (jso.authorized === 1) {
-					if (document.getElementById("creds"))
-						document.getElementById("creds").classList.add("hide");
-					if (document.getElementById("logout"))
-						document.getElementById("logout").classList.remove("hide");
-					if (jso.auth_user)
-						auth_user = jso.auth_user;
-					if (jso.auth_secs) {
-						var now_ut = Math.round((new Date().getTime() / 1000));
-						clearTimeout(exptimer);
-						exptimer = window.setTimeout(expiry, 1000 * jso.auth_secs);
-						if (document.getElementById("remauth"))
-							document.getElementById("remauth").innerHTML =
-								san(auth_user) + " " + agify(now_ut, now_ut + jso.auth_secs);
-					}
-				}
 
 				/*
 				 * We get told about changes to any task state,
@@ -2381,44 +2333,6 @@ function ws_open_sai()
 	}
 }
 
-function post_login_form()
-{
-	var xhr = new XMLHttpRequest(), s ="", q = window.location.pathname;
-
-	s = "----boundo\x0d\x0acontent-disposition: form-data; name=\"lname\"\x0d\x0a\x0d\x0a" +
-		document.getElementById("lname").value +
-	    "\x0d\x0a----boundo\x0d\x0acontent-disposition: form-data; name=\"lpass\"\x0d\x0a\x0d\x0a" +
-		document.getElementById("lpass").value +
-	    "\x0d\x0a----boundo\x0d\x0acontent-disposition: form-data; name=\"success_redir\"\x0d\x0a\x0d\x0a" +
-		document.getElementById("success_redir").value +
-	    "\x0d\x0a----boundo--";
-
-	if (q.length > 10 && q.substring(q.length - 10) == "index.html")
-		q = q.substring(0, q.length - 10);
-	xhr.open("POST", q + "login", true);
-	xhr.setRequestHeader( 'content-type', "multipart/form-data; boundary=--boundo");
-
-	console.log(s.length +" " + s);
-
-	xhr.onload = function (e) {
-	  if (xhr.readyState === 4) {
-	    if (xhr.status === 200 || xhr.status == 303) {
-	      console.log(xhr.responseText);
-		location.reload();
-	    } else {
-	      console.error(xhr.statusText);
-	    }
-	  }
-	};
-	xhr.onerror = function (e) {
-	  console.error(xhr.statusText);
-	};
-
-	xhr.send(s);
-
-	return false;
-}
-
 /* stuff that has to be delayed until all the page assets are loaded */
 
 window.addEventListener("load", function() {
@@ -2451,17 +2365,22 @@ window.addEventListener("load", function() {
 	if (document.getElementById("noscript"))
 		document.getElementById("noscript").display = "none";
 
-	/* login form hidden success redirect */
-	if (document.getElementById("success_redir"))
-		document.getElementById("success_redir").value =
-			window.location.href;
+	/* LWS Login hook */
+	if (window.renderLwsLoginStatus)
+		window.renderLwsLoginStatus('lws-login-status-container');
+
+	fetch('.lws-login-status')
+		.then(function(res) { return res.json(); })
+		.then(function(data) {
+			if (data.logged_in && data.has_grant)
+				authd = 1;
+		})
+		.catch(function(err) {
+			console.log('lws-login auth fetch failed: ', err);
+		});
+
 	ws_open_sai();
 	aging();
-
-	if (document.getElementById("login-button")) {
-		document.getElementById("login-button").addEventListener("click", post_login_form);
-		document.getElementById("logout-button").addEventListener("click", post_login_form);
-	}
 
 	setInterval(function() {
 		update_task_activities();

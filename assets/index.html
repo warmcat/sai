@@ -4,6 +4,7 @@
    <link rel="stylesheet" type="text/css" href="sai.css"/>
    <link rel="icon" href="sai-icon.svg" sizes="any" type="image/svg+xml"/>
     <script type='text/javascript' src='sai.js'></script>
+    <script type='text/javascript' src='lws-login.js'></script>
     <script type='text/javascript' src="lws-common.js"></script>
  <title>Sai</title>
  </head>
@@ -11,26 +12,13 @@
 		<div class="overlay"></div>
 		<div class="main-container">
 			<div class="left-pane">
-				<div class="logo">
-					<img class="logo" src="sai.svg"><br>
-					<span class="logo"><a href="https://warmcat.com/git/sai">Sai git</a></span>
-					<span class="logo" id="apirev"></span>
-				</div>
-				<div id="login" class="login">
-					<div id="creds" class="creds hide">
-						<form class="login">
-							<label for="lname">Name:</label>
-							<input class="crin" type="text" id="lname" name="lname" autocomplete="username"><br>
-							<label for="lpass">Password:</label>
-							<input class="crin" type="password" id="lpass" name="lpass" autocomplete="current-password"><br>
-							<input class="crinb" type="button" value="Login" id="login-button">
-							<input type="hidden" id="success_redir" name="success_redir" value="">
-						</form>
+				<div style="display: flex; align-items: center; margin-bottom: 12px; flex-wrap: nowrap;">
+					<div class="logo">
+						<img class="logo" src="sai.svg"><br>
+						<span class="logo"><a href="https://warmcat.com/git/sai">Sai git</a></span>
+						<span class="logo" id="apirev"></span>
 					</div>
-					<div id="logout" class="creds hide">
-						<div id="remauth"></div>
-						<input class="crin" type="button" id="logout-button" value="Logout">
-					</div>
+					<div id="lws-login-status-container" style="margin-left: 10px; margin-top: 4px;"></div>
 				</div>
 				<div id="sai_builders"></div>
 			</div>

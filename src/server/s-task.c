@@ -819,7 +819,8 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 
 	/*
 	 * Make a copy of the lws_struct allocation in the lwsac,
-	 * then drop the lwsac
+	 * but we must retain the lwsac because the copied task_template
+	 * still contains pointers into it!
 	 */
 
 	temp_task = malloc(sizeof(sai_task_t));
@@ -831,7 +832,7 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 
 	memset(temp_task, 0, sizeof(*temp_task));
 	*temp_task = *task_template;
-	lwsac_free(&ac);
+	temp_task->ac_task_container = ac;
 
 	sais_get_task_metrics_estimates(vhd, temp_task);
 

@@ -40,24 +40,7 @@ const lws_struct_map_t lsm_schema_map_ta[] = {
 	LSM_SCHEMA (sai_task_t,	    NULL, lsm_task,    "com-warmcat-sai-ta"),
 };
 
-typedef struct sai_auth {
-	lws_dll2_t		list;
-	char			name[33];
-	char			passphrase[65];
-	unsigned long		since;
-	unsigned long		last_updated;
-} sai_auth_t;
 
-const lws_struct_map_t lsm_auth[] = {
-	LSM_CARRAY	(sai_auth_t, name,		"name"),
-	LSM_CARRAY	(sai_auth_t, passphrase,	"passphrase"),
-	LSM_UNSIGNED	(sai_auth_t, since,		"since"),
-	LSM_UNSIGNED	(sai_auth_t, last_updated,	"last_updated"),
-};
-
-const lws_struct_map_t lsm_schema_sq3_map_auth[] = {
-	LSM_SCHEMA_DLL2	(sai_auth_t, list, NULL, lsm_auth,	"auth"),
-};
 
 extern const lws_struct_map_t lsm_schema_sq3_map_event[];
 
@@ -119,19 +102,7 @@ sai_get_head_status(struct vhd *vhd, const char *projname)
 }
 
 
-static int
-sai_login_cb(void *data, const char *name, const char *filename,
-	     char *buf, int len, enum lws_spa_fileupload_states state)
-{
-	lwsl_notice("%s: name '%s'\n", __func__, name);
-	return 0;
-}
 
-static const char * const auth_param_names[] = {
-	"lname",
-	"lpass",
-	"success_redir",
-};
 
 enum enum_param_names {
 	EPN_LNAME,
@@ -166,12 +137,10 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	uint8_t buf[LWS_PRE + 8192], *start = &buf[LWS_PRE], *p = start,
 		*end = &buf[sizeof(buf) - LWS_PRE - 1];
 	struct pss *pss = (struct pss *)user;
-	struct lws_jwt_sign_set_cookie ck;
 	sai_http_murl_t mu = SHMUT_NONE;
 	char projname[64];
 	int n, resp, r;
 	const char *cp;
-	size_t cml;
 
 	(void)end;
 	(void)p;
@@ -214,84 +183,7 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 		}
 
-		/* auth database */
 
-		lws_snprintf((char *)buf, sizeof(buf), "%s-auth.sqlite3",
-				vhd->sqlite3_path_lhs);
-
-		if (lws_struct_sq3_open(vhd->context, (char *)buf, 1,
-					&vhd->pdb_auth)) {
-			lwsl_err("%s: Unable to open auth db %s: %s\n",
-				 __func__, vhd->sqlite3_path_lhs, sqlite3_errmsg(
-						 vhd->pdb_auth));
-
-			return -1;
-		}
-
-		if (lws_struct_sq3_create_table(vhd->pdb_auth,
-						lsm_schema_sq3_map_auth)) {
-			lwsl_err("%s: unable to create auth table\n", __func__);
-			return -1;
-		}
-
-		/*
-		 * jwt-iss
-		 */
-
-		if (lws_pvo_get_str(in, "jwt-iss", &vhd->jwt_issuer)) {
-			lwsl_err("%s: jwt-iss required\n", __func__);
-			return -1;
-		}
-
-		/*
-		 * jwt-aud
-		 */
-
-		if (lws_pvo_get_str(in, "jwt-aud", &vhd->jwt_audience)) {
-			lwsl_err("%s: jwt-aud required\n", __func__);
-			return -1;
-		}
-
-		/*
-		 * auth-alg
-		 */
-
-		if (lws_pvo_get_str(in, "jwt-auth-alg", &cp)) {
-			lwsl_err("%s: jwt-auth-alg required\n", __func__);
-			return -1;
-		}
-
-		lws_strncpy(vhd->jwt_auth_alg, cp, sizeof(vhd->jwt_auth_alg));
-
-		/*
-		 * auth-jwk-path
-		 */
-
-		if (lws_pvo_get_str(in, "jwt-auth-jwk-path", &cp)) {
-			lwsl_err("%s: jwt-auth-jwk-path required\n", __func__);
-			return -1;
-		}
-
-		n = open(cp, LWS_O_RDONLY);
-		if (n < 0) {
-			lwsl_err("%s: can't open auth JWK %s\n", __func__, cp);
-			return -1;
-		}
-		r = (int)read(n, buf, sizeof(buf));
-		close(n);
-		if (r < 0) {
-			lwsl_err("%s: can't read auth JWK %s\n", __func__, cp);
-			return -1;
-		}
-
-		if (lws_jwk_import(&vhd->jwt_jwk_auth, NULL, NULL,
-				   (const char *)buf, (unsigned int)r)) {
-			lwsl_notice("%s: Failed to parse JWK key\n", __func__);
-			return -1;
-		}
-
-		lwsl_notice("%s: Auth JWK type %d\n", __func__,
-						vhd->jwt_jwk_auth.kty);
 
 		/*
 		 * Reach out to the sai-server part over the SS ws websrv link
@@ -319,8 +211,6 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
 		saiw_event_db_close_all_now(vhd);
 		lws_struct_sq3_close(&vhd->pdb);
-		lws_struct_sq3_close(&vhd->pdb_auth);
-		lws_jwk_destroy(&vhd->jwt_jwk_auth);
 		goto passthru;
 
 	/*
@@ -338,33 +228,6 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		resp = HTTP_STATUS_FORBIDDEN;
 		pss->vhd = vhd;
-
-		/*
-		 * What's the situation with a JWT cookie?  Normal users won't
-		 * have any, but privileged users will have one, and we should
-		 * try to confirm it and set the pss auth level accordingly
-		 */
-
-		memset(&ck, 0, sizeof(ck));
-		ck.jwk = &vhd->jwt_jwk_auth;
-		ck.alg = vhd->jwt_auth_alg;
-		ck.iss = vhd->jwt_issuer;
-		ck.aud = vhd->jwt_audience;
-		ck.cookie_name = "__Host-sai_jwt";
-
-		cml = sizeof(buf);
-		if (!lws_jwt_get_http_cookie_validate_jwt(wsi, &ck,
-							  (char *)buf, &cml) &&
-		    ck.extra_json &&
-		    !lws_json_simple_strcmp(ck.extra_json, ck.extra_json_len,
-					    "\"authorized\":", "1")) {
-				/* the token allows him to manage us */
-				pss->authorized = 1;
-				pss->expiry_unix_time = ck.expiry_unix_time;
-				lws_strncpy(pss->auth_user, ck.sub,
-					    sizeof(pss->auth_user));
-		} else
-			lwsl_info("%s: cookie rejected\n", __func__);
 
 		for (n = 0; n < (int)LWS_ARRAY_SIZE(well_known); n++)
 			if (!strncmp((const char *)in, well_known[n],
@@ -413,11 +276,6 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				return -1;
 
 			goto passthru;
-
-		case SHMUT_LOGIN:
-			pss->login_form = 1;
-			lwsl_notice("LWS_CALLBACK_HTTP: sees login\n");
-			return 0;
 
 		case SHMUT_ARTIFACTS:
 			/*
@@ -510,43 +368,13 @@ http_resp:
 	case LWS_CALLBACK_HTTP_BODY:
 
 		// lwsl_notice("%s: HTTP_BODY\n", __func__);
-
-		if (pss->login_form) {
-
-			if (!pss->spa) {
-				pss->spa = lws_spa_create(wsi, auth_param_names,
-						LWS_ARRAY_SIZE(auth_param_names),
-						1024, sai_login_cb, pss);
-				if (!pss->spa) {
-					lwsl_err("failed to create spa\n");
-					return -1;
-				}
-			}
-
-			/* let it parse the POST data */
-
-			lwsl_hexdump_notice(in, len);
-
-			if (!pss->spa_failed &&
-			    lws_spa_process(pss->spa, in, (int)len)) {
-
-				lwsl_notice("%s: spa failed\n", __func__);
-
-				/*
-				 * mark it as failed, and continue taking body until
-				 * completion, and return error there
-				 */
-				pss->spa_failed = 1;
-			}
-		}
-
 		break;
 
 	case LWS_CALLBACK_HTTP_BODY_COMPLETION:
 		lwsl_user("%s: LWS_CALLBACK_HTTP_BODY_COMPLETION: %d\n",
 			  __func__, (int)len);
 
-		if (!pss->our_form && !pss->login_form) {
+		if (!pss->our_form) {
 			lwsl_user("%s: no sai form\n", __func__);
 			goto passthru;
 		}
@@ -554,155 +382,6 @@ http_resp:
 		/* inform the spa no more payload data coming */
 		if (pss->spa)
 			lws_spa_finalize(pss->spa);
-
-		if (pss->login_form) {
-			const char *un, *pw, *sr;
-			lws_dll2_owner_t o;
-			struct lwsac *ac = NULL;
-
-			if (lws_add_http_header_status(wsi,
-						HTTP_STATUS_SEE_OTHER, &p, end))
-				goto clean_spa;
-			if (lws_add_http_header_content_length(wsi, 0, &p, end))
-				goto clean_spa;
-
-			if (pss->spa_failed)
-				goto final;
-
-			if (pss->authorized) {
-
-				char temp[128];
-				/*
-				 * It means, logout then
-				 */
-
-				n = lws_snprintf(temp, sizeof(temp),
-						 "__Host-sai_jwt=deleted;"
-						 "HttpOnly;"
-						 "Secure;"
-						 "SameSite=strict;"
-						 "Path=/;"
-						 "expires=Sun, 06 Nov 1994 08:49:37 GMT;");
-
-				sr = "x/..";
-
-				if (lws_add_http_header_by_token(wsi,
-						WSI_TOKEN_HTTP_SET_COOKIE,
-						(uint8_t *)temp, n, &p, end)) {
-					lwsl_err("%s: failed to add JWT cookie header\n", __func__);
-					return 1;
-				}
-
-				goto back;
-			}
-
-			un = lws_spa_get_string(pss->spa, EPN_LNAME);
-			pw = lws_spa_get_string(pss->spa, EPN_LPASS);
-			sr = lws_spa_get_string(pss->spa, EPN_SUCCESS_REDIR);
-
-			if (!un || !pw || !sr) {
-				lwsl_notice("%s: missing form args %p %p %p\n",
-						__func__, un, pw, sr);
-				pss->spa_failed = 1;
-				goto final;
-			}
-
-			// lwsl_notice("%s: login attempt %s %s %s\n", __func__,
-			//	    un, pw, sr);
-
-			/*
-			 * Try to look up his credentials
-			 */
-
-			lws_sql_purify((char *)buf + 512, un, 34);
-			lws_sql_purify((char *)buf + 768, pw, 66);
-			lws_snprintf((char *)buf + 256, 256,
-					" and name='%s' and passphrase='%s'",
-					(const char *)buf + 512,
-					(const char *)buf + 768);
-			lws_dll2_owner_clear(&o);
-			n = lws_struct_sq3_deserialize(pss->vhd->pdb_auth,
-						       (const char *)buf + 256,
-						       NULL,
-						       lsm_schema_sq3_map_auth,
-						       &o, &ac, 0, 1);
-			if (n < 0 || !o.head) {
-				/* no results, failed */
-				// lwsl_notice("%s: login attempt %s failed %d\n",
-				//		__func__, (const char *)buf, n);
-				lwsac_free(&ac);
-				pss->spa_failed = 1;
-				goto final;
-			}
-
-			/* any result in o means a successful match */
-
-			lwsac_free(&ac);
-
-			/*
-			 * Produce a signed JWT allowing managing this Sai
-			 * instance for a short time, and redirect ourselves
-			 * back to the page we were on
-			 */
-
-
-
-			lwsl_notice("%s: setting cookie\n", __func__);
-			/* un is invalidated by destroying the spa */
-			memset(&ck, 0, sizeof(ck));
-			lws_strncpy(ck.sub, un, sizeof(ck.sub));
-			ck.jwk = &vhd->jwt_jwk_auth;
-			ck.alg = vhd->jwt_auth_alg;
-			ck.iss = vhd->jwt_issuer;
-			ck.aud = vhd->jwt_audience;
-			ck.cookie_name = "sai_jwt";
-			ck.extra_json = "\"authorized\": 1";
-			ck.expiry_unix_time = 2 * 24 * 60 * 60; /* 2 days */
-
-			if (lws_jwt_sign_token_set_http_cookie(wsi, &ck, &p, end))
-				goto clean_spa;
-
-back:
-			/*
-			 * Auth succeeded, go to the page the form was on
-			 */
-
-			if (lws_add_http_header_by_token(wsi,
-						WSI_TOKEN_HTTP_LOCATION,
-						(unsigned char *)sr,
-						(int)strlen((const char *)sr),
-						&p, end)) {
-				goto clean_spa;
-			}
-
-			if (pss->spa) {
-				lws_spa_destroy(pss->spa);
-				pss->spa = NULL;
-			}
-
-			if (lws_finalize_write_http_header(wsi, start, &p, end))
-				goto bail;
-
-			lwsl_notice("%s: set / delete cookie OK\n", __func__);
-			// lwsl_hexdump_notice(start, lws_ptr_diff(p, start));
-			return 0;
-
-final:
-			lwsl_notice("%s: auth failed, login_form %d\n",
-					__func__, pss->login_form);
-			/*
-			 * Auth failed, go back to /
-			 */
-			if (lws_add_http_header_by_token(wsi,
-						WSI_TOKEN_HTTP_LOCATION,
-						(unsigned char *)"/", 1,
-						&p, end)) {
-				goto clean_spa;
-			}
-			if (lws_finalize_write_http_header(wsi, start, &p, end))
-				goto bail;
-			return 0;
-		}
 
 		if (pss->spa) {
 			lws_spa_destroy(pss->spa);
@@ -718,14 +397,6 @@ final:
 				NULL) < 0)
 			return -1;
 		break;
-
-clean_spa:
-		if (pss->spa) {
-			lws_spa_destroy(pss->spa);
-			pss->spa = NULL;
-		}
-		pss->spa_failed = 1;
-		goto final;
 
 	/*
 	 * ws connections from builders and browsers
@@ -757,32 +428,6 @@ clean_spa:
 			return -1;
 		}
 
-		/*
-		 * What's the situation with a JWT cookie?  Normal users won't
-		 * have any, but privileged users will have one, and we should
-		 * try to confirm it and set the pss auth level accordingly
-		 */
-
-		memset(&ck, 0, sizeof(ck));
-		ck.jwk = &vhd->jwt_jwk_auth;
-		ck.alg = vhd->jwt_auth_alg;
-		ck.iss = vhd->jwt_issuer;
-		ck.aud = vhd->jwt_audience;
-		ck.cookie_name = "__Host-sai_jwt";
-
-		cml = sizeof(buf);
-		if (!lws_jwt_get_http_cookie_validate_jwt(wsi, &ck,
-							  (char *)buf, &cml) &&
-		    ck.extra_json &&
-		    !lws_json_simple_strcmp(ck.extra_json, ck.extra_json_len,
-					    "\"authorized\":", "1")) {
-			/* the token allows him to manage us */
-			pss->authorized = 1;
-			pss->expiry_unix_time = ck.expiry_unix_time;
-			lws_strncpy(pss->auth_user, ck.sub,
-				    sizeof(pss->auth_user));
-		} else
-			lwsl_info("%s: cookie rejected\n", __func__);
 		pss->wsi = wsi;
 		pss->vhd = vhd;
 		pss->alang[0] = '\0';

@@ -64,16 +64,6 @@
 			"database":		"/srv/sai/sai-master",
 
 
-			# auth jwk path
-			# You can generate a suitable key like this
-			#
-			# lws-crypto-jwk -t EC -b512 -vP-521 --alg ES512 > mykey.jwk
-			#
-			"jwt-auth-alg":		"ES512",
-			"jwt-auth-jwk-path":	"/etc/sai/web/auth.jwk",
-
-			"jwt-iss":		"com.warmcat",
-			"jwt-aud":		"https://mydomain.com/sai",
 
 			# template HTML to use for this vhost.  You'd normally
 			# copy this to gitohashi-vhostname.html and modify it
