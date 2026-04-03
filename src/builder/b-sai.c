@@ -175,6 +175,7 @@ static const char * const default_ss_policy =
 		"{\"sai_power_client\": {"
 			"\"endpoint\":"		"\"${url}\","
 			"\"protocol\":"		"\"ws\","
+			"\"ws_subprotocol\":"	"\"com-warmcat-sai-builder\","
 			"\"http_url\":"		"\"\"," /* filled in by url */
 			"\"retry\":"		"\"default\","
 			"\"metadata\": ["

@@ -197,6 +197,7 @@ LWS_SS_USER_TYPEDEF
 	struct lws_struct_args	a;
 	struct lejp_ctx		ctx;
 	saip_builder_t		*b;
+	uint8_t			frag;
 } local_srv_t;
 
 static lws_ss_state_return_t
@@ -236,10 +237,11 @@ local_srv_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	struct lws_ss_handle *h = lws_ss_from_user(g);
 	saip_builder_t *b;
 	saip_pcon_t *pc;
+	int m;
 
-	lwsl_err("%s: %%%%%%%%%%%%%%%%%%%%%% %.*s\n", __func__, (int)len, (const char *)buf);
+	lwsl_debug("%s: rx %d bytes\n", __func__, (int)len);
 
-	if (!g->ctx.user) { /* first time */
+	if (!g->frag) { /* first time */
 		memset(&g->a, 0, sizeof(g->a));
 
 		g->a.map_st[0]		= lsm_schema_builder_registration;
@@ -247,7 +249,8 @@ local_srv_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		g->a.ac_block_size	= 2048;
 
 		lws_struct_json_init_parse(&g->ctx, NULL, &g->a);
-	}
+	} else
+		g->frag = 0;
 
 	/*
 	 * Dec 02 05:45:31 warmcat.com sai-power[2690328]: 0000: 7B 22 73 63 68 65 6D 61 22 3A 22 63 6F 6D 2E 77    {"schema":"com.w
@@ -263,8 +266,21 @@ local_srv_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	 *
 	 */
 
-	if (lejp_parse(&g->ctx, buf, (int)len) < 0 || !g->a.dest) {
-		lwsl_ss_warn(h, "JSON decode failed");
+	m = lejp_parse(&g->ctx, buf, (int)len);
+
+	if (m < 0 && m != LEJP_CONTINUE) {
+		lwsl_ss_warn(h, "JSON decode failed '%s'", lejp_error_to_string(m));
+		lwsac_free(&g->a.ac);
+		return LWSSSSRET_DISCONNECT_ME;
+	}
+
+	if (m == LEJP_CONTINUE) {
+		g->frag = 1;
+		return LWSSSSRET_OK;
+	}
+
+	if (!g->a.dest) {
+		lwsl_ss_warn(h, "JSON decode didn't make an object");
 		lwsac_free(&g->a.ac);
 		return LWSSSSRET_DISCONNECT_ME;
 	}
