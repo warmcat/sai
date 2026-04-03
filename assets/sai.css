@@ -1165,3 +1165,15 @@ body.overlay-active {
 	align-items: center;
 	flex-shrink: 0;
 }
+
+.logo-login-container {
+	display: flex;
+	align-items: center;
+	margin-bottom: 12px;
+	flex-wrap: nowrap;
+}
+
+.login-status-container {
+	margin-left: 10px;
+	margin-top: 4px;
+}
