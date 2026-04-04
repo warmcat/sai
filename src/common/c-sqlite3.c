@@ -73,6 +73,8 @@ sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache
 		return 3;
 	}
 
+	sai_sqlite3_statement(*ppdb, "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_uuid ON tasks(uuid);", "create task index");
+
 	sai_sqlite3_statement(*ppdb, "PRAGMA journal_mode=WAL;", "set WAL");
 
 	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_log)) {
@@ -81,11 +83,15 @@ sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache
 		return 4;
 	}
 
+	sai_sqlite3_statement(*ppdb, "CREATE INDEX IF NOT EXISTS idx_log_task_time ON logs(task_uuid, timestamp);", "create log index");
+
 	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_artifact)) {
 		lwsl_err("%s: unable to create artifact table in %s\n", __func__, filepath);
 
 		return 5;
 	}
+
+	sai_sqlite3_statement(*ppdb, "CREATE INDEX IF NOT EXISTS idx_art_task ON artifacts(task_uuid);", "create artifact index");
 
 	sc = malloc(sizeof(*sc));
 	memset(sc, 0, sizeof(*sc));

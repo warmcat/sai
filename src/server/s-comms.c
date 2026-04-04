@@ -198,6 +198,8 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 		}
 
+		sai_sqlite3_statement(vhd->server.pdb, "CREATE UNIQUE INDEX IF NOT EXISTS idx_event_uuid ON events(uuid);", "create event index");
+
 		if (lws_struct_sq3_create_table(vhd->server.pdb,
 						lsm_schema_sq3_map_plat)) {
 			lwsl_err("%s: unable to create builders table\n", __func__);
