@@ -384,6 +384,13 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 			return 1;
 		}
 
+		if (builder.power_controller_name) {
+			lws_start_foreach_dll(struct lws_dll2 *, d, builder.sai_plat_owner.head) {
+				struct sai_plat *sp = lws_container_of(d, struct sai_plat, sai_plat_list);
+				sp->pcon = builder.power_controller_name;
+			} lws_end_foreach_dll(d);
+		}
+
 		/*
 		 * For each platform...
 		 */
@@ -547,6 +554,7 @@ saib_app_run(int argc, const char **argv)
 		return 1;
 	}
 
+
 	/*
 	 * We need to sample the true uid / gid we should use inside
 	 * the mountpoint for sai:nobody or sai:sai, by looking at
@@ -642,13 +650,11 @@ saib_app_run(int argc, const char **argv)
 
 	/* ... and our vhost... */
 
-	builder.context = lws_create_context(&info);
-	if (!builder.context) {
+	builder.vhost = lws_create_vhost(builder.context, &info);
+	if (!builder.vhost) {
 		lwsl_err("lws init failed\n");
 		return 1;
 	}
-
-	/* ... and our vhost... */
 
 	while (!lws_service(builder.context, 0) && !interrupted)
 		;

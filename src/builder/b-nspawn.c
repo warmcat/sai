@@ -523,10 +523,14 @@ saib_spawn_script(struct sai_nspawn *ns)
 		     ns->inp);
 #endif
 
-	lws_strncpy(one_step, ns->task->script, sizeof(one_step));
-
-	if (saib_log_chunk_create(op->ns, one_step, strlen(one_step), 3))
+	n = lws_snprintf(one_step, sizeof(one_step), "%s\n", ns->task->script);
+	if (n < 1)
 		return -1;
+
+	if (saib_log_chunk_create(ns, one_step, strlen(one_step), 3))
+		return -1;
+
+	one_step[n - 1] = '\0'; /* trim off the CR; n is always at least 1 */
 
 #if defined(WIN32)
 	if (_sopen_s(&fd, ns->script_path, _O_CREAT | _O_TRUNC | _O_WRONLY,

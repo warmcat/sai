@@ -1923,6 +1923,20 @@ function ws_open_sai()
 
 				if (platformsArray) {
 					last_builder_list = platformsArray;
+					
+					/* Ensure PCONs exist in topology even if omitted by the server payload */
+					last_builder_list.forEach(b => {
+					    if (b.pcon && !pcon_topology[b.pcon]) {
+					        pcon_topology[b.pcon] = {
+					            name: b.pcon,
+					            on: 1, /* Default to on so it shows green if unknown */
+					            type: "auto-discovered",
+					            depends_on: "",
+					            children: []
+					        };
+					    }
+					});
+
 					const container = document.getElementById("sai_builders");
 					if (container) renderPconHierarchy(container);
 				}
@@ -2148,7 +2162,7 @@ function ws_open_sai()
 						const url_task_uuid = urlParams.get('task');
 
 						if (url_task_uuid === jso.t.uuid &&
-						    document.getElementById("sai_sticky"))
+						    document.getElementById("sai_sticky")) {
 							document.getElementById("sai_sticky").innerHTML =
 								"<div class=\"taskinfo\" id=\"taskinfo-" +
 								san(jso.t.uuid) + "\">" +
@@ -2156,25 +2170,26 @@ function ws_open_sai()
 								"</div>";
 
 
-						s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
-						"<td class=\"atop\">" +
-						"<div id=\"dlogsn\" class=\"dlogsn\">" + lines + "</div></td>" +
-						"<td class=\"atop\">" +
-						"<div id=\"dlogst\" class=\"dlogst\">" + times + "</div></td>" +
-					     "<td class=\"atop\"><div id=\"dlogs\" class=\"dlogs\">" +
-					     "<span id=\"logs\" class=\"nowrap\">" + logs +
-						"</span>"+
-						"</div></td></tr></table></pre>";
+							s = "<table><td colspan=\"3\"><pre><table class=\"scrollogs\"><tr>" +
+							"<td class=\"atop\">" +
+							"<div id=\"dlogsn\" class=\"dlogsn\">" + lines + "</div></td>" +
+							"<td class=\"atop\">" +
+							"<div id=\"dlogst\" class=\"dlogst\">" + times + "</div></td>" +
+							 "<td class=\"atop\"><div id=\"dlogs\" class=\"dlogs\">" +
+							 "<span id=\"logs\" class=\"nowrap\">" + logs +
+							"</span>"+
+							"</div></td></tr></table></pre>";
 
-					if (document.getElementById("sai_overview")) {
-						document.getElementById("sai_overview").innerHTML = s;
-						logs_pending = times_pending = lines_pending = "";
+							if (document.getElementById("sai_overview")) {
+								document.getElementById("sai_overview").innerHTML = s;
+								logs_pending = times_pending = lines_pending = "";
 
-						if (document.getElementById("esr-" + jso.e.uuid))
-							document.getElementById("esr-" + jso.e.uuid).innerHTML =
-								sai_event_summary_render(jso, now_ut, 1);
+								if (document.getElementById("esr-" + jso.e.uuid))
+									document.getElementById("esr-" + jso.e.uuid).innerHTML =
+										sai_event_summary_render(jso, now_ut, 1);
 
-					}
+							}
+						}
 					update_summary_and_progress(jso.e.uuid);
 
 					if (document.getElementById("rebuild-" + san(jso.t.uuid))) {
@@ -2206,9 +2221,12 @@ function ws_open_sai()
 
 								document.getElementById("dlogsn").innerHTML = "";
 								document.getElementById("dlogst").innerHTML = "";
-								document.getElementById("logs").innerHTML = "";
+								document.getElementById("dlogs").innerHTML = "<span id=\"logs\" class=\"nowrap\"></span>";
 								lines = times = logs = "";
 								lines_pending = times_pending = logs_pending = "";
+								segment_stack = [];
+								seg_counter = 0;
+								window.held_start_line = null;
 								logAnsiState = {};
 								tfirst = 0;
 								lli = 1;
@@ -2379,61 +2397,92 @@ function ws_open_sai()
 					default: s_logs = "<span class=\"tty1\">" + s + "</span>"; break;
 					}
 
+					var eval_line = text_line;
+					if (window.pending_log_line && idx === 0) {
+						eval_line = window.pending_log_line + text_line;
+					}
+					
+					if (has_nl === '') {
+						window.pending_log_line = eval_line;
+					} else if (idx === 0) {
+						window.pending_log_line = "";
+					}
+
 					var skip_push = false;
 					var skip_render = false;
-					var match_fail = jso.channel === 1 ? text_line.match(/Test\s+#(\d+):\s+.*(Failed|\*\*\*)/i) : null;
-					var is_fail = match_fail || (jso.channel === 1 && /test failed/i.test(text_line));
+					var match_fail = (jso.channel === 1 || jso.channel === 2) ? eval_line.match(/Test\s+#(\d+):\s+.*(Failed|\*\*\*|Timeout)/i) : null;
+					var is_fail = match_fail || ((jso.channel === 1 || jso.channel === 2) && /test failed/i.test(eval_line));
 					
-					if (jso.channel === 1) {
+					if (jso.channel === 1 || jso.channel === 2) {
 						if (window.held_start_line) {
 							if (is_fail) {
+								var is_same_test = false;
+								if (match_fail) {
+									var start_match = window.held_start_line.text.match(/Start\s+(\d+):/i);
+									if (start_match && start_match[1] === match_fail[1]) {
+										is_same_test = true;
+									}
+								}
+								// If the failing test isn't the one that just started, it must be running in parallel.
+								// Flush the unrelated valid 'Start' line out into the parent CTest boundary first.
+								if (!is_same_test) {
+									logs += window.held_start_line.s_logs; logs_pending += window.held_start_line.s_logs;
+									if (window.held_start_line.li) {
+										lines += window.held_start_line.en; lines_pending += window.held_start_line.en;
+										times += window.held_start_line.tn; times_pending += window.held_start_line.tn;
+									}
+									window.held_start_line = null;
+								}
+							
 								while (segment_stack.length > 1) pop_segment();
-								push_segment(text_line, true);
+								push_segment(eval_line, true);
 								skip_push = true;
 							}
 							
-							logs += window.held_start_line.s_logs; logs_pending += window.held_start_line.s_logs;
-							if (window.held_start_line.li) {
-								lines += window.held_start_line.en; lines_pending += window.held_start_line.en;
-								times += window.held_start_line.tn; times_pending += window.held_start_line.tn;
+							if (window.held_start_line) {
+								logs += window.held_start_line.s_logs; logs_pending += window.held_start_line.s_logs;
+								if (window.held_start_line.li) {
+									lines += window.held_start_line.en; lines_pending += window.held_start_line.en;
+									times += window.held_start_line.tn; times_pending += window.held_start_line.tn;
+								}
+								window.held_start_line = null;
 							}
-							window.held_start_line = null;
 						}
 						
-						if (/^\s*Start\s+\d+:/i.test(text_line)) {
-							window.held_start_line = { text: text_line, s_logs: s_logs, en: en, tn: tn, li: li };
+						if (/^\s*Start\s+\d+:/i.test(eval_line)) {
+							window.held_start_line = { text: eval_line, s_logs: s_logs, en: en, tn: tn, li: li };
 							skip_render = true;
 						}
 					}
 
 					if (jso.channel === 3) {
-						if (/^>saib>\s+Starting task step/.test(text_line)) {
+						if (/^>saib>\s+Starting task step/.test(eval_line)) {
 							while (segment_stack.length > 0) pop_segment();
-							push_segment(text_line, true);
-						} else if (/^>saib>\s+Step \d+:/.test(text_line) && segment_stack.length > 0) {
+							push_segment(eval_line, true);
+						} else if (/^>saib>\s+Step \d+:/.test(eval_line) && segment_stack.length > 0) {
 							var pseg = segment_stack[0];
 							var phdr = document.getElementById("hdr-seg-" + pseg.id);
-							if (phdr) phdr.querySelector('.seg-title').innerText = text_line;
+							if (phdr) phdr.querySelector('.seg-title').innerText = eval_line;
 						} else {
 							while (segment_stack.length > 1) pop_segment();
 						}
 					}
 					
-					if (jso.channel === 1) {
+					if (jso.channel === 1 || jso.channel === 2) {
 						if (skip_push) {
 							// Fold logic successfully handled during lookahead execution
-						} else if (match_fail || /test failed/i.test(text_line)) {
+						} else if (match_fail || /test failed/i.test(eval_line)) {
 							while (segment_stack.length > 1) pop_segment();
-							push_segment(text_line, true);
-						} else if (/^\d+% tests passed/i.test(text_line) || /Total Test time/i.test(text_line) || /The following tests FAILED:/i.test(text_line) || /Errors while running CTest/i.test(text_line)) {
+							push_segment(eval_line, true);
+						} else if (/^\d+% tests passed/i.test(eval_line) || /Total Test time/i.test(eval_line) || /The following tests FAILED:/i.test(eval_line) || /Errors while running CTest/i.test(eval_line)) {
 							while (segment_stack.length > 1) pop_segment();
-						} else if (/^\d+\/\d+\s+Test\s+#\d+:/i.test(text_line)) {
+						} else if (/^\d+\/\d+\s+Test\s+#\d+:/i.test(eval_line)) {
 							while (segment_stack.length > 1) pop_segment();
 						}
 					}
 					
-					var text_lower = text_line.toLowerCase();
-					if (text_lower.includes("error:") || text_lower.includes("fatal:") || /error\s\d+:/.test(text_lower)) {
+					var text_lower = eval_line.toLowerCase();
+					if (is_fail || text_lower.includes("error:") || text_lower.includes("fatal:") || /error\s\d+:/.test(text_lower)) {
 						for (var si = 0; si < segment_stack.length; si++) {
 							var sobj = segment_stack[si];
 							sobj.error_count++;

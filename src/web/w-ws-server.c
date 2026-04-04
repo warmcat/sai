@@ -127,9 +127,6 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			switch (m->a.top_schema_index) {
 			case SAIS_WS_WEBSRV_RX_LOADREPORT:
 			case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
-			case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
-			case SAIS_WS_WEBSRV_RX_POWER_MANAGED_BUILDERS:
-			case SAIS_WS_WEBSRV_RX_PCON_ENERGY:
 				saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, p, rem,
 					lws_write_ws_flags(LWS_WRITE_TEXT,
 							   is_start,
@@ -151,9 +148,6 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		switch (m->a.top_schema_index) {
 		case SAIS_WS_WEBSRV_RX_TASKCHANGE:
 		case SAIS_WS_WEBSRV_RX_EVENTCHANGE:
-		case SAIS_WS_WEBSRV_RX_SAI_BUILDERS:
-		case SAIS_WS_WEBSRV_RX_POWER_MANAGED_BUILDERS:
-		case SAIS_WS_WEBSRV_RX_PCON_ENERGY:
 		case SAIS_WS_WEBSRV_RX_LOADREPORT:
 		case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
 			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, p, consumed,
@@ -229,6 +223,14 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				struct pss *pss = lws_container_of(p, struct pss, same);
 
 				saiw_browser_broadcast_queue_builders(pss->vhd, pss);
+			} lws_end_foreach_dll(p);
+			break;
+
+		case SAIS_WS_WEBSRV_RX_PCON_ENERGY:
+			lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
+				struct pss *pss = lws_container_of(p, struct pss, same);
+
+				saiw_browser_broadcast_queue_pcon_energy(pss->vhd, pss, (sai_pcon_energy_report_t *)m->a.dest);
 			} lws_end_foreach_dll(p);
 			break;
 

@@ -120,6 +120,21 @@ if (LWS_OPENSSL_INCLUDE_DIRS)
 	set(CMAKE_C_FLAGS "-I\"${LWS_OPENSSL_INCLUDE_DIRS}\" ${CMAKE_C_FLAGS}")
 endif()
 
+find_package(OpenSSL)
+if (OPENSSL_FOUND)
+	include_directories("${OPENSSL_INCLUDE_DIR}")
+endif()
+
+if (APPLE AND EXISTS "/opt/homebrew/opt/openssl/include")
+	include_directories("/opt/homebrew/opt/openssl/include")
+	link_directories("/opt/homebrew/opt/openssl/lib")
+endif()
+
+if (APPLE AND EXISTS "/opt/homebrew/opt/openssl@3/include")
+	include_directories("/opt/homebrew/opt/openssl@3/include")
+	link_directories("/opt/homebrew/opt/openssl@3/lib")
+endif()
+
 
 set(CMAKE_C_FLAGS "-DBUILD_INFO=\\\"${LWS_BUILD_HASH}\\\" ${CMAKE_C_FLAGS}")
 

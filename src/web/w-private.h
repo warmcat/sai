@@ -110,6 +110,9 @@ struct pss {
 	uint64_t		artifact_offset;
 	uint64_t		artifact_length;
 
+	char			*last_bps[3];
+	size_t			last_bps_len[3];
+
 	unsigned int		spa_failed:1;
 	unsigned int		dry:1;
 	unsigned int		frag:1;
@@ -233,5 +236,9 @@ int
 saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss);
 int
 saiw_browser_broadcast_queue_pcons(struct vhd *vhd, struct pss *pss);
+int
+saiw_browser_broadcast_queue_pcon_energy(struct vhd *vhd, struct pss *pss, sai_pcon_energy_report_t *energy);
+
+extern const lws_struct_map_t lsm_schema_pcon_energy[];
 
 

@@ -775,11 +775,15 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				char q[1024];
 
 				lws_snprintf(q, sizeof(q),
-					     "INSERT INTO builders (name, platform, last_seen, peer_ip, sai_hash, lws_hash, windows) "
-					     "VALUES ('%s', '%s', %llu, '%s', '%s', '%s', %d) "
-					     "ON CONFLICT(name) DO UPDATE SET last_seen=excluded.last_seen, "
+					     "INSERT INTO builders (name, platform, pcon, last_seen, peer_ip, sai_hash, lws_hash, windows) "
+					     "VALUES ('%s', '%s', %s%s%s, %llu, '%s', '%s', '%s', %d) "
+					     "ON CONFLICT(name) DO UPDATE SET pcon=COALESCE(NULLIF(excluded.pcon, ''), pcon), last_seen=excluded.last_seen, "
 					     "peer_ip=excluded.peer_ip, sai_hash=excluded.sai_hash, lws_hash=excluded.lws_hash",
-					     build->name, build->platform, (unsigned long long)lws_now_secs(),
+					     build->name, build->platform, 
+					     build->pcon ? "'" : "NULL",
+					     build->pcon ? build->pcon : "",
+					     build->pcon ? "'" : "",
+					     (unsigned long long)lws_now_secs(),
 					     pss->peer_ip, build->sai_hash, build->lws_hash, build->windows);
 
 				if (sai_sqlite3_statement(vhd->server.pdb, q, "upsert builder"))
@@ -801,7 +805,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 						lws_strncpy(host, build->name, sizeof(host));
 
 					lws_snprintf(q, sizeof(q),
-						     "UPDATE builders SET pcon = (SELECT pcon_name FROM pcon_builders WHERE builder_name = '%s') "
+						     "UPDATE builders SET pcon = COALESCE((SELECT pcon_name FROM pcon_builders WHERE builder_name = '%s'), pcon) "
 						     "WHERE name = '%s' OR name LIKE '%s.%%'",
 						     host, build->name, build->name);
 					lwsl_notice("%s: Syncing pcon for host '%s' (plat '%s'): %s\n", __func__, host, build->name, q);

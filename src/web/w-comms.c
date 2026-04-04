@@ -539,6 +539,11 @@ http_resp:
 		lws_dll2_remove(&pss->subs_list);
 		lws_sul_cancel(&pss->sul_logcache);
 
+		for (n = 0; n < 3; n++) {
+			if (pss->last_bps[n])
+				free(pss->last_bps[n]);
+		}
+
 		lwsac_free(&pss->logs_ac);
 		break;
 

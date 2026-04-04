@@ -179,29 +179,70 @@ sais_list_pcons(struct vhd *vhd)
 	lws_wsmsg_info_t info;
 	size_t w;
 	lws_struct_json_serialize_result_t r;
+	char pcon_query[128];
+	sqlite3_stmt *pcon_stmt;
 
 	sai_power_managed_builders_t pmb;
 	sai_power_controller_t *pc;
 
 	memset(&pmb, 0, sizeof(pmb));
 
-	/* Query PCONs from DB using schema map */
-	if (lws_struct_sq3_deserialize(vhd->server.pdb, NULL, "name ",
-				       lsm_schema_sq3_map_power_controller,
-				       &pmb.power_controllers, &ac, 0, 100)) {
-		/* It's okay if empty */
+	/*
+	 * We use raw sqlite queries for PCON deserialization to bypass
+	 * complex inner/outer lws_struct_sq3 memory management edge cases that truncates rows.
+	 */
+	lws_snprintf(pcon_query, sizeof(pcon_query),
+		     "SELECT name, type, depends_on, state FROM power_controllers ORDER BY name LIMIT 100");
+
+	if (sqlite3_prepare_v2(vhd->server.pdb, pcon_query, -1, &pcon_stmt, NULL) == SQLITE_OK) {
+		while (sqlite3_step(pcon_stmt) == SQLITE_ROW) {
+			const char *name = (const char *)sqlite3_column_text(pcon_stmt, 0);
+			if (name) {
+				pc = lwsac_use_zero(&ac, sizeof(*pc), 2048);
+				if (pc) {
+					lws_strncpy(pc->name, name, sizeof(pc->name));
+					
+					const char *type = (const char *)sqlite3_column_text(pcon_stmt, 1);
+					if (type) lws_strncpy(pc->type, type, sizeof(pc->type));
+					
+					const char *depends_on = (const char *)sqlite3_column_text(pcon_stmt, 2);
+					if (depends_on) lws_strncpy(pc->depends_on, depends_on, sizeof(pc->depends_on));
+					
+					pc->on = (char)sqlite3_column_int(pcon_stmt, 3);
+					
+					lws_dll2_add_tail(&pc->list, &pmb.power_controllers);
+				}
+			}
+		}
+		sqlite3_finalize(pcon_stmt);
 	}
 
 	/* Iterate PCONs and populate controlled builders */
 	lws_start_foreach_dll(struct lws_dll2 *, d, pmb.power_controllers.head) {
 		pc = lws_container_of(d, sai_power_controller_t, list);
-		char filter[128];
+		char query[256];
+		sqlite3_stmt *stmt;
 
-		/* Map 'builder_name' column to 'name' field in struct */
-		lws_snprintf(filter, sizeof(filter), "and pcon_name = '%s'", pc->name);
-		lws_struct_sq3_deserialize(vhd->server.pdb, filter, "builder_name ",
-					   lsm_schema_sq3_map_controlled_builder,
-					   &pc->controlled_builders_owner, &ac, 0, 100);
+		/* Manually query builders mapped to this pcon to avoid LWS struct nested 0-row ac free bug */
+		lws_snprintf(query, sizeof(query),
+			     "SELECT builder_name FROM pcon_builders WHERE pcon_name = '%s' "
+			     "ORDER BY builder_name LIMIT 100", pc->name);
+
+		if (sqlite3_prepare_v2(vhd->server.pdb, query, -1, &stmt, NULL) == SQLITE_OK) {
+			while (sqlite3_step(stmt) == SQLITE_ROW) {
+				const char *bname = (const char *)sqlite3_column_text(stmt, 0);
+				if (bname) {
+					sai_controlled_builder_t *c =
+						lwsac_use_zero(&ac, sizeof(*c), 2048);
+					if (c) {
+						lws_strncpy(c->name, bname, sizeof(c->name));
+						lws_dll2_add_tail(&c->list,
+								&pc->controlled_builders_owner);
+					}
+				}
+			}
+			sqlite3_finalize(stmt);
+		}
 
 	} lws_end_foreach_dll(d);
 
