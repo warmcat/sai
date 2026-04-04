@@ -525,6 +525,9 @@ saib_spawn_script(struct sai_nspawn *ns)
 
 	lws_strncpy(one_step, ns->task->script, sizeof(one_step));
 
+	if (saib_log_chunk_create(op->ns, one_step, strlen(one_step), 3))
+		return -1;
+
 #if defined(WIN32)
 	if (_sopen_s(&fd, ns->script_path, _O_CREAT | _O_TRUNC | _O_WRONLY,
 		     _SH_DENYNO, _S_IWRITE))

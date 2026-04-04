@@ -399,6 +399,9 @@ var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user 
 	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {},
 	fadingTasks = new Map();
 
+var segment_stack = [];
+var seg_counter = 0;
+
 /* Global caches for reconcilation */
 var pcon_topology = {};
 var pcon_energy_cache = {};
@@ -559,6 +562,119 @@ function humanize(s)
 		return (i / 1024).toFixed(3) + "Ki";
 
 	return s;
+}
+
+function flush_segments() {
+	var target_id = segment_stack.length > 0 ? segment_stack[segment_stack.length - 1].id : "root";
+	var c_idx = segment_stack.length > 0 ? (segment_stack[segment_stack.length - 1].chunk_index || 0) : 0;
+	
+	var logs_dom = target_id === "root" ? "logs" : ("dlogs-" + target_id + "-" + c_idx);
+	var lines_dom = target_id === "root" ? "dlogsn" : ("dlogsn-" + target_id + "-" + c_idx);
+	var times_dom = target_id === "root" ? "dlogst" : ("dlogst-" + target_id + "-" + c_idx);
+	
+	if (document.getElementById(logs_dom) && logs_pending) {
+		document.getElementById(logs_dom).insertAdjacentHTML('beforeend', logs_pending);
+	}
+	if (document.getElementById(lines_dom) && lines_pending) {
+		document.getElementById(lines_dom).insertAdjacentHTML('beforeend', lines_pending);
+	}
+	if (document.getElementById(times_dom) && times_pending) {
+		document.getElementById(times_dom).insertAdjacentHTML('beforeend', times_pending);
+	}
+	
+	logs_pending = lines_pending = times_pending = "";
+	
+	if (target_id !== "root") {
+		var seg = segment_stack[segment_stack.length - 1];
+		var ehdr = document.getElementById("hdr-seg-" + target_id);
+		if (ehdr) {
+			ehdr.querySelector('.seg-lines').innerText = seg.lines_count;
+			ehdr.querySelector('.seg-errors').innerText = seg.error_count;
+			
+			if (seg.error_count > 0) ehdr.classList.add("has-error");
+			else if (seg.warning_count > 0) ehdr.classList.add("has-warning");
+		}
+	}
+}
+
+function append_chunk_table(id, chunk_index, target_dom) {
+	var html = `
+		<table><tr>
+			<td class="atop"><div class="dlogsn" id="dlogsn-${id}-${chunk_index}"></div></td>
+			<td class="atop"><div class="dlogst" id="dlogst-${id}-${chunk_index}"></div></td>
+			<td class="atop"><div class="dlogs"><span class="nowrap" id="dlogs-${id}-${chunk_index}"></span></div></td>
+		</tr></table>
+	`;
+	if (target_dom) target_dom.insertAdjacentHTML('beforeend', html);
+}
+
+function push_segment(title, default_folded) {
+	flush_segments();
+	seg_counter++;
+	var id = seg_counter;
+	
+	var seg = { id: id, title: title, lines_count: 0, error_count: 0, warning_count: 0, folded: default_folded, chunk_index: 0 };
+	
+	var parent_id = segment_stack.length > 0 ? segment_stack[segment_stack.length - 1].id : "root";
+	// Append to root's dlogs container OR the parent segment's BODY container
+	var parent_logs_dom = parent_id === "root" ? "dlogs" : ("seg-" + parent_id);
+	var parent_dom = document.getElementById(parent_logs_dom);
+	
+	if (parent_dom) {
+		var icon = default_folded ? "▶" : "▼";
+		var hideClass = default_folded ? " hide" : "";
+		
+		var html = `<div class="log-segment-wrapper">
+			<div class="log-segment-header" id="hdr-seg-${id}">
+				<span class="fold-icon">${icon}</span><span class="seg-title">${title}</span>
+				<span class="seg-stats">(<span class="seg-lines">0</span> lines, <span class="seg-errors">0</span> errors)</span>
+			</div>
+			<div class="log-segment-body${hideClass}" id="seg-${id}">
+			</div>
+		</div>`;
+		
+		// If root, we only append once, but wait, root is just flat.
+		parent_dom.insertAdjacentHTML('beforeend', html);
+		
+		var seg_dom = document.getElementById("seg-" + id);
+		append_chunk_table(id, 0, seg_dom);
+		
+		if (parent_id === "root") {
+			if (document.getElementById("dlogsn")) document.getElementById("dlogsn").insertAdjacentHTML('beforeend', '<br><br>');
+			if (document.getElementById("dlogst")) document.getElementById("dlogst").insertAdjacentHTML('beforeend', '<br><br>');
+		}
+	}
+	segment_stack.push(seg);
+}
+
+function pop_segment() {
+	if (segment_stack.length > 0) {
+		flush_segments();
+		segment_stack.pop();
+		
+		// When we return to parent, we need a new table below the children we just popped
+		if (segment_stack.length > 0) {
+			var p = segment_stack[segment_stack.length - 1];
+			p.chunk_index++;
+			var seg_dom = document.getElementById("seg-" + p.id);
+			append_chunk_table(p.id, p.chunk_index, seg_dom);
+		}
+	}
+}
+
+function toggleSegment(id) {
+	var body = document.getElementById("seg-" + id);
+	var hdr = document.getElementById("hdr-seg-" + id);
+	if (body && hdr) {
+		var icon = hdr.querySelector('.fold-icon');
+		if (body.classList.contains("hide")) {
+			body.classList.remove("hide");
+			if (icon) icon.innerText = "▼";
+		} else {
+			body.classList.add("hide");
+			if (icon) icon.innerText = "▶";
+		}
+	}
 }
 
 function ansiToHtml(text, state) {
@@ -1671,9 +1787,13 @@ function ws_open_sai()
 //	s1 = s1.split("?")[0];
 	console.log(s1);
 	sai = new WebSocket(s1, "com-warmcat-sai");
-
 	try {
+
 		sai.onopen = function() {
+			if (typeof window.overlayTimeout !== 'undefined' && window.overlayTimeout) {
+				clearTimeout(window.overlayTimeout);
+				window.overlayTimeout = null;
+			}
 			var overlay = document.querySelector(".overlay");
 			if (overlay) {
 				overlay.parentNode.removeChild(overlay);
@@ -2213,70 +2333,147 @@ function ws_open_sai()
 				break;
 
 			case "com-warmcat-sai-logs":
+				var s1;
 				try {
-					var s1 = decodeURIComponent(escape(atob(jso.log))),
-					    ansiResult = ansiToHtml(s1, logAnsiState),
-					    s = ansiResult.html, li,
-					    en = "", yo, dh, ce, tn = "";
-					logAnsiState = ansiResult.newState;
+					s1 = decodeURIComponent(escape(atob(jso.log)));
 				} catch (e) {
 					break;
 				}
 
-				if (!tfirst)
-					tfirst = jso.timestamp;
-
+				if (!tfirst) tfirst = jso.timestamp;
 				last_log_timestamp = jso.timestamp;
 
-				li = (s1.match(/\n/g)||[]).length;
+				var lines_started = 0;
+				var lines_arr = s1.split('\n');
+				for (var idx = 0; idx < lines_arr.length; ++idx) {
+					if (idx === lines_arr.length - 1 && lines_arr[idx] === '') continue;
+					
+					var text_line = lines_arr[idx];
+					var has_nl = (idx < lines_arr.length - 1) ? '\n' : '';
+					var line_str = text_line + has_nl;
+					
+					var ansiResult = ansiToHtml(line_str, logAnsiState);
+					var s = ansiResult.html;
+					logAnsiState = ansiResult.newState;
+					
+					var li = has_nl ? 1 : 0;
+					var en = "", tn = "";
+					if (cont && !cont[jso.channel] && jso.len)
+						tn = ((jso.timestamp - tfirst) / 1000000).toFixed(4);
 
-				switch (jso.channel) {
-				case 1:
-					logs += s; logs_pending += s;
-					break;
-				case 2:
-					logs += "<span class=\"stderr\">" + s +
-							"</span>";
-					logs_pending += "<span class=\"stderr\">" + s +
-							"</span>";
-					break;
-				case 3:
-					logs += "<span class=\"saibuild\">\u{25a0} " + s +
-							"</span>";
-					logs_pending += "<span class=\"saibuild\">\u{25a0} " + s +
-							"</span>";
-					break;
-				case 4:
-					logs += "<span class=\"tty0\">" + s +
-							"</span>";
-					logs_pending += "<span class=\"tty0\">" + s +
-							"</span>";
-					break;
-				default:
-					logs += "<span class=\"tty1\">" + s +
-							"</span>";
-					logs_pending += "<span class=\"tty1\">" + s +
-							"</span>";
+					var temp_li = li;
+					var temp_lli = lli;
+					while (temp_li > 0) {
+						en += "<a id=\"#sn" + temp_lli + "\" href=\"#sn" + temp_lli + "\">" + temp_lli + "</a><br>";
+						tn += "<br>";
+						temp_lli++;
+						temp_li--;
+					}
+					
+					var s_logs = "";
+					switch (jso.channel) {
+					case 1: s_logs = s; break;
+					case 2: s_logs = "<span class=\"stderr\">" + s + "</span>"; break;
+					case 3: s_logs = "<span class=\"saibuild\">\u{25a0} " + s + "</span>"; break;
+					case 4: s_logs = "<span class=\"tty0\">" + s + "</span>"; break;
+					default: s_logs = "<span class=\"tty1\">" + s + "</span>"; break;
+					}
 
+					var skip_push = false;
+					var skip_render = false;
+					var match_fail = jso.channel === 1 ? text_line.match(/Test\s+#(\d+):\s+.*(Failed|\*\*\*)/i) : null;
+					var is_fail = match_fail || (jso.channel === 1 && /test failed/i.test(text_line));
+					
+					if (jso.channel === 1) {
+						if (window.held_start_line) {
+							if (is_fail) {
+								while (segment_stack.length > 1) pop_segment();
+								push_segment(text_line, true);
+								skip_push = true;
+							}
+							
+							logs += window.held_start_line.s_logs; logs_pending += window.held_start_line.s_logs;
+							if (window.held_start_line.li) {
+								lines += window.held_start_line.en; lines_pending += window.held_start_line.en;
+								times += window.held_start_line.tn; times_pending += window.held_start_line.tn;
+							}
+							window.held_start_line = null;
+						}
+						
+						if (/^\s*Start\s+\d+:/i.test(text_line)) {
+							window.held_start_line = { text: text_line, s_logs: s_logs, en: en, tn: tn, li: li };
+							skip_render = true;
+						}
+					}
+
+					if (jso.channel === 3) {
+						if (/^>saib>\s+Starting task step/.test(text_line)) {
+							while (segment_stack.length > 0) pop_segment();
+							push_segment(text_line, true);
+						} else if (/^>saib>\s+Step \d+:/.test(text_line) && segment_stack.length > 0) {
+							var pseg = segment_stack[0];
+							var phdr = document.getElementById("hdr-seg-" + pseg.id);
+							if (phdr) phdr.querySelector('.seg-title').innerText = text_line;
+						} else {
+							while (segment_stack.length > 1) pop_segment();
+						}
+					}
+					
+					if (jso.channel === 1) {
+						if (skip_push) {
+							// Fold logic successfully handled during lookahead execution
+						} else if (match_fail || /test failed/i.test(text_line)) {
+							while (segment_stack.length > 1) pop_segment();
+							push_segment(text_line, true);
+						} else if (/^\d+% tests passed/i.test(text_line) || /Total Test time/i.test(text_line) || /The following tests FAILED:/i.test(text_line) || /Errors while running CTest/i.test(text_line)) {
+							while (segment_stack.length > 1) pop_segment();
+						} else if (/^\d+\/\d+\s+Test\s+#\d+:/i.test(text_line)) {
+							while (segment_stack.length > 1) pop_segment();
+						}
+					}
+					
+					var text_lower = text_line.toLowerCase();
+					if (text_lower.includes("error:") || text_lower.includes("fatal:") || /error\s\d+:/.test(text_lower)) {
+						for (var si = 0; si < segment_stack.length; si++) {
+							var sobj = segment_stack[si];
+							sobj.error_count++;
+							if (si < segment_stack.length - 1) {
+								var sbody = document.getElementById("seg-" + sobj.id);
+								var shdr = document.getElementById("hdr-seg-" + sobj.id);
+								if (sbody && shdr && sbody.classList.contains("hide")) {
+									sbody.classList.remove("hide");
+									var sicon = shdr.querySelector('.fold-icon');
+									if (sicon) sicon.innerText = "▼";
+								}
+							}
+						}
+					} else if (text_lower.includes("warning:")) {
+						for (var si = 0; si < segment_stack.length; si++) segment_stack[si].warning_count++;
+					}
+
+					if (segment_stack.length > 0) {
+						segment_stack[segment_stack.length - 1].lines_count += (has_nl ? 1 : 0);
+					}
+
+					if (!skip_render) {
+						if (s_logs) {
+							logs += s_logs; logs_pending += s_logs;
+						}
+						if (li) {
+							lines += en; lines_pending += en;
+							times += tn; times_pending += tn;
+						}
+					}
+
+					if (cont)
+						cont[jso.channel] = (li === 0);
+
+					while (li > 0) {
+						lli++;
+						li--;
+					}
 
 				}
-
-				if (cont && !cont[jso.channel] && jso.len)
-					tn = ((jso.timestamp - tfirst) / 1000000).toFixed(4);
-
-				if (cont)
-				cont[jso.channel] = (li == 0);
-
-				while (li--) {
-					en += "<a id=\"#sn" + lli +
-						"\" href=\"#sn" + lli + "\">" +
-						lli + "</a><br>";
-					tn += "<br>"
-					lli++;
-				}
-
-				lines += en; lines_pending += en;
-				times += tn; times_pending += tn;
 
 				if (!redpend) {
 					redpend = 1;
@@ -2288,22 +2485,7 @@ function ws_open_sai()
 								rightPane.clientHeight <=
 								rightPane.scrollTop + 1;
 
-						if (document.getElementById("logs")) {
-							if (logs_pending) {
-								document.getElementById("logs").insertAdjacentHTML('beforeend', logs_pending);
-								logs_pending = "";
-							}
-
-							if (document.getElementById("dlogsn") && lines_pending) {
-								document.getElementById("dlogsn").insertAdjacentHTML('beforeend', lines_pending);
-								lines_pending = "";
-							}
-
-							if (document.getElementById("dlogst") && times_pending) {
-								document.getElementById("dlogst").insertAdjacentHTML('beforeend', times_pending);
-								times_pending = "";
-							}
-						}
+						flush_segments();
 
 						if (locked && rightPane)
 						   rightPane.scrollTop =
@@ -2320,13 +2502,20 @@ function ws_open_sai()
 		};
 
 		sai.onclose = function(ev){
-			var overlay = document.createElement("div");
-			overlay.className = "overlay";
-			document.body.appendChild(overlay);
-			document.body.classList.add("overlay-active");
-
 			console.log("WebSocket closed. Code:", ev.code, "Reason:", ev.reason);
-			myVar = setTimeout(ws_open_sai, 4000);
+			
+			if (typeof overlayTimeout !== 'undefined' && overlayTimeout) clearTimeout(overlayTimeout);
+			
+			window.overlayTimeout = setTimeout(function() {
+				if (!document.querySelector(".overlay")) {
+					var overlay = document.createElement("div");
+					overlay.className = "overlay";
+					document.body.appendChild(overlay);
+					document.body.classList.add("overlay-active");
+				}
+			}, 3000);
+
+			myVar = setTimeout(ws_open_sai, 1000);
 		};
 	} catch(exception) {
 		alert("<p>Error" + exception);
@@ -2336,6 +2525,14 @@ function ws_open_sai()
 /* stuff that has to be delayed until all the page assets are loaded */
 
 window.addEventListener("load", function() {
+
+	document.addEventListener('click', function(e) {
+		var hdr = e.target.closest('.log-segment-header');
+		if (hdr) {
+			var id = hdr.id.substring(8);
+			toggleSegment(id);
+		}
+	});
 
 	const savedFlex = localStorage.getItem('sai-left-pane-flex');
 	if (savedFlex) {

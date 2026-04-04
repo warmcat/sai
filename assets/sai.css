@@ -1177,3 +1177,43 @@ body.overlay-active {
 	margin-left: 10px;
 	margin-top: 4px;
 }
+
+.log-segment-wrapper {
+	margin-top: 4px;
+}
+.log-segment-body .log-segment-wrapper {
+	margin-left: 2em;
+}
+.log-segment-header {
+	background-color: #f8f9fa;
+	cursor: pointer;
+	padding: 1px 2px;
+	border: 1px solid #ddd;
+	font-weight: bold;
+	font-family: 'OpenSans', sans-serif;
+	font-size: 11px;
+	margin-top: 1px;
+	margin-bottom: 1px;
+	user-select: none;
+	-webkit-user-select: none;
+	border-radius: 2px;
+}
+.log-segment-header.has-error {
+	background-color: #ffdddd;
+}
+.log-segment-header.has-warning {
+	background-color: #ffedcc;
+}
+.log-segment-header:hover {
+	background-color: #e9ecef;
+}
+.log-segment-body {
+	border-left: 1px solid #ddd;
+	padding-left: 2px;
+	margin-left: 2px;
+}
+.fold-icon {
+	display: inline-block;
+	width: 10px;
+	text-align: center;
+}

@@ -565,7 +565,8 @@ http_resp:
 			break;
 
 		{
-			char som, eom, rb[1200];
+			char som, eom, rb[1200 + LWS_PRE];
+			uint8_t *prb = (uint8_t *)rb + LWS_PRE;
 			int used, final = 1;
 			size_t fsl = lws_buflist_next_segment_len(&pss->raw_tx, NULL);
 
@@ -583,7 +584,7 @@ http_resp:
 				 * fragment_use sets 'som' to true if we are at
 				 * the segment start.
 				 */
-				used = lws_buflist_fragment_use(&pss->raw_tx, (uint8_t *)rb, sizeof(rb), &som, &eom);
+				used = lws_buflist_fragment_use(&pss->raw_tx, prb, 1200, &som, &eom);
 				if (!used)
 					return 0;
 
@@ -595,7 +596,7 @@ http_resp:
 			if (used < (int)fsl || (pss->segment_flags & LWS_WRITE_NO_FIN))
 				final = 0;
 
-			if (lws_write(pss->wsi, (uint8_t *)rb + ((size_t)som * sizeof(int)),
+			if (lws_write(pss->wsi, prb + ((size_t)som * sizeof(int)),
 						(size_t)used  - ((size_t)som * sizeof(int)),
 						(lws_ws_sending_multifragment(pss->wsi) ?
 								LWS_WRITE_CONTINUATION : LWS_WRITE_TEXT) |
