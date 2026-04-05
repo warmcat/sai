@@ -98,6 +98,7 @@ struct pss {
 	int			specificity;
 	int			segment_flags;
 	unsigned int		js_api_version;
+	unsigned int		overview_offset;
 
 	/* notification hmac information */
 	char			notification_sig[128];

@@ -59,6 +59,7 @@ static lws_struct_map_t lsm_browser_taskinfo[] = {
 	LSM_CARRAY	(sai_browse_rx_taskinfo_t, task_hash,		"task_hash"),
 	LSM_UNSIGNED	(sai_browse_rx_taskinfo_t, logs,		"logs"),
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, js_api_version,	"js_api_version"),
+	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, offset,		"offset"),
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, last_log_ts,		"last_log_ts"),
 };
 
@@ -601,6 +602,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 			if (ti->js_api_version)
 				pss->js_api_version = ti->js_api_version;
+			pss->overview_offset = ti->offset;
 
 			saiw_browser_broadcast_queue_builders(pss->vhd, pss);
 			saiw_browser_queue_overview(pss->vhd, pss);
@@ -881,7 +883,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 
 	filt[0] = '\0';
 	esc[0] = '\0';
-	n = -8;
+	n = -6;
 
 	if (pss->specific_project[0]) {
 		lws_sql_purify(esc, pss->specific_project, sizeof(esc) - 1);
@@ -889,10 +891,24 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		n = -1;
 	}
 
+	unsigned int total_events = 0;
+	{
+		char q[256];
+		sqlite3_stmt *stmt;
+		lws_snprintf(q, sizeof(q), "SELECT COUNT(*) FROM events%s%s",
+			     filt[0] ? " WHERE " : "",
+			     filt[0] ? filt + 5 : "");
+		if (sqlite3_prepare_v2(vhd->pdb, q, -1, &stmt, NULL) == SQLITE_OK) {
+			if (sqlite3_step(stmt) == SQLITE_ROW)
+				total_events = (unsigned int)sqlite3_column_int(stmt, 0);
+			sqlite3_finalize(stmt);
+		}
+	}
+
 	pss->wants_event_updates = 1;
 	if (lws_struct_sq3_deserialize(vhd->pdb, filt[0] ? filt : NULL,
 				       "created ", lsm_schema_sq3_map_event,
-				       &owner, &ac, 0, n)) {
+				       &owner, &ac, (int)pss->overview_offset, n)) {
 		lwsl_notice("%s: OVERVIEW 2 failed\n", __func__);
 
 		return 0;
@@ -907,8 +923,11 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		"{\"schema\":\"sai.warmcat.com.overview\","
 		" \"api_version\":%u,"
 		" \"alang\":\"%s\","
+		" \"total_events\":%u,"
+		" \"offset\":%u,"
 		"\"overview\":[", SAIW_API_VERSION,
-		lws_json_purify(esc, pss->alang, sizeof(esc) - 1, NULL)
+		lws_json_purify(esc, pss->alang, sizeof(esc) - 1, NULL),
+		total_events, pss->overview_offset
 	);
 
 	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,

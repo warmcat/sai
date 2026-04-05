@@ -1217,3 +1217,13 @@ body.overlay-active {
 	width: 10px;
 	text-align: center;
 }
+
+.sai-pagination {
+    text-align: center;
+    margin: 20px 0;
+}
+
+.sai-pagination-info {
+    color: #fff;
+    margin: 0 15px;
+}

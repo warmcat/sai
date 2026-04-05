@@ -22,7 +22,6 @@
  */
 
 #include <libwebsockets.h>
-#include <sqlite3.h>
 
 #if defined(WIN32)
 #define HAVE_STRUCT_TIMESPEC
@@ -69,7 +68,7 @@ enum {
 typedef struct sais_sqlite_cache {
 	lws_dll2_t			list;
 	char				uuid[65];
-	sqlite3				*pdb;
+	struct sqlite3			*pdb;
 	lws_usec_t			idle_since;
 	int				refcount;
 } sais_sqlite_cache_t;
@@ -565,6 +564,7 @@ typedef struct sai_browse_rx_taskinfo {
 	uint64_t			last_log_ts;
 	unsigned int			log_start;
 	unsigned int			js_api_version;
+	unsigned int			offset;
 	uint8_t				logs;
 } sai_browse_rx_taskinfo_t;
 
@@ -797,9 +797,9 @@ sai_ss_tx_from_buflist_helper(struct lws_ss_handle *ss, struct lws_buflist **buf
 int
 sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache,
 			 const char *sqlite3_path_lhs, const char *event_uuid,
-			  char create_if_needed, sqlite3 **ppdb);
+			  char create_if_needed, struct sqlite3 **ppdb);
 void
-sai_event_db_close(lws_dll2_owner_t *sqlite3_cache, sqlite3 **ppdb);
+sai_event_db_close(lws_dll2_owner_t *sqlite3_cache, struct sqlite3 **ppdb);
 
 int
 sai_event_db_close_all_now(lws_dll2_owner_t *sqlite3_cache);
@@ -808,5 +808,5 @@ int
 sai_event_db_delete_database(const char *sqlite3_path_lhs, const char *event_uuid);
 
 int
-sai_sqlite3_statement(sqlite3 *pdb, const char *cmd, const char *desc);
+sai_sqlite3_statement(struct sqlite3 *pdb, const char *cmd, const char *desc);
 

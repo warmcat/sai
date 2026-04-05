@@ -406,6 +406,14 @@ var seg_counter = 0;
 var pcon_topology = {};
 var pcon_energy_cache = {};
 var last_builder_list = [];
+var current_overview_offset = 0;
+
+window.change_page = function(new_offset) {
+	current_overview_offset = new_offset;
+	sai.send("{\"schema\":" +
+		"\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION +
+		", \"offset\": " + current_overview_offset + "}");
+};
 
 function createPconDiv(pcon) {
     const pconDiv = document.createElement("div");
@@ -1849,7 +1857,8 @@ function ws_open_sai()
 			 */
 
 			 sai.send("{\"schema\":" +
-				  "\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION + "}");
+				  "\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION +
+				  ", \"offset\": " + current_overview_offset + "}");
 		};
 
 		sai.onmessage = function got_packet(msg) {
@@ -2034,10 +2043,25 @@ function ws_open_sai()
 					 * display events wholesale
 					 */
 					if (jso.overview.length) {
+						var pagination_html = "";
+						if (!gitohashi_integ && jso.total_events > 6) {
+							pagination_html += "<div class=\"sai-pagination\">";
+							if (jso.offset > 0) {
+								pagination_html += "<button class=\"btn sai-pagination-btn\" data-offset=\"" + Math.max(0, jso.offset - 6) + "\">&lt; Newer</button> ";
+							}
+							pagination_html += "<span class=\"sai-pagination-info\">Showing " + (jso.offset + 1) + " - " + Math.min(jso.offset + 6, jso.total_events) + " of " + jso.total_events + "</span>";
+							if (jso.offset + 6 < jso.total_events) {
+								pagination_html += "<button class=\"btn sai-pagination-btn\" data-offset=\"" + (jso.offset + 6) + "\">Older &gt;</button>";
+							}
+							pagination_html += "</div>";
+						}
+
+						s = pagination_html + s;
+
 						for (n = jso.overview.length - 1; n >= 0; n--)
 							s += sai_event_render(jso.overview[n], now_ut, 1);
 
-						s = s + "</table>";
+						s = s + "</table>" + pagination_html;
 
 						if (document.getElementById("sai_sticky"))
 							document.getElementById("sai_sticky").innerHTML = s;
@@ -2580,6 +2604,12 @@ window.addEventListener("load", function() {
 		if (hdr) {
 			var id = hdr.id.substring(8);
 			toggleSegment(id);
+		}
+		var pbtn = e.target.closest('.sai-pagination-btn');
+		if (pbtn) {
+			if (window.change_page) {
+				window.change_page(parseInt(pbtn.getAttribute('data-offset')));
+			}
 		}
 	});
 
