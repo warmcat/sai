@@ -19,6 +19,10 @@
  *  MA  02110-1301  USA
  */
 
+#if !defined(_CRT_SECURE_NO_WARNINGS)
+#define _CRT_SECURE_NO_WARNINGS
+#endif
+
 #include <libwebsockets.h>
 #include <string.h>
 #include <signal.h>
@@ -27,6 +31,7 @@
 #include <fcntl.h>
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #if !defined(WIN32)
 #include <pwd.h>
 #include <grp.h>
@@ -34,10 +39,6 @@
 
 #if defined(__linux__) || defined(__APPLE__)
 #include <unistd.h>
-#endif
-
-#if defined(__APPLE__)
-#include <sys/stat.h>	/* for mkdir() */
 #endif
 
 #if defined(WIN32)
@@ -51,6 +52,10 @@
 #if !defined(PATH_MAX)
 #define PATH_MAX MAX_PATH
 #endif
+#endif
+
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
 #endif
 
 #include "b-private.h"

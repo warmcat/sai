@@ -56,8 +56,6 @@ set(CPACK_DEBIAN_BUILDER_PACKAGE_NAME "sai-builder")
 option(SAI_SERVER "Build the server + web part" ON)
 option(SAI_BUILDER "Build the builder part" ON)
 
-set(LWS_OPENSSL_LIBRARIES CACHE PATH "Path to the OpenSSL library")
-set(LWS_OPENSSL_INCLUDE_DIRS CACHE PATH "Path to the OpenSSL include directory")
 
 if (NOT SAI_SERVER AND NOT SAI_BUILDER)
 	message(FATAL_ERROR "Have to build both or one or the other")
@@ -118,21 +116,6 @@ endif()
 
 if (LWS_OPENSSL_INCLUDE_DIRS)
 	set(CMAKE_C_FLAGS "-I\"${LWS_OPENSSL_INCLUDE_DIRS}\" ${CMAKE_C_FLAGS}")
-endif()
-
-find_package(OpenSSL)
-if (OPENSSL_FOUND)
-	include_directories("${OPENSSL_INCLUDE_DIR}")
-endif()
-
-if (APPLE AND EXISTS "/opt/homebrew/opt/openssl/include")
-	include_directories("/opt/homebrew/opt/openssl/include")
-	link_directories("/opt/homebrew/opt/openssl/lib")
-endif()
-
-if (APPLE AND EXISTS "/opt/homebrew/opt/openssl@3/include")
-	include_directories("/opt/homebrew/opt/openssl@3/include")
-	link_directories("/opt/homebrew/opt/openssl@3/lib")
 endif()
 
 
