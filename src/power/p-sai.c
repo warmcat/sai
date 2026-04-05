@@ -179,8 +179,12 @@ callback_std(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 }
 
 
-static const struct lws_protocols protocol_std =
-        { "protocol_std", callback_std, 0, 0 };
+static const struct lws_protocols protocol_std = {
+	.name = "protocol_std",
+	.callback = callback_std,
+	.per_session_data_size = 0,
+	.rx_buffer_size = 0,
+};
 
 static const struct lws_protocols *pprotocols[] = {
 	&protocol_std,

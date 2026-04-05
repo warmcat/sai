@@ -242,5 +242,8 @@ callback_serial(struct lws *wsi, enum lws_callback_reasons reason,
 }
 
 struct lws_protocols protocol_serial = {
-	"sai-serial", callback_serial, sizeof(struct pss), 0,
+	.name = "sai-serial",
+	.callback = callback_serial,
+	.per_session_data_size = sizeof(struct pss),
+	.rx_buffer_size = 0,
 };

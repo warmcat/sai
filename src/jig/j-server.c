@@ -215,7 +215,11 @@ fin:
 	return lws_callback_http_dummy(wsi, reason, user, in, len);
 }
 
-static const struct lws_protocols protocol =
-	{ "http", callback_dynamic_http, sizeof(struct pss), 0 };
+static const struct lws_protocols protocol = {
+	.name = "jig-server",
+	.callback = callback_dynamic_http,
+	.per_session_data_size = sizeof(struct pss),
+	.rx_buffer_size = 4096,
+};
 
 const struct lws_protocols *pprotocols[] = { &protocol, NULL };

@@ -1,7 +1,7 @@
 /*
  * sai-builder - logproxy
  *
- * Copyright (C) 2019 - 2020 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2026 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -54,8 +54,9 @@ callback_logproxy(struct lws *wsi, enum lws_callback_reasons reason,
 }
 
 const struct lws_protocols protocol_logproxy = {
-	"protocol-logproxy",
-	callback_logproxy,
-	0,
-	2048, 2048, NULL, 0
+	.name			= "protocol-logproxy",
+	.callback		= callback_logproxy,
+	.per_session_data_size	= 0,
+	.rx_buffer_size		= 2048,
+	.tx_packet_size		= 2048,
 };

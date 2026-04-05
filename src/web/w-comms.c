@@ -641,5 +641,9 @@ try_to_reuse:
 	return 0;
 }
 
-const struct lws_protocols protocol_ws =
-	{ "com-warmcat-sai", w_callback_ws, sizeof(struct pss), 0 };
+const struct lws_protocols protocol_ws = {
+	.name = "com-warmcat-sai",
+	.callback = w_callback_ws,
+	.per_session_data_size = sizeof(struct pss),
+	.rx_buffer_size = 0,
+};

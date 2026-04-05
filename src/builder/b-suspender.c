@@ -122,8 +122,12 @@ callback_sai_suspender_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 	return 0;
 }
 
-struct lws_protocols protocol_suspender_stdxxx =
-		{ "sai-suspender-stdxxx", callback_sai_suspender_stdwsi, 0, 0 };
+struct lws_protocols protocol_suspender_stdxxx = {
+	.name			= "sai-suspender-stdxxx",
+	.callback		= callback_sai_suspender_stdwsi,
+	.per_session_data_size	= 0,
+	.rx_buffer_size		= 0,
+};
 
 #if !defined(__APPLE__) && !defined(__NetBSD__) && !defined(__OpenBSD__) && !defined(__FreeBSD__)
 static void reap(void *opaque, const lws_spawn_resource_us_t *res,

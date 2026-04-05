@@ -237,8 +237,9 @@ callback_resproxy(struct lws *wsi, enum lws_callback_reasons reason,
 }
 
 const struct lws_protocols protocol_resproxy = {
-	"protocol-resproxy",
-	callback_resproxy,
-	sizeof(struct rppss),
-	2048, 2048, NULL, 0
+	.name			= "protocol-resproxy",
+	.callback		= callback_resproxy,
+	.per_session_data_size	= sizeof(struct rppss),
+	.rx_buffer_size		= 2048,
+	.tx_packet_size		= 2048,
 };

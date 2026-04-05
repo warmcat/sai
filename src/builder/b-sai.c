@@ -598,7 +598,7 @@ saib_app_run(int argc, const char **argv)
 #endif
 
 	lwsl_user("Sai Builder - "
-		  "Copyright (C) 2019-2020 Andy Green <andy@warmcat.com>\n");
+		  "Copyright (C) 2019-2026 Andy Green <andy@warmcat.com>\n");
 	lwsl_user("   sai-builder [-c <config-file>]\n");
 
 	lwsl_notice("%s: sai-power: %s %s %s %s %s\n",
@@ -612,12 +612,8 @@ saib_app_run(int argc, const char **argv)
 	info.port = CONTEXT_PORT_NO_LISTEN;
 	info.pprotocols = pprotocols;
 
-	info.pprotocols = pprotocols;
-
 	info.uid = sb.st_uid;
 	info.gid = sb.st_gid;
-
-
 
 #if !defined(LWS_WITHOUT_EXTENSIONS)
 	if (!lws_cmdline_option(argc, argv, "-n"))

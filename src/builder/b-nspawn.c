@@ -149,8 +149,12 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 	return 0;
 }
 
-struct lws_protocols protocol_stdxxx =
-		{ "sai-stdxxx", callback_sai_stdwsi, 0, 0 };
+struct lws_protocols protocol_stdxxx = {
+	.name			= "sai-stdxxx",
+	.callback		= callback_sai_stdwsi,
+	.per_session_data_size	= 0,
+	.rx_buffer_size		= 0,
+};
 
 /*
  * We are called when the process completed and has been reaped at
