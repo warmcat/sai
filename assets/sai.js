@@ -597,10 +597,15 @@ function flush_segments() {
 		var ehdr = document.getElementById("hdr-seg-" + target_id);
 		if (ehdr) {
 			ehdr.querySelector('.seg-lines').innerText = seg.lines_count;
-			ehdr.querySelector('.seg-errors').innerText = seg.error_count;
+			var errSpan = ehdr.querySelector('.seg-errors');
 			
-			if (seg.error_count > 0) ehdr.classList.add("has-error");
-			else if (seg.warning_count > 0) ehdr.classList.add("has-warning");
+			if (seg.error_count > 0) {
+				errSpan.innerText = seg.error_count + " errors";
+				ehdr.classList.add("has-error");
+				errSpan.parentElement.classList.add("seg-errors-bold");
+			} else if (seg.warning_count > 0) {
+				ehdr.classList.add("has-warning");
+			}
 		}
 	}
 }
@@ -632,10 +637,15 @@ function push_segment(title, default_folded) {
 		var icon = default_folded ? "▶" : "▼";
 		var hideClass = default_folded ? " hide" : "";
 		
+		var clean_title = title.replace(/^[\s\S]*?(?:>|&gt;)saib(?:>|&gt;)\s*/i, '');
 		var html = `<div class="log-segment-wrapper">
 			<div class="log-segment-header" id="hdr-seg-${id}">
-				<span class="fold-icon">${icon}</span><span class="seg-title">${title}</span>
-				<span class="seg-stats">(<span class="seg-lines">0</span> lines, <span class="seg-errors">0</span> errors)</span>
+				<table class="seg-header-table"><tr>
+					<td class="seg-td-icon"><span class="fold-icon">${icon}</span></td>
+					<td class="seg-td-lines"><span class="seg-lines">0</span> lines</td>
+					<td class="seg-td-errors"><span class="seg-errors"></span></td>
+					<td class="seg-td-title"><span class="seg-title">${hsanitize(clean_title)}</span></td>
+				</tr></table>
 			</div>
 			<div class="log-segment-body${hideClass}" id="seg-${id}">
 			</div>
@@ -1287,6 +1297,34 @@ function getBuilderGroupKey(platName) {
 	return hostname;
 }
 
+window.current_viewed_task_state = 0;
+
+function check_and_apply_failure_ui() {
+	if (window.current_viewed_task_state === 4 || window.current_viewed_task_state === 5 || window.current_viewed_task_state === 6) {
+		var rootDlogs = document.getElementById("dlogs");
+		if (rootDlogs) {
+			var wrappers = rootDlogs.querySelectorAll(".log-segment-wrapper > .log-segment-header");
+			/* Only want the top-level ones, which are direct children of #dlogs > .log-segment-wrapper */
+			var topWrappers = [];
+			for (var i = 0; i < wrappers.length; i++) {
+				if (wrappers[i].parentElement && wrappers[i].parentElement.parentElement === rootDlogs) {
+					topWrappers.push(wrappers[i]);
+				}
+			}
+			if (topWrappers.length > 0) {
+				var hdr = topWrappers[topWrappers.length - 1];
+				hdr.classList.add("seg-fail-red");
+				var body = hdr.nextElementSibling;
+				if (body && body.classList.contains("hide")) {
+					body.classList.remove("hide");
+					var icon = hdr.querySelector('.fold-icon');
+					if (icon) icon.innerText = "▼";
+				}
+			}
+		}
+	}
+}
+
 function refresh_state(task_uuid, task_state)
 {
 	var tsi = document.getElementById("taskstate_" + task_uuid);
@@ -1303,6 +1341,13 @@ function refresh_state(task_uuid, task_state)
 		tsi.classList.remove("taskstate10");
 		tsi.classList.add("taskstate" + task_state);
 		// console.log("refresh_state  taskstate" + task_state);
+	}
+
+	const urlParams = new URLSearchParams(window.location.search);
+	const urlTask = urlParams.get('task');
+	if (urlTask && urlTask === task_uuid) {
+		window.current_viewed_task_state = task_state;
+		check_and_apply_failure_ui();
 	}
 }
 
@@ -2138,6 +2183,10 @@ function ws_open_sai()
 				if (!jso.t)
 					break;
 
+				if (new URLSearchParams(window.location.search).get('task') === jso.t.uuid) {
+					window.current_viewed_task_state = jso.t.state;
+				}
+
 				/*
 				 * We get told about changes to any task state,
 				 * it's up to us to figure out if the page we
@@ -2506,7 +2555,7 @@ function ws_open_sai()
 					}
 					
 					var text_lower = eval_line.toLowerCase();
-					if (is_fail || text_lower.includes("error:") || text_lower.includes("fatal:") || /error\s\d+:/.test(text_lower)) {
+					if (is_fail || text_lower.includes("error:") || text_lower.includes("fatal:") || /error\s+[a-z0-9_]+:/i.test(text_lower)) {
 						for (var si = 0; si < segment_stack.length; si++) {
 							var sobj = segment_stack[si];
 							sobj.error_count++;
@@ -2559,6 +2608,7 @@ function ws_open_sai()
 								rightPane.scrollTop + 1;
 
 						flush_segments();
+						check_and_apply_failure_ui();
 
 						if (locked && rightPane)
 						   rightPane.scrollTop =

@@ -357,7 +357,7 @@ skip:
 
 fail:
 	n = lws_snprintf(s, sizeof(s), "Build step %d FAILED, exit code: %d\n",
-			 ns->task->build_step, exit_code);
+			 ns->task->build_step + 1, exit_code);
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	saib_task_grace(ns);
