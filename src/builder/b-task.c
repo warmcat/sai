@@ -173,6 +173,8 @@ saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
 //	int cpu_load = saib_get_system_cpu(&builder);
 #endif
 
+	unsigned int executing = 0;
+
 	if ((((builder.ram_limit_kib * 4) / 3) - builder.ram_reserved_kib) < task->est_peak_mem_kib) {
 		lwsl_notice("%s: reject task %s: not enough RAM: task %u vs %u lim - %u res\n", __func__,
 			    task->uuid, (unsigned int)task->est_peak_mem_kib, (unsigned int)builder.ram_limit_kib, (unsigned int)builder.ram_reserved_kib);
@@ -185,11 +187,19 @@ saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
 		return 1;
 	}
 
-       if (sp->nspawn_owner.count >= tc) {
+	lws_start_foreach_dll(struct lws_dll2 *, p, sp->nspawn_owner.head) {
+		struct sai_nspawn *xns = lws_container_of(p, struct sai_nspawn, list);
+		if (xns->state == NSSTATE_INIT ||
+		    xns->state == NSSTATE_MOUNTING ||
+		    xns->state == NSSTATE_EXECUTING_STEPS)
+			executing++;
+	} lws_end_foreach_dll(p);
+
+	if (executing >= tc) {
 		lwsl_notice("%s: reject task %s: already running %u tasks\n",
 			    __func__, task->uuid, tc);
-               return 1; /* nope */
-       }
+		return 1; /* nope */
+	}
 
 	return 0; /* acceptable */
 }
