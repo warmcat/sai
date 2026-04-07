@@ -22,6 +22,7 @@
 #include <libwebsockets.h>
 #include <string.h>
 #include <signal.h>
+#include <errno.h>
 
 #include "p-private.h"
 

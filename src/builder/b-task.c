@@ -1,7 +1,7 @@
 /*
  * sai-builder task acquisition
  *
- * Copyright (C) 2019 - 2025 Andy Green <andy@warmcat.com>
+ * Copyright (C) 2019 - 2026 Andy Green <andy@warmcat.com>
  *
  *  This library is free software; you can redistribute it and/or
  *  modify it under the terms of the GNU Lesser General Public
@@ -23,6 +23,7 @@
 #include <sys/stat.h>
 #include <assert.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #include "b-private.h"
 

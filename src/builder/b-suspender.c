@@ -25,6 +25,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #include <sys/types.h>
 #if !defined(WIN32)
