@@ -1989,6 +1989,15 @@ function ws_open_sai()
 					            children: []
 					        };
 					    }
+
+					    if (!b.online) {
+					        /* Builder became inactive, remove associated task steps */
+					        for (const short_name in spreadsheet_data_cache) {
+					            if (b.name.startsWith(short_name)) {
+					                delete spreadsheet_data_cache[short_name];
+					            }
+					        }
+					    }
 					});
 
 					const container = document.getElementById("sai_builders");
@@ -2112,8 +2121,10 @@ function ws_open_sai()
 							document.getElementById("sai_sticky").innerHTML = s;
 
 						for (n = jso.overview.length - 1; n >= 0; n--) {
-							document.getElementById("esr-" + jso.overview[n].e.uuid).innerHTML =
-								sai_event_summary_render(jso.overview[n], now_ut, 1);
+							var esr_el = document.getElementById("esr-" + jso.overview[n].e.uuid);
+							if (esr_el)
+								esr_el.innerHTML =
+									sai_event_summary_render(jso.overview[n], now_ut, 1);
 
 							update_summary_and_progress(jso.overview[n].e.uuid);
 						}
