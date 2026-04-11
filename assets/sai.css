@@ -1260,3 +1260,30 @@ body.overlay-active {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+
+div.power-overview {
+	padding: 5px 10px;
+	margin-bottom: 10px;
+	background: rgba(0,0,0,0.05);
+	border-radius: 4px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+div.power-overview.hidden {
+	display: none;
+}
+div.power-text {
+	font-weight: bold;
+	font-size: 0.7em;
+	white-space: nowrap;
+	margin-right: 10px;
+}
+canvas.power-graph {
+	width: 150px;
+	height: 20px;
+	display: block;
+	border: 1px solid #ccc;
+	background: #fff;
+	box-sizing: border-box;
+}

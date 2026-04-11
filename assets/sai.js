@@ -1796,6 +1796,61 @@ function renderPconHierarchy(container) {
     }
 }
 
+let sai_power_samples = [];
+let sai_max_total_power_w = 0;
+
+function updatePowerGraph(total_w) {
+    const overviewDiv = document.getElementById("sai_power_overview");
+    const powerText = document.getElementById("sai_total_power");
+    const canvas = document.getElementById("sai_power_graph");
+
+    if (!overviewDiv || !powerText || !canvas) return;
+
+    if (overviewDiv.classList.contains("hidden")) {
+        overviewDiv.classList.remove("hidden");
+    }
+
+    /* if no updates passed (just drawing from memory), avoid adding a new sample */
+    if (total_w !== null) {
+        powerText.textContent = total_w + "W";
+
+        if (total_w > sai_max_total_power_w) {
+            sai_max_total_power_w = total_w;
+        }
+
+        sai_power_samples.push(total_w);
+    } else {
+        if (sai_power_samples.length > 0)
+             powerText.textContent = sai_power_samples[sai_power_samples.length - 1] + "W";
+    }
+
+    const ctx = canvas.getContext("2d");
+    if (canvas.width !== canvas.clientWidth) {
+        canvas.width = canvas.clientWidth;
+    }
+
+    const w = canvas.width;
+    const h = canvas.height;
+
+    if (sai_power_samples.length > w) {
+        sai_power_samples.shift();
+    }
+
+    ctx.clearRect(0, 0, w, h);
+    if (sai_power_samples.length === 0) return;
+
+    const max_y = sai_max_total_power_w > 0 ? sai_max_total_power_w : 1;
+
+    ctx.fillStyle = "#ff4136";
+    const startX = w - sai_power_samples.length;
+
+    for (let i = 0; i < sai_power_samples.length; i++) {
+        const val = sai_power_samples[i];
+        const barH = (val / max_y) * h;
+        ctx.fillRect(startX + i, h - barH, 1, barH);
+    }
+}
+
 function ws_open_sai()
 {
 	var s = "", q, qa, qi, q5, q5s;
@@ -2044,7 +2099,25 @@ function ws_open_sai()
 								stats.textContent = `${d.active_power_w}W`;
 						}
 					});
+					
+					let total_w = 0;
+					for (const p in pcon_energy_cache) {
+						if (pcon_energy_cache[p].active_power_w)
+							total_w += pcon_energy_cache[p].active_power_w;
+					}
+					updatePowerGraph(total_w);
 				}
+				break;
+
+			case "com.warmcat.sai.power_history":
+				sai_max_total_power_w = jso.max_w;
+				sai_power_samples = [];
+				if (jso.samples) {
+					for (var j = 0; j < jso.samples.length; j++) {
+						sai_power_samples.push(jso.samples[j]);
+					}
+				}
+				updatePowerGraph(null); /* Redraw instantly without new sample */
 				break;
 
 			case "com.warmcat.sai.build-metric":
@@ -2097,25 +2170,31 @@ function ws_open_sai()
 					 * display events wholesale
 					 */
 					if (jso.overview.length) {
-						var pagination_html = "";
+						var pagination_html_top = "";
+						var pagination_html_bottom = "";
 						if (!gitohashi_integ && jso.total_events > 6) {
-							pagination_html += "<div class=\"sai-pagination\">";
+							var info_span = "<span class=\"sai-pagination-info\">Showing " + (jso.offset + 1) + " - " + Math.min(jso.offset + 6, jso.total_events) + " of " + jso.total_events + "</span>";
+
+							pagination_html_top += "<div class=\"sai-pagination\">";
 							if (jso.offset > 0) {
-								pagination_html += "<button class=\"btn sai-pagination-btn\" data-offset=\"" + Math.max(0, jso.offset - 6) + "\">&lt; Newer</button> ";
+								pagination_html_top += "<button class=\"btn sai-pagination-btn\" data-offset=\"" + Math.max(0, jso.offset - 6) + "\">&lt; Newer</button> ";
 							}
-							pagination_html += "<span class=\"sai-pagination-info\">Showing " + (jso.offset + 1) + " - " + Math.min(jso.offset + 6, jso.total_events) + " of " + jso.total_events + "</span>";
+							pagination_html_top += info_span + "</div>";
+
+							pagination_html_bottom += "<div class=\"sai-pagination\">";
+							pagination_html_bottom += info_span;
 							if (jso.offset + 6 < jso.total_events) {
-								pagination_html += "<button class=\"btn sai-pagination-btn\" data-offset=\"" + (jso.offset + 6) + "\">Older &gt;</button>";
+								pagination_html_bottom += " <button class=\"btn sai-pagination-btn\" data-offset=\"" + (jso.offset + 6) + "\">Older &gt;</button>";
 							}
-							pagination_html += "</div>";
+							pagination_html_bottom += "</div>";
 						}
 
-						s = pagination_html + s;
+						s = pagination_html_top + s;
 
 						for (n = jso.overview.length - 1; n >= 0; n--)
 							s += sai_event_render(jso.overview[n], now_ut, 1);
 
-						s = s + "</table>" + pagination_html;
+						s = s + "</table>" + pagination_html_bottom;
 
 						if (document.getElementById("sai_sticky"))
 							document.getElementById("sai_sticky").innerHTML = s;

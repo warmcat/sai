@@ -185,7 +185,19 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		sai_sqlite3_statement(vhd->pdb, "CREATE UNIQUE INDEX IF NOT EXISTS idx_event_uuid ON events(uuid);", "create event index");
 
-
+		sai_sqlite3_statement(vhd->pdb,
+			"CREATE TABLE IF NOT EXISTS saiweb_state (key TEXT PRIMARY KEY, val INTEGER);",
+			"create saiweb_state");
+			
+		{
+			sqlite3_stmt *stmt;
+			if (sqlite3_prepare_v2(vhd->pdb,
+				"SELECT val FROM saiweb_state WHERE key='max_power'", -1, &stmt, NULL) == SQLITE_OK) {
+				if (sqlite3_step(stmt) == SQLITE_ROW)
+					vhd->max_total_power_w = (unsigned int)sqlite3_column_int(stmt, 0);
+				sqlite3_finalize(stmt);
+			}
+		}
 
 		/*
 		 * Reach out to the sai-server part over the SS ws websrv link
@@ -539,7 +551,7 @@ http_resp:
 		lws_dll2_remove(&pss->subs_list);
 		lws_sul_cancel(&pss->sul_logcache);
 
-		for (n = 0; n < 3; n++) {
+		for (n = 0; n < 4; n++) {
 			if (pss->last_bps[n])
 				free(pss->last_bps[n]);
 		}

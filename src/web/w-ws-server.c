@@ -227,9 +227,11 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			break;
 
 		case SAIS_WS_WEBSRV_RX_PCON_ENERGY:
+			saiw_update_global_power_history(vhd, (sai_pcon_energy_report_t *)m->a.dest);
 			lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 				struct pss *pss = lws_container_of(p, struct pss, same);
 
+				saiw_browser_broadcast_queue_power_history(pss->vhd, pss);
 				saiw_browser_broadcast_queue_pcon_energy(pss->vhd, pss, (sai_pcon_energy_report_t *)m->a.dest);
 			} lws_end_foreach_dll(p);
 			break;

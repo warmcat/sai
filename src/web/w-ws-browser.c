@@ -1405,6 +1405,8 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 	}
 
 	lwsac_unreference(&vhd->builders);
+	
+	saiw_browser_broadcast_queue_power_history(vhd, pss);
 
 	return saiw_dedup_and_queue(pss, 0, &d);
 }
@@ -1429,3 +1431,115 @@ saiw_browser_state_changed(struct pss *pss, int established)
 }
 
 
+
+
+typedef struct pcon_watts {
+	lws_dll2_t list;
+	char name[64];
+	unsigned int active_power_w;
+} pcon_watts_t;
+
+void
+saiw_update_global_power_history(struct vhd *vhd, sai_pcon_energy_report_t *energy)
+{
+	unsigned int total_w;
+	char buf[1024];
+
+	if (!vhd || !energy)
+		return;
+
+	/* Record or update individual PCON wattages */
+	lws_start_foreach_dll(struct lws_dll2 *, p, energy->items.head) {
+		sai_pcon_energy_report_item_t *item = lws_container_of(p, sai_pcon_energy_report_item_t, list);
+		pcon_watts_t *pw = NULL;
+
+		lws_start_foreach_dll(struct lws_dll2 *, pt, vhd->pcon_watts_owner.head) {
+			pcon_watts_t *pw_iter = lws_container_of(pt, pcon_watts_t, list);
+			if (!strcmp(pw_iter->name, item->name)) {
+				pw = pw_iter;
+				break;
+			}
+		} lws_end_foreach_dll(pt);
+
+		if (!pw) {
+			pw = malloc(sizeof(*pw));
+			if (pw) {
+				memset(pw, 0, sizeof(*pw));
+				lws_strncpy(pw->name, item->name, sizeof(pw->name));
+				lws_dll2_add_tail(&pw->list, &vhd->pcon_watts_owner);
+			}
+		}
+		if (pw)
+			pw->active_power_w = item->data.active_power_w;
+
+	} lws_end_foreach_dll(p);
+
+	/* Calculate global watts across all tracked PCONs */
+	total_w = 0;
+	lws_start_foreach_dll(struct lws_dll2 *, pt, vhd->pcon_watts_owner.head) {
+		pcon_watts_t *pw = lws_container_of(pt, pcon_watts_t, list);
+		total_w += pw->active_power_w;
+	} lws_end_foreach_dll(pt);
+
+	/* Record this sample */
+	if (vhd->power_history_count == 150) {
+		memmove(vhd->power_history, vhd->power_history + 1, sizeof(unsigned int) * 149);
+		vhd->power_history[149] = total_w;
+	} else {
+		vhd->power_history[vhd->power_history_count++] = total_w;
+	}
+
+	if (total_w > vhd->max_total_power_w) {
+		vhd->max_total_power_w = total_w;
+		if (vhd->pdb) {
+			lws_snprintf(buf, sizeof(buf), "INSERT OR REPLACE INTO saiweb_state (key, val) VALUES ('max_power', %u)", total_w);
+			sai_sqlite3_statement(vhd->pdb, buf, "update max_power");
+		}
+	}
+}
+
+int
+saiw_browser_broadcast_queue_power_history(struct vhd *vhd, struct pss *pss)
+{
+	struct sai_dyn_buf d;
+	char buf[2048];
+	int n, i;
+
+	if (!vhd)
+		return 0;
+
+	memset(&d, 0, sizeof(d));
+
+	/* Reserve LWS_PRE header space */
+	memset(buf, 0, LWS_PRE);
+	if (sai_dyn_buf_append(&d, buf, LWS_PRE))
+		return 1;
+
+	n = lws_snprintf(buf, sizeof(buf),
+		"{\"schema\":\"com.warmcat.sai.power_history\","
+		" \"max_w\":%u,"
+		" \"samples\":[", vhd->max_total_power_w);
+
+	if (sai_dyn_buf_append(&d, buf, (size_t)n)) {
+		free(d.buf);
+		return 1;
+	}
+
+	for (i = 0; i < vhd->power_history_count; i++) {
+		n = lws_snprintf(buf, sizeof(buf), "%s%u",
+				 i ? "," : "",
+				 vhd->power_history[i]);
+		if (sai_dyn_buf_append(&d, buf, (size_t)n)) {
+			free(d.buf);
+			return 1;
+		}
+	}
+
+	n = lws_snprintf(buf, sizeof(buf), "]}");
+	if (sai_dyn_buf_append(&d, buf, (size_t)n)) {
+		free(d.buf);
+		return 1;
+	}
+
+	return saiw_dedup_and_queue(pss, 3, &d);
+}

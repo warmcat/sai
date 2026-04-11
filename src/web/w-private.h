@@ -111,8 +111,8 @@ struct pss {
 	uint64_t		artifact_offset;
 	uint64_t		artifact_length;
 
-	char			*last_bps[3];
-	size_t			last_bps_len[3];
+	char			*last_bps[4];
+	size_t			last_bps_len[4];
 
 	unsigned int		spa_failed:1;
 	unsigned int		dry:1;
@@ -140,6 +140,11 @@ struct vhd {
 	lws_dll2_owner_t		web_to_srv_owner;
 	lws_dll2_owner_t		subs_owner;
 	sqlite3				*pdb;
+	
+	lws_dll2_owner_t		pcon_watts_owner;
+	unsigned int			power_history[150];
+	int				power_history_count;
+	unsigned int			max_total_power_w;
 
 	struct lws_ss_handle		*h_ss_websrv; /* client */
 
@@ -239,6 +244,10 @@ int
 saiw_browser_broadcast_queue_pcons(struct vhd *vhd, struct pss *pss);
 int
 saiw_browser_broadcast_queue_pcon_energy(struct vhd *vhd, struct pss *pss, sai_pcon_energy_report_t *energy);
+void
+saiw_update_global_power_history(struct vhd *vhd, sai_pcon_energy_report_t *energy);
+int
+saiw_browser_broadcast_queue_power_history(struct vhd *vhd, struct pss *pss);
 
 extern const lws_struct_map_t lsm_schema_pcon_energy[];
 
