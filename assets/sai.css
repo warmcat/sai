@@ -1287,3 +1287,7 @@ canvas.power-graph {
 	background: #fff;
 	box-sizing: border-box;
 }
+
+.pcon-header-on {
+    background-color: #79da80;
+}

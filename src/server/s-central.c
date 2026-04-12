@@ -161,6 +161,11 @@ sais_ensure_tables(struct vhd *vhd)
 		/* lwsl_notice("%s: (stateless) %s\n", __func__, err); */
 		sqlite3_free(err);
 	}
+	sqlite3_exec(vhd->server.pdb, "ALTER TABLE power_controllers ADD COLUMN manual_on integer;", NULL, NULL, &err);
+	if (err) {
+		/* lwsl_notice("%s: (stateless) %s\n", __func__, err); */
+		sqlite3_free(err);
+	}
 
 	sai_sqlite3_statement(vhd->server.pdb,
 		"CREATE TABLE IF NOT EXISTS power_controllers ("
@@ -168,7 +173,8 @@ sais_ensure_tables(struct vhd *vhd)
 		" type varchar(32),"
 		" url varchar(128),"
 		" depends_on varchar(64),"
-		" state integer"
+		" state integer,"
+		" manual_on integer"
 		");", "create pcon table");
 
 	sai_sqlite3_statement(vhd->server.pdb,

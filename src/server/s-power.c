@@ -151,8 +151,8 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			
 			/* Insert PCON */
 			lws_snprintf(q, sizeof(q),
-				     "INSERT OR REPLACE INTO power_controllers (name, type, url, depends_on, state) VALUES ('%s', '%s', '', '%s', %d)",
-				     pc->name, pc->type, pc->depends_on, pc->on);
+				     "INSERT OR REPLACE INTO power_controllers (name, type, url, depends_on, state, manual_on) VALUES ('%s', '%s', '', '%s', %d, %d)",
+				     pc->name, pc->type, pc->depends_on, pc->on, pc->manual_on);
 			sai_sqlite3_statement(vhd->server.pdb, q, "insert pcon");
 
 			/* Insert Controlled Builders */

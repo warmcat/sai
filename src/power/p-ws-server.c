@@ -149,7 +149,8 @@ saip_queue_stay_info(saip_server_t *sps)
 
 		if (pc1 && pc->name) {
 			lws_strncpy(pc1->name, pc->name, sizeof(pc1->name));
-			pc1->on		= pc->on;
+			pc1->on		= (unsigned int)pc->on;
+			pc1->manual_on	= !!(pc->flags & SAIP_PCON_F_MANUAL_STAY);
 			if (pc->depends_on)
 				lws_strncpy(pc1->depends_on, pc->depends_on, sizeof(pc1->depends_on));
 			if (pc->type)

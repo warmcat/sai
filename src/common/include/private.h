@@ -531,9 +531,9 @@ typedef struct sai_plat {
 	unsigned int			avail_mem_kib;
 	unsigned int			avail_sto_kib;
 
-	char				windows;
-	char				power_managed;
-	char				stay_on;
+	unsigned int			windows;
+	unsigned int			power_managed;
+	unsigned int			stay_on;
 	char				busy;
 
 	int				index; /* used to create unique build dir path */
@@ -604,7 +604,7 @@ typedef struct sai_stay {
 	lws_dll2_t			list;
 	char				builder_name[64];
 	char				pcon_name[64];
-	char				stay_on; /* 0 = release, 1 = set */
+	unsigned int			stay_on; /* 0 = release, 1 = set */
 } sai_stay_t;
 
 typedef struct sai_controlled_builder {
@@ -619,14 +619,15 @@ typedef struct sai_power_controller {
 	char				name[64];
 	char				type[32];
 	char				depends_on[64];
-	char				on;
+	unsigned int			on;
+	unsigned int			manual_on;
 } sai_power_controller_t;
 
 /* sai-power -> sai-server, tells it the builders it can manage */
 typedef struct sai_power_managed_builder {
 	lws_dll2_t			list;
 	char				name[64];
-	char				stay_on;
+	unsigned int			stay_on;
 } sai_power_managed_builder_t;
 
 typedef struct sai_power_managed_builders {
@@ -639,7 +640,7 @@ typedef struct sai_power_managed_builders {
 typedef struct sai_stay_state_update {
 	lws_dll2_t			list;
 	char				builder_name[64];
-	char				stay_on;
+	unsigned int			stay_on;
 } sai_stay_state_update_t;
 
 /* Builder -> sai-power registration */
@@ -699,7 +700,7 @@ extern const lws_struct_map_t
 	lsm_power_managed_builder[2],
 	lsm_power_managed_builders_list[2],
 	lsm_schema_power_managed_builders[1],
-	lsm_power_controller[5],
+	lsm_power_controller[6],
 	lsm_schema_json_map_task[],
 	lsm_schema_sq3_map_task[],
 	lsm_schema_sq3_map_event[],

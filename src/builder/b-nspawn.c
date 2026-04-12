@@ -137,8 +137,13 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 			return -1;
 		}
 
-		if (saib_log_chunk_create(op->ns, buf, len, lws_spawn_get_stdfd(wsi)))
-			return -1;
+		{
+			int ch = lws_spawn_get_stdfd(wsi);
+			if (ch == 0)
+				ch = 1;
+			if (saib_log_chunk_create(op->ns, buf, len, ch))
+				return -1;
+		}
 
 		return lws_ss_request_tx(op->ns->spm->ss) ? -1 : 0;
 
@@ -612,6 +617,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 	info.max_log_lines	= 10000;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.reap_cb		= sai_lsp_reap_cb;
+	info.pty_mode		= 1;
 	memset(&ns->res, 0, sizeof(ns->res));
 	info.res		= &ns->res;
 #if defined(__linux__)

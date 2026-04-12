@@ -324,6 +324,7 @@ const lws_struct_map_t lsm_power_controller[] = {
 	LSM_CARRAY(sai_power_controller_t, type, "type"),
 	LSM_CARRAY(sai_power_controller_t, depends_on, "depends_on"),
 	LSM_UNSIGNED(sai_power_controller_t, on, "on"),
+	LSM_UNSIGNED(sai_power_controller_t, manual_on, "manual_on"),
 	LSM_LIST(sai_power_controller_t, controlled_builders_owner,
 		 sai_controlled_builder_t, list, NULL,
 		 lsm_controlled_builder, "controlled_builders"),

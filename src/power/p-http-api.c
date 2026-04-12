@@ -140,7 +140,7 @@ saip_notify_server_stay_state(const char *builder_name, int stay_on)
 
 	memset(&ssu, 0, sizeof(ssu));
 	lws_strncpy(ssu.builder_name, builder_name, sizeof(ssu.builder_name));
-	ssu.stay_on = (char)stay_on;
+	ssu.stay_on = (uint8_t)stay_on;
 
 	sai_ss_serialize_queue_helper(sps->ss, &m->bl_pwr_to_srv,
 				      lsm_schema_stay_state_update,

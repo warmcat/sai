@@ -192,7 +192,7 @@ sais_list_pcons(struct vhd *vhd)
 	 * complex inner/outer lws_struct_sq3 memory management edge cases that truncates rows.
 	 */
 	lws_snprintf(pcon_query, sizeof(pcon_query),
-		     "SELECT name, type, depends_on, state FROM power_controllers ORDER BY name LIMIT 100");
+		     "SELECT name, type, depends_on, state, manual_on FROM power_controllers ORDER BY name LIMIT 100");
 
 	if (sqlite3_prepare_v2(vhd->server.pdb, pcon_query, -1, &pcon_stmt, NULL) == SQLITE_OK) {
 		while (sqlite3_step(pcon_stmt) == SQLITE_ROW) {
@@ -208,7 +208,8 @@ sais_list_pcons(struct vhd *vhd)
 					const char *depends_on = (const char *)sqlite3_column_text(pcon_stmt, 2);
 					if (depends_on) lws_strncpy(pc->depends_on, depends_on, sizeof(pc->depends_on));
 					
-					pc->on = (char)sqlite3_column_int(pcon_stmt, 3);
+					pc->on = (unsigned int)sqlite3_column_int(pcon_stmt, 3);
+					pc->manual_on = (unsigned int)sqlite3_column_int(pcon_stmt, 4);
 					
 					lws_dll2_add_tail(&pc->list, &pmb.power_controllers);
 				}
@@ -350,7 +351,8 @@ sais_list_builders(struct vhd *vhd)
 
 			if ((!strncmp(sp->name, ps->host, host_len) &&
 			    sp->name[host_len] == '.') || (pl > host_len &&
-					    !strncmp(sp->name + (pl - host_len), ps->host, host_len)))
+					    !strncmp(sp->name + (pl - host_len), ps->host, host_len)) ||
+			    (sp->pcon && !strcmp(sp->pcon, ps->host)))
 			{
 				lwsl_notice("%s: %s vs %s, sp->online %d, pup %d, pdwn %d\n", __func__, sp->name, ps->host, sp->online, ps->powering_up, ps->powering_down);
 				/*

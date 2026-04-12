@@ -394,7 +394,7 @@ var lang_zhs = "{" +
 		"\"%{pf}前创建, 创作时间: %{ct}ms \"" +
 "}}";
 
-var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, exptimer, auth_user = "",
+var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, auth_is_admin = 0, exptimer, auth_user = "",
 	logAnsiState = {}, logs_pending = "", lines_pending = "", times_pending = "",
 	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {},
 	fadingTasks = new Map();
@@ -426,7 +426,7 @@ function createPconDiv(pcon) {
     const header = document.createElement("div");
     header.className = "pcon-header";
 
-    let stateClass = pcon.on ? "pcon-on" : "pcon-off";
+    let stateClass = (pcon.on === 1) ? "pcon-on" : "pcon-off";
     let type = pcon.type ? `(${pcon.type})` : "";
 
     header.innerHTML = `<span class="${stateClass}">&#x23FB;</span> <b>${hsanitize(pcon.name)}</b> <span class="pcon-type">${hsanitize(type)}</span>`;
@@ -1429,11 +1429,13 @@ function createBuilderDiv(plat) {
 	else {
 		if (!plat.power_managed)
 			platDiv.className += " power-unmanaged";
-		else
-			if (plat.stay_on !== 0)
+		else {
+			let pcon = pcon_topology[plat.pcon];
+			if (pcon && pcon.manual_on)
 				platDiv.className += " power-stay";
 			else
 				platDiv.className += " power-stay-dep";
+		}
 	}
 	if (plat.powering_up)
 		platDiv.className += " powering-up";
@@ -1462,7 +1464,8 @@ function createBuilderDiv(plat) {
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-ram w-0"></div></div>` +
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-disk w-0"></div></div>` +
 		     `</div>`;
-	innerHTML += `${hsanitize(plat.peer_ip)}` + "  " + hsanitize(plat.stay_on);
+	if (authd && auth_is_admin && plat.peer_ip)
+		innerHTML += `<span class="plat-peer-ip" style="font-size: 0.8em; color: #555;">${hsanitize(plat.peer_ip)}</span>`;
 	innerHTML +=  `</td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;
@@ -1480,34 +1483,6 @@ function createBuilderDiv(plat) {
 		{ label: `<b>SAI:</b> ${plat.sai_hash}` },
 		{ label: `<b>LWS:</b> ${plat.lws_hash}` },
 	];
-
-	if (plat.power_managed && authd) {
-		if (plat.stay_on !== 0) {
-			menuItems.push({
-				label: "Release Stay",
-				callback: () => {
-					const stayMsg = {
-						schema: "com.warmcat.sai.stay",
-						builder_name: plat.name.split('.')[0],
-						stay_on: 0
-					};
-					sai.send(JSON.stringify(stayMsg));
-				}
-			});
-		} else {
-			menuItems.push({
-				label: "Stay On",
-				callback: () => {
-					const stayMsg = {
-						schema: "com.warmcat.sai.stay",
-						builder_name: plat.name.split('.')[0],
-						stay_on: 1
-					};
-					sai.send(JSON.stringify(stayMsg));
-				}
-			});
-		}
-	}
 
 	platDiv.addEventListener("contextmenu", function(event) {
 		if (!authd)
@@ -1619,7 +1594,27 @@ function createPconDiv(pcon) {
     const header = document.createElement("div");
     header.className = "pcon-header";
 
-    let stateClass = pcon.on ? "pcon-on" : "pcon-off";
+    const myBuilders = last_builder_list.filter(b => b.pcon === pcon.name);
+    let anyConnected = myBuilders.some(b => b.online === 1);
+    let anyPoweringUp = myBuilders.some(b => b.powering_up === 1);
+
+    let isActuallyOn = false;
+    let stateClass = "pcon-off";
+
+    if (pcon_energy_cache[pcon.name]) {
+        const d = pcon_energy_cache[pcon.name];
+        let hasPower = d.voltage_v >= 70 && d.active_power_w > 0;
+        isActuallyOn = anyConnected || anyPoweringUp || hasPower;
+        stateClass = hasPower ? "pcon-on" : "pcon-off";
+    } else {
+        isActuallyOn = anyConnected || (pcon.on === 1 && !anyPoweringUp);
+        stateClass = (pcon.on === 1) ? "pcon-on" : "pcon-off";
+    }
+
+    if (isActuallyOn) {
+        header.className += " pcon-header-on";
+    }
+
     let type = pcon.type ? `(${pcon.type})` : "";
 
     header.innerHTML = `<span class="${stateClass}">&#x23FB;</span> <b>${hsanitize(pcon.name)}</b> <span class="pcon-type">${hsanitize(type)}</span>`;
@@ -1649,7 +1644,7 @@ function createPconDiv(pcon) {
     ];
 
     if (authd) {
-        if (pcon.on) {
+        if (isActuallyOn) {
             menuItems.push({
                 label: "Turn Off",
                 callback: () => {
@@ -2038,7 +2033,7 @@ function ws_open_sai()
 					    if (b.pcon && !pcon_topology[b.pcon]) {
 					        pcon_topology[b.pcon] = {
 					            name: b.pcon,
-					            on: 1, /* Default to on so it shows green if unknown */
+					            on: 0, /* Default to off so it shows grey until we get real state */
 					            type: "auto-discovered",
 					            depends_on: "",
 					            children: []
@@ -2090,13 +2085,30 @@ function ws_open_sai()
 							}
 
 							const d = item;
-//							stats.textContent = `${d.voltage_v}V ${d.active_power_w}W ${d.current_ma}mA today:${(d.energy_today_wh/1000).toFixed(3)}kWh`;
+							let hasPower = false;
 							if (d.voltage_v < 70)
 								stats.textContent = "unpowered";
 							else if (!d.active_power_w)
 								stats.textContent = "OFF";
-							else
+							else {
 								stats.textContent = `${d.active_power_w}W`;
+								hasPower = true;
+							}
+
+							let plugIcon = header.querySelector("span");
+							if (plugIcon) {
+								plugIcon.className = hasPower ? "pcon-on" : "pcon-off";
+							}
+							
+							const myBuilders = last_builder_list.filter(b => b.pcon === item.name);
+							let anyConnected = myBuilders.some(b => b.online === 1);
+							let anyPoweringUp = myBuilders.some(b => b.powering_up === 1);
+							
+							if (anyConnected || anyPoweringUp || hasPower) {
+								header.classList.add("pcon-header-on");
+							} else {
+								header.classList.remove("pcon-header-on");
+							}
 						}
 					});
 					
@@ -2788,15 +2800,19 @@ window.addEventListener("load", function() {
 	fetch('.lws-login-status')
 		.then(function(res) { return res.json(); })
 		.then(function(data) {
-			if (data.logged_in && data.has_grant)
+			if (data.logged_in && data.has_grant) {
 				authd = 1;
+				if (data.is_admin)
+					auth_is_admin = 1;
+			}
 		})
 		.catch(function(err) {
 			console.log('lws-login auth fetch failed: ', err);
+		})
+		.finally(function() {
+			ws_open_sai();
+			aging();
 		});
-
-	ws_open_sai();
-	aging();
 
 	setInterval(function() {
 		update_task_activities();
