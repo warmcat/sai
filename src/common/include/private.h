@@ -268,6 +268,7 @@ typedef struct sai_rejection {
 typedef struct sai_cancel {
 	struct lws_dll2			list;
 	char				task_uuid[65];
+	unsigned int			erase;
 } sai_cancel_t;
 
 /*
@@ -718,7 +719,7 @@ extern const lws_struct_map_t
 	lsm_plat_list[1],
 	lsm_schema_map_plat[1],
 	lsm_task_rej[4],
-	lsm_task_cancel[1],
+	lsm_task_cancel[2],
 	lsm_schema_json_map_can[1],
 	lsm_schema_json_map_task[1],
 	lsm_schema_json_map_event[1],

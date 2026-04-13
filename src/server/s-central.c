@@ -186,6 +186,82 @@ sais_ensure_tables(struct vhd *vhd)
 }
 
 void
+sais_central_gc_deleted_events_cb(lws_sorted_usec_list_t *sul)
+{
+	struct vhd *vhd = lws_container_of(sul, struct vhd, sul_gc_events);
+	char q[128], event_uuid[65], esc[96];
+	sqlite3_stmt *sm, *tsm;
+	sqlite3 *pdb = NULL;
+
+	/* Find one event that is in SAIES_DELETED (7) state */
+	lws_snprintf(q, sizeof(q), "SELECT uuid FROM events WHERE state = %d LIMIT 1", SAIES_DELETED);
+
+	if (sqlite3_prepare_v2(vhd->server.pdb, q, -1, &sm, NULL) != SQLITE_OK)
+		return;
+
+	if (sqlite3_step(sm) != SQLITE_ROW) {
+		sqlite3_finalize(sm);
+		return; /* Nothing to GC */
+	}
+
+	lws_strncpy(event_uuid, (const char *)sqlite3_column_text(sm, 0), sizeof(event_uuid));
+	sqlite3_finalize(sm);
+
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb))
+		return;
+
+	/* Pick 1 task that is stopped to garbage collect */
+	/* 0=WAITING, 3=SUCCESS, 4=FAIL, 5=CANCELLED */
+	lws_snprintf(q, sizeof(q), "SELECT uuid FROM tasks WHERE state IN (0, 3, 4, 5) LIMIT 1");
+
+	if (sqlite3_prepare_v2(pdb, q, -1, &tsm, NULL) == SQLITE_OK) {
+		if (sqlite3_step(tsm) == SQLITE_ROW) {
+			const char *u = (const char *)sqlite3_column_text(tsm, 0);
+			if (u) {
+				char tu[65];
+				lws_strncpy(tu, u, sizeof(tu));
+				lws_sql_purify(esc, tu, sizeof(esc));
+
+				sais_task_cancel(vhd, tu, 1);
+
+				lws_snprintf(q, sizeof(q), "DELETE FROM logs WHERE task_uuid='%s'", esc);
+				sqlite3_exec(pdb, q, NULL, NULL, NULL);
+
+				lws_snprintf(q, sizeof(q), "DELETE FROM artifacts WHERE task_uuid='%s'", esc);
+				sqlite3_exec(pdb, q, NULL, NULL, NULL);
+
+				lws_snprintf(q, sizeof(q), "DELETE FROM tasks WHERE uuid='%s'", esc);
+				sqlite3_exec(pdb, q, NULL, NULL, NULL);
+			}
+		}
+		sqlite3_finalize(tsm);
+	}
+
+	/* Check if the event DB is completely empty of tasks now */
+	int remaining = 1; /* Assume 1 just in case query fails */
+	if (sqlite3_prepare_v2(pdb, "SELECT count(*) FROM tasks", -1, &tsm, NULL) == SQLITE_OK) {
+		if (sqlite3_step(tsm) == SQLITE_ROW)
+			remaining = sqlite3_column_int(tsm, 0);
+		sqlite3_finalize(tsm);
+	}
+	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+
+	if (remaining == 0) {
+		/* Everything is gone, we can delete the logical event and unlink the sqlite files safely */
+		lws_sql_purify(esc, event_uuid, sizeof(esc));
+		lws_snprintf(q, sizeof(q), "DELETE FROM events WHERE uuid='%s'", esc);
+		sqlite3_exec(vhd->server.pdb, q, NULL, NULL, NULL);
+		sai_event_db_delete_database(vhd->sqlite3_path_lhs, event_uuid);
+		lwsl_notice("%s: Completed GC for deleted event %s\n", __func__, event_uuid);
+	}
+
+	/* Keep yielding and re-scheduling as long as there's still work to do on this or other events */
+	lws_sul_schedule(vhd->context, 0, &vhd->sul_gc_events,
+			 sais_central_gc_deleted_events_cb, 10 * LWS_US_PER_MS); /* 10ms for next task */
+}
+
+void
 sais_central_cb(lws_sorted_usec_list_t *sul)
 {
 	struct vhd *vhd = lws_container_of(sul, struct vhd, sul_central);
@@ -213,6 +289,10 @@ sais_central_cb(lws_sorted_usec_list_t *sul)
 	 */
 	sais_prune_inflight_list(vhd);
 	sais_platforms_with_tasks_pending(vhd);
+
+	if (!vhd->sul_gc_events.list.owner)
+		lws_sul_schedule(context, 0, &vhd->sul_gc_events,
+				 sais_central_gc_deleted_events_cb, 10 * LWS_US_PER_MS);
 
 	/* check again in 1s */
 

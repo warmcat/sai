@@ -597,7 +597,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		if (sais_validate_id(ei->event_hash, SAI_TASKID_LEN))
 			goto soft_error;
 
-		sais_task_cancel(m->vhd, ei->event_hash);
+		sais_task_cancel(m->vhd, ei->event_hash, 0);
 
 		break;
 

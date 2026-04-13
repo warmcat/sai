@@ -203,6 +203,7 @@ const lws_struct_map_t lsm_schema_json_task_rej[] = {
 
 const lws_struct_map_t lsm_task_cancel[] = {
 	LSM_CARRAY	(sai_cancel_t, task_uuid,	 "task_uuid"),
+	LSM_UNSIGNED	(sai_cancel_t, erase,		 "erase"),
 };
 
 const lws_struct_map_t lsm_rebuild[] = {

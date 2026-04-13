@@ -186,7 +186,22 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 
 		can = (sai_cancel_t *)a.dest;
 
-		lwsl_notice("%s: received task cancel for %s\n", __func__, can->task_uuid);
+		lwsl_notice("%s: received task cancel for %s, erase %d\n", __func__, can->task_uuid, can->erase);
+
+		if (can->erase) {
+#if !defined(WIN32)
+			if (write(builder.pipe_master_wr, can->task_uuid,
+				  LWS_POSIX_LENGTH_CAST(strlen(can->task_uuid))) != (ssize_t)strlen(can->task_uuid))
+				lwsl_err("%s: failed to write to deletion worker\n",
+					 __func__);
+#else
+			DWORD written;
+			if (!WriteFile(builder.pipe_master_wr_win, can->task_uuid,
+				       (DWORD)strlen(can->task_uuid), &written, NULL))
+				lwsl_err("%s: failed to write to deletion worker\n",
+					 __func__);
+#endif
+		}
 
 		lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
 					   builder.sai_plat_owner.head) {

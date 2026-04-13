@@ -418,7 +418,7 @@ sais_task_pause(struct vhd *vhd, const char *task_uuid)
 }
 
 int
-sais_task_cancel(struct vhd *vhd, const char *task_uuid)
+sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase)
 {
 	sai_cancel_t *can;
 
@@ -438,6 +438,7 @@ sais_task_cancel(struct vhd *vhd, const char *task_uuid)
 		memset(can, 0, sizeof(*can));
 
 		lws_strncpy(can->task_uuid, task_uuid, sizeof(can->task_uuid));
+		can->erase = (unsigned int)erase;
 
 		lws_dll2_add_tail(&can->list, &pss->task_cancel_owner);
 
@@ -526,6 +527,7 @@ sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid)
 	memset(can, 0, sizeof(*can));
 
 	lws_strncpy(can->task_uuid, task_uuid, sizeof(can->task_uuid));
+	can->erase = 0;
 
 	lws_dll2_add_tail(&can->list, &pss_match->task_cancel_owner);
 	lws_callback_on_writable(pss_match->wsi);

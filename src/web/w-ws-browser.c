@@ -887,17 +887,17 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 
 	if (pss->specific_project[0]) {
 		lws_sql_purify(esc, pss->specific_project, sizeof(esc) - 1);
-		lws_snprintf(filt, sizeof(filt), " and repo_name=\"%s\"", esc);
+		lws_snprintf(filt, sizeof(filt), " and state != %d and repo_name=\"%s\"", SAIES_DELETED, esc);
 		n = -1;
+	} else {
+		lws_snprintf(filt, sizeof(filt), " and state != %d", SAIES_DELETED);
 	}
 
 	unsigned int total_events = 0;
 	{
 		char q[256];
 		sqlite3_stmt *stmt;
-		lws_snprintf(q, sizeof(q), "SELECT COUNT(*) FROM events%s%s",
-			     filt[0] ? " WHERE " : "",
-			     filt[0] ? filt + 5 : "");
+		lws_snprintf(q, sizeof(q), "SELECT COUNT(*) FROM events WHERE %s", filt + 5);
 		if (sqlite3_prepare_v2(vhd->pdb, q, -1, &stmt, NULL) == SQLITE_OK) {
 			if (sqlite3_step(stmt) == SQLITE_ROW)
 				total_events = (unsigned int)sqlite3_column_int(stmt, 0);

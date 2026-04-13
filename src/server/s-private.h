@@ -231,6 +231,7 @@ struct vhd {
 	lws_sorted_usec_list_t	sul_logcache;
 	lws_sorted_usec_list_t	sul_central; /* background task allocation sul */
 	lws_sorted_usec_list_t	sul_activity; /* activity broadcast sul */
+	lws_sorted_usec_list_t	sul_gc_events; /* incremental GC of deleted events */
 
 	lws_usec_t		last_check_abandoned_tasks;
 
@@ -292,13 +293,16 @@ sais_central_cb(lws_sorted_usec_list_t *sul);
 void
 sais_activity_cb(lws_sorted_usec_list_t *sul);
 
+void
+sais_central_gc_deleted_events_cb(lws_sorted_usec_list_t *sul);
+
 sai_db_result_t
 sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_rejection);
 sai_db_result_t
 sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid);
 
 int
-sais_task_cancel(struct vhd *vhd, const char *task_uuid);
+sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase);
 
 int
 sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
@@ -400,7 +404,7 @@ void
 sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task);
 
 int
-sais_task_cancel(struct vhd *vhd, const char *task_uuid);
+sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase);
 
 int
 sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid);

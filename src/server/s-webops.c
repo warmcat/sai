@@ -272,65 +272,27 @@ sai_db_result_t
 sais_event_delete(struct vhd *vhd, const char *event_uuid)
 {
 	char qu[128], esc[96], pre[LWS_PRE + 128];
-	struct lwsac *ac = NULL;
 	lws_wsmsg_info_t info;
 	sqlite3 *pdb = NULL;
-	lws_dll2_owner_t o;
 	char *err = NULL;
+	sqlite3_stmt *sm;
 	size_t len;
 	int ret;
 
-	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
-			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb) == 0) {
-		if (lws_struct_sq3_deserialize(pdb, NULL, NULL,
-					       lsm_schema_sq3_map_task,
-					       &o, &ac, 0, 999) >= 0) {
-
-			ret = sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
-			if (ret != SQLITE_OK) {
-				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
-				lwsac_free(&ac);
-				if (ret == SQLITE_BUSY)
-					return SAI_DB_RESULT_BUSY;
-				return SAI_DB_RESULT_ERROR;
-			}
-
-			lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
-				sai_task_t *t = lws_container_of(p, sai_task_t, list);
-
-				if (t->state != SAIES_WAITING &&
-				    t->state != SAIES_SUCCESS &&
-				    t->state != SAIES_FAIL &&
-				    t->state != SAIES_CANCELLED)
-					sais_task_cancel(vhd, t->uuid);
-
-			} lws_end_foreach_dll(p);
-
-			ret = sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
-			if (ret != SQLITE_OK) {
-				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
-				lwsac_free(&ac);
-				if (ret == SQLITE_BUSY)
-					return SAI_DB_RESULT_BUSY;
-				return SAI_DB_RESULT_ERROR;
-			}
-		}
-		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
-		lwsac_free(&ac);
-	}
-
 	lws_sql_purify(esc, event_uuid, sizeof(esc));
-	lws_snprintf(qu, sizeof(qu), "delete from events where uuid='%s'", esc);
+
+	/* 1. Mark event as SAIES_DELETED immediately so it disappears from UI */
+	lws_snprintf(qu, sizeof(qu), "update events set state=%d where uuid='%s'", SAIES_DELETED, esc);
 	ret = sqlite3_exec(vhd->server.pdb, qu, NULL, NULL, &err);
 	if (ret != SQLITE_OK) {
 		if (ret == SQLITE_BUSY)
 			return SAI_DB_RESULT_BUSY;
-		lwsl_err("%s: evdel uuid %s, sq3 err %s\n", __func__, esc, err);
+		lwsl_err("%s: evdel mark uuid %s, sq3 err %s\n", __func__, esc, err);
 		sqlite3_free(err);
 		return SAI_DB_RESULT_ERROR;
 	}
 
-	sai_event_db_delete_database(vhd->sqlite3_path_lhs, event_uuid);
+	/* 2. Broadcast change to UI */
 	sais_eventchange(vhd->h_ss_websrv, event_uuid, SAIES_DELETED);
 
 	len = (size_t)lws_snprintf(pre + LWS_PRE, sizeof(pre) - LWS_PRE,
@@ -346,6 +308,28 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid)
 		lwsl_err("%s: unable to broadcast\n", __func__);
 		return SAI_DB_RESULT_ERROR;
 	}
+
+	/* 3. Drop active builders gracefully without loading huge JSON objects */
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb) == 0) {
+		lws_snprintf(qu, sizeof(qu), "SELECT uuid FROM tasks WHERE state != 0 AND state != 3 AND state != 4 AND state != 5");
+		if (sqlite3_prepare_v2(pdb, qu, -1, &sm, NULL) == SQLITE_OK) {
+			while (sqlite3_step(sm) == SQLITE_ROW) {
+				const unsigned char *task_uuid = sqlite3_column_text(sm, 0);
+				if (task_uuid)
+					sais_task_cancel(vhd, (const char *)task_uuid, 0);
+			}
+			sqlite3_finalize(sm);
+		}
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+	}
+
+	/* 
+	 * Incrementally garbage collect the tasks later in sais_central_cb, 
+	 * which eventually drops the DB and erases the event row entirely.
+	 */
+	lws_sul_schedule(vhd->context, 0, &vhd->sul_gc_events,
+			 sais_central_gc_deleted_events_cb, 1);
 
 	/*
 	 * Recompute startable task platforms and broadcast to all sai-power,

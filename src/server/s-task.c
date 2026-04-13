@@ -172,7 +172,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		  const char *platform)
 {
 	struct lwsac *ac = NULL, *failed_ac = NULL;
-	char esc_plat[96], pf[2048], query[384];
+	char esc_plat[96], esc_bname[128], pf[2048], query[384];
 	lws_dll2_owner_t o, failed_tasks_owner;
 	typedef struct sai_failed_task_info {
 		lws_dll2_t      list;
@@ -184,6 +184,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 	int n;
 
 	lws_sql_purify(esc_plat, platform, sizeof(esc_plat));
+	lws_sql_purify(esc_bname, cb->name, sizeof(esc_bname));
 	assert(platform);
 
 	/* 
@@ -233,7 +234,9 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		 */
 
 		lws_snprintf(query, sizeof(query), "select count(state) from tasks where "
-						   "(state = 0 or state = 9) and platform = '%s'", esc_plat);
+						   "(state = 0 or state = 9) and platform = '%s' and "
+						   "(builder_name IS NULL or builder_name = '' or builder_name = '%s')",
+						   esc_plat, esc_bname);
 		m = sqlite3_exec(pdb, query, sql3_get_integer_cb, &pending_count, NULL);
 
 		if (m != SQLITE_OK) {
@@ -365,8 +368,9 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 			lws_sql_purify(esc_taskname, fti->taskname, sizeof(esc_taskname));
 			lws_snprintf(pf, sizeof(pf),
 				     " and (state == 0 or state == 9) and "
-				     "(platform == '%s') and (taskname == '%s')",
-				     esc_plat, esc_taskname);
+				     "(platform == '%s') and (taskname == '%s') and "
+				     "(builder_name IS NULL or builder_name == '' or builder_name == '%s')",
+				     esc_plat, esc_taskname, esc_bname);
 
 			lwsac_free(&pss->ac_alloc_task);
 			lws_dll2_owner_clear(&owner);
@@ -395,8 +399,9 @@ next1: ;
 		/* We have fallen back to doing tasks earliest-first */
 
 		lws_snprintf(pf, sizeof(pf),
-			     " and (state = 0 or state = 9) and (platform = '%s')",
-			     esc_plat);
+			     " and (state = 0 or state = 9) and (platform = '%s') and "
+			     "(builder_name IS NULL or builder_name = '' or builder_name = '%s')",
+			     esc_plat, esc_bname);
 
 		lwsac_free(&pss->ac_alloc_task);
 		lws_dll2_owner_t owner;
