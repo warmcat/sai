@@ -706,32 +706,40 @@ function ansiToHtml(text, state) {
     state = state || {};
     let currentClasses = new Set(state.classes || []);
 
-    const parts = text.split(/(\u001b\[[\d;]*m)/);
+    const parts = text.split(/(\u001b\[[0-9:;<=>?]*[ -/]*[@-~])/);
     let html = '';
 
     for (const part of parts) {
         if (!part) continue;
 
         if (part.startsWith('\u001b[')) { // It's an ANSI code
-            const codes = part.substring(2, part.length - 1).split(';');
+            if (part.endsWith('m')) {
+                const codes = part.substring(2, part.length - 1).split(';');
 
-            if (codes.length === 1 && (codes[0] === '0' || codes[0] === '')) {
-                // Reset
-                currentClasses.clear();
-            } else {
-                for (const code of codes) {
+                for (let code of codes) {
+                    if (code === '0' || code === '') {
+                        currentClasses.clear();
+                        continue;
+                    }
+
+                    /* handle leading zeros like 01 */
+                    if (!classMap[code] && code.startsWith('0'))
+                        code = code.substring(1);
+
                     if (classMap[code]) {
                         // Handle foreground/background colors: remove old before adding new
-                        if (code >= 30 && code <= 37) {
+                        const icode = parseInt(code, 10);
+                        if (icode >= 30 && icode <= 37) {
                             currentClasses.forEach(c => { if (c.startsWith('ansi-fg-')) currentClasses.delete(c); });
                         }
-                        if (code >= 40 && code <= 47) {
+                        if (icode >= 40 && icode <= 47) {
                             currentClasses.forEach(c => { if (c.startsWith('ansi-bg-')) currentClasses.delete(c); });
                         }
                         currentClasses.add(classMap[code]);
                     }
                 }
             }
+            // Non-m sequences are just stripped (handled by the split and ignored here)
         } else { // It's plain text
             const sanitizedPart = hsanitize(part);
             if (currentClasses.size > 0) {
@@ -1443,7 +1451,7 @@ function createBuilderDiv(plat) {
 		platDiv.className += " powering-down";
 
 	platDiv.id = "binfo-" + plat.name;
-	platDiv.title = plat.platform + "@" + plat.name.split('.')[0] + " / " + plat.peer_ip;
+	platDiv.title = plat.platform + "@" + plat.name.split('.')[0] + (authd && auth_is_admin && plat.peer_ip ? " / " + plat.peer_ip : "");
 
 	let plat_parts = plat.platform.split('/');
 	let plat_os = plat_parts[0] || 'generic';
@@ -2528,9 +2536,43 @@ function ws_open_sai()
 			case "com-warmcat-sai-logs":
 				var s1;
 				try {
-					s1 = decodeURIComponent(escape(atob(jso.log)));
+					var binString = atob(jso.log);
+					if (window.TextDecoder) {
+						window._sai_text_decoder = window._sai_text_decoder || new TextDecoder("utf-8");
+						var bytes = new Uint8Array(binString.length);
+						for (var i = 0; i < binString.length; i++) {
+							bytes[i] = binString.charCodeAt(i);
+						}
+						s1 = window._sai_text_decoder.decode(bytes, {stream: true});
+					} else {
+						s1 = decodeURIComponent(escape(binString));
+					}
 				} catch (e) {
+					console.log("decode err", e);
 					break;
+				}
+
+				if (window._sai_ansi_buffer) {
+					s1 = window._sai_ansi_buffer + s1;
+					window._sai_ansi_buffer = "";
+				}
+
+				var last_esc = s1.lastIndexOf('\u001b');
+				if (last_esc >= 0) {
+					var tail = s1.substring(last_esc);
+					var is_complete = true;
+					if (tail.startsWith('\u001b[')) {
+						is_complete = /(\u001b\[[0-9:;<=>?]*[ -/]*[@-~])/.test(tail);
+					} else if (tail.startsWith('\u001b]')) {
+						is_complete = tail.indexOf('\x07') !== -1 || tail.indexOf('\u001b\\', 1) !== -1;
+					} else if (tail === '\u001b') {
+						is_complete = false;
+					}
+					
+					if (!is_complete && tail.length < 512) {
+						window._sai_ansi_buffer = tail;
+						s1 = s1.substring(0, last_esc);
+					}
 				}
 
 				if (!tfirst) tfirst = jso.timestamp;
