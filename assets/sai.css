@@ -1291,3 +1291,8 @@ canvas.power-graph {
 .pcon-header-on {
     background-color: #79da80;
 }
+
+.plat-peer-ip {
+    font-size: 0.8em;
+    color: #555;
+}
