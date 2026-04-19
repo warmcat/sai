@@ -840,29 +840,30 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					lwsl_err("%s: no live for %s\n", __func__, build->name);
 
 					live_sp = malloc(sizeof(*live_sp) + nlen + plen);
-					if (live_sp) {
-						char *p_str = (char *)(live_sp + 1);
+					if (!live_sp)
+						continue;
 
-						memset(live_sp, 0, sizeof(*live_sp));
-						live_sp->name				= p_str;
-						memcpy(p_str, build->name, nlen);
-						live_sp->platform			= p_str + nlen;
-						memcpy(p_str + nlen, build->platform, plen);
-						lws_strncpy(live_sp->sai_hash, build->sai_hash,
-							    sizeof(live_sp->sai_hash));
-						lws_strncpy(live_sp->lws_hash, build->lws_hash,
-							    sizeof(live_sp->lws_hash));
-						live_sp->windows			= build->windows;
-						live_sp->avail_mem_kib			= (unsigned int)-1;
-						live_sp->avail_sto_kib			= (unsigned int)-1;
-						live_sp->wsi				= pss->wsi;
-						live_sp->cx				= lws_get_context(pss->wsi);
-						live_sp->vhd				= vhd;
-						live_sp->online				= 1;
-						lws_strncpy(live_sp->peer_ip, pss->peer_ip, sizeof(live_sp->peer_ip));
+					char *p_str = (char *)(live_sp + 1);
 
-						lws_dll2_add_tail(&live_sp->sai_plat_list, &vhd->server.builder_owner);
-					}
+					memset(live_sp, 0, sizeof(*live_sp));
+					live_sp->name				= p_str;
+					memcpy(p_str, build->name, nlen);
+					live_sp->platform			= p_str + nlen;
+					memcpy(p_str + nlen, build->platform, plen);
+					lws_strncpy(live_sp->sai_hash, build->sai_hash,
+						    sizeof(live_sp->sai_hash));
+					lws_strncpy(live_sp->lws_hash, build->lws_hash,
+						    sizeof(live_sp->lws_hash));
+					live_sp->windows			= build->windows;
+					live_sp->avail_mem_kib			= (unsigned int)-1;
+					live_sp->avail_sto_kib			= (unsigned int)-1;
+					live_sp->wsi				= pss->wsi;
+					live_sp->cx				= lws_get_context(pss->wsi);
+					live_sp->vhd				= vhd;
+					live_sp->online				= 1;
+					lws_strncpy(live_sp->peer_ip, pss->peer_ip, sizeof(live_sp->peer_ip));
+
+					lws_dll2_add_tail(&live_sp->sai_plat_list, &vhd->server.builder_owner);
 				}
 
 				lws_sul_schedule(live_sp->cx, 0, &live_sp->sul_find_jobs,
