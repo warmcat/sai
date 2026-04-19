@@ -765,7 +765,7 @@ nope:
 		info.private_source_idx		= SAI_WEBSRV_PB__ACTIVITY;
 		info.buf			= (uint8_t *)start;
 		info.len			= lws_ptr_diff_size_t(p, start);
-		info.ss_flags			= (unsigned int)((s ? LWSSS_FLAG_SOM : 0) | LWSSS_FLAG_EOM);
+		info.ss_flags			= LWSSS_FLAG_EOM;
 		sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info);
 
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
