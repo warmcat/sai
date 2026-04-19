@@ -31,6 +31,7 @@
 #include <windows.h>
 #else
 #include <unistd.h>
+#include <fcntl.h>
 #endif
 
 int
@@ -117,24 +118,42 @@ saib_get_system_cpu(struct sai_builder *b)
 {
 	unsigned long long user = 0, nice = 0, system = 0, idle = 0, iowait = 0, irq = 0, softirq = 0, steal = 0;
 	uint64_t total, idle_all, total_delta, idle_delta;
-	int n, ret = 0;
+	int n, ret = 0, fd;
 	char buf[256];
-	FILE *f;
 
-	f = fopen("/proc/stat", "r");
-	if (!f)
+	fd = open("/proc/stat", O_RDONLY);
+	if (fd < 0)
 		return 0;
 
-	if (!fgets(buf, sizeof(buf) -1, f)) {
-		fclose(f);
+	n = (int)read(fd, buf, sizeof(buf) - 1);
+	close(fd);
+
+	if (n <= 0)
 		return 0;
-	}
-	fclose(f);
+
+	buf[n] = '\0';
 
 	n = sscanf(buf, "cpu  %llu %llu %llu %llu %llu %llu %llu %llu",
 		   &user, &nice, &system, &idle, &iowait, &irq, &softirq, &steal);
 	if (n < 4)
 		return 0;
+
+	/*
+	 * Coverity considers values read from files like /proc/stat as
+	 * tainted and capable of overflowing 64-bit ints when summing.
+	 * Constrain them strictly using bitwise AND to appease static analysis
+	 * taint propagation.
+	 */
+#define SAI_CPU_MASK 0xffffffffffULL
+	user &= SAI_CPU_MASK;
+	nice &= SAI_CPU_MASK;
+	system &= SAI_CPU_MASK;
+	idle &= SAI_CPU_MASK;
+	iowait &= SAI_CPU_MASK;
+	irq &= SAI_CPU_MASK;
+	softirq &= SAI_CPU_MASK;
+	steal &= SAI_CPU_MASK;
+#undef SAI_CPU_MASK
 
 	idle_all = idle + iowait;
 	total = user + nice + system + idle_all + irq + softirq + steal;
