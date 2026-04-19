@@ -66,6 +66,10 @@ int
 saiw_task_cancel(struct vhd *vhd, const char *task_uuid)
 {
 	sai_cancel_t *can = malloc(sizeof(*can));
+	
+	if (!can)
+		return 1;
+
 
 	memset(can, 0, sizeof(*can));
 
