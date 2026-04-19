@@ -321,7 +321,7 @@ cb_lookup_pcon(void *user, int cols, char **values, char **name)
 int
 sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 {
-	uint8_t *start = buf + LWS_PRE, *p = start, *end = p + bl - LWS_PRE - 1;
+	uint8_t *start = buf + LWS_PRE, *p = start, *end = buf + bl - 1;
 	enum lws_write_protocol flags;
 	size_t w;
 	int n, diff = 0;

@@ -1362,7 +1362,7 @@ int
 sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			size_t bl)
 {
-	uint8_t *start = buf + LWS_PRE, *p = start, *end = p + bl - LWS_PRE - 1;
+	uint8_t *start = buf + LWS_PRE, *p = start, *end = buf + bl - 1;
 	int n, flags = LWS_WRITE_TEXT, first = 1;
 	lws_struct_serialize_t *js;
 	sai_task_t *task;
