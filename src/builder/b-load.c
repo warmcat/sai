@@ -115,7 +115,7 @@ saib_get_cgroup_cpu(struct sai_nspawn *ns)
 int
 saib_get_system_cpu(struct sai_builder *b)
 {
-	unsigned long long user, nice, system, idle, iowait, irq, softirq, steal;
+	unsigned long long user = 0, nice = 0, system = 0, idle = 0, iowait = 0, irq = 0, softirq = 0, steal = 0;
 	uint64_t total, idle_all, total_delta, idle_delta;
 	int n, ret = 0;
 	char buf[256];
@@ -139,12 +139,23 @@ saib_get_system_cpu(struct sai_builder *b)
 	idle_all = idle + iowait;
 	total = user + nice + system + idle_all + irq + softirq + steal;
 
-	if (b->last_sys_total) {
+	if (b->last_sys_total && total >= b->last_sys_total && idle_all >= b->last_sys_idle) {
 		total_delta = total - b->last_sys_total;
 		idle_delta = idle_all - b->last_sys_idle;
 
-		if (total_delta) {
-			n = (int)(((total_delta - idle_delta) * 1000) / total_delta);
+		if (total_delta && total_delta >= idle_delta) {
+			uint64_t w = total_delta - idle_delta;
+			
+			/*
+			 * Clamp `w` safely to avoid overflow when multiplied by 1000
+			 * and to prevent division wrap later
+			 */
+			if (w > (~0ull) / 1000)
+				w = (~0ull) / 1000;
+
+			n = (int)((w * 1000) / total_delta);
+			if (n < 0)
+				n = 0;
 			if (n > 1000)
 				n = 1000;
 			ret = n;
