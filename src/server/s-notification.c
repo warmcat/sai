@@ -1063,14 +1063,18 @@ sai_notification_file_upload_cb(void *data, const char *name,
 			       LWS_ARRAY_SIZE(saifile_paths));
 		m = lejp_parse(&saictx, (uint8_t *)pss->sn.saifile,
 			       (int)pss->sn.saifile_out_pos);
-		free(pss->sn.saifile);
-		pss->sn.saifile = NULL;
+
 		if (m < 0) {
 			lwsl_notice("%s: saifile JSON 2 decode failed '%s' (%d)\n",
 				    __func__, lejp_error_to_string(m), m);
 			puts(pss->sn.saifile);
+			free(pss->sn.saifile);
+			pss->sn.saifile = NULL;
 			return m;
 		}
+
+		free(pss->sn.saifile);
+		pss->sn.saifile = NULL;
 
 		lwsl_notice("%s: notification inserted into db\n", __func__);
 
