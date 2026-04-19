@@ -377,7 +377,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 			n = lws_struct_sq3_deserialize(pdb, pf, NULL,
 						       lsm_schema_sq3_map_task,
 						       &owner, &pss->ac_alloc_task, 0, 1);
-			if (!owner.count)
+			if (n < 0 || !owner.count)
 				goto next1;
 
 			lwsl_notice("%s: Prioritizing failed task for %s ('%s')\n",
@@ -410,7 +410,7 @@ next1: ;
 					       lsm_schema_sq3_map_task,
 					       &owner, &pss->ac_alloc_task, 0, 1);
 		// lwsl_notice("%s: deser returned %d\n", __func__, n);
-		if (!owner.count || !pss->ac_alloc_task)
+		if (n < 0 || !owner.count || !pss->ac_alloc_task)
 			goto close_next;
 
 		lwsl_info("%s: orig exit\n", __func__);
