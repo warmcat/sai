@@ -115,14 +115,14 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 #if defined(WIN32)
 	{
 		DWORD rb;
-		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf), &rb, NULL)) {
+		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1, &rb, NULL)) {
 			lwsl_debug("%s: read on stdwsi failed\n", __func__);
 			return -1;
 		}
 		ilen = (int)rb;
 	}
 #else
-		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf));
+		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1);
 		if (ilen < 1) {
 			lwsl_debug("%s: read on stdwsi failed\n", __func__);
 			return -1;
@@ -130,10 +130,11 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 #endif
 
 		len = (unsigned int)ilen;
+		buf[len] = '\0';
 
 		if (!op || !op->ns || !op->ns->spm) {
-			printf("%s: (%d) %.*s\n", __func__,
-			       (int)lws_spawn_get_stdfd(wsi), (int)len, buf);
+			printf("%s: (%d) %s\n", __func__,
+			       (int)lws_spawn_get_stdfd(wsi), (const char *)buf);
 			return -1;
 		}
 
