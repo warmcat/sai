@@ -188,6 +188,9 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 	sai_log_t *hlog;
 	int step;
 
+	if (!log || !log->log)
+		return;
+
 	/*
 	 * find the pertask if one exists
 	 */
@@ -233,7 +236,7 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_logcache,
 				 sais_dump_logs_to_db, 250 * LWS_US_PER_MS);
 
-	if (log->channel != 3 /* control channel */ || !log->log ||
+	if (log->channel != 3 /* control channel */ ||
 	    log->len < 5 || memcmp(log->log, " Step ", 5))
 		return;
 
