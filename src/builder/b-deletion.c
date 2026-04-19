@@ -291,8 +291,13 @@ saib_deletion_init(const char *argv0)
 			return 1;
 		}
 
-		fcntl(pfd[0], F_SETFD, FD_CLOEXEC);
-		fcntl(pfd[1], F_SETFD, FD_CLOEXEC);
+		if (fcntl(pfd[0], F_SETFD, FD_CLOEXEC) < 0 ||
+		    fcntl(pfd[1], F_SETFD, FD_CLOEXEC) < 0) {
+			lwsl_err("fcntl FD_CLOEXEC failed\n");
+			close(pfd[0]);
+			close(pfd[1]);
+			return 1;
+		}
 
 		pid = fork();
 		if (pid == -1) {
