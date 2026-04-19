@@ -94,7 +94,6 @@ sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache
 	sai_sqlite3_statement(*ppdb, "CREATE INDEX IF NOT EXISTS idx_art_task ON artifacts(task_uuid);", "create artifact index");
 
 	sc = malloc(sizeof(*sc));
-	memset(sc, 0, sizeof(*sc));
 	if (!sc) {
 		lwsl_err("%s: unable to alloc sc for %s\n", __func__, filepath);
 
@@ -102,6 +101,8 @@ sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache
 		*ppdb = NULL;
 		return 6;
 	}
+
+	memset(sc, 0, sizeof(*sc));
 
 	lws_strncpy(sc->uuid, event_uuid, sizeof(sc->uuid));
 	sc->refcount = 1;
