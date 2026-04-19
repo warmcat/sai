@@ -9,6 +9,14 @@
 				"cd build && SAI_CPACK=\"-G RPM\" ${cpack}"
 			]
 		},
+		"coverity/x86_64/gcc": {
+			"default": false,
+                        "build": [
+				"mkdir -p build destdir; cd build; CCACHE_DISABLE=1 LD_LIBRARY_PATH=../destdir/usr/local/share/libwebsockets-test-server/plugins:../destdir/usr/local/lib cmake .. ${cmake}",
+                                "cd build && export PATH=\"/opt/cov-analysis-linux64-2024.12.1/bin:$PATH\" && cov-build --dir cov-int make -j$SAI_PARALLEL",
+                                "cd build && SAI_CPACK=\"-G RPM\" ${cpack}"
+			]
+		},
 		"netbsd-OSX-bigsur/x86_64-intel-i3/llvm": {
                         "build": [
 				"mkdir -p build destdir; cd build; MACOSX_DEPLOYMENT_TARGET=12.5 ; cmake .. -DCMAKE_MAKE_PROGRAM=/usr/bin/make -DLWS_OPENSSL_INCLUDE_DIRS=/usr/local/opt/openssl@1.1/include -DLWS_OPENSSL_LIBRARIES=\"/usr/local/opt/openssl/lib/libssl.dylib;/usr/local/opt/openssl/lib/libcrypto.dylib\" ${cmake} ",
@@ -31,6 +39,13 @@
 			"cmake":	"-DSAI_SERVER=0 ",
 			"cpack":        "cpack -C DEBUG $SAI_CPACK",
 			"artifacts":	"build/sai-*.rpm"
+		},
+		"coverity": {
+			"cmake":	"",
+			"platforms":	"none, coverity/x86_64/gcc",
+			"cpack":	"export STAMP=`git log -1 --pretty=format:%h` && rm -f sai.tgz && tar czvf sai.tgz cov-int && script -e -q -c \"cat /etc/coverity/secrets-sai.sh | lws-minimal-http-client-post-form --h1 https://scan.coverity.com:443/builds?project=libjsongit2 --form file=@sai.tgz --form version=${STAMP} --form 'description=sai qa'\" /dev/null",
+			"branches":	"coverity"
 		}
+
 	}
 }
