@@ -235,6 +235,7 @@ sais_event_reset(struct vhd *vhd, const char *event_uuid)
 		if (ret != SQLITE_OK) {
 			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			lwsac_free(&ac);
+			sqlite3_free(err);
 			if (ret == SQLITE_BUSY)
 				return SAI_DB_RESULT_BUSY;
 			return SAI_DB_RESULT_ERROR;
@@ -245,6 +246,7 @@ sais_event_reset(struct vhd *vhd, const char *event_uuid)
 			sai_task_t *t = lws_container_of(p, sai_task_t, list);
 			if (sais_task_clear_build_and_logs(vhd, t->uuid, 0) == SAI_DB_RESULT_BUSY) {
 				sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
+				sqlite3_free(err);
 				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 				lwsac_free(&ac);
 				return SAI_DB_RESULT_BUSY;
@@ -255,6 +257,7 @@ sais_event_reset(struct vhd *vhd, const char *event_uuid)
 		if (ret != SQLITE_OK) {
 			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			lwsac_free(&ac);
+			sqlite3_free(err);
 			if (ret == SQLITE_BUSY)
 				return SAI_DB_RESULT_BUSY;
 			return SAI_DB_RESULT_ERROR;
@@ -285,8 +288,10 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid)
 	lws_snprintf(qu, sizeof(qu), "update events set state=%d where uuid='%s'", SAIES_DELETED, esc);
 	ret = sqlite3_exec(vhd->server.pdb, qu, NULL, NULL, &err);
 	if (ret != SQLITE_OK) {
-		if (ret == SQLITE_BUSY)
+		if (ret == SQLITE_BUSY) {
+			sqlite3_free(err);
 			return SAI_DB_RESULT_BUSY;
+		}
 		lwsl_err("%s: evdel mark uuid %s, sq3 err %s\n", __func__, esc, err);
 		sqlite3_free(err);
 		return SAI_DB_RESULT_ERROR;
@@ -364,6 +369,7 @@ sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 		if (ret != SQLITE_OK) {
 			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			lwsac_free(&ac);
+			sqlite3_free(err);
 			if (ret == SQLITE_BUSY)
 				return SAI_DB_RESULT_BUSY;
 			return SAI_DB_RESULT_ERROR;
@@ -374,6 +380,7 @@ sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 			sai_task_t *t = lws_container_of(p, sai_task_t, list);
 			if (sais_task_clear_build_and_logs(vhd, t->uuid, 0) == SAI_DB_RESULT_BUSY) {
 				sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
+				sqlite3_free(err);
 				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 				lwsac_free(&ac);
 				return SAI_DB_RESULT_BUSY;
@@ -384,6 +391,7 @@ sais_plat_reset(struct vhd *vhd, const char *event_uuid, const char *platform)
 		if (ret != SQLITE_OK) {
 			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			lwsac_free(&ac);
+			sqlite3_free(err);
 			if (ret == SQLITE_BUSY)
 				return SAI_DB_RESULT_BUSY;
 			return SAI_DB_RESULT_ERROR;
