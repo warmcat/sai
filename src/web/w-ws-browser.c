@@ -402,26 +402,23 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	 * no db or no artifacts can also be a normal situation...
 	 */
 
-	if (one_task) {
+	sai_task_uuid_to_event_uuid(event_uuid, one_task->uuid);
 
-		sai_task_uuid_to_event_uuid(event_uuid, one_task->uuid);
+	lws_dll2_owner_clear(&owner);
+	if (!sai_event_db_ensure_open(pss->vhd->context, &pss->vhd->sqlite3_cache,
+				      pss->vhd->sqlite3_path_lhs, event_uuid,
+				      0, &pdb)) {
 
-		lws_dll2_owner_clear(&owner);
-		if (!sai_event_db_ensure_open(pss->vhd->context, &pss->vhd->sqlite3_cache,
-					      pss->vhd->sqlite3_path_lhs, event_uuid,
-					      0, &pdb)) {
+		lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s')",
+			     one_task->uuid);
 
-			lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s')",
-				     one_task->uuid);
+		if (lws_struct_sq3_deserialize(pdb, filt, NULL,
+					       lsm_schema_sq3_map_artifact,
+					       &owner,
+					       &query_ac, 0, 10))
+			lwsl_err("%s: get afcts failed\n", __func__);
 
-			if (lws_struct_sq3_deserialize(pdb, filt, NULL,
-						       lsm_schema_sq3_map_artifact,
-						       &owner,
-						       &query_ac, 0, 10))
-				lwsl_err("%s: get afcts failed\n", __func__);
-
-			sai_event_db_close(&pss->vhd->sqlite3_cache, &pdb);
-		}
+		sai_event_db_close(&pss->vhd->sqlite3_cache, &pdb);
 	}
 
 	if (n == LSJS_RESULT_ERROR) {
@@ -435,7 +432,7 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 					       lws_write_ws_flags(LWS_WRITE_TEXT, fi, 1));
 
 	/* does he want to subscribe to logs? */
-	if (logsub && one_task && !pss->subs_list.owner) {
+	if (logsub && !pss->subs_list.owner) {
 		strcpy(pss->sub_task_uuid, one_task->uuid);
 		lws_dll2_add_head(&pss->subs_list, &pss->vhd->subs_owner);
 		pss->sub_timestamp = pss->initial_log_timestamp; /* where we got up to */
