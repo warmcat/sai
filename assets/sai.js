@@ -2578,6 +2578,13 @@ function ws_open_sai()
 				if (!tfirst) tfirst = jso.timestamp;
 				last_log_timestamp = jso.timestamp;
 
+				/* normalize CRs to LFs so line number counts track them properly */
+				if (window._sai_cr_pending && s1.startsWith('\n')) {
+					s1 = s1.substring(1);
+				}
+				window._sai_cr_pending = s1.endsWith('\r');
+				s1 = s1.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
 				var lines_started = 0;
 				var lines_arr = s1.split('\n');
 				for (var idx = 0; idx < lines_arr.length; ++idx) {
