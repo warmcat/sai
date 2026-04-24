@@ -83,6 +83,8 @@ typedef struct sai_active_task_info {
 	unsigned int			est_peak_mem_kib;
 	unsigned int			est_disk_kib;
 	uint64_t			started;
+	char				repo_name[64];
+	char				git_hash[65];
 } sai_active_task_info_t;
 
 typedef struct sai_load_report {

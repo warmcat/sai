@@ -62,6 +62,7 @@ enum {
 struct pss {
 	struct vhd		*vhd;
 	struct lws		*wsi;
+	uint8_t			is_gitohashi:1;
 
 	struct lws_spa		*spa;
 	struct lejp_ctx		ctx;
@@ -225,6 +226,10 @@ saiw_browsers_task_state_change(struct vhd *vhd, const char *task_uuid);
 void
 saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(struct vhd *vhd, const void *buf, size_t len,
 		      enum lws_write_protocol flags);
+
+int
+saiw_ws_browser_queue_REQUIRES_LWS_PRE(struct pss *pss, const void *buf,
+				       size_t len, enum lws_write_protocol flags);
 
 void
 saiw_browser_state_changed(struct pss *pss, int established);

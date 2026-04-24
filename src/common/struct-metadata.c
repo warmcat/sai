@@ -36,6 +36,8 @@ const lws_struct_map_t lsm_active_task_info[] = {
 	LSM_UNSIGNED	(sai_active_task_info_t, est_peak_mem_kib,	"est_peak_mem_kib"),
 	LSM_UNSIGNED	(sai_active_task_info_t, est_disk_kib,		"est_disk_kib"),
 	LSM_UNSIGNED	(sai_active_task_info_t, started,		"started"),
+	LSM_CARRAY	(sai_active_task_info_t, repo_name,		"repo_name"),
+	LSM_CARRAY	(sai_active_task_info_t, git_hash,		"git_hash"),
 };
 
 const lws_struct_map_t lsm_load_report_members[] = {

@@ -784,9 +784,14 @@ function createTaskRow(task, now_ut) {
         qc++;
     }
 
+    let prefix = "";
+    if (task.git_hash && task.repo_name) {
+        prefix = `<span class="e6">${hsanitize(task.git_hash.substring(0, 4))}</span> ${hsanitize(task.repo_name)} `;
+    }
+
     tr.innerHTML = `<td>${s1}</td>` +
                    `<td>${agify(now_ut, task.started)} ago</td>` +
-                   `<td><a href="index.html?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>`;
+                   `<td>${prefix}<a href="index.html?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>`;
     return tr;
 }
 
@@ -799,9 +804,14 @@ function updateTaskRow(tr, task, now_ut) {
         s1 += "&#9633;";
         qc++;
     }
+    let prefix = "";
+    if (task.git_hash && task.repo_name) {
+        prefix = `<span class="e6">${hsanitize(task.git_hash.substring(0, 4))}</span> ${hsanitize(task.repo_name)} `;
+    }
+
     const newHTML = `<td>${s1}</td>` +
                    `<td>${agify(now_ut, task.started)} ago</td>` +
-                   `<td><a href="index.html?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>`;
+                   `<td>${prefix}<a href="index.html?task=${hsanitize(task.task_uuid)}">${hsanitize(task.task_name)}</a></td>`;
     
     if (tr.innerHTML !== newHTML) {
         tr.innerHTML = newHTML;
@@ -883,6 +893,7 @@ function updateSpreadsheetDOM(container, tasks) {
 
 var pos = 0, lli = 1, lines = "", times = "", locked = 1, tfirst = 0,
 		cont = [ 0, 0, 0, 0, 0];
+var deleted_events_cache = new Set();
 
 function get_appropriate_ws_url()
 {
@@ -1359,9 +1370,7 @@ function refresh_state(task_uuid, task_state)
 	}
 }
 
-function after_delete() {
-	location.reload();
-}
+
 
 function createContextMenu(event, menuItems) {
     event.preventDefault();
@@ -1894,6 +1903,12 @@ function ws_open_sai()
 	}
 
 	var s1 = get_appropriate_ws_url() + "/sai/browse" + s;
+	if (typeof gitohashi_integ === 'undefined' || !gitohashi_integ) {
+		if (s1.indexOf('?') !== -1)
+			s1 += "&client=sai";
+		else
+			s1 += "?client=sai";
+	}
 //	if (s1.split("?"))
 //	s1 = s1.split("?")[0];
 	console.log(s1);
@@ -2162,6 +2177,13 @@ function ws_open_sai()
 				 * can send a single e[] if it just changed
 				 * state
 				 */
+				if (jso.overview) {
+					jso.overview = jso.overview.filter(o => !deleted_events_cache.has(o.e.uuid));
+					if (jso.overview.length === 0 && typeof jso.total_events === 'undefined') {
+						break;
+					}
+				}
+
 				s = "<table>";
 
 				/*
@@ -2193,18 +2215,15 @@ function ws_open_sai()
 						var pagination_html_top = "";
 						var pagination_html_bottom = "";
 						if (!gitohashi_integ && jso.total_events > 6) {
-							var info_span = "<span class=\"sai-pagination-info\">Showing " + (jso.offset + 1) + " - " + Math.min(jso.offset + 6, jso.total_events) + " of " + jso.total_events + "</span>";
-
 							pagination_html_top += "<div class=\"sai-pagination\">";
 							if (jso.offset > 0) {
-								pagination_html_top += "<button class=\"btn sai-pagination-btn\" data-offset=\"" + Math.max(0, jso.offset - 6) + "\">&lt; Newer</button> ";
+								pagination_html_top += "<button class=\"btn sai-pagination-btn\" data-offset=\"" + Math.max(0, jso.offset - 6) + "\">&lt; Newer</button>";
 							}
-							pagination_html_top += info_span + "</div>";
+							pagination_html_top += "</div>";
 
 							pagination_html_bottom += "<div class=\"sai-pagination\">";
-							pagination_html_bottom += info_span;
 							if (jso.offset + 6 < jso.total_events) {
-								pagination_html_bottom += " <button class=\"btn sai-pagination-btn\" data-offset=\"" + (jso.offset + 6) + "\">Older &gt;</button>";
+								pagination_html_bottom += "<button class=\"btn sai-pagination-btn\" data-offset=\"" + (jso.offset + 6) + "\">Older &gt;</button>";
 							}
 							pagination_html_bottom += "</div>";
 						}
@@ -2276,14 +2295,27 @@ function ws_open_sai()
 						document.getElementById("delete-ev-" + san(jso.overview[n].e.uuid)).
 							addEventListener("click", function(e) {
 					console.log(e);
+						var uuid = san(e.srcElement.id.substring(10));
+						deleted_events_cache.add(uuid);
 						var rs= "{\"schema\":" +
 						 "\"com.warmcat.sai.eventdelete\"," +
 						 "\"uuid\": " +
-							JSON.stringify(san(e.srcElement.id.substring(10))) + "}";
+							JSON.stringify(uuid) + "}";
 
 						console.log(rs);
 						sai.send(rs);
-						setTimeout(after_delete, 750);
+						// Remove the event row immediately
+						var td = e.srcElement.closest(".waiting");
+						if (td && td.parentNode) {
+							var tr = td.parentNode;
+							tr.style.transition = 'opacity 0.3s';
+							tr.style.opacity = '0';
+							setTimeout(function() {
+								if (tr && tr.parentNode) {
+									tr.parentNode.removeChild(tr);
+								}
+							}, 300);
+						}
 					});
 				}
 				break;
@@ -2324,10 +2356,12 @@ function ws_open_sai()
 					if (document.getElementById("taskinfo-" + jso.t.uuid)) {
 						console.log("FOUND taskinfo-" + jso.t.uuid);
 						document.getElementById("taskinfo-" + jso.t.uuid).innerHTML = sai_taskinfo_render(jso);
-						if (document.getElementById("esr-" + jso.e.uuid))
-							document.getElementById("esr-" + jso.e.uuid).innerHTML =
-								sai_event_summary_render(jso, now_ut, 1);
-						update_summary_and_progress(jso.e.uuid);
+						if (jso.e) {
+							if (document.getElementById("esr-" + jso.e.uuid))
+								document.getElementById("esr-" + jso.e.uuid).innerHTML =
+									sai_event_summary_render(jso, now_ut, 1);
+							update_summary_and_progress(jso.e.uuid);
+						}
 
 					} else {
 
@@ -2367,13 +2401,14 @@ function ws_open_sai()
 								document.getElementById("sai_overview").innerHTML = s;
 								logs_pending = times_pending = lines_pending = "";
 
-								if (document.getElementById("esr-" + jso.e.uuid))
+								if (jso.e && document.getElementById("esr-" + jso.e.uuid))
 									document.getElementById("esr-" + jso.e.uuid).innerHTML =
 										sai_event_summary_render(jso, now_ut, 1);
 
 							}
 						}
-					update_summary_and_progress(jso.e.uuid);
+					if (jso.e)
+						update_summary_and_progress(jso.e.uuid);
 
 					if (document.getElementById("rebuild-" + san(jso.t.uuid))) {
 						document.getElementById("rebuild-" + san(jso.t.uuid)).

@@ -448,6 +448,16 @@ http_resp:
 
 		pss->wsi = wsi;
 		pss->vhd = vhd;
+		pss->is_gitohashi = 1;
+		{
+			int r = 0;
+			char tbuf[96];
+			while (lws_hdr_copy_fragment(wsi, tbuf, sizeof(tbuf), WSI_TOKEN_HTTP_URI_ARGS, r++) >= 0) {
+				if (!strncmp(tbuf, "client=sai", 10)) {
+					pss->is_gitohashi = 0;
+				}
+			}
+		}
 		pss->alang[0] = '\0';
 		lws_hdr_copy(wsi, pss->alang, sizeof(pss->alang),
 			     WSI_TOKEN_HTTP_ACCEPT_LANGUAGE);

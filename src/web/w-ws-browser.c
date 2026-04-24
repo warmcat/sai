@@ -520,7 +520,8 @@ saiw_browsers_task_state_change(struct vhd *vhd, const char *task_uuid)
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 		struct pss *pss = lws_container_of(p, struct pss, same);
 
-		saiw_pss_schedule_taskinfo(pss, task_uuid, 0);
+		if (!pss->is_gitohashi)
+			saiw_pss_schedule_taskinfo(pss, task_uuid, 0);
 	} lws_end_foreach_dll(p);
 
 	return 0;
@@ -533,7 +534,8 @@ saiw_event_state_change(struct vhd *vhd, const char *event_uuid)
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 		struct pss *pss = lws_container_of(p, struct pss, same);
 
-		saiw_pss_schedule_eventinfo(pss, event_uuid);
+		if (!pss->is_gitohashi)
+			saiw_pss_schedule_eventinfo(pss, event_uuid);
 	} lws_end_foreach_dll(p);
 
 	return 0;
@@ -1026,84 +1028,75 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		e = lws_container_of(walk, sai_event_t, list);
 		lws_dll2_owner_clear(&task_owner);
 
-		do {
+		task_index = 0;
+
+		if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+				      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
+			lwsl_err("%s: unable to open event-specific database\n",
+					__func__);
+		} else {
 			task_ac = NULL;
-
-			if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
-					      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
-				lwsl_err("%s: unable to open event-specific database\n",
-						__func__);
-
-				break;
-			}
-
 			lws_dll2_owner_clear(&task_owner);
 			if (lws_struct_sq3_deserialize(pdb, NULL, NULL,
 					lsm_schema_sq3_map_task, &task_owner,
-					&task_ac, (int)task_index, 1)) {
+					&task_ac, 0, 999)) {
 				lwsl_err("%s: OVERVIEW 1 failed\n", __func__);
-				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+			} else {
+				lws_start_foreach_dll(struct lws_dll2 *, pt, task_owner.head) {
+					t = lws_container_of(pt, sai_task_t, list);
 
-				break;
+					if (task_index)
+						*p++ = ',';
+
+					/*
+					 * We don't want to send everyone the artifact nonces...
+					 * the up nonce is a key for uploading artifacts on to
+					 * this task, it should only be stored in the server db
+					 * and sent to the builder to use.
+					 *
+					 * The down nonce is used in generated links, but still
+					 * you should have to acquire such a link via whatever
+					 * auth rather than be able to cook them up yourself
+					 * from knowing the task uuid.
+					 */
+
+					t->art_up_nonce[0] = '\0';
+					t->art_down_nonce[0] = '\0';
+
+					t->rebuildable = (t->state == SAIES_FAIL || t->state == SAIES_CANCELLED) &&
+						(lws_now_secs() - (t->started + t->duration / 1000000) < 24 * 3600);
+
+					js = lws_struct_json_serialize_create(
+						lsm_schema_json_map_task,
+						LWS_ARRAY_SIZE(lsm_schema_json_map_task), 0, t);
+
+					t->build[0] = '\0';
+
+					do {
+						n = (int)lws_struct_json_serialize(js, (uint8_t *)p, lws_ptr_diff_size_t(end, p), &w);
+						switch (n) {
+						case LSJS_RESULT_FINISH:
+							lws_struct_json_serialize_destroy(&js);
+							p += w;
+							break;
+
+						case LSJS_RESULT_CONTINUE:
+							p += w;
+							saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
+											       lws_ptr_diff_size_t(p, start),
+											       lws_write_ws_flags(LWS_WRITE_TEXT, 0, 0));
+							p = start;
+							break;
+						}
+					} while (n == LSJS_RESULT_CONTINUE);
+
+					task_index++;
+				} lws_end_foreach_dll(pt);
 			}
-			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
-
-			if (!task_owner.count)
-				break;
-
-			if (task_index)
-				*p++ = ',';
-
-			/*
-			 * We don't want to send everyone the artifact nonces...
-			 * the up nonce is a key for uploading artifacts on to
-			 * this task, it should only be stored in the server db
-			 * and sent to the builder to use.
-			 *
-			 * The down nonce is used in generated links, but still
-			 * you should have to acquire such a link via whatever
-			 * auth rather than be able to cook them up yourself
-			 * from knowing the task uuid.
-			 */
-
-			t = (sai_task_t *)task_owner.head;
-			t->art_up_nonce[0] = '\0';
-			t->art_down_nonce[0] = '\0';
-
-			t->rebuildable = (t->state == SAIES_FAIL || t->state == SAIES_CANCELLED) &&
-				(lws_now_secs() - (t->started + t->duration / 1000000) < 24 * 3600);
-
-			/* only one in it at a time */
-			t = lws_container_of(task_owner.head, sai_task_t, list);
-
-			js = lws_struct_json_serialize_create(
-				lsm_schema_json_map_task,
-				LWS_ARRAY_SIZE(lsm_schema_json_map_task), 0, t);
-
-			t->build[0] = '\0';
-
-			do {
-				n = (int)lws_struct_json_serialize(js, (uint8_t *)p, lws_ptr_diff_size_t(end, p), &w);
-				switch (n) {
-				case LSJS_RESULT_FINISH:
-					lws_struct_json_serialize_destroy(&js);
-					p += w;
-					break;
-
-				case LSJS_RESULT_CONTINUE:
-					p += w;
-					saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
-									       lws_ptr_diff_size_t(p, start),
-									       lws_write_ws_flags(LWS_WRITE_TEXT, 0, 0));
-					p = start;
-					break;
-				}
-			} while (n == LSJS_RESULT_CONTINUE);
 
 			lwsac_free(&task_ac);
-
-			task_index++;
-		} while (1);
+			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+		}
 
 		/* none left to do, go back up a level */
 
