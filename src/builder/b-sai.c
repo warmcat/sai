@@ -351,8 +351,6 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 			return 1;
 		}
 
-		saib_power_init();
-
 #if defined(__linux__) || defined(__NetBSD__) || defined(__APPLE__)
 		if (saib_suspender_fork(argv0))
 			return 1;
@@ -383,6 +381,10 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 
 			return 1;
 		}
+
+		lwsl_notice("====== EXECUTING SAIB_POWER_INIT ======\n");
+		saib_power_init();
+		lwsl_notice("====== EXECUTED SAIB_POWER_INIT ======\n");
 
 		if (builder.power_controller_name) {
 			lws_start_foreach_dll(struct lws_dll2 *, d, builder.sai_plat_owner.head) {

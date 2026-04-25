@@ -49,7 +49,7 @@ saib_power_client_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 {
 	saib_power_client_t *g = (saib_power_client_t *)userobj;
 
-	return sai_ss_tx_from_buflist_helper(ss_power_client, &g->bl_tx,
+	return sai_ss_tx_from_buflist_helper(g->ss, &g->bl_tx,
 					     buf, len, flags);
 }
 
@@ -77,7 +77,7 @@ saib_power_client_state(void *userobj, void *sh, lws_ss_constate_t state,
 	switch (state) {
 	case LWSSSCS_CREATING:
 		lwsl_notice("%s: CREATING sai-power client connection to %s\n", __func__, builder.url_sai_power);
-		if (lws_ss_set_metadata((struct lws_ss_handle *)sh, "url",
+		if (lws_ss_set_metadata(g->ss, "url",
 					builder.url_sai_power,
 					strlen(builder.url_sai_power)))
 			lwsl_err("%s: failed to set metadata\n", __func__);
@@ -120,7 +120,7 @@ saib_power_client_state(void *userobj, void *sh, lws_ss_constate_t state,
 		} lws_end_foreach_dll(d);
 
 		/* Send it */
-		sai_ss_serialize_queue_helper(ss_power_client, &g->bl_tx,
+		sai_ss_serialize_queue_helper(g->ss, &g->bl_tx,
 					      lsm_schema_builder_registration,
 					      LWS_ARRAY_SIZE(lsm_schema_builder_registration),
 					      &r);
@@ -360,8 +360,9 @@ sul_do_suspend_cb(lws_sorted_usec_list_t *sul)
 
 	lwsl_notice("%s: actioning suspend...\n", __func__);
 
-	n = write(fd, &te, 1);
-	if (n == 1) {
+	if (fd >= 0) {
+		n = write(fd, &te, 1);
+		if (n == 1) {
 #if defined(WIN32)
 		Sleep(2000);
 #else
@@ -374,8 +375,10 @@ sul_do_suspend_cb(lws_sorted_usec_list_t *sul)
 		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
 				 sul_idle_cb, SAI_IDLE_GRACE_US);
 		lwsl_notice("%s: resuming after suspend\n", __func__);
+		} else
+			lwsl_err("%s: failed to request suspend\n", __func__);
 	} else
-		lwsl_err("%s: failed to request suspend\n", __func__);
+		lwsl_err("%s: no suspender pipe\n", __func__);
 #endif
 }
 
@@ -388,7 +391,10 @@ sul_shutdown_cb(lws_sorted_usec_list_t *sul)
 
 	lwsl_warn("%s: device shutting down\n", __func__);
 
-	n = write(fd, &te, 1);
+	if (fd >= 0)
+		n = write(fd, &te, 1);
+	else
+		n = -1;
 
 	if (n != 1)
 		lwsl_err("%s: shutdown request failed\n", __func__);
@@ -501,10 +507,14 @@ saib_power_init(void)
 	 * Do we have a url for sai-power?  If not, nothing we can do.
 	 */
 
+	lwsl_notice("====== ENTERED SAIB_POWER_INIT ======\n");
+
 	if (!builder.url_sai_power) {
-		lwsl_err("%s: *** missing URL for url_sai_power\n", __func__);
+		lwsl_err("====== *** missing URL for url_sai_power ======\n");
 		return 1;
 	}
+
+	lwsl_notice("====== URL_SAI_POWER IS: %s ======\n", builder.url_sai_power);
 
 	/* Existing SS creation for power-off logic */
 	lwsl_notice("%s: *** creating sai-power ss...\n", __func__);

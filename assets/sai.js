@@ -2568,6 +2568,10 @@ function ws_open_sai()
 				location.reload();
 				break;
 
+			case "com.warmcat.sai.event_deleted":
+				window.location.href = window.location.origin + window.location.pathname;
+				break;
+
 			case "com-warmcat-sai-logs":
 				var s1;
 				try {

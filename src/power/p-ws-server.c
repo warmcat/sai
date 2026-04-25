@@ -53,7 +53,7 @@ saip_queue_energy_report(saip_server_t *sps)
 	int r = 0;
 	int count = 0;
 
-	if (!sps->ss)
+	if (!sps || !sps->ss)
 		return 0;
 
 	m = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
@@ -137,6 +137,9 @@ saip_queue_stay_info(saip_server_t *sps)
 
 	/* lwsl_ss_notice(sps->ss, "@@@@@@@@@@@@@@ sai-power CONNECTED to server"); */
 
+	if (!sps)
+		return 0;
+
 	m = (saip_server_link_t *)lws_ss_to_user_object(sps->ss);
 
 	memset(&pmb, 0, sizeof(pmb));
@@ -151,7 +154,7 @@ saip_queue_stay_info(saip_server_t *sps)
 			lws_strncpy(pc1->name, pc->name, sizeof(pc1->name));
 			pc1->on		= (unsigned int)pc->on;
 			pc1->manual_on	= !!(pc->flags & SAIP_PCON_F_MANUAL_STAY);
-			if (pc->depends_on[0])
+			if (pc->depends_on && pc->depends_on[0])
 				lws_strncpy(pc1->depends_on, pc->depends_on, sizeof(pc1->depends_on));
 			if (pc->type[0])
 				lws_strncpy(pc1->type, pc->type, sizeof(pc1->type));

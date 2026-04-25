@@ -134,7 +134,7 @@ sai_deletion_worker(const char *home_dir)
 				lwsl_info("%s: performing rm -rf %s\n", __func__, full_path);
 
 				if (lws_dir_via_info(&di))
-					lwsl_err("%s: failed to delete %s: %s\n",
+					lwsl_info("%s: failed to delete %s: %s\n",
 						 __func__, full_path, strerror(errno));
 			}
 		} while (1);

@@ -63,7 +63,7 @@ int
 saib_suspender_get_pipe(void)
 {
 #if defined(__linux__)
-	int fd = lws_spawn_get_fd_stdxxx(lsp_suspender, 0);
+	int fd = lsp_suspender ? lws_spawn_get_fd_stdxxx(lsp_suspender, 0) : -1;
 #else
 #if defined(__APPLE__) || defined(__NetBSD__)
 	int fd = builder.pipe_suspender_wr;
@@ -252,13 +252,20 @@ saib_suspender_start(void)
 		uint8_t d;
 
 		n = read(0, &d, 1);
-		lwsl_notice("%s: suspend process read returned %d\n", __func__, (int)n);
+		if (n < 0) {
+			if (errno == EAGAIN || errno == EINTR)
+				continue;
+			lwsl_err("%s: suspend process read failed %d\n", __func__, errno);
+			break;
+		}
 
 #if defined(__APPLE__)
 		sleep(1);
 #endif
-		if (n <= 0)
-			continue;
+		if (n == 0) {
+			lwsl_notice("%s: suspend process pipe closed\n", __func__);
+			break;
+		}
 
 		if (d == 2) {
 			lwsl_warn("%s: suspend process ending\n", __func__);
@@ -348,6 +355,7 @@ suspender_destroy()
 		* Clean up after the suspend process
 		*/
 
-		write(fd, &te, 1);
+		if (fd >= 0)
+			write(fd, &te, 1);
 	}
 }

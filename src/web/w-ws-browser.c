@@ -292,8 +292,14 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	/* open the event-specific database object */
 
 	if (sai_event_db_ensure_open(pss->vhd->context, &pss->vhd->sqlite3_cache,
-			      pss->vhd->sqlite3_path_lhs, event_uuid, 0, &pdb))
+			      pss->vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
+		uint8_t buf[LWS_PRE + 128];
+		int n1 = lws_snprintf((char *)buf + LWS_PRE, sizeof(buf) - LWS_PRE,
+				     "{\"schema\":\"com.warmcat.sai.event_deleted\"}");
+		saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, buf + LWS_PRE, (size_t)n1,
+						       LWS_WRITE_TEXT);
 		return 0;
+	}
 
 	/*
 	 * get the related task object into its own ac... there might
@@ -789,8 +795,15 @@ saiw_broadcast_logs_batch(struct vhd *vhd, struct pss *pss)
 		if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
 					     vhd->sqlite3_path_lhs, event_uuid,
 					     0, &pdb)) {
+			uint8_t buf[LWS_PRE + 128];
+			int n1;
 			lwsl_notice("%s: unable to open event-specific database\n",
 					__func__);
+
+			n1 = lws_snprintf((char *)buf + LWS_PRE, sizeof(buf) - LWS_PRE,
+				     "{\"schema\":\"com.warmcat.sai.event_deleted\"}");
+			saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, buf + LWS_PRE, (size_t)n1,
+						       LWS_WRITE_TEXT);
 
 			return 0;
 		}
@@ -1344,7 +1357,6 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 			LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),
 			0, b);
 		if (!js) {
-			lwsac_unreference(&vhd->builders);
 			free(d.buf);
 			return 1;
 		}
@@ -1353,7 +1365,6 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 			if (subsequent && start_of_this_builder) {
 				if (sai_dyn_buf_append(&d, ",", 1)) {
 					lws_struct_json_serialize_destroy(&js);
-					lwsac_unreference(&vhd->builders);
 					free(d.buf);
 					return 1;
 				}
@@ -1364,7 +1375,6 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 
 			if (w && sai_dyn_buf_append(&d, buf, w)) {
 				lws_struct_json_serialize_destroy(&js);
-				lwsac_unreference(&vhd->builders);
 				free(d.buf);
 				return 1;
 			}
@@ -1372,7 +1382,6 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 			switch (r) {
 			case LSJS_RESULT_ERROR:
 				lws_struct_json_serialize_destroy(&js);
-				lwsac_unreference(&vhd->builders);
 				free(d.buf);
 				return 1;
 			case LSJS_RESULT_CONTINUE:
@@ -1389,12 +1398,10 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 
 	n = lws_snprintf(buf, sizeof(buf), " \n]}");
 	if (sai_dyn_buf_append(&d, buf, (size_t)n)) {
-		lwsac_unreference(&vhd->builders);
 		free(d.buf);
 		return 1;
 	}
 
-	lwsac_unreference(&vhd->builders);
 	
 	saiw_browser_broadcast_queue_power_history(vhd, pss);
 
