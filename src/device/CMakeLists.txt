@@ -17,6 +17,7 @@ require_lws_config(LWS_WITH_DIR			1 requirements)
 if (requirements)
 
 	add_executable("sai-device" ${SRCS})
+add_dependencies("sai-device" sai_git_hash)
 	if (APPLE)
 		set_property(TARGET sai-device PROPERTY MACOSX_RPATH YES)
 	endif()

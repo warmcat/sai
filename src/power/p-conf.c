@@ -32,38 +32,16 @@
 static const char * const paths_global[] = {
 	"perms",
 	"wol-if",
+	"database",
 	"servers[].url",
-	"servers[].power_controllers[].name",
-	"servers[].power_controllers[].type",
-	"servers[].power_controllers[].url",
-	"servers[].power_controllers[].mac",
-	"servers[].power_controllers[].depends_on",
-	"servers[].power_controllers[]",
-	"power_controllers[].name",
-	"power_controllers[].type",
-	"power_controllers[].url",
-	"power_controllers[].mac",
-	"power_controllers[].depends_on",
-	"power_controllers[]",
 	"servers[]"
 };
 
 enum enum_paths_global {
 	LEJPM_PERMS,
 	LEJPM_WOL_IF,
+	LEJPM_DATABASE,
 	LEJPM_SERVERS_URL,
-	LEJPM_SRV_PCON_NAME,
-	LEJPM_SRV_PCON_TYPE,
-	LEJPM_SRV_PCON_URL,
-	LEJPM_SRV_PCON_MAC,
-	LEJPM_SRV_PCON_DEPENDS_ON,
-	LEJPM_SRV_PCON,
-	LEJPM_PCON_NAME,
-	LEJPM_PCON_TYPE,
-	LEJPM_PCON_URL,
-	LEJPM_PCON_MAC,
-	LEJPM_PCON_DEPENDS_ON,
-	LEJPM_PCON,
 	LEJPM_SERVERS
 };
 
@@ -93,21 +71,6 @@ saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 					  &a->power->sai_server_owner);
 			break;
 
-		case LEJPM_PCON:
-		case LEJPM_SRV_PCON:
-			/*
-			 * Create the saip_pcon_t object
-			 */
-			a->sai_pcon = lwsac_use_zero(&a->power->ac_conf_head,
-					         sizeof(*a->sai_pcon), 4096);
-			if (!a->sai_pcon)
-				return -1;
-
-			/* We will link dependencies later */
-			lws_dll2_add_tail(&a->sai_pcon->list,
-					  &a->power->sai_pcon_owner);
-			break;
-
 		default:
 			return 0;
 		}
@@ -132,29 +95,8 @@ saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		pp = &a->power->wol_if;
 		break;
 
-	case LEJPM_PCON_NAME:
-	case LEJPM_SRV_PCON_NAME:
-		pp = &a->sai_pcon->name;
-		break;
-
-	case LEJPM_PCON_TYPE:
-	case LEJPM_SRV_PCON_TYPE:
-		pp = &a->sai_pcon->type;
-		break;
-
-	case LEJPM_PCON_URL:
-	case LEJPM_SRV_PCON_URL:
-		pp = &a->sai_pcon->url;
-		break;
-
-	case LEJPM_PCON_MAC:
-	case LEJPM_SRV_PCON_MAC:
-		pp = &a->sai_pcon->mac;
-		break;
-
-	case LEJPM_PCON_DEPENDS_ON:
-	case LEJPM_SRV_PCON_DEPENDS_ON:
-		pp = &a->sai_pcon->depends_on;
+	case LEJPM_DATABASE:
+		pp = &a->power->database;
 		break;
 
 	case LEJPM_SERVERS_URL:

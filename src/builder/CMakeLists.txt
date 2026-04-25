@@ -29,6 +29,7 @@ require_lws_config(LWS_WITH_DIR			1 requirements)
 
 if (requirements)
 	add_executable(${SUB} ${SRCS})
+add_dependencies(${SUB} sai_git_hash)
 	if (APPLE)
 		set_property(TARGET ${SUB} PROPERTY MACOSX_RPATH YES)
                set(CMAKE_MACOSX_RPATH 1)

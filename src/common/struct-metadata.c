@@ -326,6 +326,12 @@ const lws_struct_map_t lsm_power_controller[] = {
 	LSM_CARRAY(sai_power_controller_t, name, "name"),
 	LSM_CARRAY(sai_power_controller_t, type, "type"),
 	LSM_CARRAY(sai_power_controller_t, depends_on, "depends_on"),
+	LSM_CARRAY(sai_power_controller_t, power_on_type, "power_on_type"),
+	LSM_CARRAY(sai_power_controller_t, power_on_url, "power_on_url"),
+	LSM_CARRAY(sai_power_controller_t, power_on_mac, "power_on_mac"),
+	LSM_CARRAY(sai_power_controller_t, power_off_type, "power_off_type"),
+	LSM_CARRAY(sai_power_controller_t, power_off_url, "power_off_url"),
+	LSM_CARRAY(sai_power_controller_t, power_monitor_url, "power_monitor_url"),
 	LSM_UNSIGNED(sai_power_controller_t, on, "on"),
 	LSM_UNSIGNED(sai_power_controller_t, manual_on, "manual_on"),
 	LSM_LIST(sai_power_controller_t, controlled_builders_owner,
@@ -338,6 +344,12 @@ const lws_struct_map_t lsm_sq3_power_controller[] = {
 	LSM_CARRAY(sai_power_controller_t, name, "name"),
 	LSM_CARRAY(sai_power_controller_t, type, "type"),
 	LSM_CARRAY(sai_power_controller_t, depends_on, "depends_on"),
+	LSM_CARRAY(sai_power_controller_t, power_on_type, "power_on_type"),
+	LSM_CARRAY(sai_power_controller_t, power_on_url, "power_on_url"),
+	LSM_CARRAY(sai_power_controller_t, power_on_mac, "power_on_mac"),
+	LSM_CARRAY(sai_power_controller_t, power_off_type, "power_off_type"),
+	LSM_CARRAY(sai_power_controller_t, power_off_url, "power_off_url"),
+	LSM_CARRAY(sai_power_controller_t, power_monitor_url, "power_monitor_url"),
 	LSM_UNSIGNED(sai_power_controller_t, on, "state"),
 };
 
@@ -391,12 +403,34 @@ const lws_struct_map_t lsm_builder_registration[] = {
 		 lsm_builder_platform, "platforms"),
 	LSM_CARRAY(sai_builder_registration_t, builder_name, "builder_name"),
 	LSM_CARRAY(sai_builder_registration_t, power_controller_name, "power_controller_name"),
+	LSM_CARRAY(sai_builder_registration_t, power_on_type, "power_on_type"),
+	LSM_CARRAY(sai_builder_registration_t, power_on_url, "power_on_url"),
+	LSM_CARRAY(sai_builder_registration_t, power_on_mac, "power_on_mac"),
+	LSM_CARRAY(sai_builder_registration_t, power_off_type, "power_off_type"),
+	LSM_CARRAY(sai_builder_registration_t, power_off_url, "power_off_url"),
+	LSM_CARRAY(sai_builder_registration_t, power_monitor_url, "power_monitor_url"),
 };
 
 const lws_struct_map_t lsm_schema_builder_registration[] = {
 	LSM_SCHEMA(sai_builder_registration_t, NULL,
 		   lsm_builder_registration,
 		   "com.warmcat.sai.builder_registration"),
+};
+
+const lws_struct_map_t lsm_sq3_builder_registration[] = {
+	LSM_CARRAY(sai_builder_registration_t, builder_name, "builder_name"),
+	LSM_CARRAY(sai_builder_registration_t, power_controller_name, "power_controller_name"),
+	LSM_CARRAY(sai_builder_registration_t, power_on_type, "power_on_type"),
+	LSM_CARRAY(sai_builder_registration_t, power_on_url, "power_on_url"),
+	LSM_CARRAY(sai_builder_registration_t, power_on_mac, "power_on_mac"),
+	LSM_CARRAY(sai_builder_registration_t, power_off_type, "power_off_type"),
+	LSM_CARRAY(sai_builder_registration_t, power_off_url, "power_off_url"),
+	LSM_CARRAY(sai_builder_registration_t, power_monitor_url, "power_monitor_url"),
+};
+
+const lws_struct_map_t lsm_schema_sq3_map_builder_registration[] = {
+	LSM_SCHEMA_DLL2(sai_builder_registration_t, list, NULL,
+			lsm_sq3_builder_registration, "builder_registrations"),
 };
 
 static const lws_struct_map_t lsm_pcon_energy_item[] = {

@@ -458,7 +458,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	sai_db_result_t r;
 	int n;
 
-	lwsl_user("%s: len %d, flags: %d\n", __func__, (int)len, flags);
+	lwsl_info("%s: len %d, flags: %d\n", __func__, (int)len, flags);
 	lwsl_hexdump_info(buf, len);
 
 	memset(&a, 0, sizeof(a));

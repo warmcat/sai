@@ -556,8 +556,8 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	sai_cancel_t *can;
 	int m, ret = -1;
 
-	lwsl_notice("%s: len %d, flags: %d\n", __func__, (int)bl, ss_flags);
-	/* lwsl_hexdump_notice(buf, bl); */
+	lwsl_info("%s: len %d, flags: %d\n", __func__, (int)bl, ss_flags);
+	/* lwsl_hexdump_info(buf, bl); */
 
 	memset(&a, 0, sizeof(a));
 	/*

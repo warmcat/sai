@@ -20,6 +20,7 @@
  */
 
 #include <libwebsockets.h>
+#include <sqlite3.h>
 
 #include <assert.h>
 

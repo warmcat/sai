@@ -64,9 +64,9 @@ typedef struct saip_pcon {
 	const char		*depends_on; /* name from config */
 
 	const char		*name;
-	const char		*type;
-	const char		*url;
-	const char		*mac; /* For WOL */
+	char			type[32];
+	char			url[128];
+	char			mac[24]; /* For WOL */
 
 	char			url_on[128];
 	char			url_off[128];
@@ -142,6 +142,9 @@ struct sai_power {
 	const char		*power_off;
 
 	const char		*wol_if;
+	const char		*database;
+	
+	struct sqlite3		*pdb;
 
 	const char		*bind;		/* listen socket binding */
 	const char		*perms;		/* user:group */
@@ -200,7 +203,7 @@ int
 saip_parse_tasmota_status(tasmota_parse_t *tp);
 
 void
-saip_ss_create_tasmota(void);
+saip_ss_create_pcon_streams(saip_pcon_t *pc);
 
 void
 saip_pcon_start_check(void);

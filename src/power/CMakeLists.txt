@@ -11,6 +11,7 @@ set(SRCS
 	p-tasmota-monitor.c
 	../common/c-utils.c
 	../common/struct-metadata.c
+	../common/c-sqlite3.c
 )
 
 set(requirements 1)
@@ -20,10 +21,12 @@ require_lws_config(LWS_WITH_STRUCT_JSON		1 requirements)
 require_lws_config(LWS_WITH_SECURE_STREAMS	1 requirements)
 require_lws_config(LWS_WITH_DIR			1 requirements)
 require_lws_config(LWS_WITH_WOL			1 requirements)
+require_lws_config(LWS_WITH_STRUCT_SQLITE3	1 requirements)
 
 
 if (requirements)
 	add_executable(${SUB} ${SRCS})
+add_dependencies(${SUB} sai_git_hash)
 	if (APPLE)
 		set_property(TARGET ${SUB} PROPERTY MACOSX_RPATH YES)
 	endif()
@@ -36,7 +39,7 @@ if (requirements)
 		find_library(CAP_LIB_PATH NAMES "cap")
 	endif()
 
-	target_link_libraries(${SUB} websockets ${SAI_LWS_LIB_PATH})
+	target_link_libraries(${SUB} websockets sqlite3 ${SAI_LWS_LIB_PATH})
 	
 	message("LWS_OPENSSL_LIBRARIES ${SUB} '${LWS_OPENSSL_LIBRARIES}'")
 	if (LWS_OPENSSL_LIBRARIES)

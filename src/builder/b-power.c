@@ -75,6 +75,14 @@ saib_power_client_state(void *userobj, void *sh, lws_ss_constate_t state,
 		  (unsigned int)ack);
 
 	switch (state) {
+	case LWSSSCS_CREATING:
+		lwsl_notice("%s: CREATING sai-power client connection to %s\n", __func__, builder.url_sai_power);
+		if (lws_ss_set_metadata((struct lws_ss_handle *)sh, "url",
+					builder.url_sai_power,
+					strlen(builder.url_sai_power)))
+			lwsl_err("%s: failed to set metadata\n", __func__);
+		break;
+
 	case LWSSSCS_CONNECTED:
 		lwsl_notice("%s: Connected to sai-power, sending registration: '%s' '%s'\n", __func__, builder.host, builder.power_controller_name);
 
@@ -86,6 +94,19 @@ saib_power_client_state(void *userobj, void *sh, lws_ss_constate_t state,
 			lws_strncpy(r.power_controller_name, builder.power_controller_name, sizeof(r.power_controller_name));
 		else
 			lws_strncpy(r.power_controller_name, "unknown", sizeof(r.power_controller_name));
+
+		if (builder.power_on_type)
+			lws_strncpy(r.power_on_type, builder.power_on_type, sizeof(r.power_on_type));
+		if (builder.power_on_url)
+			lws_strncpy(r.power_on_url, builder.power_on_url, sizeof(r.power_on_url));
+		if (builder.power_on_mac)
+			lws_strncpy(r.power_on_mac, builder.power_on_mac, sizeof(r.power_on_mac));
+		if (builder.power_off_type)
+			lws_strncpy(r.power_off_type, builder.power_off_type, sizeof(r.power_off_type));
+		if (builder.power_off_url)
+			lws_strncpy(r.power_off_url, builder.power_off_url, sizeof(r.power_off_url));
+		if (builder.power_monitor_url)
+			lws_strncpy(r.power_monitor_url, builder.power_monitor_url, sizeof(r.power_monitor_url));
 
 		/* Add platforms */
 		lws_start_foreach_dll(struct lws_dll2 *, d, builder.sai_plat_owner.head) {
@@ -110,6 +131,10 @@ saib_power_client_state(void *userobj, void *sh, lws_ss_constate_t state,
 	case LWSSSCS_DISCONNECTED:
 		lwsl_notice("%s: Disconnected from sai-power\n", __func__);
 		lws_buflist_destroy_all_segments(&g->bl_tx);
+		break;
+
+	case LWSSSCS_ALL_RETRIES_FAILED:
+		lwsl_err("%s: Failed to connect to sai-power\n", __func__);
 		break;
 
 	default:

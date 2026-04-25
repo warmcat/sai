@@ -465,7 +465,7 @@ http_resp:
 		lws_hdr_copy(wsi, (char *)buf, sizeof(buf),
 			     WSI_TOKEN_X_FORWARDED_FOR);
 
-		lwsl_wsi_warn(wsi, "ESTABLISHED: %s %s", (char *)buf, pss->alang);
+		lwsl_wsi_info(wsi, "ESTABLISHED: %s %s", (char *)buf, pss->alang);
 
 		if (lws_hdr_total_length(wsi, WSI_TOKEN_GET_URI)) {
 			if (lws_hdr_copy(wsi, (char *)start, 64,
@@ -559,7 +559,7 @@ http_resp:
 
 	case LWS_CALLBACK_CLOSED:
 
-		lwsl_wsi_err(wsi, "CLOSED browse conn");
+		lwsl_wsi_info(wsi, "CLOSED browse conn");
 		lws_buflist_destroy_all_segments(&pss->raw_tx);
 		saiw_browser_state_changed(pss, 0);
 		lws_dll2_remove(&pss->subs_list);

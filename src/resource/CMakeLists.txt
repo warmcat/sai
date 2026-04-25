@@ -16,6 +16,7 @@ require_lws_config(LWS_WITH_DIR			1 requirements)
 if (requirements AND NOT MSVC)
 
 	add_executable(${SUB} ${SRCS})
+add_dependencies(${SUB} sai_git_hash)
 	if (APPLE)
 		set_property(TARGET sai-resource PROPERTY MACOSX_RPATH YES)
 	endif()

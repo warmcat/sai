@@ -25,6 +25,7 @@
 #include <fcntl.h>
 #include <errno.h>
 
+#include "sai-git-hash.h"
 #include "b-private.h"
 
 const char *git_helper_sh =
@@ -910,7 +911,7 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 
 		ml = lws_snprintf(mb, sizeof(mb),
 				  ">saib> Sai Builder Version: %s, lws: %s\n",
-				  BUILD_INFO, LWS_BUILD_HASH);
+				  SAI_BUILD_INFO, LWS_BUILD_HASH);
 		saib_log_chunk_create(ns, mb, (unsigned int)ml, 3);
 	}
 

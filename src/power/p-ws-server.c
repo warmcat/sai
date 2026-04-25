@@ -147,13 +147,13 @@ saip_queue_stay_info(saip_server_t *sps)
 		saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
 		sai_power_controller_t *pc1 = lwsac_use_zero(&ac, sizeof(*pc1), 2048);
 
-		if (pc1 && pc->name) {
+		if (pc1 && pc->name[0]) {
 			lws_strncpy(pc1->name, pc->name, sizeof(pc1->name));
 			pc1->on		= (unsigned int)pc->on;
 			pc1->manual_on	= !!(pc->flags & SAIP_PCON_F_MANUAL_STAY);
-			if (pc->depends_on)
+			if (pc->depends_on[0])
 				lws_strncpy(pc1->depends_on, pc->depends_on, sizeof(pc1->depends_on));
-			if (pc->type)
+			if (pc->type[0])
 				lws_strncpy(pc1->type, pc->type, sizeof(pc1->type));
 
 			lws_dll2_add_tail(&pc1->list, &pmb.power_controllers);

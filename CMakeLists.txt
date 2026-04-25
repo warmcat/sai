@@ -118,8 +118,15 @@ if (LWS_OPENSSL_INCLUDE_DIRS)
 	set(CMAKE_C_FLAGS "-I\"${LWS_OPENSSL_INCLUDE_DIRS}\" ${CMAKE_C_FLAGS}")
 endif()
 
-
-set(CMAKE_C_FLAGS "-DBUILD_INFO=\\\"${LWS_BUILD_HASH}\\\" ${CMAKE_C_FLAGS}")
+include_directories(${CMAKE_BINARY_DIR})
+add_custom_target(sai_git_hash ALL
+    COMMAND ${CMAKE_COMMAND}
+    -DCMAKE_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+    -DCPACK_PACKAGE_VERSION=${CPACK_PACKAGE_VERSION}
+    -DOUTPUT_FILE=${CMAKE_BINARY_DIR}/sai-git-hash.h
+    -P ${CMAKE_SOURCE_DIR}/cmake/GetGitHash.cmake
+    BYPRODUCTS ${CMAKE_BINARY_DIR}/sai-git-hash.h
+)
 
 CHECK_C_SOURCE_COMPILES("#include <libwebsockets.h>\nint
 	main(void) {\n#if defined(LWS_HAVE_LIBCAP)\n return

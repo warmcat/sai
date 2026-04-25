@@ -97,8 +97,8 @@ saip_builder_bringup(saip_server_t *sps, saip_pcon_t *pc)
 {
 	saip_notify_server_power_state(pc->name, 1, 0);
 
-	if (pc->type && !strcmp(pc->type, "wol")) {
-		if (pc->mac) {
+	if (pc->type[0] && !strcmp(pc->type, "wol")) {
+		if (pc->mac[0]) {
 			lwsl_notice("%s:   triggering WOL for %s\n", __func__, pc->name);
 #if defined(LWS_WITH_SPAWN)
 			write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
@@ -301,6 +301,42 @@ local_srv_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		}
 
 		if (pc) {
+			/* update dynamic info */
+			if (r->power_on_type[0])
+				lws_strncpy(pc->type, r->power_on_type, sizeof(pc->type));
+			if (r->power_on_url[0])
+				lws_strncpy(pc->url_on, r->power_on_url, sizeof(pc->url_on));
+			if (r->power_on_mac[0])
+				lws_strncpy(pc->mac, r->power_on_mac, sizeof(pc->mac));
+			if (r->power_off_url[0])
+				lws_strncpy(pc->url_off, r->power_off_url, sizeof(pc->url_off));
+			if (r->power_monitor_url[0])
+				lws_strncpy(pc->url_monitor, r->power_monitor_url, sizeof(pc->url_monitor));
+			
+			saip_ss_create_pcon_streams(pc);
+
+#if defined(LWS_WITH_STRUCT_SQLITE3)
+			if (power.pdb) {
+				char q[256], esc[128];
+				struct lws_dll2_owner o;
+				
+				lws_dll2_owner_clear(&o);
+				lws_dll2_add_tail(&r->list, &o);
+				
+				lws_sql_purify(esc, r->builder_name, sizeof(esc));
+				lws_snprintf(q, sizeof(q), "DELETE FROM builder_registrations WHERE builder_name='%s'", esc);
+				sai_sqlite3_statement(power.pdb, q, "delete sticky reg");
+				
+				if (lws_struct_sq3_serialize(power.pdb, lsm_schema_sq3_map_builder_registration, &o, 0))
+					lwsl_err("%s: Failed to serialize sticky reg\n", __func__);
+				else
+					lwsl_notice("%s: Successfully serialized sticky reg for %s\n", __func__, r->builder_name);
+				
+				lws_dll2_remove(&r->list);
+			}
+#endif
+
+
 			/* Check if builder already exists */
 			int found = 0;
 			lws_start_foreach_dll(struct lws_dll2 *, b_node, pc->registered_builders_owner.head) {
@@ -456,7 +492,7 @@ local_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 			saip_notify_server_power_state(pc->name, 1, 0);
 
-			if (pc->mac) {
+			if (pc->mac[0]) {
 #if defined(LWS_WITH_SPAWN)
 				if (write(lws_spawn_get_fd_stdxxx(lsp_wol, 0),
 					      pc->mac, strlen(pc->mac)) !=

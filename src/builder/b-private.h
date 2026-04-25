@@ -136,6 +136,7 @@ struct sai_builder {
 	const char		*power_on_type;
 	const char		*power_on_url;
 	const char		*power_on_mac;
+	const char		*power_monitor_url;
 
 	const char		*home;		/* home dir, usually /sai/home */
 	const char		*perms;		/* user:group */

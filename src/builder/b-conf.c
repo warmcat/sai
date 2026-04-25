@@ -25,6 +25,7 @@
 #include <time.h>
 #include <fcntl.h>
 
+#include "sai-git-hash.h"
 #include "b-private.h"
 
 /* global part */
@@ -43,6 +44,7 @@ static const char * const paths_global[] = {
 	"power-on.mac",
 	"power-off.type",
 	"power-off.url",
+	"power-monitor.url",
 	"rebuild_script_user",
 	"rebuild_script_root"
 };
@@ -61,6 +63,7 @@ enum enum_paths_global {
 	LEJPM_POWER_ON_MAC,
 	LEJPM_POWER_OFF_TYPE,
 	LEJPM_POWER_OFF_URL,
+	LEJPM_POWER_MONITOR_URL,
 	LEJPM_REBUILD_SCRIPT_USER,
 	LEJPM_REBUILD_SCRIPT_ROOT
 };
@@ -115,7 +118,7 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 			if (!a->sai_plat)
 				return -1;
 
-			lws_strncpy(a->sai_plat->sai_hash, BUILD_INFO,
+			lws_strncpy(a->sai_plat->sai_hash, SAI_BUILD_INFO,
 				    sizeof(a->sai_plat->sai_hash));
 			lws_strncpy(a->sai_plat->lws_hash, LWS_BUILD_HASH,
 				    sizeof(a->sai_plat->lws_hash));
@@ -310,6 +313,9 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		break;
 	case LEJPM_POWER_OFF_URL:
 		pp = &a->builder->power_off_url;
+		break;
+	case LEJPM_POWER_MONITOR_URL:
+		pp = &a->builder->power_monitor_url;
 		break;
 
 	case LEJPM_REBUILD_SCRIPT_USER:

@@ -22,6 +22,7 @@ require_lws_config(LWS_WITH_UNIX_SOCK		1 requirements)
 
 if (requirements)
 	add_executable(${SUB} ${SRCS})
+add_dependencies(${SUB} sai_git_hash)
 	if (APPLE)
 		set_property(TARGET sai-web PROPERTY MACOSX_RPATH YES)
 	endif()

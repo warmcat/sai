@@ -286,7 +286,7 @@ sul_broadcast_energy_cb(lws_sorted_usec_list_t *sul)
 	} lws_end_foreach_dll(p);
 
 	if (!polled)
-		lwsl_notice("%s: No PCONs polled\n", __func__);
+		lwsl_info("%s: No PCONs polled\n", __func__);
 
 	/* 2. Queue energy report to server (sends whatever latest data we have) */
 	/* We iterate servers, though usually only one */
@@ -536,7 +536,47 @@ int main(int argc, const char **argv)
 		goto bail;
 	}
 
-	saip_ss_create_tasmota();
+	if (power.database) {
+		if (lws_struct_sq3_open(power.context, power.database, 1, &power.pdb)) {
+			lwsl_err("%s: Failed to open sqlite3 db %s\n", __func__, power.database);
+		} else {
+			if (lws_struct_sq3_create_table(power.pdb, lsm_schema_sq3_map_builder_registration)) {
+				lwsl_err("%s: Failed to create builder_registrations table\n", __func__);
+			} else {
+				/* deserialize existing sticky registrations */
+				struct lws_dll2_owner temp_owner;
+				struct lwsac *ac = NULL;
+				
+				lws_dll2_owner_clear(&temp_owner);
+				if (lws_struct_sq3_deserialize(power.pdb, "",
+							       NULL, lsm_schema_sq3_map_builder_registration,
+							       &temp_owner, &ac, 0, 100) >= 0) {
+					/* Create PCONs for them */
+					lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1, temp_owner.head) {
+						sai_builder_registration_t *r = lws_container_of(p, sai_builder_registration_t, list);
+						
+						lwsl_notice("%s: Sticky registration found for PCON %s\n", __func__, r->power_controller_name);
+						saip_pcon_t *pc = saip_pcon_create(&power, r->power_controller_name);
+						if (pc) {
+							if (r->power_on_type[0])
+								lws_strncpy(pc->type, r->power_on_type, sizeof(pc->type));
+							if (r->power_on_url[0])
+								lws_strncpy(pc->url_on, r->power_on_url, sizeof(pc->url_on));
+							if (r->power_on_mac[0])
+								lws_strncpy(pc->mac, r->power_on_mac, sizeof(pc->mac));
+							if (r->power_off_url[0])
+								lws_strncpy(pc->url_off, r->power_off_url, sizeof(pc->url_off));
+							if (r->power_monitor_url[0])
+								lws_strncpy(pc->url_monitor, r->power_monitor_url, sizeof(pc->url_monitor));
+							
+							saip_ss_create_pcon_streams(pc);
+						}
+					} lws_end_foreach_dll_safe(p, p1);
+				}
+				lwsac_free(&ac);
+			}
+		}
+	}
 
 #if defined(LWS_WITH_SPAWN)
 	{

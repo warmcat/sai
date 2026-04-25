@@ -622,6 +622,12 @@ typedef struct sai_power_controller {
 	char				name[64];
 	char				type[32];
 	char				depends_on[64];
+	char				power_on_type[16];
+	char				power_on_url[128];
+	char				power_on_mac[24];
+	char				power_off_type[16];
+	char				power_off_url[128];
+	char				power_monitor_url[128];
 	unsigned int			on;
 	unsigned int			manual_on;
 } sai_power_controller_t;
@@ -658,6 +664,12 @@ typedef struct sai_builder_registration {
 	lws_dll2_owner_t		platforms_owner; /* sai_builder_platform_t */
 	char				builder_name[64];
 	char				power_controller_name[64];
+	char				power_on_type[16];
+	char				power_on_url[128];
+	char				power_on_mac[24];
+	char				power_off_type[16];
+	char				power_off_url[128];
+	char				power_monitor_url[128];
 } sai_builder_registration_t;
 
 typedef struct tasmota_data {
@@ -703,7 +715,7 @@ extern const lws_struct_map_t
 	lsm_power_managed_builder[2],
 	lsm_power_managed_builders_list[2],
 	lsm_schema_power_managed_builders[1],
-	lsm_power_controller[6],
+	lsm_power_controller[12],
 	lsm_schema_json_map_task[],
 	lsm_schema_sq3_map_task[],
 	lsm_schema_sq3_map_event[],
@@ -739,10 +751,11 @@ extern const lws_struct_map_t
 	lsm_build_metric[14],
 	lsm_plat[14], /* +1 for pcon */
 	lsm_builder_platform[1],
-	lsm_builder_registration[3],
+	lsm_builder_registration[9],
 	lsm_schema_sq3_map_power_controller[1],
 	lsm_schema_sq3_map_controlled_builder[1],
 	lsm_schema_builder_registration[1],
+	lsm_schema_sq3_map_builder_registration[1],
 	lsm_pcon_energy_report[1],
 	lsm_schema_pcon_energy[1],
 	lsm_pcon_control[2],

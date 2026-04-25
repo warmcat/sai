@@ -24,6 +24,7 @@ if (requirements AND NOT MSVC)
 	endif()
 
 	add_executable("sai-expect" ${SRCS})
+add_dependencies("sai-expect" sai_git_hash)
 	if (APPLE)
 		set_property(TARGET sai-expect PROPERTY MACOSX_RPATH YES)
 	endif()

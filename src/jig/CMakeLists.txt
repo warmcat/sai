@@ -24,6 +24,7 @@ if (requirements)
 	include_directories(BEFORE "${GPIOD_INC_PATH}")
 
 	add_executable("sai-jig" ${SRCS})
+add_dependencies("sai-jig" sai_git_hash)
 	target_link_libraries("sai-jig" ${GPIOD_LIB_PATH})
 
 	if (APPLE)

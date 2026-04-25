@@ -66,7 +66,8 @@ saip_switch(saip_pcon_t *pc, int on)
 	struct lws_ss_handle *h = on ? pc->ss_tasmota_on : pc->ss_tasmota_off;
 	int wol_fired = 0;
 
-	if (on && pc->mac) {
+	if (on && pc->mac[0]) {
+#if defined(LWS_WITH_SPAWN)
 		char buf[64];
 		size_t n = (size_t)lws_snprintf(buf, sizeof(buf), "%s\n", pc->mac);
 
@@ -79,12 +80,15 @@ saip_switch(saip_pcon_t *pc, int on)
 					__func__, pc->name);
 			wol_fired = 1;
 		}
+#else
+		lwsl_notice("%s: WOL needed but LWS_WITH_SPAWN disabled\n", __func__);
+#endif
 	}
 
 	if (!h) {
 		if (!wol_fired) {
-			if (pc->type && !strcmp(pc->type, "wol")) {
-				if (on && !pc->mac)
+			if (pc->type[0] && !strcmp(pc->type, "wol")) {
+				if (on && !pc->mac[0])
 					lwsl_err("%s: %s: WOL type but no MAC configured\n",
 						 __func__, pc->name);
 				else
@@ -94,8 +98,8 @@ saip_switch(saip_pcon_t *pc, int on)
 			} else {
 				lwsl_err("%s: %s: no ss handle for %s (type: %s, mac: %s)\n",
 					 __func__, pc->name, on ? "ON" : "OFF",
-					 pc->type ? pc->type : "null",
-					 pc->mac ? pc->mac : "null");
+					 pc->type[0] ? pc->type : "null",
+					 pc->mac[0] ? pc->mac : "null");
 			}
 		}
 		return;

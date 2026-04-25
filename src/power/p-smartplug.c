@@ -132,40 +132,31 @@ LWS_SS_INFO("sai_power_smartplug", saip_smartplug_t)
 };
 
 void
-saip_ss_create_tasmota()
+saip_ss_create_pcon_streams(saip_pcon_t *pc)
 {
-	/* let's create any needed tasmota ss */
+	/* let's create any needed smartplug ss */
 
-	lws_start_foreach_dll(struct lws_dll2 *, px, power.sai_pcon_owner.head) {
-		saip_pcon_t *pc = lws_container_of(px, saip_pcon_t, list);
+	if (pc->url_on[0] && !pc->ss_tasmota_on) {
+		if (lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,
+				  (void *)pc,
+				  &pc->ss_tasmota_on, NULL, NULL))
+			lwsl_err("%s: %s: failed to create ON smartplug secure stream %s\n",
+				 __func__, pc->name, pc->url_on);
+	}
 
-		if (pc->type && !strcmp(pc->type, "tasmota") && pc->url) {
-			lws_snprintf(pc->url_on, sizeof(pc->url_on),
-				     "%s/cm?cmnd=Power%%20On", pc->url);
-			if (lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,
-					  (void *)pc,
-					  &pc->ss_tasmota_on, NULL, NULL))
-				lwsl_err("%s: %s: failed to create ON smartplug secure stream %s\n",
-					 __func__, pc->name, pc->url_on);
+	if (pc->url_off[0] && !pc->ss_tasmota_off) {
+		if (lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,
+				  (void *)pc,
+				  &pc->ss_tasmota_off, NULL, NULL))
+			lwsl_err("%s: %s: failed to create OFF smartplug secure stream %s\n",
+				 __func__, pc->name, pc->url_off);
+	}
 
-			lws_snprintf(pc->url_off, sizeof(pc->url_off),
-				     "%s/cm?cmnd=Power%%20Off", pc->url);
-			if (lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,
-					  (void *)pc,
-					  &pc->ss_tasmota_off, NULL, NULL))
-				lwsl_err("%s: %s: failed to create OFF smartplug secure stream %s\n",
-					 __func__, pc->name, pc->url_off);
-
-			lws_snprintf(pc->url_monitor, sizeof(pc->url_monitor),
-				     "%s/?m=1", pc->url);
-			if (lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,
-					  (void *)pc,
-					  &pc->ss_tasmota_monitor, NULL, NULL))
-				lwsl_err("%s: %s: failed to create MONITOR smartplug secure stream %s\n",
-					 __func__, pc->name, pc->url_monitor);
-			else
-				lwsl_ss_warn(pc->ss_tasmota_monitor, "============================ creating monitor SS for %s", pc->url_monitor);
-		}
-
-	} lws_end_foreach_dll(px);
+	if (pc->url_monitor[0] && !pc->ss_tasmota_monitor) {
+		if (lws_ss_create(power.context, 0, &ssi_saip_smartplug_t,
+				  (void *)pc,
+				  &pc->ss_tasmota_monitor, NULL, NULL))
+			lwsl_err("%s: %s: failed to create MONITOR smartplug secure stream %s\n",
+				 __func__, pc->name, pc->url_monitor);
+	}
 }
