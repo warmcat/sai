@@ -508,7 +508,7 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 	 * Collect a list of *events* (not tasks) that still have any open tasks
 	 */
 
-	lws_snprintf(pf, sizeof(pf)," and (state != 3 and state != 5) and (created < %llu)",
+	lws_snprintf(pf, sizeof(pf)," and (state != 3 and state != 5 and state != 7) and (created < %llu)",
 			(unsigned long long)(lws_now_secs() - 10));
 
 	n = lws_struct_sq3_deserialize(vhd->server.pdb, pf, "created desc ",

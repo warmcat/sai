@@ -330,6 +330,9 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 						sta = SAIES_BEING_BUILT_HAS_FAILURES;
 		}
 
+		if (oes == SAIES_DELETED)
+			sta = SAIES_DELETED;
+
 		if (sta != oes) {
 			lwsl_notice("%s: event state changed\n", __func__);
 

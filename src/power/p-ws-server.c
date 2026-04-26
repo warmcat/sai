@@ -226,9 +226,12 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				if (ctl->on) {
 					pc->flags |= SAIP_PCON_F_MANUAL_STAY;
 					saip_switch(pc, 1);
+					saip_notify_server_power_state(pc->name, 1, 0);
+					saip_queue_stay_info(sps);
 				} else {
 					pc->flags &= (uint8_t)~SAIP_PCON_F_MANUAL_STAY;
 					saip_pcon_start_check();
+					saip_queue_stay_info(sps);
 				}
 			} else {
 				lwsl_warn("%s: Unknown PCON '%s'\n", __func__, ctl->pcon_name);
@@ -260,10 +263,13 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 						pc->flags |= SAIP_PCON_F_MANUAL_STAY;
 						/* If stay is set, ensure it is on immediately */
 						saip_switch(pc, 1);
+						saip_notify_server_power_state(pc->name, 1, 0);
+						saip_queue_stay_info(sps);
 					} else {
 						pc->flags &= (uint8_t)~SAIP_PCON_F_MANUAL_STAY;
 						/* If stay is cleared, schedule power off check */
 						saip_pcon_start_check();
+						saip_queue_stay_info(sps);
 					}
 					goto found;
 				}
@@ -281,10 +287,13 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 							pc->flags |= SAIP_PCON_F_MANUAL_STAY;
 							/* If stay is set, ensure it is on immediately */
 							saip_switch(pc, 1);
+							saip_notify_server_power_state(pc->name, 1, 0);
+							saip_queue_stay_info(sps);
 						} else {
 							pc->flags &= (uint8_t)~SAIP_PCON_F_MANUAL_STAY;
 							/* If stay is cleared, schedule power off check */
 							saip_pcon_start_check();
+							saip_queue_stay_info(sps);
 						}
 						goto found;
 					}
@@ -397,8 +406,9 @@ saip_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	r = sai_ss_tx_from_buflist_helper(pss->ss, &pss->bl_pwr_to_srv,
 					  buf, len, flags);
 
-	if (r == LWSSSSRET_OK)
-		sai_dump_stderr(buf, *len);
+	if (r == LWSSSSRET_OK) {
+		/* sai_dump_stderr(buf, *len); */
+	}
 
 	return r;
 }

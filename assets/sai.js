@@ -2057,7 +2057,7 @@ function ws_open_sai()
 					        pcon_topology[b.pcon] = {
 					            name: b.pcon,
 					            on: 0, /* Default to off so it shows grey until we get real state */
-					            type: "auto-discovered",
+					            type: "",
 					            depends_on: "",
 					            children: []
 					        };

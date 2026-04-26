@@ -23,6 +23,7 @@
 #include <sqlite3.h>
 
 #include <assert.h>
+#include <errno.h>
 
 #include "include/private.h"
 
