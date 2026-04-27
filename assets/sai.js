@@ -705,8 +705,9 @@ function ansiToHtml(text, state) {
     // Ensure state is a valid object
     state = state || {};
     let currentClasses = new Set(state.classes || []);
+    let currentLink = state.linkHref || null;
 
-    const parts = text.split(/(\u001b\[[0-9:;<=>?]*[ -/]*[@-~])/);
+    const parts = text.split(/(\u001b\[[0-9:;<=>?]*[ -/]*[@-~]|\u001b\]8;.*?(?:\u001b\\|\x07))/);
     let html = '';
 
     for (const part of parts) {
@@ -740,19 +741,35 @@ function ansiToHtml(text, state) {
                 }
             }
             // Non-m sequences are just stripped (handled by the split and ignored here)
+        } else if (part.startsWith('\u001b]8;')) { // OSC 8 Hyperlink
+            let terminatorLen = part.endsWith('\x07') ? 1 : 2;
+            let inner = part.substring(4, part.length - terminatorLen);
+            let firstSemicolon = inner.indexOf(';');
+            if (firstSemicolon !== -1) {
+                let url = inner.substring(firstSemicolon + 1);
+                if (url === "") {
+                    currentLink = null;
+                } else if (/^(https?|ftp|file|vscode):/i.test(url)) {
+                    currentLink = url;
+                }
+            }
         } else { // It's plain text
             const sanitizedPart = hsanitize(part);
+            let styledPart = sanitizedPart;
             if (currentClasses.size > 0) {
-                html += `<span class="${Array.from(currentClasses).join(' ')}">${sanitizedPart}</span>`;
-            } else {
-                html += sanitizedPart;
+                styledPart = `<span class="${Array.from(currentClasses).join(' ')}">${styledPart}</span>`;
             }
+            if (currentLink) {
+                let safelink = hsanitize(currentLink);
+                styledPart = `<a href="${safelink}" target="_blank" rel="noopener noreferrer">${styledPart}</a>`;
+            }
+            html += styledPart;
         }
     }
 
     return {
         html: html,
-        newState: { classes: Array.from(currentClasses) }
+        newState: { classes: Array.from(currentClasses), linkHref: currentLink }
     };
 }
 

@@ -3,9 +3,15 @@ if(GIT_EXECUTABLE)
     execute_process(
         COMMAND "${GIT_EXECUTABLE}" describe --tags --always
         WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        RESULT_VARIABLE GIT_RESULT
         OUTPUT_VARIABLE GIT_HASH
         OUTPUT_STRIP_TRAILING_WHITESPACE
+        ERROR_QUIET
     )
+    if(NOT GIT_RESULT EQUAL 0)
+        # Git failed (e.g. running as root in a user directory)
+        return()
+    endif()
 else()
     set(GIT_HASH "unknown")
 endif()
