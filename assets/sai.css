@@ -1300,3 +1300,48 @@ canvas.power-graph {
     font-size: 0.8em;
     color: #555;
 }
+.watchers-row {
+	display: flex;
+	flex-wrap: wrap;
+	padding: 4px;
+	gap: 8px;
+}
+
+.watcher {
+	display: flex;
+	align-items: center;
+	background: rgba(255, 255, 255, 0.4);
+	border-radius: 4px;
+	padding: 2px 4px;
+	border: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+.watcher-icon {
+	width: 20px;
+	height: 20px;
+	margin-right: 4px;
+	vertical-align: middle;
+}
+
+.watcher-metrics {
+	display: flex;
+	gap: 4px;
+	font-size: 8pt;
+	font-weight: bold;
+}
+
+.watcher-metric {
+	background: rgba(0, 0, 0, 0.05);
+	padding: 1px 4px;
+	border-radius: 3px;
+}
+
+.watcher-fail {
+	background: #ff4136;
+	color: white;
+}
+
+.watcher-warn {
+	background: #ffdc00;
+	color: black;
+}

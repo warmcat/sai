@@ -65,6 +65,55 @@ enum {
 	SAISPRF_SIGNALLED		= 0x4000,
 };
 
+typedef enum {
+	SAIWS_QUEUED,
+	SAIWS_ONGOING,
+	SAIWS_FINISHED,
+	SAIWS_FAILED
+} sai_watcher_state_t;
+
+typedef struct sai_watcher_rule {
+	lws_dll2_t			list;
+	const char			*label;
+	const char			*prefix;
+	const char			*suffix;
+	const char			*anchor;
+	uint8_t				final;
+} sai_watcher_rule_t;
+
+typedef struct sai_watcher_ui_rule {
+	lws_dll2_t			list;
+	const char			*label;
+	const char			*key;
+	int				warn_if_gt;
+	int				fail_if_gt;
+} sai_watcher_ui_rule_t;
+
+typedef struct sai_watcher_service {
+	lws_dll2_t			list;
+	const char			*name;
+	const char			*match;
+	const char			*icon;
+	lws_dll2_owner_t		rules_owner; /* sai_watcher_rule_t */
+	lws_dll2_owner_t		ui_owner;    /* sai_watcher_ui_rule_t */
+} sai_watcher_service_t;
+
+typedef struct sai_watcher {
+	lws_dll2_t			list;
+	char				service_name[32];
+	char				event_hash[65];
+	char				task_hash[65];
+	char				url[256];
+	char				metrics_json[2048]; /* scraped data */
+	uint64_t			created;
+	uint64_t			last_polled;
+	int				state; /* sai_watcher_state_t */
+
+	/* server side only: transient ptr to service def if available */
+	const sai_watcher_service_t	*service;
+	void				*vhd;
+} sai_watcher_t;
+
 typedef struct sais_sqlite_cache {
 	lws_dll2_t			list;
 	char				uuid[65];
@@ -108,6 +157,10 @@ typedef struct sai_viewer_state {
 	lws_dll2_t			list;        /* Not used, for schema mapping */
 	unsigned int			viewers;
 } sai_viewer_state_t;
+
+typedef struct {
+	lws_dll2_owner_t		watchers;
+} sai_watcher_conf_t;
 
 typedef struct sai_platform_load {
        lws_dll2_t			list;        /* Not used, for schema mapping */
@@ -304,6 +357,8 @@ typedef struct sai_event {
 	sai_event_state_t		state;
 	int				uid;
 	int				sec;
+ 
+	lws_dll2_owner_t		watcher_owner; /* sai_watcher_t */
 } sai_event_t;
 
 typedef struct {
@@ -726,7 +781,7 @@ extern const lws_struct_map_t
 	lsm_schema_sq3_map_artifact[1],
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
-	lsm_event[11],
+	lsm_event[12],
 	lsm_task[30],
 	lsm_log[7],
 	lsm_artifact[8],
@@ -759,7 +814,14 @@ extern const lws_struct_map_t
 	lsm_pcon_energy_report[1],
 	lsm_schema_pcon_energy[1],
 	lsm_pcon_control[2],
-	lsm_schema_pcon_control[1];
+	lsm_schema_pcon_control[1],
+	lsm_watcher_rule[5],
+	lsm_watcher_ui_rule[4],
+	lsm_watcher_service[5],
+	lsm_watcher[9],
+	lsm_schema_sq3_map_watcher[1],
+	lsm_schema_json_map_watcher[1],
+	lsm_watcher_conf[1];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];

@@ -142,6 +142,8 @@ struct vhd {
 	lws_dll2_owner_t		subs_owner;
 	sqlite3				*pdb;
 	
+	lws_dll2_owner_t		watcher_services;
+	
 	lws_dll2_owner_t		pcon_watts_owner;
 	unsigned int			power_history[150];
 	int				power_history_count;

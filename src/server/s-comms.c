@@ -128,6 +128,12 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 		}
 
+		{
+			const char *conf_dir = "/etc/sai/server";
+			lws_pvo_get_str(in, "config-dir", &conf_dir);
+			sais_config_watchers(vhd, conf_dir);
+		}
+
 		/*
 		 * Create the listed well-known resources to be managed by the
 		 * sai-server for the builders
@@ -543,3 +549,94 @@ const struct lws_protocols protocol_ws = {
 	.per_session_data_size = sizeof(struct pss),
 	.rx_buffer_size = 0,
 };
+
+static int
+sais_config_watchers_cb(const char *dirpath, void *opaque, struct lws_dir_entry *lde)
+{
+	struct vhd *vhd = (struct vhd *)opaque;
+	char path[256], *buf;
+	sai_watcher_conf_t *wc;
+	struct lwsac *ac = NULL;
+	lws_dll2_owner_t o;
+	int n, fd;
+	struct stat st;
+	struct lejp_ctx ctx;
+	lws_struct_args_t args;
+
+	memset(&o, 0, sizeof(o));
+
+	if (lde->type != LDOT_FILE || !strstr(lde->name, ".json"))
+		return 0;
+
+	lws_snprintf(path, sizeof(path), "%s/%s", dirpath, lde->name);
+	lwsl_notice("%s: parsing %s for watchers\n", __func__, path);
+
+	fd = open(path, O_RDONLY);
+	if (fd < 0)
+		return 0;
+
+	if (fstat(fd, &st)) {
+		close(fd);
+		return 0;
+	}
+
+	buf = malloc((size_t)st.st_size);
+	if (!buf) {
+		close(fd);
+		return 0;
+	}
+
+	if (read(fd, buf, (size_t)st.st_size) != (ssize_t)st.st_size) {
+		free(buf);
+		close(fd);
+		return 0;
+	}
+	close(fd);
+
+	memset(&args, 0, sizeof(args));
+	args.map_st[0] = lsm_watcher_conf;
+	args.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_watcher_conf);
+	args.dest = &o;
+	args.dest_len = sizeof(o);
+
+	lws_struct_json_init_parse(&ctx, lws_struct_default_lejp_cb, &args);
+	n = lejp_parse(&ctx, (const uint8_t *)buf, (int)st.st_size);
+	lejp_destruct(&ctx);
+	ac = args.ac;
+
+	free(buf);
+
+	if (n < 0 || !o.head) {
+		lwsac_free(&ac);
+		return 0;
+	}
+
+	wc = lws_container_of(o.head, sai_watcher_conf_t, watchers);
+
+	/* Move the parsed watcher services to our vhd list */
+	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1, wc->watchers.head) {
+		sai_watcher_service_t *ws = lws_container_of(p,
+						sai_watcher_service_t, list);
+
+		lwsl_notice("%s: added watcher service '%s'\n", __func__,
+			    ws->name);
+		lws_dll2_remove(&ws->list);
+		lws_dll2_add_tail(&ws->list, &vhd->watcher_services);
+
+	} lws_end_foreach_dll_safe(p, p1);
+
+	lwsac_free(&ac);
+
+	return 0;
+}
+
+int
+sais_config_watchers(struct vhd *vhd, const char *config_dir)
+{
+	char path[256];
+
+	lws_snprintf(path, sizeof(path), "%s/conf.d", config_dir);
+	lwsl_notice("%s: scanning %s\n", __func__, path);
+
+	return lws_dir(path, vhd, sais_config_watchers_cb);
+}

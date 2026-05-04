@@ -258,6 +258,48 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 		lwsl_err("%s: failed to update build_step\n", __func__);
 
 	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+
+	if (log->len >= 14 && !memcmp(log->log, "SAI_WATCH_URL:", 14)) {
+		const char *url = log->log + 14;
+		sai_watcher_t w;
+
+		while (*url == ' ')
+			url++;
+
+		memset(&w, 0, sizeof(w));
+		lws_strncpy(w.url, url, sizeof(w.url));
+		lws_strncpy(w.task_hash, log->task_uuid, sizeof(w.task_hash));
+		sai_task_uuid_to_event_uuid(w.event_hash, log->task_uuid);
+		w.created = (uint64_t)lws_now_usecs();
+		w.state = SAIWS_QUEUED;
+
+		/* Identify service immediately to store service_name */
+		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->watcher_services.head) {
+			sai_watcher_service_t *s = lws_container_of(p, sai_watcher_service_t, list);
+			if (strstr(w.url, s->match)) {
+				lws_strncpy(w.service_name, s->name, sizeof(w.service_name));
+				break;
+			}
+		} lws_end_foreach_dll(p);
+
+		if (w.service_name[0]) {
+			lwsl_notice("%s: triggering watcher for %s (%s)\n", __func__, w.service_name, w.url);
+			/* For now, just use sqlite3_exec */
+			char q[512], esc_url[256], esc_svc[64], esc_event[65], esc_task[65];
+			lws_sql_purify(esc_url, w.url, sizeof(esc_url));
+			lws_sql_purify(esc_svc, w.service_name, sizeof(esc_svc));
+			lws_sql_purify(esc_event, w.event_hash, sizeof(esc_event));
+			lws_sql_purify(esc_task, w.task_hash, sizeof(esc_task));
+
+			lws_snprintf(q, sizeof(q),
+				"REPLACE INTO watchers (service_name, event_hash, task_hash, url, state, created, last_polled, metrics_json) "
+				"VALUES ('%s', '%s', '%s', '%s', %d, %llu, 0, '{}')",
+				esc_svc, esc_event, esc_task, esc_url, w.state, (unsigned long long)w.created);
+			
+			if (sai_sqlite3_statement(vhd->server.pdb, q, "insert watcher"))
+				lwsl_err("%s: failed to insert watcher\n", __func__);
+		}
+	}
 }
 
 sai_plat_t *

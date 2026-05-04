@@ -158,6 +158,7 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 
 		lwsl_err("web-callback-ws: LWS_CALLBACK_PROTOCOL_INIT\n");
+		lws_dll2_owner_clear(&vhd->watcher_services);
 
 		vhd->context = lws_get_context(wsi);
 		vhd->vhost = lws_get_vhost(wsi);

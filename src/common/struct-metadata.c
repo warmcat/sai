@@ -127,6 +127,8 @@ const lws_struct_map_t lsm_event[] = {
 	LSM_UNSIGNED	(sai_event_t, state,		"state"),
 	LSM_UNSIGNED	(sai_event_t, last_updated,	"last_updated"),
 	LSM_UNSIGNED	(sai_event_t, sec,		"sec"),
+	LSM_JO_LIST	(sai_event_t, watcher_owner, sai_watcher_t, list,
+			 NULL, lsm_watcher,		"watchers"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_event[] = {
@@ -465,4 +467,52 @@ const lws_struct_map_t lsm_pcon_control[] = {
 const lws_struct_map_t lsm_schema_pcon_control[] = {
 	LSM_SCHEMA(sai_pcon_control_t, NULL, lsm_pcon_control,
 		   "com.warmcat.sai.pcon_control"),
+};
+const lws_struct_map_t lsm_watcher_rule[] = {
+	LSM_STRING_PTR	(sai_watcher_rule_t, label,		"label"),
+	LSM_STRING_PTR	(sai_watcher_rule_t, prefix,		"prefix"),
+	LSM_STRING_PTR	(sai_watcher_rule_t, suffix,		"suffix"),
+	LSM_STRING_PTR	(sai_watcher_rule_t, anchor,		"anchor"),
+	LSM_UNSIGNED	(sai_watcher_rule_t, final,		"final"),
+};
+
+const lws_struct_map_t lsm_watcher_ui_rule[] = {
+	LSM_STRING_PTR	(sai_watcher_ui_rule_t, label,		"label"),
+	LSM_STRING_PTR	(sai_watcher_ui_rule_t, key,		"key"),
+	LSM_SIGNED	(sai_watcher_ui_rule_t, warn_if_gt,	"warn_if_gt"),
+	LSM_SIGNED	(sai_watcher_ui_rule_t, fail_if_gt,	"fail_if_gt"),
+};
+
+const lws_struct_map_t lsm_watcher_service[] = {
+	LSM_STRING_PTR	(sai_watcher_service_t, name,		"name"),
+	LSM_STRING_PTR	(sai_watcher_service_t, match,		"match"),
+	LSM_STRING_PTR	(sai_watcher_service_t, icon,		"icon"),
+	LSM_LIST	(sai_watcher_service_t, rules_owner, sai_watcher_rule_t, list,
+			 NULL, lsm_watcher_rule,		"rules"),
+	LSM_LIST	(sai_watcher_service_t, ui_owner, sai_watcher_ui_rule_t, list,
+			 NULL, lsm_watcher_ui_rule,		"ui"),
+};
+
+const lws_struct_map_t lsm_watcher[] = {
+	LSM_CARRAY	(sai_watcher_t, service_name,	"service_name"),
+	LSM_CARRAY	(sai_watcher_t, event_hash,	"event_hash"),
+	LSM_CARRAY	(sai_watcher_t, task_hash,	"task_hash"),
+	LSM_CARRAY	(sai_watcher_t, url,		"url"),
+	LSM_CARRAY	(sai_watcher_t, metrics_json,	"metrics_json"),
+	LSM_UNSIGNED	(sai_watcher_t, created,		"created"),
+	LSM_UNSIGNED	(sai_watcher_t, last_polled,	"last_polled"),
+	LSM_UNSIGNED	(sai_watcher_t, state,		"state"),
+};
+
+const lws_struct_map_t lsm_schema_sq3_map_watcher[] = {
+	LSM_SCHEMA_DLL2	(sai_watcher_t, list, NULL, lsm_watcher, "watchers"),
+};
+
+const lws_struct_map_t lsm_schema_json_map_watcher[] = {
+	LSM_SCHEMA_DLL2	(sai_watcher_t, list, NULL, lsm_watcher, "com.warmcat.sai.watchers"),
+};
+
+const lws_struct_map_t lsm_watcher_conf[] = {
+	LSM_LIST(sai_watcher_conf_t, watchers, sai_watcher_service_t, list,
+			 NULL, lsm_watcher_service,		"watchers"),
 };

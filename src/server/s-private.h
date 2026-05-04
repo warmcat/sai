@@ -232,6 +232,9 @@ struct vhd {
 	lws_sorted_usec_list_t	sul_central; /* background task allocation sul */
 	lws_sorted_usec_list_t	sul_activity; /* activity broadcast sul */
 	lws_sorted_usec_list_t	sul_gc_events; /* incremental GC of deleted events */
+	lws_sorted_usec_list_t	sul_watcher; /* generic async service watcher sul */
+ 
+	lws_dll2_owner_t	watcher_services; /* sai_watcher_service_t from config */
 
 	lws_usec_t		last_check_abandoned_tasks;
 
@@ -300,6 +303,12 @@ sai_db_result_t
 sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_rejection);
 sai_db_result_t
 sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid);
+ 
+void
+sais_watcher_cb(lws_sorted_usec_list_t *sul);
+ 
+int
+sais_config_watchers(struct vhd *vhd, const char *config_dir);
 
 int
 sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase);

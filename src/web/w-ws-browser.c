@@ -93,6 +93,8 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 					      "com.warmcat.sai.stay"),
 	LSM_SCHEMA	(sai_pcon_control_t,	 NULL, lsm_pcon_control,
 			/* shares struct */   "com.warmcat.sai.pcon_control"),
+	LSM_SCHEMA_DLL2	(sai_watcher_service_t, list, NULL, lsm_watcher_service,
+					      "com.warmcat.sai.watcher_services"),
 };
 
 enum {
@@ -610,6 +612,15 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			pss->overview_offset = ti->offset;
 
 			saiw_browser_broadcast_queue_builders(pss->vhd, pss);
+ 
+			{
+				uint8_t buf[LWS_PRE + 4096], *start = buf + LWS_PRE, *p = start, *end = buf + sizeof(buf);
+				
+				p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), 
+					"{\"schema\":\"com.warmcat.sai.watcher_services\",\"watchers\":[]}");
+				saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start, lws_ptr_diff_size_t(p, start), LWS_WRITE_TEXT);
+			}
+ 
 			saiw_browser_queue_overview(pss->vhd, pss);
 			break;
 		}
@@ -979,6 +990,14 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 			}
 		}
 
+		{
+			char wfilt[128];
+			struct lwsac *ac_watchers = NULL;
+			lws_dll2_owner_clear(&e->watcher_owner);
+			lws_snprintf(wfilt, sizeof(wfilt), " and event_hash='%s'", e->uuid);
+			lws_struct_sq3_deserialize(vhd->pdb, wfilt, "created",
+						   lsm_schema_sq3_map_watcher, &e->watcher_owner, &ac_watchers, 0, 0);
+
 		js = lws_struct_json_serialize_create(
 			lsm_schema_json_map_event,
 			LWS_ARRAY_SIZE(lsm_schema_json_map_event), 0, e);
@@ -1022,6 +1041,10 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 				break;
 			}
 		} while (n == LSJS_RESULT_CONTINUE);
+
+		if (ac_watchers)
+			lwsac_free(&ac_watchers);
+		}
 
 		if (lws_ptr_diff_size_t(end, p) < 128) {
 			saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,

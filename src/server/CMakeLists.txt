@@ -16,6 +16,7 @@ set(SRCS
 	s-ws-web.c
 	s-webops.c
 	s-resource.c
+	s-watcher.c
 	../common/c-utils.c
 	../common/c-sqlite3.c
 	../common/struct-metadata.c

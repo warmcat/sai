@@ -182,6 +182,19 @@ sais_ensure_tables(struct vhd *vhd)
 		" pcon_name varchar(64),"
 		" builder_name varchar(64)"
 		");", "create pcon_builders table");
+ 
+	sai_sqlite3_statement(vhd->server.pdb,
+		"CREATE TABLE IF NOT EXISTS watchers ("
+		" service_name varchar(32),"
+		" event_hash varchar(65),"
+		" task_hash varchar(65),"
+		" url varchar(256),"
+		" state integer,"
+		" created integer,"
+		" last_polled integer,"
+		" metrics_json text,"
+		" PRIMARY KEY (event_hash, service_name)"
+		");", "create watchers table");
 
 }
 
@@ -293,6 +306,10 @@ sais_central_cb(lws_sorted_usec_list_t *sul)
 	if (!vhd->sul_gc_events.list.owner)
 		lws_sul_schedule(context, 0, &vhd->sul_gc_events,
 				 sais_central_gc_deleted_events_cb, 10 * LWS_US_PER_MS);
+ 
+	if (!vhd->sul_watcher.list.owner)
+		lws_sul_schedule(context, 0, &vhd->sul_watcher,
+				 sais_watcher_cb, 100 * LWS_US_PER_MS);
 
 	/* check again in 1s */
 

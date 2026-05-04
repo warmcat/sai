@@ -397,6 +397,7 @@ var lang_zhs = "{" +
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, auth_is_admin = 0, auth_grant_level = -1, exptimer, auth_user = "",
 	logAnsiState = {}, logs_pending = "", lines_pending = "", times_pending = "",
 	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {},
+	watcher_services = [],
 	fadingTasks = new Map();
 
 var segment_stack = [];
@@ -1191,6 +1192,45 @@ function summarize_build_situation(event_uuid)
 	};
 }
 
+function sai_watcher_render(w) {
+	var s = "", svc = null;
+
+	/* Find service definition */
+	if (watcher_services && watcher_services.watchers) {
+		watcher_services.watchers.forEach(sv => {
+			if (sv.name === w.service_name) svc = sv;
+		});
+	}
+
+	s = "<div class=\"watcher\" title=\"" + san(w.service_name) + "\">";
+	s += "<a href=\"" + san(w.url) + "\" target=\"_blank\">";
+	s += "<img src=\"/sai/watchers/" + san(w.service_name) + "/icon.svg\" class=\"watcher-icon\">";
+	s += "</a>";
+
+	if (w.metrics_json) {
+		try {
+			var m = JSON.parse(w.metrics_json);
+			if (svc && svc.ui) {
+				s += "<div class=\"watcher-metrics\">";
+				svc.ui.forEach(u => {
+					if (typeof m[u.key] !== 'undefined') {
+						var val = m[u.key];
+						var cl = "";
+						if (typeof u.fail_if_gt !== 'undefined' && parseInt(val) > u.fail_if_gt) cl = " watcher-fail";
+						else if (typeof u.warn_if_gt !== 'undefined' && parseInt(val) > u.warn_if_gt) cl = " watcher-warn";
+
+						s += "<span class=\"watcher-metric" + cl + "\" title=\"" + san(u.label) + "\">" + san(val) + "</span>";
+					}
+				});
+				s += "</div>";
+			}
+		} catch (e) { }
+	}
+	s += "</div>";
+
+	return s;
+}
+
 function sai_event_summary_render(o, now_ut, reset_all_icon)
 {
 	var s, q, ctn = "", wai, s1 = "", n, e = o.e;
@@ -1259,7 +1299,17 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		     "</td></tr><tr><td class=\"nomar e6\" id=\"sumbs-" + e.uuid + "\"></td></tr>" +
 		     "</table></td>";
 	}
-	s += "</tr><tr><td class=\"nomar e6\" colspan=\"2\" id=\"sumbs-" + e.uuid +"\"></td></tr></table>";
+	s += "</tr>";
+
+	if (o.watchers && o.watchers.length) {
+		s += "<tr><td class=\"nomar\" colspan=\"2\"><div class=\"watchers-row\">";
+		o.watchers.forEach(w => {
+			s += sai_watcher_render(w);
+		});
+		s += "</div></td></tr>";
+	}
+
+	s += "<tr><td class=\"nomar e6\" colspan=\"2\" id=\"sumbs-" + e.uuid +"\"></td></tr></table>";
 
 	return s;
 }
@@ -2186,6 +2236,10 @@ function ws_open_sai()
 						"</div>";
 					summaryDiv.innerHTML += s;
 				}
+				break;
+
+			case "com.warmcat.sai.watcher_services":
+				watcher_services = jso;
 				break;
 
 			case "sai.warmcat.com.overview":
