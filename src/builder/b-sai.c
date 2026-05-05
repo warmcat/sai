@@ -43,6 +43,7 @@
 
 #if defined(__APPLE__)
 #include <sys/stat.h>	/* for mkdir() */
+#include <mach-o/dyld.h>
 #endif
 
 #if defined(WIN32)
@@ -364,8 +365,6 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 
 		if (saib_deletion_init(argv0))
 			return 1;
-		if (saib_deletion_init(argv0))
-			return 1;
 
 
 		/*
@@ -488,7 +487,25 @@ saib_app_run(int argc, const char **argv)
 	struct stat sb;
 	const char *p;
 
+	static char execpath[PATH_MAX];
+
 	argv0 = argv[0];
+
+#if defined(__APPLE__)
+	{
+		uint32_t size = sizeof(execpath);
+		if (_NSGetExecutablePath(execpath, &size) == 0)
+			argv0 = execpath;
+	}
+#elif defined(__linux__)
+	{
+		ssize_t n = readlink("/proc/self/exe", execpath, sizeof(execpath) - 1);
+		if (n > 0) {
+			execpath[n] = '\0';
+			argv0 = execpath;
+		}
+	}
+#endif
 
 	if ((p = lws_cmdline_option(argc, argv, "--home")))
 		/*

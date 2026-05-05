@@ -392,6 +392,7 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 		return 0;
 	}
 
+	*p = '\0';
 	n = 0;
 	lws_start_foreach_dll(struct lws_dll2 *, px, vhd->pending_plats.head) {
 		sais_plat_t *pl = lws_container_of(px, sais_plat_t, list);
