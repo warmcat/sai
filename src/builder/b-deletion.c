@@ -154,8 +154,17 @@ sai_deletion_worker(const char *home_dir)
  * We are careful not to delete anything that is part of an ongoing job.
  */
 
-struct active_job_uuids {
-	lws_dll2_owner_t owner;
+struct inactive_job {
+	struct inactive_job *next;
+	char name[32];
+	uint64_t age;
+};
+
+struct cleanup_ctx {
+	lws_dll2_owner_t active_owner;
+	struct lwsac *ac;
+	struct inactive_job *inactive_head;
+	int inactive_count;
 };
 
 struct active_job_uuid {
@@ -163,17 +172,31 @@ struct active_job_uuid {
 	char uuid[65];
 };
 
+static int
+compare_age(const void *a, const void *b)
+{
+	const struct inactive_job *ia = *(const struct inactive_job **)a;
+	const struct inactive_job *ib = *(const struct inactive_job **)b;
+
+	if (ia->age > ib->age)
+		return -1;
+	if (ia->age < ib->age)
+		return 1;
+	return 0;
+}
+
 int
 scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 {
-	struct active_job_uuids *active = (struct active_job_uuids *)user;
-	char path[512];
-	struct stat sb;
+	struct cleanup_ctx *ctx = (struct cleanup_ctx *)user;
+	char path[512], path2[512];
+	struct stat sb, sb2;
+	uint64_t age;
 
 	if (lde->name[0] == '.')
 		return 0;
 
-	lws_start_foreach_dll(struct lws_dll2 *, p, active->owner.head) {
+	lws_start_foreach_dll(struct lws_dll2 *, p, ctx->active_owner.head) {
 		struct active_job_uuid *aj = lws_container_of(p, struct active_job_uuid, list);
 
 		if (!strcmp(aj->uuid, lde->name)) {
@@ -195,9 +218,20 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 		return 0;
 	}
 
+#if !defined(WIN32)
+	lws_snprintf(path2, sizeof(path2), "%s/git_helper.sh", path);
+#else
+	lws_snprintf(path2, sizeof(path2), "%s/git_helper.bat", path);
+#endif
+	if (!stat(path2, &sb2)) {
+		sb.st_mtime = sb2.st_mtime;
+	}
+
 	/* older than 24h? */
 
-	if (((uint64_t)lws_now_secs() - (uint64_t)sb.st_mtime) > SAI_CLEANUP_JOB_DIR_MIN_AGE_SECS) {
+	age = (uint64_t)lws_now_secs() - (uint64_t)sb.st_mtime;
+
+	if (age > SAI_CLEANUP_JOB_DIR_MIN_AGE_SECS) {
 		char temp[128];
 		size_t len = (size_t)lws_snprintf(temp, sizeof(temp), "%s\n", lde->name);
 #if defined(WIN32)
@@ -205,8 +239,7 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 #endif
 
 		lwsl_info("%s: requesting removal of old job dir %s (age %llus)\n",
-			    __func__, path, (unsigned long long)
-			    ((uint64_t)lws_now_secs() - (uint64_t)sb.st_mtime));
+			    __func__, path, (unsigned long long)age);
 
 #if !defined(WIN32)
 		if (write(builder.pipe_master_wr, temp, LWS_POSIX_LENGTH_CAST(len)) != (ssize_t)len)
@@ -217,9 +250,16 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 			lwsl_err("%s: failed to write to deletion worker\n",
 			 __func__);
 	} else {
+		struct inactive_job *ij = lwsac_use_zero(&ctx->ac, sizeof(*ij), 0);
+		if (ij) {
+			lws_strncpy(ij->name, lde->name, sizeof(ij->name));
+			ij->age = age;
+			ij->next = ctx->inactive_head;
+			ctx->inactive_head = ij;
+			ctx->inactive_count++;
+		}
 		lwsl_info("%s: %s is only %llus old\n", __func__, path,
-			    (unsigned long long)
-			    ((uint64_t)lws_now_secs() - (uint64_t)sb.st_mtime));
+			    (unsigned long long)age);
 	}
 
 	return 0;
@@ -230,13 +270,12 @@ sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul)
 {
 	struct sai_builder *b = lws_container_of(sul, struct sai_builder,
 						 sul_cleanup_jobs);
-	struct active_job_uuids active;
-	struct lwsac *ac = NULL;
+	struct cleanup_ctx ctx;
 	char path[256];
 
 	lwsl_info("%s: starting periodic cleanup\n", __func__);
 
-	memset(&active, 0, sizeof(active));
+	memset(&ctx, 0, sizeof(ctx));
 
 	/*
 	 * We must not delete any active job directories, find out the uuids
@@ -255,12 +294,12 @@ sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul)
 			if (!ns->task)
 				continue;
 
-			aj = lwsac_use_zero(&ac, sizeof(*aj), 64);
+			aj = lwsac_use_zero(&ctx.ac, sizeof(*aj), 64);
 			if (!aj)
 				continue;
 
-			lws_strncpy(aj->uuid, ns->task->uuid, sizeof(aj->uuid));
-			lws_dll2_add_tail(&aj->list, &active.owner);
+			lws_strncpy(aj->uuid, ns->inp_vn, sizeof(aj->uuid));
+			lws_dll2_add_tail(&aj->list, &ctx.active_owner);
 		} lws_end_foreach_dll_safe(d2, d3);
 	} lws_end_foreach_dll_safe(d, d1);
 
@@ -270,9 +309,54 @@ sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul)
 	 */
 
 	lws_snprintf(path, sizeof(path), "%s/jobs", b->home);
-	lws_dir(path, &active, scan_jobs_dir_cb);
+	lws_dir(path, &ctx, scan_jobs_dir_cb);
 
-	lwsac_free(&ac);
+	/* dynamic cleanup */
+	{
+		unsigned int free_kib = saib_get_free_disk_kib(b->home);
+		unsigned int target_free_kib = 3 * 1024 * 1024; /* 3GB target */
+
+		if (free_kib < target_free_kib && ctx.inactive_count) {
+			int n, to_delete = 1;
+			struct inactive_job **sorted, *ij;
+
+			if (to_delete > ctx.inactive_count) to_delete = ctx.inactive_count;
+
+			sorted = lwsac_use(&ctx.ac, sizeof(*sorted) * (unsigned int)ctx.inactive_count, 0);
+			if (sorted) {
+				n = 0;
+				ij = ctx.inactive_head;
+				while (ij) {
+					sorted[n++] = ij;
+					ij = ij->next;
+				}
+
+				qsort(sorted, (size_t)ctx.inactive_count, sizeof(*sorted), compare_age);
+
+				for (n = 0; n < to_delete; n++) {
+					char temp[128];
+					size_t len = (size_t)lws_snprintf(temp, sizeof(temp), "%s\n", sorted[n]->name);
+#if defined(WIN32)
+					DWORD written;
+#endif
+
+					lwsl_notice("%s: dyn cleanup: requesting removal of %s (age %llus, free %uMiB, tgt %uMiB)\n",
+						__func__, sorted[n]->name, (unsigned long long)sorted[n]->age,
+						free_kib / 1024, target_free_kib / 1024);
+
+#if !defined(WIN32)
+					if (write(builder.pipe_master_wr, temp, LWS_POSIX_LENGTH_CAST(len)) != (ssize_t)len)
+#else
+					if (!WriteFile(builder.pipe_master_wr_win, temp, (DWORD)len,
+							&written, NULL) || written != (DWORD)len)
+#endif
+						lwsl_err("%s: failed to write to deletion worker\n", __func__);
+				}
+			}
+		}
+	}
+
+	lwsac_free(&ctx.ac);
 
 	lws_sul_schedule(b->context, 0, &b->sul_cleanup_jobs,
 			 sul_cleanup_jobs_cb, SAI_CLEANUP_JOBS_INTERVAL_US);

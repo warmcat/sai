@@ -390,15 +390,15 @@ saib_task_destroy(struct sai_nspawn *ns)
 		lwsl_notice("%s: task %s succeeded, requesting deletion of job dir %s\n",
 			    __func__, ns->task->uuid, ns->inp);
 #if !defined(WIN32)
-		if (write(builder.pipe_master_wr, ns->task->uuid,
-			  LWS_POSIX_LENGTH_CAST(strlen(ns->task->uuid))) != (ssize_t)strlen(ns->task->uuid))
+		if (write(builder.pipe_master_wr, ns->inp_vn,
+			  LWS_POSIX_LENGTH_CAST(strlen(ns->inp_vn))) != (ssize_t)strlen(ns->inp_vn))
 			lwsl_err("%s: failed to write to deletion worker\n",
 				 __func__);
 #else
 		{
 			DWORD written;
-			if (!WriteFile(builder.pipe_master_wr_win, ns->task->uuid,
-				       (DWORD)strlen(ns->task->uuid), &written, NULL))
+			if (!WriteFile(builder.pipe_master_wr_win, ns->inp_vn,
+				       (DWORD)strlen(ns->inp_vn), &written, NULL))
 				lwsl_err("%s: failed to write to deletion worker\n",
 					 __func__);
 		}
