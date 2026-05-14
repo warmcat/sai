@@ -325,6 +325,7 @@ saib_power_link_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	if (memcmp(buf, "ACK:", 4)) {
 		lwsl_warn("%s: sai-power didn't start power-off: %.*s\n",
 				__func__, (int)len, (const char *)buf);
+		lws_sul_cancel(&builder.sul_do_shutdown);
 		return LWSSSSRET_OK;
 	}
 

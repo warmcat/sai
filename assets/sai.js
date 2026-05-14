@@ -612,13 +612,11 @@ function flush_segments() {
 }
 
 function append_chunk_table(id, chunk_index, target_dom) {
-	var html = `
-		<table><tr>
-			<td class="atop"><div class="dlogsn" id="dlogsn-${id}-${chunk_index}"></div></td>
-			<td class="atop"><div class="dlogst" id="dlogst-${id}-${chunk_index}"></div></td>
-			<td class="atop"><div class="dlogs"><span class="nowrap" id="dlogs-${id}-${chunk_index}"></span></div></td>
-		</tr></table>
-	`;
+	var html = '<table><tr>' +
+		'<td class="atop"><div class="dlogsn" id="dlogsn-' + id + '-' + chunk_index + '"></div></td>' +
+		'<td class="atop"><div class="dlogst" id="dlogst-' + id + '-' + chunk_index + '"></div></td>' +
+		'<td class="atop"><div class="dlogs"><span class="nowrap" id="dlogs-' + id + '-' + chunk_index + '"></span></div></td>' +
+	'</tr></table>';
 	if (target_dom) target_dom.insertAdjacentHTML('beforeend', html);
 }
 
@@ -627,7 +625,7 @@ function push_segment(title, default_folded) {
 	seg_counter++;
 	var id = seg_counter;
 	
-	var seg = { id: id, title: title, lines_count: 0, error_count: 0, warning_count: 0, folded: default_folded, chunk_index: 0 };
+	var seg = { id: id, title: title, lines_count: 0, error_count: 0, warning_count: 0, folded: default_folded, chunk_index: 0, auto_unfolded: false, user_toggled: false };
 	
 	var parent_id = segment_stack.length > 0 ? segment_stack[segment_stack.length - 1].id : "root";
 	// Append to root's dlogs container OR the parent segment's BODY container
@@ -639,18 +637,18 @@ function push_segment(title, default_folded) {
 		var hideClass = default_folded ? " hide" : "";
 		
 		var clean_title = title.replace(/^[\s\S]*?(?:>|&gt;)saib(?:>|&gt;)\s*/i, '');
-		var html = `<div class="log-segment-wrapper">
-			<div class="log-segment-header" id="hdr-seg-${id}">
-				<table class="seg-header-table"><tr>
-					<td class="seg-td-icon"><span class="fold-icon">${icon}</span></td>
-					<td class="seg-td-lines"><span class="seg-lines">0</span> lines</td>
-					<td class="seg-td-errors"><span class="seg-errors"></span></td>
-					<td class="seg-td-title"><span class="seg-title">${hsanitize(clean_title)}</span></td>
-				</tr></table>
-			</div>
-			<div class="log-segment-body${hideClass}" id="seg-${id}">
-			</div>
-		</div>`;
+		var html = '<div class="log-segment-wrapper">' +
+			'<div class="log-segment-header" id="hdr-seg-' + id + '">' +
+				'<table class="seg-header-table"><tr>' +
+					'<td class="seg-td-icon"><span class="fold-icon">' + icon + '</span></td>' +
+					'<td class="seg-td-lines"><span class="seg-lines">0</span> lines</td>' +
+					'<td class="seg-td-errors"><span class="seg-errors"></span></td>' +
+					'<td class="seg-td-title"><span class="seg-title">' + hsanitize(clean_title) + '</span></td>' +
+				'</tr></table>' +
+			'</div>' +
+			'<div class="log-segment-body' + hideClass + '" id="seg-' + id + '">' +
+			'</div>' +
+		'</div>';
 		
 		// If root, we only append once, but wait, root is just flat.
 		parent_dom.insertAdjacentHTML('beforeend', html);
@@ -669,6 +667,20 @@ function push_segment(title, default_folded) {
 function pop_segment() {
 	if (segment_stack.length > 0) {
 		flush_segments();
+
+		var p = segment_stack[segment_stack.length - 1];
+		if (p.auto_unfolded && p.error_count === 0 && !p.user_toggled) {
+			var body = document.getElementById("seg-" + p.id);
+			var hdr = document.getElementById("hdr-seg-" + p.id);
+			if (body && !body.classList.contains("hide")) {
+				body.classList.add("hide");
+				if (hdr) {
+					var icon = hdr.querySelector('.fold-icon');
+					if (icon) icon.innerText = "▶";
+				}
+			}
+		}
+
 		segment_stack.pop();
 		
 		// When we return to parent, we need a new table below the children we just popped
@@ -682,6 +694,12 @@ function pop_segment() {
 }
 
 function toggleSegment(id) {
+	for (var i = 0; i < segment_stack.length; i++) {
+		if (segment_stack[i].id == id) {
+			segment_stack[i].user_toggled = true;
+			break;
+		}
+	}
 	var body = document.getElementById("seg-" + id);
 	var hdr = document.getElementById("hdr-seg-" + id);
 	if (body && hdr) {
@@ -1053,8 +1071,8 @@ function sai_taskinfo_render(t, now_ut)
 			"id=\"stop-" + san(t.t.uuid) + "\">&nbsp;";
 	if (auth_is_admin)
 		s += "<img class=\"rebuild\" alt=\"rebuild\" src=\"rebuild.png\" " +
-			"id=\"rebuild-" + san(t.t.uuid) + "\">&nbsp;" +
-			sai_stateful_taskname(t.t.state, t.t.taskname, 1);
+			"id=\"rebuild-" + san(t.t.uuid) + "\">&nbsp;";
+	s += sai_stateful_taskname(t.t.state, t.t.taskname, 1);
 
 	if (t.t.builder_name) {
 		var now_ut = Math.round((new Date().getTime() / 1000));
@@ -1411,11 +1429,13 @@ function check_and_apply_failure_ui() {
 	}
 }
 
-function refresh_state(task_uuid, task_state)
+function refresh_state(t)
 {
-	var tsi = document.getElementById("taskstate_" + task_uuid);
+	var task_uuid = t.uuid;
+	var task_state = t.state;
+	var els = document.querySelectorAll("[id='taskstate_" + task_uuid + "']");
 
-	if (tsi) {
+	els.forEach(function(tsi) {
 		tsi.classList.remove("taskstate0");
 		tsi.classList.remove("taskstate1");
 		tsi.classList.remove("taskstate2");
@@ -1426,8 +1446,26 @@ function refresh_state(task_uuid, task_state)
 		tsi.classList.remove("taskstate7");
 		tsi.classList.remove("taskstate10");
 		tsi.classList.add("taskstate" + task_state);
-		// console.log("refresh_state  taskstate" + task_state);
-	}
+
+		var toRemove = [];
+		for (var i = 0; i < tsi.classList.length; i++) {
+			if (tsi.classList[i].startsWith('prog-')) {
+				toRemove.push(tsi.classList[i]);
+			}
+		}
+		toRemove.forEach(function(cls) { tsi.classList.remove(cls); });
+
+		if (task_state === 1 || task_state === 2 || task_state === 6) {
+			var total = typeof t.total_steps !== 'undefined' ? t.total_steps : t.build_step_count;
+			if (typeof t.build_step !== 'undefined' && typeof total !== 'undefined' && total >= 0) {
+				var pct = Math.round((t.build_step + 1) * 100 / (total + 2));
+				if (pct > 100) pct = 100;
+				if (pct < 0) pct = 0;
+				pct = Math.round(pct / 5) * 5;
+				tsi.classList.add("prog-" + pct);
+			}
+		}
+	});
 
 	const urlParams = new URLSearchParams(window.location.search);
 	const urlTask = urlParams.get('task');
@@ -2272,7 +2310,7 @@ function ws_open_sai()
 					/* if the task status icons exist, update their state */
 
 					for (n = jso.overview[0].t.length - 1; n >= 0; n--)
-						refresh_state(jso.overview[0].t[n].uuid, jso.overview[0].t[n].state);
+						refresh_state(jso.overview[0].t[n]);
 
 					update_summary_and_progress(jso.overview[0].e.uuid);
 
@@ -2314,6 +2352,12 @@ function ws_open_sai()
 							if (esr_el)
 								esr_el.innerHTML =
 									sai_event_summary_render(jso.overview[n], now_ut, 1);
+
+							if (jso.overview[n].t) {
+								for (var q = 0; q < jso.overview[n].t.length; q++) {
+									refresh_state(jso.overview[n].t[q]);
+								}
+							}
 
 							update_summary_and_progress(jso.overview[n].e.uuid);
 						}
@@ -2416,7 +2460,7 @@ function ws_open_sai()
 
 				if (document.getElementById("taskstate_" + jso.t.uuid)) {
 					console.log("found taskstate_" + jso.t.uuid);
-					refresh_state(jso.t.uuid, jso.t.state);
+					refresh_state(jso.t);
 
 					update_summary_and_progress(jso.t.uuid.substring(0, 32));
 
@@ -2867,6 +2911,22 @@ function ws_open_sai()
 							locked = rightPane.scrollHeight -
 								rightPane.clientHeight <=
 								rightPane.scrollTop + 1;
+
+						if (locked) {
+							for (var si = 0; si < segment_stack.length; si++) {
+								var sobj = segment_stack[si];
+								var sdom = document.getElementById("seg-" + sobj.id);
+								var hdom = document.getElementById("hdr-seg-" + sobj.id);
+								if (sdom && sdom.classList.contains("hide")) {
+									sdom.classList.remove("hide");
+									sobj.auto_unfolded = true;
+									if (hdom) {
+										var icon = hdom.querySelector('.fold-icon');
+										if (icon) icon.innerText = "▼";
+									}
+								}
+							}
+						}
 
 						flush_segments();
 						check_and_apply_failure_ui();

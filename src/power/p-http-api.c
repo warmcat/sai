@@ -594,11 +594,13 @@ power_off:
 				} lws_end_foreach_dll(px1);
 				*/
 
-				if (needs[0] || (pc->flags & SAIP_PCON_F_NEEDED)) {
+				if (needs[0] || (pc->flags & SAIP_PCON_F_NEEDED) ||
+				    (pc->flags & SAIP_PCON_F_MANUAL_STAY)) {
 					g->size = (size_t)lws_snprintf(g->payload,
 						sizeof(g->payload),
-						"NAK: %s needed: %d, deps needed: '%s'",
-						pn, !!(pc->flags & SAIP_PCON_F_NEEDED), needs);
+						"NAK: %s needed: %d, stay: %d, deps needed: '%s'",
+						pn, !!(pc->flags & SAIP_PCON_F_NEEDED),
+						!!(pc->flags & SAIP_PCON_F_MANUAL_STAY), needs);
 					goto bail;
 				}
 			}

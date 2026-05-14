@@ -378,6 +378,8 @@ sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down
 		}
 	} lws_end_foreach_dll_safe(p, p1);
 
+	ps = NULL;
+
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
 		ps = lws_container_of(p, sai_power_state_t, list);
 
