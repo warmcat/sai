@@ -65,6 +65,8 @@ int main(int argc, const char **argv)
 	if (gethostname(virt.hostname, sizeof(virt.hostname) - 1))
 		lws_strncpy(virt.hostname, "unknown", sizeof(virt.hostname));
 
+	virt.max_vms = 4;
+
 	const struct lws_protocols *pprotocols[] = {
 		&virt_protocols[0],
 		NULL
@@ -95,6 +97,17 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
+	/* We can spawn mac-m1, windows-10, etc. (Mocked for now) */
+	const char *plats[] = {"windows-x86_64", "mac-m1"};
+	for (size_t i = 0; i < LWS_ARRAY_SIZE(plats); i++) {
+		saiv_plat_t *vp = malloc(sizeof(*vp));
+		if (vp) {
+			memset(vp, 0, sizeof(*vp));
+			lws_strncpy(vp->name, plats[i], sizeof(vp->name));
+			lws_dll2_add_tail(&vp->list, &virt.plat_owner);
+		}
+	}
+
 	/* We create the server link manually for testing skeleton */
 	saiv_server_t *srv = malloc(sizeof(*srv));
 	if (srv) {
@@ -117,6 +130,12 @@ int main(int argc, const char **argv)
 		lws_ss_destroy(&s->ss);
 		lws_dll2_remove(d);
 		free(s);
+	} lws_end_foreach_dll_safe(d, d1);
+
+	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, virt.plat_owner.head) {
+		saiv_plat_t *p = lws_container_of(d, saiv_plat_t, list);
+		lws_dll2_remove(d);
+		free(p);
 	} lws_end_foreach_dll_safe(d, d1);
 
 	lws_context_destroy(virt.context);

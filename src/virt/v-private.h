@@ -17,22 +17,45 @@
 
 struct sai_virt;
 
+struct saiv_vm;
+
 typedef struct sai_virt_ops {
 	const char *name;
 	int (*init)(struct sai_virt *virt);
-	int (*spawn)(struct sai_virt *virt, const char *platform);
-	int (*destroy)(struct sai_virt *virt, const char *vm_id);
+	int (*spawn)(struct sai_virt *virt, struct saiv_vm *vm);
+	int (*destroy)(struct sai_virt *virt, struct saiv_vm *vm);
 } sai_virt_ops_t;
+
+typedef struct saiv_plat {
+	lws_dll2_t		list;
+	char			name[64];
+
+	int			wait_magnification;
+	int			starting_vms;
+
+	lws_dll2_owner_t	vm_owner;
+} saiv_plat_t;
+
+typedef struct saiv_vm {
+	lws_dll2_t		list;
+	saiv_plat_t		*plat;
+	char			name[64];
+	lws_sorted_usec_list_t	sul_timeout;
+} saiv_vm_t;
 
 /*
  * Represents the virt process state
  */
 struct sai_virt {
 	lws_dll2_owner_t	sai_server_owner; /* servers we connect to */
+	lws_dll2_owner_t	plat_owner;	  /* platforms we can spawn */
 	struct lws_context	*context;
 	struct lws_vhost	*vhost;
 
 	const sai_virt_ops_t	*ops;
+
+	int			running_vms;
+	int			max_vms;
 
 	const char		*bind;		/* listen socket binding */
 	const char		*perms;		/* user:group */

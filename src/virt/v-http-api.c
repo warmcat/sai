@@ -27,8 +27,34 @@ callback_virt_http(struct lws *wsi, enum lws_callback_reasons reason,
 		if (len > 16 && !strncmp(path, "/auto-power-off/", 16)) {
 			lws_strncpy(vm_id, path + 16, sizeof(vm_id));
 			lwsl_notice("%s: Received auto-power-off for %s\n", __func__, vm_id);
-			if (virt.ops)
-				virt.ops->destroy(&virt, vm_id);
+
+			saiv_vm_t *found_vm = NULL;
+			lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
+				saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
+				lws_start_foreach_dll(struct lws_dll2 *, v, vp->vm_owner.head) {
+					saiv_vm_t *vm = lws_container_of(v, saiv_vm_t, list);
+					if (!strcmp(vm->name, vm_id)) {
+						found_vm = vm;
+						break;
+					}
+				} lws_end_foreach_dll(v);
+				if (found_vm)
+					break;
+			} lws_end_foreach_dll(d);
+
+			if (found_vm) {
+				if (virt.ops)
+					virt.ops->destroy(&virt, found_vm);
+				
+				if (found_vm->plat->starting_vms > 0)
+					found_vm->plat->starting_vms--;
+				
+				virt.running_vms--;
+				
+				lws_dll2_remove(&found_vm->list);
+				lws_sul_cancel(&found_vm->sul_timeout);
+				free(found_vm);
+			}
 
 			lws_return_http_status(wsi, HTTP_STATUS_OK, NULL);
 			return -1; /* hang up */

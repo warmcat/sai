@@ -55,32 +55,21 @@ ops_libvirt_init(struct sai_virt *virt)
 }
 
 static int
-ops_libvirt_spawn(struct sai_virt *virt, const char *platform)
+ops_libvirt_spawn(struct sai_virt *virt, struct saiv_vm *vm)
 {
-	/*
-	 * Mock implementation: 
-	 * Ideally, we would run:
-	 * virsh virt-clone --original sai-template-<platform> --name sai-ephemeral-<uuid> --auto-clone
-	 * virsh start sai-ephemeral-<uuid>
-	 */
 	const char * const exec_array[] = {
 		"/usr/bin/virsh", "list", "--all", NULL
 	};
 
-	lwsl_notice("%s: Spawning ephemeral VM for platform: %s\n", __func__, platform);
+	lwsl_notice("%s: Spawning ephemeral VM %s for platform: %s\n", __func__, vm->name, vm->plat->name);
 
 	return spawn_virsh_command(virt, exec_array);
 }
 
 static int
-ops_libvirt_destroy(struct sai_virt *virt, const char *vm_id)
+ops_libvirt_destroy(struct sai_virt *virt, struct saiv_vm *vm)
 {
-	/*
-	 * Mock implementation:
-	 * virsh destroy <vm_id>
-	 * virsh undefine <vm_id> --remove-all-storage
-	 */
-	lwsl_notice("%s: Destroying ephemeral VM: %s\n", __func__, vm_id);
+	lwsl_notice("%s: Destroying ephemeral VM: %s\n", __func__, vm->name);
 	return 0;
 }
 
