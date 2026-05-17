@@ -58,6 +58,8 @@ saiv_server_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	memset(&a, 0, sizeof(a));
 	a.map_st[0]		= lsm_schema_pending_tasks;
 	a.map_entries_st[0]	= LWS_ARRAY_SIZE(lsm_schema_pending_tasks);
+	a.map_st[1]		= lsm_schema_stay;
+	a.map_entries_st[1]	= LWS_ARRAY_SIZE(lsm_schema_stay);
 	a.ac_block_size		= 512;
 
 	lws_struct_json_init_parse(&ctx, NULL, &a);
@@ -72,7 +74,16 @@ saiv_server_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		return LWSSSSRET_OK;
 	}
 
-	if (a.top_schema_index == 0) {
+	if (a.top_schema_index == 1) {
+		sai_stay_t *stay = (sai_stay_t *)a.dest;
+		lwsl_notice("%s: Received stay request for platform %s (stay_on=%d)\n", 
+			    __func__, stay->builder_name, stay->stay_on);
+		/* In Maintenance Mode, we boot the template RW instead of a transient clone */
+		/* For this skeleton we'll just mock log it */
+		lwsl_notice("%s: Maintenance Mode %s for %s\n", __func__, 
+			    stay->stay_on ? "ENABLED (booting RW)" : "DISABLED (destroying)", 
+			    stay->builder_name);
+	} else if (a.top_schema_index == 0) {
 		sai_platform_pending_tasks_t *pt = (sai_platform_pending_tasks_t *)a.dest;
 		lwsl_notice("%s: Pending tasks for pcons: %s\n", __func__, pt->pcons);
 
@@ -170,7 +181,6 @@ saiv_server_state(void *userobj, void *sh, lws_ss_constate_t state,
 		  lws_ss_tx_ordinal_t ack)
 {
 	saiv_server_link_t *g = (saiv_server_link_t *)userobj;
-	sai_builder_registration_t r;
 	struct lwsac *ac = NULL;
 
 	switch (state) {
@@ -182,23 +192,30 @@ saiv_server_state(void *userobj, void *sh, lws_ss_constate_t state,
 	case LWSSSCS_CONNECTED:
 		lwsl_notice("%s: Connected to sai-server\n", __func__);
 
-		memset(&r, 0, sizeof(r));
-		lws_strncpy(r.builder_name, virt.hostname, sizeof(r.builder_name));
-		lws_strncpy(r.power_controller_name, virt.hostname, sizeof(r.power_controller_name));
+		sai_power_managed_builders_t pmb;
+		memset(&pmb, 0, sizeof(pmb));
 
+		/* Register ourselves as the power controller */
+		sai_power_controller_t *pc = lwsac_use_zero(&ac, sizeof(*pc), 512);
+		if (pc) {
+			lws_strncpy(pc->name, virt.hostname, sizeof(pc->name));
+			lws_dll2_add_tail(&pc->list, &pmb.power_controllers);
+		}
+
+		/* Register our platforms as the "builders" we manage */
 		lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
 			saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
-			sai_builder_platform_t *bp = lwsac_use_zero(&ac, sizeof(*bp), 512);
+			sai_power_managed_builder_t *bp = lwsac_use_zero(&ac, sizeof(*bp), 512);
 			if (bp) {
 				lws_strncpy(bp->name, vp->name, sizeof(bp->name));
-				lws_dll2_add_tail(&bp->list, &r.platforms_owner);
+				lws_dll2_add_tail(&bp->list, &pmb.builders);
 			}
 		} lws_end_foreach_dll(d);
 
 		sai_ss_serialize_queue_helper(g->ss, &g->bl_tx,
-					      lsm_schema_builder_registration,
-					      LWS_ARRAY_SIZE(lsm_schema_builder_registration),
-					      &r);
+					      lsm_schema_power_managed_builders,
+					      LWS_ARRAY_SIZE(lsm_schema_power_managed_builders),
+					      &pmb);
 		lwsac_free(&ac);
 		break;
 

@@ -1104,7 +1104,7 @@ function update_summary_and_progress(event_uuid) {
     var summary = summarize_build_situation(event_uuid);
     var summary_html = summary.text;
 
-    if (summary.total > 0) {
+    if (summary.total > 0 && summary.good !== summary.total) {
         var good_pct = (summary.good / summary.total) * 100;
         var pending_pct = (summary.pending / summary.total) * 100;
         var ongoing_pct = (summary.ongoing / summary.total) * 100;
