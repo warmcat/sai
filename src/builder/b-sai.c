@@ -528,6 +528,11 @@ saib_app_run(int argc, const char **argv)
 	if ((p = lws_cmdline_option(argc, argv, "-c")))
 		config_dir = p;
 
+	if (lws_cmdline_option(argc, argv, "-E")) {
+		builder.event_affinity_active = 1;
+		lwsl_notice("%s: event affinity mode enabled (ephemeral VM)\n", __func__);
+	}
+
 #if defined(__NetBSD__) || defined(__OpenBSD__)
 	if (lws_cmdline_option(argc, argv, "-D")) {
 		if (lws_daemonize("/var/run/sai_builder.pid"))

@@ -177,6 +177,19 @@ saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
 
 	unsigned int executing = 0;
 
+	if (builder.event_affinity_active) {
+		if (!builder.event_affinity[0]) {
+			lws_strncpy(builder.event_affinity, task->event_uuid,
+				    sizeof(builder.event_affinity));
+			lwsl_notice("%s: locked affinity to event %s\n",
+				    __func__, builder.event_affinity);
+		} else if (strcmp(builder.event_affinity, task->event_uuid)) {
+			lwsl_notice("%s: reject task %s: affinity locked to %s\n",
+				    __func__, task->uuid, builder.event_affinity);
+			return 1;
+		}
+	}
+
 	if ((((builder.ram_limit_kib * 4) / 3) - builder.ram_reserved_kib) < task->est_peak_mem_kib) {
 		lwsl_notice("%s: reject task %s: not enough RAM: task %u vs %u lim - %u res\n", __func__,
 			    task->uuid, (unsigned int)task->est_peak_mem_kib, (unsigned int)builder.ram_limit_kib, (unsigned int)builder.ram_reserved_kib);

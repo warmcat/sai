@@ -159,6 +159,9 @@ struct sai_builder {
 #endif
 	char			stay;
 
+	char			event_affinity[65];
+	char			event_affinity_active;
+
 	/* resource management */
 
 	uint64_t		ram_limit_kib;
