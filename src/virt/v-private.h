@@ -15,7 +15,14 @@
 #include "../common/include/private.h"
 #include <pthread.h>
 
-struct saiv_server;
+struct sai_virt;
+
+typedef struct sai_virt_ops {
+	const char *name;
+	int (*init)(struct sai_virt *virt);
+	int (*spawn)(struct sai_virt *virt, const char *platform);
+	int (*destroy)(struct sai_virt *virt, const char *vm_id);
+} sai_virt_ops_t;
 
 /*
  * Represents the virt process state
@@ -24,6 +31,8 @@ struct sai_virt {
 	lws_dll2_owner_t	sai_server_owner; /* servers we connect to */
 	struct lws_context	*context;
 	struct lws_vhost	*vhost;
+
+	const sai_virt_ops_t	*ops;
 
 	const char		*bind;		/* listen socket binding */
 	const char		*perms;		/* user:group */
@@ -48,6 +57,8 @@ LWS_SS_USER_TYPEDEF
 
 extern struct sai_virt virt;
 extern const lws_ss_info_t ssi_saiv_server_link_t;
+extern const sai_virt_ops_t ops_libvirt;
+extern const struct lws_protocols virt_protocols[];
 
 int saiv_config(struct sai_virt *virt, const char *d);
 

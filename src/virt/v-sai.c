@@ -65,10 +65,16 @@ int main(int argc, const char **argv)
 	if (gethostname(virt.hostname, sizeof(virt.hostname) - 1))
 		lws_strncpy(virt.hostname, "unknown", sizeof(virt.hostname));
 
+	const struct lws_protocols *pprotocols[] = {
+		&virt_protocols[0],
+		NULL
+	};
+
 	memset(&info, 0, sizeof info);
-	info.port = CONTEXT_PORT_NO_LISTEN;
+	info.port = 8000;
 	info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
 		       LWS_SERVER_OPTION_VALIDATE_UTF8;
+	info.pprotocols = pprotocols;
 
 	signal(SIGINT, sigint_handler);
 
@@ -79,6 +85,9 @@ int main(int argc, const char **argv)
 		lwsl_err("lws init failed\n");
 		return 1;
 	}
+
+	virt.ops = &ops_libvirt;
+	virt.ops->init(&virt);
 
 	virt.vhost = lws_create_vhost(virt.context, &info);
 	if (!virt.vhost) {

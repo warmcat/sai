@@ -4,6 +4,8 @@ set(CPACK_DEBIAN_VIRT_PACKAGE_NAME "sai-virt")
 set(SRCS
 	v-sai.c
 	v-ws-server.c
+	v-libvirt.c
+	v-http-api.c
 	../common/c-utils.c
 	../common/struct-metadata.c
 )

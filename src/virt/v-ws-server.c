@@ -60,6 +60,9 @@ saiv_server_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lws_start_foreach_dll(struct lws_dll2 *, p, pt->tasks.head) {
 			sai_platform_pending_task_t *t = lws_container_of(p, sai_platform_pending_task_t, list);
 			lwsl_notice("   - %s: %u pending\n", t->plat, t->pending);
+			if (t->pending > 0 && virt.ops) {
+				virt.ops->spawn(&virt, t->plat);
+			}
 		} lws_end_foreach_dll(p);
 	}
 
