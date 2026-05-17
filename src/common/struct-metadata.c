@@ -516,3 +516,20 @@ const lws_struct_map_t lsm_watcher_conf[] = {
 	LSM_LIST(sai_watcher_conf_t, watchers, sai_watcher_service_t, list,
 			 NULL, lsm_watcher_service,		"watchers"),
 };
+
+const lws_struct_map_t lsm_pending_task[] = {
+	LSM_CARRAY	(sai_platform_pending_task_t, plat,		"plat"),
+	LSM_UNSIGNED	(sai_platform_pending_task_t, pending,		"pending"),
+};
+
+const lws_struct_map_t lsm_pending_tasks[] = {
+	LSM_CARRAY	(sai_platform_pending_tasks_t, pcons, "pcons"),
+	LSM_LIST	(sai_platform_pending_tasks_t, tasks,
+			 sai_platform_pending_task_t, list,
+			 NULL, lsm_pending_task, "tasks"),
+};
+
+const lws_struct_map_t lsm_schema_pending_tasks[] = {
+	LSM_SCHEMA(sai_platform_pending_tasks_t, NULL, lsm_pending_tasks,
+		   "com.warmcat.sai.power.pending_tasks"),
+};

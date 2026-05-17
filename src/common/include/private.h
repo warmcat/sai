@@ -755,6 +755,18 @@ typedef struct sai_pcon_control {
 	char			on;
 } sai_pcon_control_t;
 
+typedef struct sai_platform_pending_task {
+	lws_dll2_t		list;
+	char			plat[64];
+	unsigned int		pending;
+} sai_platform_pending_task_t;
+
+typedef struct sai_platform_pending_tasks {
+	lws_dll2_t		list;
+	char			pcons[1024];
+	lws_dll2_owner_t	tasks; /* sai_platform_pending_task_t */
+} sai_platform_pending_tasks_t;
+
 /*
  * Because the definitions of these arrays of map structs are mostly in
  * common/struct-metadata.c, we are forced to repeat the length of the struct
@@ -821,7 +833,10 @@ extern const lws_struct_map_t
 	lsm_watcher[9],
 	lsm_schema_sq3_map_watcher[1],
 	lsm_schema_json_map_watcher[1],
-	lsm_watcher_conf[1];
+	lsm_watcher_conf[1],
+	lsm_pending_task[2],
+	lsm_pending_tasks[2],
+	lsm_schema_pending_tasks[1];
 
 extern const lws_ss_info_t ssi_said_logproxy;
 extern struct lws_ss_handle *ssh[3];

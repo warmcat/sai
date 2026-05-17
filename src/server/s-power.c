@@ -423,7 +423,46 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 
 	} lws_end_foreach_dll(px);
 
-	lwsl_info("%s: final pcon list: '%.*s'\n", __func__,
+	{
+		sai_platform_pending_tasks_t pt;
+		lws_struct_serialize_t *js;
+		struct lwsac *ac = NULL;
+
+		memset(&pt, 0, sizeof(pt));
+		
+		/* copy the pcon list into the struct */
+		if (lws_ptr_diff_size_t(p, start) < sizeof(pt.pcons))
+			lws_strncpy(pt.pcons, (const char *)start, lws_ptr_diff_size_t(p, start) + 1);
+		else
+			lws_strncpy(pt.pcons, (const char *)start, sizeof(pt.pcons));
+
+		lws_start_foreach_dll(struct lws_dll2 *, px1, vhd->pending_plats.head) {
+			sais_plat_t *pl = lws_container_of(px1, sais_plat_t, list);
+			sai_platform_pending_task_t *ptask = lwsac_use_zero(&ac, sizeof(*ptask), 1024);
+
+			if (ptask) {
+				lws_strncpy(ptask->plat, pl->plat, sizeof(ptask->plat));
+				ptask->pending = (unsigned int)pl->pending_count;
+				lws_dll2_add_tail(&ptask->list, &pt.tasks);
+			}
+		} lws_end_foreach_dll(px1);
+
+		js = lws_struct_json_serialize_create(lsm_schema_pending_tasks,
+				LWS_ARRAY_SIZE(lsm_schema_pending_tasks), 0, &pt);
+		if (!js) {
+			lwsl_err("%s: failed to serialize pending tasks\n", __func__);
+			lwsac_free(&ac);
+			return -1;
+		}
+
+		n = (int)lws_struct_json_serialize(js, start, lws_ptr_diff_size_t(end, start), &w);
+		lws_struct_json_serialize_destroy(&js);
+		lwsac_free(&ac);
+
+		p = start + w;
+	}
+
+	lwsl_info("%s: final json: '%.*s'\n", __func__,
 		    (int)lws_ptr_diff_size_t(p, start), start);
 
 	/*

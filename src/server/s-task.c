@@ -444,15 +444,17 @@ bail:
  */
 
 static int
-sais_find_or_add_pending_plat(struct vhd *vhd, const char *name)
+sais_find_or_add_pending_plat(struct vhd *vhd, const char *name, int count)
 {
 	sais_plat_t *sp;
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->pending_plats.head) {
 		sais_plat_t *pl = lws_container_of(p, sais_plat_t, list);
 
-		if (!strcmp(pl->plat, name))
+		if (!strcmp(pl->plat, name)) {
+			pl->pending_count += count;
 			return 1;
+		}
 
 	} lws_end_foreach_dll(p);
 
@@ -462,6 +464,7 @@ sais_find_or_add_pending_plat(struct vhd *vhd, const char *name)
 
 	sp->plat = (const char *)&sp[1]; /* start of overcommit */
 	memcpy(&sp[1], name, strlen(name) + 1);
+	sp->pending_count = count;
 
 	lws_dll2_add_tail(&sp->list, &vhd->pending_plats);
 
@@ -533,9 +536,9 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 		if (!sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
 				      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
 
-			if (sqlite3_prepare_v2(pdb, "select distinct platform "
+			if (sqlite3_prepare_v2(pdb, "select platform, count(*) "
 						    "from tasks where "
-						    "(state = 0 or state = 1 or state = 2)", -1, &sm,
+						    "(state = 0 or state = 1 or state = 2) group by platform", -1, &sm,
 							   NULL) != SQLITE_OK) {
 				lwsl_err("%s: Unable to %s\n",
 					 __func__, sqlite3_errmsg(pdb));
@@ -547,7 +550,8 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 				n = sqlite3_step(sm);
 				if (n == SQLITE_ROW)
 					sais_find_or_add_pending_plat(vhd,
-						(const char *)sqlite3_column_text(sm, 0));
+						(const char *)sqlite3_column_text(sm, 0),
+						sqlite3_column_int(sm, 1));
 			} while (n == SQLITE_ROW);
 
 			sqlite3_reset(sm);

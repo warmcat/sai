@@ -205,6 +205,7 @@ typedef struct sais_plat {
 	lws_dll2_t	list;
 	const char	*plat;
 	char		busy;
+	int		pending_count;
 } sais_plat_t;
 
 struct vhd {

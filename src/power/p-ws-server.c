@@ -36,12 +36,13 @@ static const lws_struct_map_t lsm_schema_power_state[] = {
 		   "com.warmcat.sai.powerstate"),
 };
 
-/* Combined map for RX from server */
 static const lws_struct_map_t lsm_saip_rx_map[] = {
 	LSM_SCHEMA(sai_stay_t, NULL, lsm_stay,
 		   "com.warmcat.sai.power.stay"),
 	LSM_SCHEMA(sai_pcon_control_t, NULL, lsm_pcon_control,
 		   "com.warmcat.sai.pcon_control"),
+	LSM_SCHEMA(sai_platform_pending_tasks_t, NULL, lsm_pending_tasks,
+		   "com.warmcat.sai.power.pending_tasks"),
 };
 
 int
@@ -236,7 +237,7 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			} else {
 				lwsl_warn("%s: Unknown PCON '%s'\n", __func__, ctl->pcon_name);
 			}
-		} else {
+		} else if (a.top_schema_index == 0) {
 			/* Stay */
 			sai_stay_t *stay = (sai_stay_t *)a.dest;
 			saip_pcon_t *pc;
@@ -299,6 +300,84 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 					}
 				} lws_end_foreach_dll(b_node);
 			} lws_end_foreach_dll(p);
+		} else if (a.top_schema_index == 2) {
+			/* Pending tasks JSON */
+			sai_platform_pending_tasks_t *pt = (sai_platform_pending_tasks_t *)a.dest;
+
+			lwsl_info("%s: received pending tasks pcons: %s\n", __func__, pt->pcons);
+
+			lws_start_foreach_dll(struct lws_dll2 *, p, power.sai_pcon_owner.head) {
+				saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
+
+				pc->flags &= (uint8_t)~SAIP_PCON_F_NEEDED;
+			} lws_end_foreach_dll(p);
+
+			if (pt->pcons[0]) {
+				const char *cp = pt->pcons;
+				const char *end = cp + strlen(cp);
+
+				while (cp < end) {
+					const char *comma = memchr(cp, ',', lws_ptr_diff_size_t(end, cp));
+					size_t token_len;
+
+					if (comma)
+						token_len = lws_ptr_diff_size_t(comma, cp);
+					else
+						token_len = lws_ptr_diff_size_t(end, cp);
+
+					if (token_len) {
+						char pcon[64];
+						saip_pcon_t *pc;
+
+						lws_strnncpy(pcon, cp, token_len, sizeof(pcon));
+						pc = saip_pcon_by_name(&power, pcon);
+						if (pc)
+							pc->flags |= SAIP_PCON_F_NEEDED;
+						else
+							lwsl_notice("%s: unknown pcon '%.*s' needed\n",
+								    __func__, (int)token_len, cp);
+					}
+
+					cp += token_len;
+					if (cp < end && *cp == ',')
+						cp++;
+				}
+			}
+
+			/*
+			 * Propagate needed state up the dependency tree
+			 *
+			 * If a PCON is needed, and it depends on another PCON, that parent PCON
+			 * is also needed.
+			 */
+			{
+				int changed;
+
+				do {
+					changed = 0;
+					lws_start_foreach_dll(struct lws_dll2 *, p,
+							      power.sai_pcon_owner.head) {
+						saip_pcon_t *pc = lws_container_of(p,
+								saip_pcon_t, list);
+
+						if (pc->flags & SAIP_PCON_F_NEEDED) {
+							/* check if this PCON depends on another */
+							if (pc->depends_on) {
+								saip_pcon_t *parent = saip_pcon_by_name(&power,
+											pc->depends_on);
+								if (parent && !(parent->flags & SAIP_PCON_F_NEEDED)) {
+									parent->flags |= SAIP_PCON_F_NEEDED;
+									changed = 1;
+									lwsl_notice("%s: PCON %s needed by dep %s\n",
+										    __func__, parent->name, pc->name);
+								}
+							}
+						}
+					} lws_end_foreach_dll(p);
+				} while (changed);
+			}
+
+			saip_pcon_start_check();
 		}
 
 found:
@@ -307,86 +386,8 @@ found:
 	}
 	lwsac_free(&a.ac);
 
-	/*
-	 * It wasn't a JSON message... it's the comma-separated list of needed
-	 * platforms then
-	 */
-
-	lwsl_err("%s: ************* Received comma-separated list of needed platforms\n", __func__);
+	lwsl_err("%s: ************* Received unknown non-JSON message\n", __func__);
 	sai_dump_stderr(buf, len);
-
-	lws_start_foreach_dll(struct lws_dll2 *, p, power.sai_pcon_owner.head) {
-		saip_pcon_t *pc = lws_container_of(p, saip_pcon_t, list);
-
-		pc->flags &= (uint8_t)~SAIP_PCON_F_NEEDED;
-	} lws_end_foreach_dll(p);
-
-	if (len) {
-		const char *cp = (const char *)buf;
-		const char *end = cp + len;
-
-		while (cp < end) {
-			const char *comma = memchr(cp, ',', lws_ptr_diff_size_t(end, cp));
-			size_t token_len;
-
-			if (comma)
-				token_len = lws_ptr_diff_size_t(comma, cp);
-			else
-				token_len = lws_ptr_diff_size_t(end, cp);
-
-			if (token_len) {
-				char pcon[64];
-				saip_pcon_t *pc;
-
-				lws_strnncpy(pcon, cp, token_len, sizeof(pcon));
-				pc = saip_pcon_by_name(&power, pcon);
-				if (pc)
-					pc->flags |= SAIP_PCON_F_NEEDED;
-				else
-					lwsl_notice("%s: unknown pcon '%.*s' needed\n",
-						    __func__, (int)token_len, cp);
-			}
-
-			cp += token_len;
-			if (cp < end && *cp == ',')
-				cp++;
-		}
-	}
-
-	/*
-	 * Propagate needed state up the dependency tree
-	 *
-	 * If a PCON is needed, and it depends on another PCON, that parent PCON
-	 * is also needed.
-	 */
-	{
-		int changed;
-
-		do {
-			changed = 0;
-			lws_start_foreach_dll(struct lws_dll2 *, p,
-					      power.sai_pcon_owner.head) {
-				saip_pcon_t *pc = lws_container_of(p,
-						saip_pcon_t, list);
-
-				if (pc->flags & SAIP_PCON_F_NEEDED) {
-					/* check if this PCON depends on another */
-					if (pc->depends_on) {
-						saip_pcon_t *parent = saip_pcon_by_name(&power,
-									pc->depends_on);
-						if (parent && !(parent->flags & SAIP_PCON_F_NEEDED)) {
-							parent->flags |= SAIP_PCON_F_NEEDED;
-							changed = 1;
-							lwsl_notice("%s: PCON %s needed by dep %s\n",
-								    __func__, parent->name, pc->name);
-						}
-					}
-				}
-			} lws_end_foreach_dll(p);
-		} while (changed);
-	}
-
-	saip_pcon_start_check();
 
 	return 0;
 }
