@@ -76,6 +76,7 @@ static lws_struct_map_t lsm_browser_taskinfo[] = {
 	LSM_UNSIGNED	(sai_browse_rx_taskinfo_t, logs,		"logs"),
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, js_api_version,	"js_api_version"),
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, last_log_ts,		"last_log_ts"),
+	LSM_SIGNED      (sai_browse_rx_taskinfo_t, run,			"run"),
 };
 
 static const lws_struct_map_t lsm_schema_json_map[] = {

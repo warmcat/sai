@@ -73,6 +73,7 @@ struct pss {
 
 	uint64_t		sub_timestamp;
 	char			sub_task_uuid[65];
+	int			sub_run;
 	char			specific_ref[65];
 	char			specific_task[65];
 	char			specific_project[96];

@@ -61,6 +61,7 @@ static lws_struct_map_t lsm_browser_taskinfo[] = {
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, js_api_version,	"js_api_version"),
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, offset,		"offset"),
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, last_log_ts,		"last_log_ts"),
+	LSM_SIGNED      (sai_browse_rx_taskinfo_t, run,			"run"),
 };
 
 /*
@@ -120,6 +121,7 @@ enum {
 typedef struct sai_browse_taskreply {
 	const sai_event_t	*event;
 	const sai_task_t	*task;
+	lws_dll2_owner_t	runs;
 } sai_browse_taskreply_t;
 
 static lws_struct_map_t lsm_taskreply[] = {
@@ -127,6 +129,8 @@ static lws_struct_map_t lsm_taskreply[] = {
 			 lsm_event, "e"),
 	LSM_CHILD_PTR	(sai_browse_taskreply_t, task,	sai_task_t, NULL,
 			 lsm_task, "t"),
+	LSM_LIST	(sai_browse_taskreply_t, runs,	sai_task_t, list, NULL,
+			 lsm_task, "runs"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_taskreply[] = {
@@ -257,13 +261,13 @@ bail:
 /* we leave an allocation in sch->query_ac ... */
 
 static int
-saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
+saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub, int run_idx)
 {
 	char qu[192], event_uuid[33], esc2[96], buf[4096 + LWS_PRE],
 	     *start = buf + LWS_PRE, *p = start, *end = buf + sizeof(buf);
 	const sai_event_t *one_event = NULL;
 	sai_browse_taskreply_t task_reply;
-	struct lwsac *query_ac = NULL;
+	struct lwsac *query_ac = NULL, *runs_ac = NULL, *art_ac = NULL;
 	sai_task_t *one_task = NULL;
 	lws_struct_serialize_t *js;
 	char esc[256], filt[128];
@@ -310,9 +314,19 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	 */
 
 	lws_sql_purify(esc, task_uuid, sizeof(esc));
-	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
-	n = lws_struct_sq3_deserialize(pdb, qu, NULL, lsm_schema_sq3_map_task,
+	if (run_idx >= 0)
+		lws_snprintf(qu, sizeof(qu), " and uuid='%s' and run=%d", esc, run_idx);
+	else
+		lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
+	n = lws_struct_sq3_deserialize(pdb, qu, run_idx >= 0 ? NULL : "run desc", lsm_schema_sq3_map_task,
 				       &o, &query_ac, 0, 1);
+				       
+	memset(&task_reply, 0, sizeof(task_reply));
+	lws_dll2_owner_clear(&task_reply.runs);
+	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
+	lws_struct_sq3_deserialize(pdb, qu, "run desc", lsm_schema_sq3_map_task,
+				       &task_reply.runs, &runs_ac, 0, 100);
+				       
 	sai_event_db_close(&pss->vhd->sqlite3_cache, &pdb);
 	if (n < 0 || !o.head)
 		goto bail;
@@ -364,8 +378,6 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	else
 		one_event = lws_container_of(o.head, sai_event_t, list);
 
-	memset(&task_reply, 0, sizeof(task_reply));
-
 	/*
 	 * We're sending a browser the specific task info that he
 	 * asked for.
@@ -392,9 +404,15 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 
 	do {
 		n = (int)lws_struct_json_serialize(js, (uint8_t *)p, lws_ptr_diff_size_t(end, p), &w);
+		if (n == LSJS_RESULT_ERROR) {
+			lws_struct_json_serialize_destroy(&js);
+			lwsl_notice("%s: taskinfo: error generating json\n", __func__);
+			goto bail;
+		}
+		p += w;
 
 		if (lws_ptr_diff_size_t(end, (uint8_t *)p) < 512) {
-			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(pss->vhd, start,
+			saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
 								    lws_ptr_diff_size_t(p, start),
 								    lws_write_ws_flags(LWS_WRITE_TEXT, fi, 0));
 			p = start;
@@ -417,23 +435,23 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 				      pss->vhd->sqlite3_path_lhs, event_uuid,
 				      0, &pdb)) {
 
-		lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s')",
-			     one_task->uuid);
+		if (run_idx >= 0)
+			lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s') and run=%d",
+			     one_task->uuid, run_idx);
+		else
+			lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s') and run=%d",
+			     one_task->uuid, one_task->run);
 
 		if (lws_struct_sq3_deserialize(pdb, filt, NULL,
 					       lsm_schema_sq3_map_artifact,
 					       &owner,
-					       &query_ac, 0, 10))
+					       &art_ac, 0, 10))
 			lwsl_err("%s: get afcts failed\n", __func__);
 
 		sai_event_db_close(&pss->vhd->sqlite3_cache, &pdb);
 	}
 
-	if (n == LSJS_RESULT_ERROR) {
-		lwsl_notice("%s: taskinfo: error generating json\n", __func__);
-		goto bail;
-	}
-	p += w;
+
 
 	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
 					       lws_ptr_diff_size_t(p, start),
@@ -442,9 +460,18 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	/* does he want to subscribe to logs? */
 	if (logsub && !pss->subs_list.owner) {
 		strcpy(pss->sub_task_uuid, one_task->uuid);
+		pss->sub_run = run_idx >= 0 ? run_idx : one_task->run;
 		lws_dll2_add_head(&pss->subs_list, &pss->vhd->subs_owner);
 		pss->sub_timestamp = pss->initial_log_timestamp; /* where we got up to */
 		saiw_broadcast_logs_batch(pss->vhd, pss);
+	} else if (!strcmp(pss->sub_task_uuid, one_task->uuid)) {
+		/* If already subscribed to this task, track new runs automatically */
+		int new_run = run_idx >= 0 ? run_idx : one_task->run;
+		if (pss->sub_run != new_run) {
+			pss->sub_run = new_run;
+			pss->sub_timestamp = 0;
+			saiw_broadcast_logs_batch(pss->vhd, pss);
+		}
 	}
 
 	saiw_browser_broadcast_queue_builders(pss->vhd, pss);
@@ -492,11 +519,15 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub)
 	}
 
 	lwsac_free(&query_ac);
+	lwsac_free(&runs_ac);
+	lwsac_free(&art_ac);
 
 	return 0;
 
 bail:
 	lwsac_free(&query_ac);
+	lwsac_free(&runs_ac);
+	lwsac_free(&art_ac);
 
 	return 1;
 }
@@ -514,7 +545,7 @@ saiw_subs_task_state_change(struct vhd *vhd, const char *task_uuid)
 		struct pss *pss = lws_container_of(p, struct pss, subs_list);
 
 		if (!strcmp(pss->sub_task_uuid, task_uuid))
-			saiw_pss_schedule_taskinfo(pss, task_uuid, 0);
+			saiw_pss_schedule_taskinfo(pss, task_uuid, 0, pss->sub_run);
 
 	} lws_end_foreach_dll(p);
 
@@ -529,7 +560,7 @@ saiw_browsers_task_state_change(struct vhd *vhd, const char *task_uuid)
 		struct pss *pss = lws_container_of(p, struct pss, same);
 
 		if (!pss->is_gitohashi)
-			saiw_pss_schedule_taskinfo(pss, task_uuid, 0);
+			saiw_pss_schedule_taskinfo(pss, task_uuid, 0, -1);
 	} lws_end_foreach_dll(p);
 
 	return 0;
@@ -636,7 +667,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		else
 			pss->initial_log_timestamp = 0;
 
-		if (saiw_pss_schedule_taskinfo(pss, ti->task_hash, !!ti->logs))
+		if (saiw_pss_schedule_taskinfo(pss, ti->task_hash, !!ti->logs, ti->run))
 			goto soft_error;
 
 		goto ok;
@@ -797,8 +828,8 @@ saiw_broadcast_logs_batch(struct vhd *vhd, struct pss *pss)
 		lwsac_free(&pss->logs_ac);
 
 		lws_snprintf(esc, sizeof(esc),
-		     "and task_uuid='%s' and timestamp > %llu",
-		     pss->sub_task_uuid,
+		     "and task_uuid='%s' and run=%d and timestamp > %llu",
+		     pss->sub_task_uuid, pss->sub_run,
 		     (unsigned long long)pss->sub_timestamp);
 
 		// lwsl_notice("%s: collecting logs %s\n", __func__, esc);
@@ -1073,7 +1104,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		} else {
 			task_ac = NULL;
 			lws_dll2_owner_clear(&task_owner);
-			if (lws_struct_sq3_deserialize(pdb, NULL, NULL,
+			if (lws_struct_sq3_deserialize(pdb, NULL, "taskname, platform",
 					lsm_schema_sq3_map_task, &task_owner,
 					&task_ac, 0, 999)) {
 				lwsl_err("%s: OVERVIEW 1 failed\n", __func__);

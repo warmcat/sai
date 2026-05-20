@@ -165,6 +165,29 @@ sais_prune_inflight_list(struct vhd *vhd)
 
 
 /*
+ * Helper to identify and fix stale corrupted legacy tasks
+ */
+static int
+sais_check_and_fix_stale_task(sqlite3 *pdb, sai_task_t *t)
+{
+	int max_run = -1;
+	char q[200], esc[100];
+
+	lws_sql_purify(esc, t->uuid, sizeof(esc));
+	lws_snprintf(q, sizeof(q), "select max(run) from tasks where uuid='%s'", esc);
+
+	if (sqlite3_exec(pdb, q, sql3_get_integer_cb, &max_run, NULL) == SQLITE_OK) {
+		if (max_run >= 0 && (int)t->run < max_run) {
+			lwsl_err("%s: task %s run %d is stale (max %d), marking deleted\n", __func__, esc, t->run, max_run);
+			lws_snprintf(q, sizeof(q), "update tasks set state=7 where uuid='%s' and run=%d", esc, t->run);
+			sqlite3_exec(pdb, q, NULL, NULL, NULL);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+/*
  * Find the most recent task that still needs doing for platform, on any event
  */
 static const sai_task_t *
@@ -234,8 +257,8 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		 */
 
 		lws_snprintf(query, sizeof(query), "select count(state) from tasks where "
-						   "(state = 0 or state = 9) and platform = '%s' and "
-						   "(builder_name IS NULL or builder_name = '' or builder_name = '%s')",
+						   "state IN(0,9) and platform='%s' and "
+						   "(builder_name IS NULL or builder_name IN('','%s'))",
 						   esc_plat, esc_bname);
 		m = sqlite3_exec(pdb, query, sql3_get_integer_cb, &pending_count, NULL);
 
@@ -367,9 +390,8 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 
 			lws_sql_purify(esc_taskname, fti->taskname, sizeof(esc_taskname));
 			lws_snprintf(pf, sizeof(pf),
-				     " and (state == 0 or state == 9) and "
-				     "(platform == '%s') and (taskname == '%s') and "
-				     "(builder_name IS NULL or builder_name == '' or builder_name == '%s')",
+				     " and state IN(0,9) and platform='%s' and taskname='%s' and "
+				     "(builder_name IS NULL or builder_name IN('','%s'))",
 				     esc_plat, esc_taskname, esc_bname);
 
 			lwsac_free(&pss->ac_alloc_task);
@@ -379,6 +401,14 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 						       &owner, &pss->ac_alloc_task, 0, 1);
 			if (n < 0 || !owner.count)
 				goto next1;
+
+			sai_task_t *t = lws_container_of(owner.head, sai_task_t, list);
+			if (sais_check_and_fix_stale_task(pdb, t)) {
+				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+				lwsac_free(&ac);
+				lwsac_free(&failed_ac);
+				return NULL;
+			}
 
 			lwsl_notice("%s: Prioritizing failed task for %s ('%s')\n",
 				    __func__, platform, fti->taskname);
@@ -399,8 +429,8 @@ next1: ;
 		/* We have fallen back to doing tasks earliest-first */
 
 		lws_snprintf(pf, sizeof(pf),
-			     " and (state = 0 or state = 9) and (platform = '%s') and "
-			     "(builder_name IS NULL or builder_name = '' or builder_name = '%s')",
+			     " and state IN(0,9) and platform='%s' and "
+			     "(builder_name IS NULL or builder_name IN('','%s'))",
 			     esc_plat, esc_bname);
 
 		lwsac_free(&pss->ac_alloc_task);
@@ -412,6 +442,14 @@ next1: ;
 		// lwsl_notice("%s: deser returned %d\n", __func__, n);
 		if (n < 0 || !owner.count || !pss->ac_alloc_task)
 			goto close_next;
+
+		sai_task_t *t = lws_container_of(owner.head, sai_task_t, list);
+		if (sais_check_and_fix_stale_task(pdb, t)) {
+			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+			lwsac_free(&ac);
+			lwsac_free(&failed_ac);
+			return NULL;
+		}
 
 		lwsl_info("%s: orig exit\n", __func__);
 		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
@@ -815,7 +853,7 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 
 	lws_sql_purify(esc_uuid, task_uuid, sizeof(esc_uuid));
 	lws_snprintf(update, sizeof(update), " and state != 4 and uuid='%s'", esc_uuid);
-	n = lws_struct_sq3_deserialize(pdb, update, NULL,
+	n = lws_struct_sq3_deserialize(pdb, update, "run desc",
 				       lsm_schema_sq3_map_task, &o, &ac, 0, 1);
 	if (n < 0 || !o.head) {
 		lwsl_warn("%s: bailing as nothing with state != 4\n", __func__);

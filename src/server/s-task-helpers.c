@@ -76,7 +76,7 @@ int
 sais_bind_task_to_builder(struct vhd *vhd, const char *builder_name,
 			  const char *builder_uuid, const char *task_uuid)
 {
-	char update[384], esc[96], esc1[96], esc2[96], event_uuid[33];
+	char update[512], esc[96], esc1[96], esc2[96], event_uuid[33];
 	struct lwsac *ac = NULL;
 	sai_event_t *e = NULL;
 	lws_dll2_owner_t o;
@@ -132,8 +132,8 @@ sais_bind_task_to_builder(struct vhd *vhd, const char *builder_name,
 	 */
 
 	lws_snprintf(update, sizeof(update),
-		"update tasks set builder='%s',builder_name='%s' where uuid='%s'",
-		 esc1, esc, esc2);
+		"update tasks set builder='%s',builder_name='%s' where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
+		 esc1, esc, esc2, esc2);
 
 	if (sqlite3_exec((sqlite3 *)e->pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
 		lwsl_err("%s: %s: %s: fail\n", __func__, update,
@@ -155,7 +155,7 @@ int
 sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 		    sai_event_state_t state, uint64_t started, uint64_t duration)
 {
-	char update[384], esc1[96], esc2[96], esc3[32], esc4[32], event_uuid[33];
+	char update[512], esc1[96], esc2[96], esc3[32], esc4[32], event_uuid[33];
 	sai_event_state_t oes, sta, task_ostate, ostate = state;
 	unsigned int count = 0, count_good = 0, count_bad = 0;
 	uint64_t started_orig = started;
@@ -207,7 +207,7 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 	 * grab the current state of it for seeing if it changed
 	 */
 	lws_snprintf(update, sizeof(update),
-		     "select state from tasks where uuid='%s'", esc2);
+		     "select state from tasks where uuid='%s' order by run desc limit 1", esc2);
 	if (sqlite3_exec((sqlite3 *)e->pdb, update,
 			 sql3_get_integer_cb, &task_ostate, NULL) != SQLITE_OK) {
 		lwsl_err("%s: %s: %s: fail\n", __func__, update,
@@ -240,9 +240,9 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 	 */
 
 	lws_snprintf(update, sizeof(update),
-		"update tasks set state=%d%s%s%s where uuid='%s'", state,
+		"update tasks set state=%d%s%s%s where uuid='%s' and run=(select max(run) from tasks where uuid='%s')", state,
 		esc3, esc4, state == SAIES_WAITING && started_orig == 1 ?
-						",build_step=0" : "", esc2);
+						",build_step=0" : "", esc2, esc2);
 
 	if (sqlite3_exec((sqlite3 *)e->pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
 		lwsl_err("%s: %s: %s: fail\n", __func__, update,
@@ -280,7 +280,7 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 		 * So, how many tasks for this event?
 		 */
 
-		if (sqlite3_exec((sqlite3 *)e->pdb, "select count(state) from tasks",
+		if (sqlite3_exec((sqlite3 *)e->pdb, "select count(*) from (select max(run) from tasks group by uuid)",
 				 sql3_get_integer_cb, &count, NULL) != SQLITE_OK) {
 			lwsl_err("%s: %s: %s: fail\n", __func__, update,
 				 sqlite3_errmsg(vhd->server.pdb));
@@ -291,7 +291,7 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 		 * ... how many completed well?
 		 */
 
-		if (sqlite3_exec((sqlite3 *)e->pdb, "select count(state) from tasks where state == 3",
+		if (sqlite3_exec((sqlite3 *)e->pdb, "select count(*) from (select max(run) as mx, state from tasks group by uuid) where state == 3",
 				 sql3_get_integer_cb, &count_good, NULL) != SQLITE_OK) {
 			lwsl_err("%s: %s: %s: fail\n", __func__, update,
 				 sqlite3_errmsg(vhd->server.pdb));
@@ -302,7 +302,7 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 		 * ... how many failed?
 		 */
 
-		if (sqlite3_exec((sqlite3 *)e->pdb, "select count(state) from tasks where state == 4",
+		if (sqlite3_exec((sqlite3 *)e->pdb, "select count(*) from (select max(run) as mx, state from tasks group by uuid) where state == 4",
 				 sql3_get_integer_cb, &count_bad, NULL) != SQLITE_OK) {
 			lwsl_err("%s: %s: %s: fail\n", __func__, update,
 				 sqlite3_errmsg(vhd->server.pdb));
@@ -375,7 +375,7 @@ bail:
 int
 sais_task_pause(struct vhd *vhd, const char *task_uuid)
 {
-	char event_uuid[33], esc_uuid[129], q[128];
+	char event_uuid[33], esc_uuid[129], q[384];
 	int build_step = -1, state = -1;
 	sqlite3 *pdb = NULL;
 
@@ -388,7 +388,7 @@ sais_task_pause(struct vhd *vhd, const char *task_uuid)
 
 	lws_sql_purify(esc_uuid, task_uuid, sizeof(esc_uuid));
 	lws_snprintf(q, sizeof(q),
-		     "select build_step,state from tasks where uuid='%s'",
+		     "select build_step,state from tasks where uuid='%s' order by run desc limit 1",
 		     esc_uuid);
 
 	if (sqlite3_exec(pdb, q, sql3_get_integer_cb, &build_step,
@@ -408,8 +408,8 @@ sais_task_pause(struct vhd *vhd, const char *task_uuid)
 		if (build_step > 0) {
 			build_step--;
 			lws_snprintf(q, sizeof(q),
-				     "update tasks set build_step=%d where uuid='%s'",
-				     build_step, esc_uuid);
+				     "update tasks set build_step=%d where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
+				     build_step, esc_uuid, esc_uuid);
 			sqlite3_exec(pdb, q, NULL, NULL, NULL);
 		}
 		sais_task_stop_on_builders(vhd, task_uuid);
@@ -486,7 +486,7 @@ sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid)
 
 	builder_name[0] = '\0';
 	lws_sql_purify(esc_uuid, task_uuid, sizeof(esc_uuid));
-	lws_snprintf(q, sizeof(q), "select builder_name from tasks where uuid='%s'",
+	lws_snprintf(q, sizeof(q), "select builder_name from tasks where uuid='%s' order by run desc limit 1",
 		     esc_uuid);
 	if (sqlite3_exec(pdb, q, sql3_get_string_cb, builder_name, NULL) !=
 							SQLITE_OK ||
@@ -565,36 +565,51 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 		return SAI_DB_RESULT_ERROR;
 	}
 
+	struct lwsac *ac = NULL;
+	lws_dll2_owner_t o;
+
 	lws_sql_purify(esc, task_uuid, sizeof(esc));
-	lws_snprintf(cmd, sizeof(cmd), "delete from logs where task_uuid='%s'",
-		     esc);
-
-	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
-	if (ret != SQLITE_OK) {
-		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
-		if (ret == SQLITE_BUSY)
-			return SAI_DB_RESULT_BUSY;
-		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
-			 sqlite3_errmsg(pdb));
-		return SAI_DB_RESULT_ERROR;
+	lws_snprintf(cmd, sizeof(cmd), " and uuid='%s'", esc);
+	
+	ret = lws_struct_sq3_deserialize(pdb, cmd, "run desc", lsm_schema_sq3_map_task, &o, &ac, 0, 1);
+	if (ret >= 0 && o.head) {
+		sai_task_t *t = lws_container_of(o.head, sai_task_t, list);
+		
+		if (!from_rejection)
+			t->run++;
+			
+		t->started = 0;
+		t->duration = 0;
+		t->build_step = 0;
+		
+		if (!from_rejection) {
+			/* Reset builder bindings for the new run so it can be picked up by any suitable builder */
+			t->builder[0] = '\0';
+			t->builder_name[0] = '\0';
+			t->server_name = "";
+			/* serialize as a new row */
+			lws_struct_sq3_serialize(pdb, lsm_schema_sq3_map_task, &o, 0);
+		} else {
+			t->state = SAIES_WAITING;
+			/* update the existing row if it's a rejection */
+			lws_snprintf(cmd, sizeof(cmd), 
+				"update tasks set state=%d,started=0,duration=0,build_step=0 where uuid='%s' and run=%d",
+				SAIES_WAITING, esc, t->run);
+			sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+		}
 	}
-	lws_snprintf(cmd, sizeof(cmd), "delete from artifacts where task_uuid='%s'",
-		     esc);
-
-	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
-	if (ret != SQLITE_OK) {
-		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
-		if (ret == SQLITE_BUSY)
-			return SAI_DB_RESULT_BUSY;
-		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
-			 sqlite3_errmsg(pdb));
-		return SAI_DB_RESULT_ERROR;
-	}
-
+	
+	lwsac_free(&ac);
 	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
-	/* 1,1 == reset started and duration in db for task to 0 */
-	sais_set_task_state(vhd, task_uuid, SAIES_WAITING, 1, 1);
+	if (!from_rejection) {
+		sais_set_task_state(vhd, task_uuid, SAIES_WAITING, 0, 0);
+		sais_taskchange(vhd->h_ss_websrv, task_uuid, SAIES_WAITING);
+		sais_eventchange(vhd->h_ss_websrv, event_uuid, SAIES_WAITING);
+	} else {
+		sais_taskchange(vhd->h_ss_websrv, task_uuid, SAIES_WAITING);
+		sais_eventchange(vhd->h_ss_websrv, event_uuid, SAIES_WAITING);
+	}
 
 	sais_task_stop_on_builders(vhd, task_uuid);
 
@@ -623,7 +638,7 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 sai_db_result_t
 sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 {
-	char esc[96], cmd[256], event_uuid[33];
+	char esc[96], cmd[384], event_uuid[33];
 	struct lwsac *ac = NULL;
 	sqlite3 *pdb = NULL;
 	lws_dll2_owner_t o;
@@ -660,8 +675,8 @@ sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 
 	if (task->build_step > 0) {
 		lws_snprintf(cmd, sizeof(cmd),
-			     "update tasks set build_step=%d where uuid='%s'",
-			     task->build_step - 1, esc);
+			     "update tasks set build_step=%d where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
+			     task->build_step - 1, esc, esc);
 
 		ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 		if (ret != SQLITE_OK) {

@@ -41,7 +41,7 @@ img.tread2 {
 
 img.zup {
 	position: relative;
-	z-index: 1001
+	z-index: 11
 }
 
 .tab label {
@@ -1413,3 +1413,82 @@ canvas.power-graph {
 .taskstate6.prog-95 { background: linear-gradient(90deg, #df3030 95%, transparent 95%); }
 .taskstate6.prog-100 { background: linear-gradient(90deg, #df3030 100%, transparent 100%); }
 
+.taskstate.has_runs {
+	border: 2px solid black;
+	margin: -1px;
+	position: relative;
+	z-index: 10;
+}
+
+.taskstate.has_runs:hover {
+	z-index: 1001;
+	opacity: 1.0 !important;
+}
+
+.runs-popup {
+	display: none;
+	position: absolute;
+	background: #ccc;
+	border: 1px solid black;
+	padding: 5px;
+	z-index: 2000;
+	opacity: 1.0 !important;
+	box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+}
+
+.taskstate:hover {
+	opacity: 1.0 !important;
+}
+
+.taskstate:hover .runs-popup {
+	display: block;
+}
+
+.runs-popup table {
+	border-collapse: collapse;
+}
+
+.runs-popup td {
+	padding: 2px 5px;
+	white-space: nowrap;
+}
+
+.runs-header-container {
+	margin-top: -8px;
+}
+
+.runs-table {
+	border-collapse: separate;
+	border-spacing: 4px 0px;
+}
+
+.runs-table td {
+	text-align: center;
+	padding: 0px 2px;
+}
+
+.runs-popup table {
+	border-collapse: collapse;
+}
+
+.runs-popup td {
+	padding: 2px 8px;
+	text-align: left;
+}
+
+.run-current-decal {
+	border: 2px solid #000;
+	position: relative;
+	border-radius: 4px;
+	display: inline-block;
+}
+
+.run-decal {
+	position: relative;
+	border-radius: 4px;
+	display: inline-block;
+}
+
+.runs-time-cell {
+	white-space: nowrap;
+}

@@ -178,6 +178,7 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_UNSIGNED	(sai_task_t, est_compute_ms,	"est_compute_ms"),
 	LSM_SIGNED	(sai_task_t, parallel,		"parallel"),
 	LSM_SIGNED	(sai_task_t, rebuildable,	"rebuildable"),
+	LSM_SIGNED	(sai_task_t, run,		"run"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {
@@ -242,6 +243,7 @@ const lws_struct_map_t lsm_log[] = {
 	LSM_UNSIGNED	(sai_log_t, finished,		"finished"),
 	LSM_CARRAY	(sai_log_t, task_uuid,		"task_uuid"),
 	LSM_STRING_PTR	(sai_log_t, log,		"log"),
+	LSM_SIGNED	(sai_log_t, run,		"run"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_log[] = {
@@ -288,6 +290,7 @@ const lws_struct_map_t lsm_artifact[] = {
 	LSM_BLOB_PTR	(sai_artifact_t, blob,			"blob"),
 	LSM_UNSIGNED	(sai_artifact_t, timestamp,		"timestamp"),
 	LSM_UNSIGNED	(sai_artifact_t, len,			"len"),
+	LSM_SIGNED	(sai_artifact_t, run,			"run"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_artifact[] = {

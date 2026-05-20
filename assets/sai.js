@@ -1089,6 +1089,22 @@ function sai_taskinfo_render(t, now_ut)
 		sai_arts = "";
 	}
 
+	if (t.runs && t.runs.length > 1) {
+		var r1 = "", r2 = "";
+		s += "<div class=\"runs-header-container\"><table class=\"runs-table\"><tr>";
+		for (var n = t.runs.length - 1; n >= 0; n--) {
+			var r = t.runs[n];
+			var ridx = typeof r.run !== 'undefined' ? r.run : 0;
+			var current = (ridx == (typeof t.t.run !== 'undefined' ? t.t.run : 0));
+			var dcl = current ? "run-current-decal" : "run-decal";
+			var decal = "<div class=\"taskstate taskstate" + r.state + " " + dcl + "\"><a href=\"?task=" + t.t.uuid + "&run=" + ridx + "\">" + sai_plat_icon(r.platform, 0) + "</a></div>";
+			var timeStr = r.started ? agify(now_ut, r.started) + " ago" : "pending";
+			r1 += "<td>" + decal + "</td>";
+			r2 += "<td><span class=\"ti5\">" + timeStr + "</span></td>";
+		}
+		s += r1 + "</tr><tr>" + r2 + "</tr></table></div>";
+	}
+
 	s += "</td></tr>";
 
 	s += "</td></tr></table></table>";
@@ -1159,28 +1175,28 @@ function summarize_build_situation(event_uuid)
 	if (!roo)
 		return { text: "" };
 
-	same = roo.querySelectorAll(".taskstate");
+	same = roo.querySelectorAll(".taskstate:not(.run-decal)");
 	if (same)
 		total = same.length;
-	same = roo.querySelectorAll(".taskstate0");
+	same = roo.querySelectorAll(".taskstate0:not(.run-decal)");
 	if (same)
 		pending = same.length;
-	same = roo.querySelectorAll(".taskstate1");
+	same = roo.querySelectorAll(".taskstate1:not(.run-decal)");
 	if (same)
 		ongoing += same.length;
-	same = roo.querySelectorAll(".taskstate2");
+	same = roo.querySelectorAll(".taskstate2:not(.run-decal)");
 	if (same)
 		ongoing += same.length;
-	same = roo.querySelectorAll(".taskstate3");
+	same = roo.querySelectorAll(".taskstate3:not(.run-decal)");
 	if (same)
 		good = same.length;
-	same = roo.querySelectorAll(".taskstate4");
+	same = roo.querySelectorAll(".taskstate4:not(.run-decal)");
 	if (same)
 		bad += same.length;
-	same = roo.querySelectorAll(".taskstate5");
+	same = roo.querySelectorAll(".taskstate5:not(.run-decal)");
 	if (same)
 		bad += same.length; // treat cancelled as bad
-	same = roo.querySelectorAll(".taskstate6");
+	same = roo.querySelectorAll(".taskstate6:not(.run-decal)");
 	if (same)
 		ongoing += same.length;
 
@@ -1348,8 +1364,24 @@ function sai_event_render(o, now_ut, reset_all_icon)
 
 		s += "<table><tr><td class=\"atop\">";
 
+		var run_max = {}, run_list = {};
+		for (q = 0; q < o.t.length; q++) {
+			var tx = o.t[q];
+			var ru = typeof tx.run !== 'undefined' ? tx.run : 0;
+			if (!run_list[tx.uuid]) run_list[tx.uuid] = [];
+			run_list[tx.uuid].push(tx);
+			if (typeof run_max[tx.uuid] === 'undefined' || ru > (typeof run_max[tx.uuid].run !== 'undefined' ? run_max[tx.uuid].run : 0))
+				run_max[tx.uuid] = tx;
+		}
+		for (var uid in run_list) {
+			run_list[uid].sort(function(a, b) { var ar = typeof a.run !== 'undefined' ? a.run : 0; var br = typeof b.run !== 'undefined' ? b.run : 0; return ar - br; });
+		}
+
 		for (q = 0; q < o.t.length; q++) {
 			var t = o.t[q];
+
+			if (t !== run_max[t.uuid])
+				continue;
 
 			if (t.taskname !== ctn) {
 				if (ctn !== "") {
@@ -1363,10 +1395,22 @@ function sai_event_render(o, now_ut, reset_all_icon)
 			}
 
 			s1 += "<div id=\"taskstate_" + t.uuid + "\" class=\"taskstate taskstate" + t.state +
+				(run_list[t.uuid].length > 1 ? " has_runs" : "") +
 				"\" data-event-uuid=\"" + san(e.uuid) + "\" data-platform=\"" + san(t.platform) +
 				"\" data-rebuildable=\"" + t.rebuildable + "\">";
 			s1 += "<a href=\"/sai/index.html?task=" + t.uuid + "\">" +
 				sai_plat_icon(t.platform, 0) + "</a>";
+			if (run_list[t.uuid].length > 1) {
+				s1 += "<div class=\"runs-popup\"><table>";
+				for (var w = 0; w < run_list[t.uuid].length; w++) {
+					var rt = run_list[t.uuid][w];
+					var rr = typeof rt.run !== 'undefined' ? rt.run : 0;
+					var decal = "<div class=\"taskstate taskstate" + rt.state + " run-decal\"><a href=\"/sai/index.html?task=" + t.uuid + "&run=" + rr + "\">" + sai_plat_icon(rt.platform, 0) + "</a></div>";
+					var timeStr = rt.started ? agify(now_ut, rt.started) + " ago" : "pending";
+					s1 += "<tr><td>" + decal + "</td><td class=\"runs-time-cell\"><span class=\"ti5\">" + timeStr + "</span></td></tr>";
+				}
+				s1 += "</table></div>";
+			}
 			s1 += "</div>";
 		}
 
@@ -1385,7 +1429,7 @@ function sai_event_render(o, now_ut, reset_all_icon)
 
 	s += "</tr>";
 
-	return s;
+	return "<tbody id=\"ev-group-" + o.e.uuid + "\">" + s + "</tbody>";
 }
 
 function getBuilderHostname(platName) {
@@ -2032,10 +2076,10 @@ function ws_open_sai()
 			document.body.classList.remove("overlay-active");
 
 			var par = new URLSearchParams(window.location.search),
-				tid, eid;
+				tid, eid, run_idx;
 			tid = par.get('task');
 			eid = par.get('event');
-
+			run_idx = par.get('run');
 
 			if (tid) {
 				/*
@@ -2046,13 +2090,17 @@ function ws_open_sai()
 
 				 console.log("tid " + tid);
 
-				 sai.send("{\"schema\":" +
+				 var req = "{\"schema\":" +
 					  "\"com.warmcat.sai.taskinfo\"," +
 					  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
 					  "\"logs\": 1," +
-					  "\"last_log_ts\":" + last_log_timestamp + "," +
-					  "\"task_hash\":" +
-					  JSON.stringify(tid) + "}");
+					  "\"last_log_ts\":" + last_log_timestamp + ",";
+				 if (run_idx)
+					 req += "\"run\":" + run_idx + ",";
+				 else
+					 req += "\"run\": -1,";
+				 req += "\"task_hash\":" + JSON.stringify(tid) + "}";
+				 sai.send(req);
 
 				 return;
 			}
@@ -2302,15 +2350,16 @@ function ws_open_sai()
 				// console.log("jso.overview.length " + jso.overview.length);
 
 				if (jso.overview.length == 1 &&
-				    document.getElementById("esr-" + jso.overview[0].e.uuid)) {
-					/* this is just the summary box, not the tasks */
-					document.getElementById("esr-" + jso.overview[0].e.uuid).innerHTML =
-						sai_event_summary_render(jso.overview[0], now_ut, 1);
+				    document.getElementById("ev-group-" + jso.overview[0].e.uuid)) {
+					/* completely replace the event HTML to capture new runs/tasks */
+					document.getElementById("ev-group-" + jso.overview[0].e.uuid).outerHTML =
+						sai_event_render(jso.overview[0], now_ut, 1);
 
-					/* if the task status icons exist, update their state */
-
-					for (n = jso.overview[0].t.length - 1; n >= 0; n--)
-						refresh_state(jso.overview[0].t[n]);
+					/* restore progress bars via refresh_state */
+					if (jso.overview[0].t) {
+						for (n = jso.overview[0].t.length - 1; n >= 0; n--)
+							refresh_state(jso.overview[0].t[n]);
+					}
 
 					update_summary_and_progress(jso.overview[0].e.uuid);
 
@@ -2469,7 +2518,15 @@ function ws_open_sai()
 					/* update task summary if shown anywhere */
 
 					if (document.getElementById("taskinfo-" + jso.t.uuid)) {
-						console.log("FOUND taskinfo-" + jso.t.uuid);
+						if (typeof window.current_task_run !== 'undefined' && window.current_task_run !== jso.t.run) {
+							if (document.getElementById("sai-task-logs"))
+								document.getElementById("sai-task-logs").innerHTML = "";
+							/* update the URL without reloading so sharing works */
+							const newUrl = new URL(window.location.href);
+							newUrl.searchParams.set('run', jso.t.run);
+							window.history.replaceState({}, '', newUrl);
+						}
+						window.current_task_run = jso.t.run;
 						document.getElementById("taskinfo-" + jso.t.uuid).innerHTML = sai_taskinfo_render(jso);
 						if (jso.e) {
 							if (document.getElementById("esr-" + jso.e.uuid))
@@ -2495,6 +2552,7 @@ function ws_open_sai()
 
 						if (url_task_uuid === jso.t.uuid &&
 						    document.getElementById("sai_sticky")) {
+							window.current_task_run = jso.t.run;
 							document.getElementById("sai_sticky").innerHTML =
 								"<div class=\"taskinfo\" id=\"taskinfo-" +
 								san(jso.t.uuid) + "\">" +
@@ -2536,15 +2594,21 @@ function ws_open_sai()
 								console.log(rs);
 								sai.send(rs);
 
+								var tid = san(e.srcElement.id.substring(8));
+								if (new URLSearchParams(window.location.search).get('run')) {
+									window.location.search = '?task=' + tid;
+									return;
+								}
+
 								/*
 								 * and immediately re-request the task info, so we can get
 								 * the new logs
 								 */
-								var tid = san(e.srcElement.id.substring(8));
 								var rq = "{\"schema\":" +
 									  "\"com.warmcat.sai.taskinfo\"," +
 									  "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
 									  "\"logs\": 1," +
+									  "\"run\": -1," +
 									  "\"last_log_ts\":" + last_log_timestamp + "," +
 									  "\"task_hash\":" +
 									  JSON.stringify(tid) + "}";

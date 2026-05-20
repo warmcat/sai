@@ -142,6 +142,7 @@ add_dependencies(${SUB} sai_git_hash)
 			../../assets/tc-mingw32.svg
 			../../assets/tc-mingw64.svg
 			../../assets/tc-msvc.svg
+			../../assets/tc-msvc-schannel.svg
 			../../assets/tc-wmbedtlsmsvc.svg
 			../../assets/tc-noptmsvc.svg
 			../../assets/ubuntu.svg

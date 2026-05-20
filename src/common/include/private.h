@@ -221,6 +221,7 @@ typedef struct {
 	char				told_ongoing;
 
 	char				rebuildable;
+	int				run;
 } sai_task_t;
 
 struct saib_logproxy {
@@ -374,6 +375,7 @@ typedef struct {
 	/* builder can report this along with step completion */
 	unsigned int			avail_mem_kib;
 	unsigned int			avail_sto_kib;
+	int				run;
 } sai_log_t;
 
 typedef struct {
@@ -395,6 +397,7 @@ typedef struct {
 	int				uid;
 	int				fd;
 	char				sent_json;
+	int				run;
 } sai_artifact_t;
 
 /* communication part of resource allocation requests */
@@ -624,6 +627,7 @@ typedef struct sai_browse_rx_taskinfo {
 	unsigned int			js_api_version;
 	unsigned int			offset;
 	uint8_t				logs;
+	int				run;
 } sai_browse_rx_taskinfo_t;
 
 /* sai-power -> sai-server, tells it that a platform is being powered up */
@@ -794,9 +798,9 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[12],
-	lsm_task[30],
-	lsm_log[7],
-	lsm_artifact[8],
+	lsm_task[31],
+	lsm_log[8],
+	lsm_artifact[9],
 	lsm_plat_list[1],
 	lsm_schema_map_plat[1],
 	lsm_task_rej[4],

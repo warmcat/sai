@@ -75,7 +75,7 @@ sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache
 		return 3;
 	}
 
-	sai_sqlite3_statement(*ppdb, "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_uuid ON tasks(uuid);", "create task index");
+	sai_sqlite3_statement(*ppdb, "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_uuid ON tasks(uuid, run);", "create task index");
 
 	sai_sqlite3_statement(*ppdb, "PRAGMA journal_mode=WAL;", "set WAL");
 
@@ -94,6 +94,11 @@ sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache
 	}
 
 	sai_sqlite3_statement(*ppdb, "CREATE INDEX IF NOT EXISTS idx_art_task ON artifacts(task_uuid);", "create artifact index");
+
+	
+	/* Migrate the unique index to include the run column */
+	sqlite3_exec(*ppdb, "DROP INDEX IF EXISTS idx_task_uuid;", NULL, NULL, NULL);
+	sqlite3_exec(*ppdb, "CREATE UNIQUE INDEX idx_task_uuid ON tasks(uuid, run);", NULL, NULL, NULL);
 
 	sc = malloc(sizeof(*sc));
 	if (!sc) {

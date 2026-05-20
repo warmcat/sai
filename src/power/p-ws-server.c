@@ -202,8 +202,8 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	lws_struct_args_t a;
 	struct lejp_ctx ctx;
 
-	lwsl_notice("%s: PPPPPPPP len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
-	lwsl_hexdump_notice(buf, len);
+	// lwsl_notice("%s: PPPPPPPP len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
+	// lwsl_hexdump_notice(buf, len);
 
 	memset(&a, 0, sizeof(a));
 	a.map_st[0] = lsm_saip_rx_map;

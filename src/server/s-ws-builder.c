@@ -116,6 +116,17 @@ sais_dump_logs_to_db(lws_sorted_usec_list_t *sul)
 			 * more efficient
 			 */
 
+			int run = 0;
+			char q[128];
+			
+			lws_snprintf(q, sizeof(q), "select max(run) from tasks where uuid='%s'", lcpt->uuid);
+			sqlite3_exec(pdb, q, sql3_get_integer_cb, &run, NULL);
+
+			lws_start_foreach_dll(struct lws_dll2 *, pq, lcpt->cache.head) {
+				sai_log_t *hl = lws_container_of(pq, sai_log_t, list);
+				hl->run = run;
+			} lws_end_foreach_dll(pq);
+
 			sqlite3_exec(pdb, "BEGIN TRANSACTION", NULL, NULL, &err);
 			if (err)
 				sqlite3_free(err);
@@ -251,8 +262,8 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 	lws_sql_purify(esc_uuid, log->task_uuid, sizeof(esc_uuid));
 
 	lws_snprintf(q, sizeof(q),
-		     "UPDATE tasks SET build_step=%d WHERE uuid='%s'",
-		     step, esc_uuid);
+		     "UPDATE tasks SET build_step=%d WHERE uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
+		     step, esc_uuid, esc_uuid);
 
 	if (sai_sqlite3_statement(pdb, q, "update build_step"))
 		lwsl_err("%s: failed to update build_step\n", __func__);
@@ -455,8 +466,8 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 
 						lws_snprintf(q, sizeof(q),
 							"SELECT uuid FROM tasks WHERE "
-							"(state = %d OR state = %d) AND "
-							"builder_name = ?",
+							"builder_name=? AND (state = %d OR state = %d) "
+							"AND run=(SELECT max(run) FROM tasks t2 WHERE t2.uuid = tasks.uuid)",
 							SAIES_PASSED_TO_BUILDER,
 							SAIES_BEING_BUILT);
 
@@ -532,7 +543,7 @@ static int
 sais_process_rej(struct vhd *vhd, struct pss *pss,
 		 sai_plat_t *sp, sai_rejection_t *rej)
 {
-	char event_uuid[33], do_remove_uuid = 0, q[128], esc_uuid[129];
+	char event_uuid[33], do_remove_uuid = 0, q[384], esc_uuid[129];
 	int n, build_step = -1;
 	sqlite3 *pdb = NULL;
 	sai_uuid_list_t *ul;
@@ -553,7 +564,7 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 
 		lws_sql_purify(esc_uuid, rej->task_uuid, sizeof(esc_uuid));
 		lws_snprintf(q, sizeof(q),
-			     "select build_step from tasks where uuid='%s'",
+			     "select build_step from tasks where uuid='%s' order by run desc limit 1",
 			     esc_uuid);
 
 		if (sqlite3_exec(pdb, q, sql3_get_integer_cb, &build_step,
@@ -567,22 +578,23 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 		build_step++;
 		lws_snprintf(q, sizeof(q),
 			     "update tasks set build_step=%d "
-			     "where state != 4 and uuid='%s'",
-			     build_step, esc_uuid);
-		sqlite3_exec(pdb, q, NULL, NULL, NULL);
+			     "where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
+			     build_step, esc_uuid, esc_uuid);
+		if (sai_sqlite3_statement(pdb, q, "update build_step accepted"))
+			lwsl_err("%s: failed to update build_step\n", __func__);
 
 		lwsl_notice("%s: &&&&&&&& build_step set to %d\n", __func__, build_step);
 
 		if (build_step == 1) {
 			pss->first_log_timestamp = (uint64_t)lws_now_secs();
 			lws_snprintf(q, sizeof(q),
-			     "update tasks set started=%llu where uuid='%s'",
-			     (unsigned long long)pss->first_log_timestamp, esc_uuid);
+			     "update tasks set started=%llu where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
+			     (unsigned long long)pss->first_log_timestamp, esc_uuid, esc_uuid);
 
 			lwsl_warn("%s: &&&&&&&&&&&&&&&&&&&&&&&&&& setting task %s started to %llu\n",
 				  __func__, esc_uuid, (unsigned long long)pss->first_log_timestamp);
 
-			if (sqlite3_exec(pdb, q, NULL, NULL, NULL) != SQLITE_OK)
+			if (sai_sqlite3_statement(pdb, q, "update started"))
 				lwsl_notice("%s: unable to set started\n", __func__);
 		}
 
@@ -1074,7 +1086,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				lws_sql_purify(esc, ap->task_uuid, sizeof(esc));
 				lws_snprintf(s, sizeof(s)," and uuid == \"%s\"", esc);
 				n = lws_struct_sq3_deserialize(pss->pdb_artifact, s,
-							       NULL, lsm_schema_sq3_map_task,
+							       "run desc", lsm_schema_sq3_map_task,
 							       &o, &ac, 0, 1);
 				if (n < 0 || !o.head) {
 					sai_event_db_close(&vhd->sqlite3_cache, &pss->pdb_artifact);
@@ -1107,6 +1119,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 
 				sai_uuid16_create(pss->vhd->context,
 						  ap->artifact_down_nonce);
+
+				ap->run = task->run;
 
 				lws_dll2_owner_clear(&o);
 				lws_dll2_add_head(&ap->list, &o);
@@ -1210,7 +1224,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				ap = (sai_artifact_t *)pss->a.dest;
 
 				lws_sql_purify(esc, ap->task_uuid, sizeof(esc));
-				lws_snprintf(s, sizeof(s)," select state from tasks where uuid == \"%s\"", esc);
+				lws_snprintf(s, sizeof(s)," select state from tasks where uuid == \"%s\" order by run desc limit 1", esc);
 				if (sqlite3_exec((sqlite3 *)pss->pdb_artifact, s,
 						 sql3_get_integer_cb, &state, NULL) != SQLITE_OK) {
 					lwsl_err("%s: %s: %s: fail\n", __func__, s,
