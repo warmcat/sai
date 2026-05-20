@@ -644,7 +644,7 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 
 		if (sais_set_task_state(vhd, rej->task_uuid, n, 0,
 					lws_now_secs() - pss->first_log_timestamp))
-			return 1;
+			lwsl_notice("%s: task state update failed, possibly event deleted\n", __func__);
 
 		sais_plat_busy(sp, 0);
 		break;

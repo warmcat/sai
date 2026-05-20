@@ -688,8 +688,15 @@ saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	lws_spawn_piped_kill_child_process(ns->op->lsp);
-	if (!--ns->term_budget)
+	if (!--ns->term_budget) {
+		lwsl_err("%s: unable to kill child process -> destroying ns forcibly\n", __func__);
+		if (ns->op) {
+			ns->op->ns = NULL;
+			ns->op = NULL;
+		}
+		saib_task_destroy(ns);
 		return;
+	}
 
 	lws_sul_schedule(ns->builder->context, 0, &ns->sul_task_cancel,
 			 saib_sul_task_cancel, 500 * LWS_US_PER_MS);
