@@ -1,0 +1,9 @@
+[Unit]
+Description=Sai Virtualization Daemon
+After=network-online.target ntp.service
+
+[Service]
+ExecStart=/usr/local/bin/sai-virt
+
+[Install]
+WantedBy=multi-user.target

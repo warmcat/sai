@@ -1,0 +1,24 @@
+{
+        "perms":        "sai:nobody",
+        "home":         "/home/sai",
+        "hostname":     "virt-host-1",
+        "max_vms":      4,
+
+        "servers": [
+                {
+                        "url": "wss://libwebsockets.org:4444/sai/builder"
+                }
+        ],
+
+        "platforms": [
+                {
+                        "name": "windows-x86_64"
+                },
+                {
+                        "name": "mac-m1"
+                },
+                {
+                        "name": "linux-fedora-x86_64"
+                }
+        ]
+}
