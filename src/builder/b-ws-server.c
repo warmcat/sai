@@ -610,10 +610,15 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		memcpy((char *)spm->name, pq, (unsigned int)n);
 		((char *)spm->name)[n] = '\0';
 
-		while (strchr(spm->name, '.'))
-			*strchr(spm->name, '.') = '_';
-		while (strchr(spm->name, '/'))
-			*strchr(spm->name, '/') = '_';
+		{
+			char *p_name = (char *)spm->name;
+			char *p_found;
+
+			while ((p_found = strchr(p_name, '.')))
+				*p_found = '_';
+			while ((p_found = strchr(p_name, '/')))
+				*p_found = '_';
+		}
 
 		/* add us to the builder list of unique servers */
 		lws_dll2_add_head(&spm->list, &a->builder->sai_plat_server_owner);

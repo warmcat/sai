@@ -58,7 +58,7 @@ saip_parse_tasmota_status(tasmota_parse_t *tp)
 {
 	lws_tokenize_elem e;
 	unsigned int *i;
-	char *p;
+	const char *p;
 	int n;
 
 	do {

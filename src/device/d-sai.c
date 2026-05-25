@@ -213,7 +213,7 @@ said_check_device(lws_sorted_usec_list_t *sul)
 				lwsl_warn("%s: exporting %s = %s\n", __func__, p1, t->tty_path);
 
 				if (alias) {
-					p1 = strchr(alias, '=');
+					p1 = strchr((char *)alias, '=');
 					if (p1 && atoi(&p1[1]) == try) {
 						*p1 = '\0';
 						setenv(alias, t->tty_path, 1);

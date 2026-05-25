@@ -160,7 +160,7 @@ arg_to_bool(const char *s)
 static int
 sai_tuple_element_compare(const char *e1, const char *e2)
 {
-	char *p;
+	const char *p;
 
 	// lwsl_notice("%s: comp '%s' '%s'\n", __func__, e1, e2);
 
