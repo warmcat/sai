@@ -73,7 +73,7 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 		r = lws_ss_request_tx(ap->ss);
 		if (r)
 			return r;
-		lwsl_notice("%s: sent JSON %s\n", __func__, (const char *)buf);
+		lwsl_info("%s: sent JSON %s\n", __func__, (const char *)buf);
 
 		return LWSSSSRET_OK;
 	}

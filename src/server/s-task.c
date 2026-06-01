@@ -436,7 +436,7 @@ next1: ;
 		lwsac_free(&pss->ac_alloc_task);
 		lws_dll2_owner_t owner;
 		lws_dll2_owner_clear(&owner);
-		n = lws_struct_sq3_deserialize(pdb, pf, "uid asc ",
+		n = lws_struct_sq3_deserialize(pdb, pf, "taskname asc, uid asc ",
 					       lsm_schema_sq3_map_task,
 					       &owner, &pss->ac_alloc_task, 0, 1);
 		// lwsl_notice("%s: deser returned %d\n", __func__, n);

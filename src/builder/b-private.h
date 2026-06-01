@@ -67,6 +67,7 @@
 extern char suspender_exists;
 
 struct lws_spawn_piped;
+struct lws_stub_manager;
 
 struct saib_opaque_spawn {
 	struct sai_nspawn	*ns;
@@ -170,12 +171,11 @@ struct sai_builder {
 	uint64_t		disk_reserved_kib;
 
 #if !defined(WIN32)
-	int			pipe_master_wr;
 	int			pipe_suspender_wr;
 #else
-	void			*pipe_master_wr_win;
 	void			*pipe_suspender_wr;
 #endif
+	struct lws_stub_manager	*mgr_deletion;
 };
 
 struct jpargs {

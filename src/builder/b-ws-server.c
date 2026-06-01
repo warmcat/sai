@@ -121,8 +121,6 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 			return -1;
 		}
 
-		sai_dump_stderr(buf + LWS_PRE, w);
-
 		if (saib_srv_queue_tx(h, buf + LWS_PRE, w, ssf))
 			return -1;
 
@@ -189,17 +187,13 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 		lwsl_notice("%s: received task cancel for %s, erase %d\n", __func__, can->task_uuid, can->erase);
 
 		if (can->erase) {
-#if !defined(WIN32)
-			if (write(builder.pipe_master_wr, can->task_uuid,
-				  LWS_POSIX_LENGTH_CAST(strlen(can->task_uuid))) != (ssize_t)strlen(can->task_uuid))
-				lwsl_err("%s: failed to write to deletion worker\n",
-					 __func__);
-#else
-			DWORD written;
-			if (!WriteFile(builder.pipe_master_wr_win, can->task_uuid,
-				       (DWORD)strlen(can->task_uuid), &written, NULL))
-				lwsl_err("%s: failed to write to deletion worker\n",
-					 __func__);
+#if defined(LWS_WITH_STUB)
+			if (builder.mgr_deletion) {
+				char json[256];
+				lws_snprintf(json, sizeof(json), "{\"delete\": \"%s\"}", can->task_uuid);
+				if (lws_stub_request(builder.mgr_deletion, json, NULL, 0, NULL, NULL, NULL) < 0)
+					lwsl_err("%s: failed to queue deletion\n", __func__);
+			}
 #endif
 		}
 

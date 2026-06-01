@@ -98,6 +98,16 @@ struct sai_builder builder;
 
 extern struct lws_protocols protocol_stdxxx;
 extern struct lws_protocols protocol_suspender_stdxxx;
+extern struct lws_protocols protocol_deletion_stdxxx;
+
+#if defined(LWS_WITH_STUB)
+static const struct lws_protocols protocol_stub_client = {
+	.name = "lws-stub-client",
+	.callback = lws_callback_stub_client,
+	.per_session_data_size = 0,
+	.rx_buffer_size = 4096,
+};
+#endif
  
 static const char * const default_ss_policy =
 	"{"
@@ -191,6 +201,10 @@ static const struct lws_protocols *pprotocols[] = {
 	&protocol_logproxy,
 	&protocol_resproxy,
 	&protocol_suspender_stdxxx,
+	&protocol_deletion_stdxxx,
+#if defined(LWS_WITH_STUB)
+	&protocol_stub_client,
+#endif
 #if defined(LWS_WITH_SYS_METRICS) && defined(LWS_WITH_PLUGINS_BUILTIN)
 	&lws_openmetrics_export_protocols[LWSOMPROIDX_PROX_WS_CLIENT],
 #else
@@ -425,10 +439,6 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 		if (saib_stay_init())
 			return 1;
 
-		lwsl_info("%s: scheduling initial cleanup in 100ms\n", __func__);
-		lws_sul_schedule(builder.context, 0, &builder.sul_cleanup_jobs,
-			 sul_cleanup_jobs_cb, 100 * LWS_US_PER_MS);
-
 		/* let's sample the best possible free RAM + disk situation,
 		 * we will derate it a bit when using it */
 		builder.ram_limit_kib	= saib_get_free_ram_kib();
@@ -476,6 +486,31 @@ void saib_app_stop(void)
 	lws_cancel_service(builder.context);
 }
 
+#if defined(__linux__) || defined(__APPLE__)
+#include <execinfo.h>
+void
+crash_handler(int signum)
+{
+	void *array[20];
+	int size;
+	char **strings;
+
+	lwsl_err("FATAL: Caught signal %d, producing backtrace:\n", signum);
+
+	size = backtrace(array, 20);
+	strings = backtrace_symbols(array, size);
+
+	if (strings != NULL) {
+		for (int i = 0; i < size; i++)
+			lwsl_err("  %s\n", strings[i]);
+		free(strings);
+	}
+
+	signal(signum, SIG_DFL);
+	abort();
+}
+#endif
+
 int
 saib_app_run(int argc, const char **argv)
 {
@@ -487,7 +522,9 @@ saib_app_run(int argc, const char **argv)
 	struct stat sb;
 	const char *p;
 
+#if defined(__APPLE__) || defined(__linux__)
 	static char execpath[PATH_MAX];
+#endif
 
 	argv0 = argv[0];
 
@@ -507,12 +544,15 @@ saib_app_run(int argc, const char **argv)
 	}
 #endif
 
-	if ((p = lws_cmdline_option(argc, argv, "--home")))
-		/*
-		 * This is the deletion worker process being spawned, it only
-		 * needs to know the home dir to clean up inside
-		 */
-		return sai_deletion_worker(p);
+	if ((p = lws_cmdline_option(argc, argv, "--lws-stub="))) {
+		if (!strcmp(p, "sai-deletion")) {
+#if defined(LWS_WITH_STUB)
+			return sai_deletion_worker(NULL);
+#else
+			return 1;
+#endif
+		}
+	}
 
 	if ((p = lws_cmdline_option(argc, argv, "-s"))) {
 		lwsl_notice("%s: starting shutdown worker\n", __func__);
@@ -539,6 +579,14 @@ saib_app_run(int argc, const char **argv)
 			return 1;
 		lws_set_log_level(logs, lwsl_emit_syslog);
 	} else
+#endif
+
+#if defined(__linux__) || defined(__APPLE__)
+	signal(SIGSEGV, crash_handler);
+	signal(SIGABRT, crash_handler);
+	signal(SIGBUS, crash_handler);
+	signal(SIGILL, crash_handler);
+	signal(SIGFPE, crash_handler);
 #endif
 
 	lws_set_log_level(logs, NULL);
@@ -662,6 +710,9 @@ saib_app_run(int argc, const char **argv)
 
 	/* create the lws context */
 
+	info.argc = argc;
+	info.argv = argv;
+
 	builder.context = lws_create_context(&info);
 	if (!builder.context) {
 		lwsl_err("lws init failed\n");
@@ -676,7 +727,7 @@ saib_app_run(int argc, const char **argv)
 		return 1;
 	}
 
-	while (!lws_service(builder.context, 0) && !interrupted)
+	while (lws_service(builder.context, 0) >= 0 && !interrupted)
 		;
 
 	suspender_destroy();

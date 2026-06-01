@@ -184,7 +184,7 @@ saib_reassess_idle_situation()
 							struct sai_nspawn, list);
 
 				if (xns->task)
-				lwsl_notice("%s: ongoing task: %s\n", __func__,
+				lwsl_info("%s: ongoing task: %s\n", __func__,
 							xns->task->uuid);
 
 			} lws_end_foreach_dll_safe(d, d1);

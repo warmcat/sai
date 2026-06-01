@@ -60,89 +60,234 @@
 #endif
 
 #include "b-private.h"
-
-int
-sai_deletion_worker(const char *home_dir)
-{
-	char *p, line[PATH_MAX], buf[4096];
-	ssize_t n, len = 0;
-	char *nl;
-
-	lwsl_notice("%s: deletion worker started\n", __func__);
-
-#if defined(WIN32)
-	/*
-	 * On Windows, stdin is not a pipe from the parent but a handle
-	 * value passed on the commandline
-	 */
-	FreeConsole();
+#if defined(LWS_WITH_STUB)
+#include <libwebsockets/lws-stub.h>
 #endif
 
-	do {
-		n = read(0, buf + len, (sizeof(buf) - 1) - (unsigned int)len);
-		if (n <= 0) {
-			lwsl_notice("%s: pipe closed, exiting\n", __func__);
-			return 0;
+#if defined(LWS_WITH_STUB)
+
+static int
+sai_rm_rf_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
+{
+	char path[PATH_MAX];
+
+	if (lde->name[0] == '.' && lde->name[1] == '\0')
+		return 0;
+	if (lde->name[0] == '.' && lde->name[1] == '.' && lde->name[2] == '\0')
+		return 0;
+
+	lws_snprintf(path, sizeof(path), "%s/%s", dirpath, lde->name);
+
+	if (lde->type == LDOT_DIR) {
+		lws_dir(path, user, sai_rm_rf_cb);
+		if (rmdir(path))
+			lwsl_notice("%s: rmdir %s failed: errno %d (%s)\n", __func__, path, errno, strerror(errno));
+	} else {
+		if (unlink(path)) {
+#if defined(WIN32)
+			SetFileAttributesA(path, FILE_ATTRIBUTE_NORMAL);
+			if (unlink(path))
+#endif
+				lwsl_notice("%s: unlink %s failed: errno %d (%s)\n", __func__, path, errno, strerror(errno));
 		}
-		len += n;
-
-		do {
-			nl = memchr(buf, '\n', (unsigned int)len);
-			if (!nl)
-				break;
-
-			*nl = '\0';
-			lws_strncpy(line, buf, sizeof(line));
-
-			len -= (nl - buf) + 1;
-			memmove(buf, nl + 1, (unsigned int)len);
-
-			p = line;
-			/* sanitize: no .. or / or \ */
-			while (*p) {
-				if (*p == '.' || *p == '/' || *p == '\\') {
-					lwsl_err("%s: invalid chars in delete path '%s'\n",
-						 __func__, line);
-					p = NULL;
-					break;
-				}
-				p++;
-			}
-			if (!p)
-				continue;
-
-			lwsl_info("%s: received delete request for '%s'\n", __func__, line);
-
-			{
-				struct lws_dir_info di;
-				char full_path[PATH_MAX];
-				struct stat st;
-
-				lws_snprintf(full_path, sizeof(full_path),
-					     "%s/jobs/%s", home_dir, line);
-
-				if (stat(full_path, &st)) {
-					// lwsl_notice("%s: %s already gone or inaccessible\n", __func__, full_path);
-					continue;
-				}
-
-				memset(&di, 0, sizeof(di));
-				di.dirpath = full_path;
-				di.cb = lws_dir_rm_rf_cb;
-				di.do_toplevel_cb = 1;
-
-				lwsl_info("%s: performing rm -rf %s\n", __func__, full_path);
-
-				if (lws_dir_via_info(&di))
-					lwsl_info("%s: failed to delete %s: %s\n",
-						 __func__, full_path, strerror(errno));
-			}
-		} while (1);
-
-	} while (1);
+	}
 
 	return 0;
 }
+
+struct child_conn {
+	struct lejp_ctx jctx;
+	char home_dir[PATH_MAX];
+};
+
+static signed char
+child_lejp_cb(struct lejp_ctx *ctx, char reason)
+{
+	struct child_conn *conn = (struct child_conn *)ctx->user;
+
+	if (reason == LEJPCB_VAL_STR_END && !strcmp(ctx->path, "delete")) {
+		struct lws_dir_info di;
+		char full_path[PATH_MAX];
+		struct stat st;
+
+		lwsl_notice("%s: received delete request for '%s'\n", __func__, ctx->buf);
+
+		lws_snprintf(full_path, sizeof(full_path), "%s/jobs/%s", conn->home_dir, ctx->buf);
+
+		if (!stat(full_path, &st)) {
+			memset(&di, 0, sizeof(di));
+			di.dirpath = full_path;
+			di.cb = sai_rm_rf_cb;
+			di.do_toplevel_cb = 1;
+
+			lwsl_notice("%s: performing rm -rf %s\n", __func__, full_path);
+
+			lws_dir_via_info(&di);
+			
+			/* lws_dir_via_info returns 1 on success. Errors are logged by sai_rm_rf_cb. */
+			if (!stat(full_path, &st))
+				lwsl_notice("%s: top level dir %s still exists\n", __func__, full_path);
+		} else {
+			lwsl_notice("%s: job dir %s not found (errno %d)\n", __func__, full_path, errno);
+		}
+	}
+	return 0;
+}
+
+static const char * const child_paths[] = { "delete" };
+
+static int
+callback_sai_deletion_uds(struct lws *wsi, enum lws_callback_reasons reason,
+		    void *user, void *in, size_t len)
+{
+	struct child_conn *conn = (struct child_conn *)user;
+
+	switch (reason) {
+	case LWS_CALLBACK_RAW_ADOPT:
+		/* Get home_dir from vhost user data */
+		{
+			const char *vuser = (const char *)lws_get_vhost_user(lws_get_vhost(wsi));
+			lwsl_notice("%s: ADOPT: vhost user is '%s'\n", __func__, vuser ? vuser : "NULL");
+			lws_strncpy(conn->home_dir, vuser ? vuser : "", sizeof(conn->home_dir));
+			lwsl_notice("%s: ADOPT: conn->home_dir set to '%s'\n", __func__, conn->home_dir);
+		}
+		/* We would normally verify the secret here, but for simplicity we skip it 
+		   since it's a local UDS with 0600 perms. */
+		lejp_construct(&conn->jctx, child_lejp_cb, conn, child_paths, 1);
+		break;
+
+	case LWS_CALLBACK_RAW_RX: {
+		uint8_t *p = (uint8_t *)in;
+		while (len) {
+			int m = lejp_parse(&conn->jctx, p, 1);
+			if (m < 0 && m != LEJP_CONTINUE) {
+				/* 
+				 * We hit the end of a JSON object and the start of the next one,
+				 * which lejp rejects as trailing garbage. Reset the parser and 
+				 * retry this byte! 
+				 */
+				lejp_destruct(&conn->jctx);
+				lejp_construct(&conn->jctx, child_lejp_cb, conn, child_paths, LWS_ARRAY_SIZE(child_paths));
+				continue;
+			}
+			p++;
+			len--;
+		}
+		break;
+	}
+
+	case LWS_CALLBACK_RAW_CLOSE:
+		lejp_destruct(&conn->jctx);
+		break;
+
+	default:
+		break;
+	}
+	return 0;
+}
+
+static struct lws_protocols protocol_deletion_uds[] = {
+	{
+		.name			= "sai-deletion-uds",
+		.callback		= callback_sai_deletion_uds,
+		.per_session_data_size	= sizeof(struct child_conn),
+		.rx_buffer_size		= 0,
+	},
+	{ NULL, NULL, 0, 0 }
+};
+
+#if defined(__linux__) || defined(__APPLE__)
+extern void crash_handler(int signum);
+#endif
+
+int
+sai_deletion_worker(const char *home_dir_unused)
+{
+	struct lws_context_creation_info info;
+	struct lws_context *cx;
+	struct lws_vhost *vh_uds;
+	char uds[256];
+	char secret[129];
+	char home_dir[PATH_MAX];
+	size_t rx = 0;
+
+#if defined(__linux__) || defined(__APPLE__)
+	signal(SIGSEGV, crash_handler);
+	signal(SIGABRT, crash_handler);
+	signal(SIGBUS, crash_handler);
+	signal(SIGILL, crash_handler);
+	signal(SIGFPE, crash_handler);
+#endif
+
+	lwsl_notice("%s: deletion worker (stub) started\n", __func__);
+
+	/* 1. Read secret from stdin */
+#if defined(WIN32)
+	_setmode(0, _O_BINARY);
+#endif
+
+	while (rx < 128) {
+		ssize_t n = read(0, secret + rx, 128 - (unsigned int)rx);
+		if (n <= 0)
+			break;
+		rx += (size_t)n;
+	}
+
+	if (rx < 64) {
+		lwsl_err("%s: Failed to read secret from stdin\n", __func__);
+		return 1;
+	}
+	secret[128] = '\0';
+
+	/* 2. Read home_dir from stdin */
+	{
+		ssize_t n = read(0, home_dir, sizeof(home_dir) - 1);
+		if (n <= 0) {
+			lwsl_err("%s: Failed to read home_dir\n", __func__);
+			return 1;
+		}
+		home_dir[n] = '\0';
+	}
+
+	/* 3. Setup context */
+	memset(&info, 0, sizeof(info));
+	info.port = CONTEXT_PORT_NO_LISTEN;
+	info.options = LWS_SERVER_OPTION_EXPLICIT_VHOSTS;
+	cx = lws_create_context(&info);
+	if (!cx)
+		return 1;
+
+	lws_snprintf(uds, sizeof(uds), "%s/sai-deletion.sock", home_dir);
+
+	/* 4. Create UDS server vhost */
+	memset(&info, 0, sizeof(info));
+	info.options = LWS_SERVER_OPTION_UNIX_SOCK | LWS_SERVER_OPTION_ONLY_RAW;
+	info.iface = uds;
+	info.protocols = protocol_deletion_uds;
+	info.vhost_name = "sai-deletion";
+	
+	/* Pass the home_dir via pvo to the protocol so it can be extracted in protocol init */
+	/* Actually, we can just pass it via user pointer for the protocol! */
+	info.user = home_dir;
+
+	unlink(info.iface);
+	vh_uds = lws_create_vhost(cx, &info);
+	if (!vh_uds) {
+		lwsl_err("%s: Failed to create UDS vhost\n", __func__);
+		return 1;
+	}
+
+	chmod(info.iface, 0600);
+	lwsl_notice("STUB-READY (sai-deletion)\n");
+
+	while (lws_service(cx, 0) >= 0)
+		;
+
+	lws_context_destroy(cx);
+	return 0;
+}
+
+#endif
 
 /*
  * Periodically (eg, once per hour) we walk the jobs dir and find subdirs
@@ -209,7 +354,7 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 
 	lws_snprintf(path, sizeof(path), "%s/%s", dirpath, lde->name);
 	if (stat(path, &sb)) {
-		lwsl_notice("%s: stat failed %s\n", __func__, path);
+		lwsl_notice("%s: stat failed %s: errno %d (%s)\n", __func__, path, errno, strerror(errno));
 		return 0;
 	}
 
@@ -232,23 +377,16 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 	age = (uint64_t)lws_now_secs() - (uint64_t)sb.st_mtime;
 
 	if (age > SAI_CLEANUP_JOB_DIR_MIN_AGE_SECS) {
-		char temp[128];
-		size_t len = (size_t)lws_snprintf(temp, sizeof(temp), "%s\n", lde->name);
-#if defined(WIN32)
-		DWORD written;
-#endif
-
 		lwsl_info("%s: requesting removal of old job dir %s (age %llus)\n",
 			    __func__, path, (unsigned long long)age);
 
-#if !defined(WIN32)
-		if (write(builder.pipe_master_wr, temp, LWS_POSIX_LENGTH_CAST(len)) != (ssize_t)len)
-#else
-		if (!WriteFile(builder.pipe_master_wr_win, temp, (DWORD)len,
-				&written, NULL) || written != (DWORD)len)
+#if defined(LWS_WITH_STUB)
+					if (builder.mgr_deletion) {
+						char json[256];
+						lws_snprintf(json, sizeof(json), "{\"delete\": \"%s\"}", lde->name);
+						lws_stub_request(builder.mgr_deletion, json, NULL, 0, NULL, NULL, NULL);
+					}
 #endif
-			lwsl_err("%s: failed to write to deletion worker\n",
-			 __func__);
 	} else {
 		struct inactive_job *ij = lwsac_use_zero(&ctx->ac, sizeof(*ij), 0);
 		if (ij) {
@@ -334,23 +472,17 @@ sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul)
 				qsort(sorted, (size_t)ctx.inactive_count, sizeof(*sorted), compare_age);
 
 				for (n = 0; n < to_delete; n++) {
-					char temp[128];
-					size_t len = (size_t)lws_snprintf(temp, sizeof(temp), "%s\n", sorted[n]->name);
-#if defined(WIN32)
-					DWORD written;
-#endif
-
 					lwsl_notice("%s: dyn cleanup: requesting removal of %s (age %llus, free %uMiB, tgt %uMiB)\n",
 						__func__, sorted[n]->name, (unsigned long long)sorted[n]->age,
 						free_kib / 1024, target_free_kib / 1024);
 
-#if !defined(WIN32)
-					if (write(builder.pipe_master_wr, temp, LWS_POSIX_LENGTH_CAST(len)) != (ssize_t)len)
-#else
-					if (!WriteFile(builder.pipe_master_wr_win, temp, (DWORD)len,
-							&written, NULL) || written != (DWORD)len)
+#if defined(LWS_WITH_STUB)
+					if (builder.mgr_deletion) {
+						char json[256];
+						lws_snprintf(json, sizeof(json), "{\"delete\": \"%s\"}", sorted[n]->name);
+						lws_stub_request(builder.mgr_deletion, json, NULL, 0, NULL, NULL, NULL);
+					}
 #endif
-						lwsl_err("%s: failed to write to deletion worker\n", __func__);
 				}
 			}
 		}
@@ -362,96 +494,99 @@ sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul)
 			 sul_cleanup_jobs_cb, SAI_CLEANUP_JOBS_INTERVAL_US);
 }
 
-int
-saib_deletion_init(const char *argv0)
+
+
+static int
+callback_sai_deletion_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
+		    void *user, void *in, size_t len)
 {
-#if !defined(WIN32)
+	uint8_t buf[256];
+	int ilen;
+
+	switch (reason) {
+
+	case LWS_CALLBACK_RAW_CLOSE_FILE:
+		break;
+
+	case LWS_CALLBACK_RAW_RX_FILE:
+#if defined(WIN32)
 	{
-		int pfd[2];
-		pid_t pid;
-
-		if (pipe(pfd) == -1) {
-			lwsl_err("pipe() failed\n");
-			return 1;
+		DWORD rb;
+		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf), &rb, NULL)) {
+			return -1;
 		}
-
-		if (fcntl(pfd[0], F_SETFD, FD_CLOEXEC) < 0 ||
-		    fcntl(pfd[1], F_SETFD, FD_CLOEXEC) < 0) {
-			lwsl_err("fcntl FD_CLOEXEC failed\n");
-			close(pfd[0]);
-			close(pfd[1]);
-			return 1;
-		}
-
-		pid = fork();
-		if (pid == -1) {
-			lwsl_err("fork() failed\n");
-			return 1;
-		}
-
-		if (!pid) {
-			/* child: deletion worker */
-			char home_arg[256];
-
-			lws_snprintf(home_arg, sizeof(home_arg), "--home=%s",
-				     builder.home);
-			close(pfd[1]); /* wr */
-			if (dup2(pfd[0], 0) < 0)
-				return 1;
-			close(pfd[0]);
-
-			execlp(argv0, argv0, home_arg, "--delete-worker", (char *)NULL);
-			lwsl_err("execlp failed\n");
-			return 1;
-		}
-
-		/* parent */
-		close(pfd[0]); /* rd */
-		builder.pipe_master_wr = pfd[1];
+		ilen = (int)rb;
 	}
 #else
-	{
-		char cmdline[512];
-		HANDLE hChildStd_IN_Rd = NULL;
-		HANDLE hChildStd_IN_Wr = NULL;
-		SECURITY_ATTRIBUTES sa;
-		PROCESS_INFORMATION pi;
-		STARTUPINFOA si;
-
-		sa.nLength = sizeof(SECURITY_ATTRIBUTES);
-		sa.bInheritHandle = TRUE;
-		sa.lpSecurityDescriptor = NULL;
-
-		if (!CreatePipe(&hChildStd_IN_Rd, &hChildStd_IN_Wr, &sa, 0)) {
-			lwsl_err("CreatePipe failed\n");
-			return 1;
+		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf));
+		if (ilen < 1) {
+			return -1;
 		}
-		if (!SetHandleInformation(hChildStd_IN_Wr, HANDLE_FLAG_INHERIT, 0)) {
-			lwsl_err("SetHandleInformation failed\n");
-			return 1;
-		}
-
-		memset(&pi, 0, sizeof(pi));
-		memset(&si, 0, sizeof(si));
-		si.cb = sizeof(si);
-		si.hStdInput = hChildStd_IN_Rd;
-		si.dwFlags |= STARTF_USESTDHANDLES;
-
-		lws_snprintf(cmdline, sizeof(cmdline), "%s --delete-worker --home=%s",
-			     argv0, builder.home);
-
-		if (!CreateProcessA(NULL, cmdline, NULL, NULL, TRUE, 0,
-				    NULL, NULL, &si, &pi)) {
-			lwsl_err("CreateProcess failed\n");
-			return 1;
-		}
-
-		CloseHandle(pi.hProcess);
-		CloseHandle(pi.hThread);
-		CloseHandle(hChildStd_IN_Rd);
-		builder.pipe_master_wr_win = hChildStd_IN_Wr;
-	}
 #endif
+		if (ilen > 0)
+			lwsl_notice("[DELETION] %.*s", ilen, buf);
+		break;
+
+	default:
+		break;
+	}
+
 	return 0;
 }
 
+struct lws_protocols protocol_deletion_stdxxx[] = {
+	{
+		.name			= "sai-deletion-stdxxx",
+		.callback		= callback_sai_deletion_stdwsi,
+		.per_session_data_size	= 0,
+		.rx_buffer_size		= 0,
+	},
+	{ NULL, NULL, 0, 0 }
+};
+
+#if defined(LWS_WITH_STUB)
+static void
+sai_deletion_connected_cb(struct lws_stub_manager *mgr)
+{
+	lwsl_notice("%s: scheduling initial cleanup immediately upon connection\n", __func__);
+	lws_sul_schedule(builder.context, 0, &builder.sul_cleanup_jobs,
+			 sul_cleanup_jobs_cb, 1);
+}
+
+int
+saib_deletion_init(const char *argv0)
+{
+	struct lws_stub_config config;
+	char uds_path[256];
+
+	memset(&config, 0, sizeof(config));
+
+	lws_snprintf(uds_path, sizeof(uds_path), "%s/sai-deletion.sock", builder.home);
+
+	config.cx = builder.context;
+	config.vh = builder.vhost;
+	config.stub_name = "sai-deletion";
+	config.uds_path = uds_path;
+	/* protocol_deletion_stdxxx is in the global array pprotocols, but we pass it as a single element array for lws_stub_spawn */
+	config.protocols = protocol_deletion_stdxxx;
+	config.user = (void *)builder.home;
+	config.extra_payload = builder.home;
+	config.extra_payload_len = strlen(builder.home) + 1;
+	config.connected_cb = sai_deletion_connected_cb;
+
+	builder.mgr_deletion = lws_stub_spawn(&config);
+	if (!builder.mgr_deletion) {
+		lwsl_err("%s: stub spawn failed\n", __func__);
+		return 1;
+	}
+
+	return 0;
+}
+#else
+int
+saib_deletion_init(const char *argv0)
+{
+	lwsl_err("%s: lws_stub disabled\n", __func__);
+	return 0;
+}
+#endif

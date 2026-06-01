@@ -402,18 +402,12 @@ saib_task_destroy(struct sai_nspawn *ns)
 
 		lwsl_notice("%s: task %s succeeded, requesting deletion of job dir %s\n",
 			    __func__, ns->task->uuid, ns->inp);
-#if !defined(WIN32)
-		if (write(builder.pipe_master_wr, ns->inp_vn,
-			  LWS_POSIX_LENGTH_CAST(strlen(ns->inp_vn))) != (ssize_t)strlen(ns->inp_vn))
-			lwsl_err("%s: failed to write to deletion worker\n",
-				 __func__);
-#else
-		{
-			DWORD written;
-			if (!WriteFile(builder.pipe_master_wr_win, ns->inp_vn,
-				       (DWORD)strlen(ns->inp_vn), &written, NULL))
-				lwsl_err("%s: failed to write to deletion worker\n",
-					 __func__);
+#if defined(LWS_WITH_STUB)
+		if (builder.mgr_deletion) {
+			char json[256];
+			lws_snprintf(json, sizeof(json), "{\"delete\": \"%s\"}", ns->inp_vn);
+			if (lws_stub_request(builder.mgr_deletion, json, NULL, 0, NULL, NULL, NULL) < 0)
+				lwsl_err("%s: failed to queue deletion\n", __func__);
 		}
 #endif
 	}
