@@ -12,44 +12,74 @@
 #include <libwebsockets.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <libvirt/libvirt.h>
 
 #include "v-private.h"
 
-/*
- * We use virsh via lws_spawn_piped to avoid a hard dependency on libvirt.so
- * and to easily integrate with the asynchronous lws event loop.
- */
+virConnectPtr conn;
 
-static void
-reap_virsh(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si, int we_killed_him)
+static char *
+replace_string(const char *orig, const char *rep, const char *with)
 {
-	lwsl_notice("%s: virsh exited with code %d\n", __func__, si->si_status);
-}
+	char *result;
+	char *ins;
+	char *tmp;
+	size_t len_rep;
+	size_t len_with;
+	size_t len_front;
+	size_t count;
 
-static int
-spawn_virsh_command(struct sai_virt *virt, const char * const *exec_array)
-{
-	struct lws_spawn_piped_info info;
-	struct lws_spawn_piped *lsp;
+	if (!orig || !rep)
+		return NULL;
+	len_rep = strlen(rep);
+	if (len_rep == 0)
+		return NULL;
+	if (!with)
+		with = "";
+	len_with = strlen(with);
 
-	memset(&info, 0, sizeof(info));
-	info.vh = virt->vhost;
-	info.exec_array = exec_array;
-	info.max_log_lines = 10;
-	info.reap_cb = reap_virsh;
-
-	lsp = lws_spawn_piped(&info);
-	if (!lsp) {
-		lwsl_err("%s: failed to spawn virsh\n", __func__);
-		return 1;
+	ins = (char *)orig;
+	for (count = 0; (tmp = strstr(ins, rep)); ++count) {
+		ins = tmp + len_rep;
 	}
 
-	return 0;
+	tmp = result = malloc(strlen(orig) + (count * len_with) + 1);
+	if (!result)
+		return NULL;
+
+	while (count--) {
+		ins = strstr(orig, rep);
+		len_front = lws_ptr_diff_size_t(ins, orig);
+		tmp = strncpy(tmp, orig, len_front) + len_front;
+		tmp = strcpy(tmp, with) + len_with;
+		orig += len_front + len_rep;
+	}
+	strcpy(tmp, orig);
+	return result;
+}
+
+static void
+strip_xml_tags(char *xml, const char *start_tag, const char *end_tag)
+{
+	char *start;
+	while ((start = strstr(xml, start_tag))) {
+		char *end = strstr(start, end_tag);
+		if (!end)
+			break;
+		end += strlen(end_tag);
+		memmove(start, end, strlen(end) + 1);
+	}
 }
 
 static int
 ops_libvirt_init(struct sai_virt *virt)
 {
+	conn = virConnectOpen("qemu:///system");
+	if (!conn) {
+		lwsl_err("Failed to open connection to qemu:///system\n");
+		return 1;
+	}
 	lwsl_notice("%s: libvirt ops initialized\n", __func__);
 	return 0;
 }
@@ -57,19 +87,202 @@ ops_libvirt_init(struct sai_virt *virt)
 static int
 ops_libvirt_spawn(struct sai_virt *virt, struct saiv_vm *vm)
 {
-	const char * const exec_array[] = {
-		"/usr/bin/virsh", "list", "--all", NULL
-	};
+	virDomainPtr dom;
+	virStoragePoolPtr pool;
+	virStorageVolPtr vol;
+	char *xml, *xml2, *xml3;
+	char vol_xml[1024];
+	char overlay_path[256];
+	char orig_name_tag[128];
+	char new_name_tag[128];
+	char orig_source_tag[256];
+	char new_source_tag[256];
+	const char *shm_pool_xml = "<pool type='dir'><name>sai_shm</name><target><path>/dev/shm</path></target></pool>";
 
-	lwsl_notice("%s: Spawning ephemeral VM %s for platform: %s\n", __func__, vm->name, vm->plat->name);
+	lwsl_notice("%s: Spawning ephemeral VM %s for platform: %s (base %s)\n", 
+			__func__, vm->name, vm->plat->name, vm->plat->base_image);
 
-	return spawn_virsh_command(virt, exec_array);
+	if (!conn)
+		return 1;
+
+	/* 1. Ensure the /dev/shm storage pool exists */
+	pool = virStoragePoolLookupByName(conn, "sai_shm");
+	if (!pool) {
+		pool = virStoragePoolCreateXML(conn, shm_pool_xml, 0);
+		if (!pool) {
+			lwsl_err("Failed to create transient shm storage pool\n");
+			return 1;
+		}
+	} else {
+		/* If it exists but is inactive, start it */
+		int active = virStoragePoolIsActive(pool);
+		if (active == 0)
+			virStoragePoolCreate(pool, 0);
+	}
+
+	long capacity_size = 20;
+	const char *capacity_unit = "G";
+	if (vm->plat->overlay_size[0]) {
+		char *p;
+		capacity_size = strtol(vm->plat->overlay_size, &p, 10);
+		if (p && *p)
+			capacity_unit = p;
+	}
+
+	/* 2. Create the overlay volume using libvirt API */
+	lws_snprintf(vol_xml, sizeof(vol_xml),
+		"<volume>"
+		"  <name>%s.qcow2</name>"
+		"  <capacity unit='%s'>%ld</capacity>"
+		"  <target><format type='qcow2'/></target>"
+		"  <backingStore>"
+		"    <path>%s</path>"
+		"    <format type='qcow2'/>"
+		"  </backingStore>"
+		"</volume>",
+		vm->name, 
+		capacity_unit, capacity_size,
+		vm->plat->base_image);
+
+	vol = virStorageVolCreateXML(pool, vol_xml, 0);
+	if (!vol) {
+		lwsl_err("Failed to create libvirt storage volume for overlay\n");
+		virStoragePoolFree(pool);
+		return 1;
+	}
+	virStorageVolFree(vol);
+	virStoragePoolFree(pool);
+
+	lws_snprintf(overlay_path, sizeof(overlay_path), "/dev/shm/%s.qcow2", vm->name);
+
+	/* 3. Get base domain XML and manipulate it */
+	dom = virDomainLookupByName(conn, vm->plat->name);
+	if (!dom) {
+		lwsl_err("Failed to find base domain %s\n", vm->plat->name);
+		return 1;
+	}
+
+	xml = virDomainGetXMLDesc(dom, 0);
+	virDomainFree(dom);
+
+	if (!xml) {
+		lwsl_err("Failed to get XML for base domain\n");
+		return 1;
+	}
+
+	/* Replace <name>base</name> with <name>vm->name</name> */
+	lws_snprintf(orig_name_tag, sizeof(orig_name_tag), "<name>%s</name>", vm->plat->name);
+	lws_snprintf(new_name_tag, sizeof(new_name_tag), "<name>%s</name>", vm->name);
+	xml2 = replace_string(xml, orig_name_tag, new_name_tag);
+	free(xml);
+
+	/* Replace <source file='base_image'/> with <source file='overlay_path'/> */
+	lws_snprintf(orig_source_tag, sizeof(orig_source_tag), "file='%s'", vm->plat->base_image);
+	lws_snprintf(new_source_tag, sizeof(new_source_tag), "file='%s'", overlay_path);
+	xml3 = replace_string(xml2, orig_source_tag, new_source_tag);
+	free(xml2);
+
+	if (!xml3) {
+		lwsl_err("Failed to manipulate XML\n");
+		return 1;
+	}
+
+	/* Inject qemu namespace into <domain> */
+	char *xml4 = replace_string(xml3, "<domain type=", "<domain xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0' type=");
+	if (!xml4)
+		xml4 = strdup(xml3);
+	free(xml3);
+
+	/* Inject smbios mode='sysinfo' into <os> if missing */
+	char *xml4a = xml4;
+	if (!strstr(xml4, "<smbios mode='sysinfo'/>")) {
+		xml4a = replace_string(xml4, "</os>", "    <smbios mode='sysinfo'/>\n  </os>");
+		if (xml4a)
+			free(xml4);
+		else
+			xml4a = xml4;
+	}
+
+	/* Inject SMBIOS serial number and fw_cfg for builder identity */
+	char fw_cfg_tag[512];
+	lws_snprintf(fw_cfg_tag, sizeof(fw_cfg_tag), 
+		"  <sysinfo type='smbios'>\n"
+		"    <system>\n"
+		"      <entry name='serial'>sai_builder_id:%s</entry>\n"
+		"    </system>\n"
+		"  </sysinfo>\n"
+		"  <qemu:commandline>\n"
+		"    <qemu:arg value='-fw_cfg'/>\n"
+		"    <qemu:arg value='name=opt/sai_builder_id,string=%s'/>\n"
+		"  </qemu:commandline>\n"
+		"</domain>", vm->name, vm->name);
+
+	char *xml5 = replace_string(xml4a, "</domain>", fw_cfg_tag);
+	if (xml5) {
+		free(xml4a);
+	} else {
+		xml5 = xml4a;
+	}
+
+	if (!xml5) {
+		lwsl_err("Failed to manipulate XML\n");
+		return 1;
+	}
+
+	/* Remove UUID so libvirt generates a new one, avoiding conflicts with the base VM */
+	strip_xml_tags(xml5, "<uuid>", "</uuid>");
+	/* Remove MAC addresses so libvirt generates new ones, avoiding network conflicts */
+	strip_xml_tags(xml5, "<mac address=", "/>");
+
+	/* 4. Boot the transient domain */
+	dom = virDomainCreateXML(conn, xml5, 0);
+	free(xml5);
+
+	if (!dom) {
+		lwsl_err("Failed to create transient domain %s\n", vm->name);
+		return 1;
+	}
+
+	virDomainFree(dom);
+	lwsl_notice("Successfully spawned ephemeral VM %s\n", vm->name);
+
+	return 0;
 }
 
 static int
 ops_libvirt_destroy(struct sai_virt *virt, struct saiv_vm *vm)
 {
+	virDomainPtr dom;
+	virStoragePoolPtr pool;
+	virStorageVolPtr vol;
+	char vol_name[128];
+
 	lwsl_notice("%s: Destroying ephemeral VM: %s\n", __func__, vm->name);
+
+	if (!conn)
+		return 1;
+
+	dom = virDomainLookupByName(conn, vm->name);
+	if (dom) {
+		virDomainDestroy(dom);
+		virDomainFree(dom);
+	} else {
+		lwsl_warn("Domain %s not found during destroy\n", vm->name);
+	}
+
+	pool = virStoragePoolLookupByName(conn, "sai_shm");
+	if (pool) {
+		lws_snprintf(vol_name, sizeof(vol_name), "%s.qcow2", vm->name);
+		vol = virStorageVolLookupByName(pool, vol_name);
+		if (vol) {
+			virStorageVolDelete(vol, 0);
+			virStorageVolFree(vol);
+		} else {
+			lwsl_warn("Volume %s not found in pool sai_shm\n", vol_name);
+		}
+		virStoragePoolFree(pool);
+	}
+
 	return 0;
 }
 

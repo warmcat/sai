@@ -219,12 +219,12 @@ sul_pcon_check_cb(lws_sorted_usec_list_t *sul)
 		/* Rule 2: User Keep On -> Turn ON */
 		if (pc->flags & SAIP_PCON_F_MANUAL_STAY) {
 			target_on = 1;
-			lwsl_warn("%s: PCON %s has user keep on -> Force ON\n", __func__, pc->name);
+			// lwsl_warn("%s: PCON %s has user keep on -> Force ON\n", __func__, pc->name);
 		}
 		/* Rule 3: Server Requested -> Turn ON */
 		else if (pc->flags & SAIP_PCON_F_NEEDED) {
 			target_on = 1;
-			lwsl_warn("%s: PCON %s has server request -> Force ON\n", __func__, pc->name);
+			// lwsl_warn("%s: PCON %s has server request -> Force ON\n", __func__, pc->name);
 		}
 
 		lwsl_info("%s: PCON %s check: target=%d, current=%d (flags=0x%x)\n",

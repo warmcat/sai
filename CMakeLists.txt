@@ -3,6 +3,7 @@ project(sai C)
 find_package(libwebsockets CONFIG REQUIRED)
 list(APPEND CMAKE_MODULE_PATH ${LWS_CMAKE_DIR})
 include(CheckCSourceCompiles)
+include(CheckSymbolExists)
 include(LwsCheckRequirements)
 
 if (CMAKE_HOST_SYSTEM_NAME MATCHES "NetBSD" OR CMAKE_HOST_SYSTEM_NAME MATCHES "SunOS")
@@ -114,6 +115,11 @@ if (APPLE)
 	link_directories("/usr/local/lib")
 endif()
 
+if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
+	set(CMAKE_C_FLAGS "-I/usr/local/include ${CMAKE_C_FLAGS}")
+	link_directories("/usr/local/lib")
+endif()
+
 if (LWS_OPENSSL_INCLUDE_DIRS)
 	set(CMAKE_C_FLAGS "-I\"${LWS_OPENSSL_INCLUDE_DIRS}\" ${CMAKE_C_FLAGS}")
 endif()
@@ -131,6 +137,15 @@ add_custom_target(sai_git_hash ALL
 CHECK_C_SOURCE_COMPILES("#include <libwebsockets.h>\nint
 	main(void) {\n#if defined(LWS_HAVE_LIBCAP)\n return
 		0;\n#else\n fail;\n#endif\n return 0;\n}\n" HAS_LIBCAP)
+
+if (APPLE)
+       set(CMAKE_REQUIRED_LIBRARIES "-framework IOKit")
+	check_symbol_exists(kIOMainPortDefault "mach/mach.h;IOKit/IOKitLib.h" HAVE_KIOMAINPORTDEFAULT)
+       set(CMAKE_REQUIRED_LIBRARIES "")
+	if (HAVE_KIOMAINPORTDEFAULT)
+		set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -DHAVE_KIOMAINPORTDEFAULT")
+	endif()
+endif()
 
 #set(CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS} -v")
 set (CMAKE_REQUIRED_INCLUDES "${CMAKE_REQUIRED_INCLUDES};${LIBWEBSOCKETS_INCLUDE_DIRS}")

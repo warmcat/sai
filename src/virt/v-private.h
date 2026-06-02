@@ -29,6 +29,9 @@ typedef struct sai_virt_ops {
 typedef struct saiv_plat {
 	lws_dll2_t		list;
 	char			name[64];
+	char			platform[128];
+	char			base_image[128];
+	char			overlay_size[32];
 
 	int			wait_magnification;
 	int			starting_vms;
@@ -84,5 +87,6 @@ extern const sai_virt_ops_t ops_libvirt;
 extern const struct lws_protocols virt_protocols[];
 
 int saiv_config(struct sai_virt *virt, const char *d);
+int saiv_config_global(struct sai_virt *virt, const char *filepath);
 
 #endif

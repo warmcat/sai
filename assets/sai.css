@@ -647,7 +647,7 @@ div.ibuil {
 	display: inline-block;
 	vertical-align:top;
 	text-align:left;
-	line-height: 50%;
+	line-height: normal;
 	float:left;
 	margin: 0.1em;
 	font-weight: normal;
@@ -659,7 +659,7 @@ div.ibuil {
 	user-select: none;
 	-webkit-user-select: none;
 	cursor: pointer;
-       width: 80px;
+	width: 80px;
 }
 
 div.ibuil table {
@@ -1303,6 +1303,9 @@ canvas.power-graph {
 .plat-peer-ip {
     font-size: 0.8em;
     color: #555;
+    display: block;
+    word-break: break-all;
+    margin-top: 2px;
 }
 .watchers-row {
 	display: flex;

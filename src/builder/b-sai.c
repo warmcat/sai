@@ -30,6 +30,7 @@
 #include <signal.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <fcntl.h>
 
 #include <sys/types.h>
 #if !defined(WIN32)
@@ -44,6 +45,8 @@
 #if defined(__APPLE__)
 #include <sys/stat.h>	/* for mkdir() */
 #include <mach-o/dyld.h>
+#include <IOKit/IOKitLib.h>
+#include <CoreFoundation/CoreFoundation.h>
 #endif
 
 #if defined(WIN32)
@@ -573,6 +576,11 @@ saib_app_run(int argc, const char **argv)
 		lwsl_notice("%s: event affinity mode enabled (ephemeral VM)\n", __func__);
 	}
 
+	if (lws_cmdline_option(argc, argv, "-O")) {
+		builder.one_shot_active = 1;
+		lwsl_notice("%s: one-shot mode enabled (single task ephemeral VM)\n", __func__);
+	}
+
 #if defined(__NetBSD__) || defined(__OpenBSD__)
 	if (lws_cmdline_option(argc, argv, "-D")) {
 		if (lws_daemonize("/var/run/sai_builder.pid"))
@@ -626,6 +634,95 @@ saib_app_run(int argc, const char **argv)
 		return 1;
 	}
 
+#if defined(__linux__)
+	/*
+	 * If running inside a VM spawned by sai-virt, we might have been
+	 * passed a dynamic prefix via QEMU fw_cfg.
+	 */
+	{
+		int fd = open("/sys/firmware/qemu_fw_cfg/by_name/opt/sai_builder_id/raw", O_RDONLY);
+		if (fd >= 0) {
+			char fw_id[128];
+			ssize_t fw_n = read(fd, fw_id, sizeof(fw_id) - 1);
+			if (fw_n > 0) {
+				fw_id[fw_n] = '\0';
+				/* Remove any trailing newline */
+				while (fw_n > 0 && (fw_id[fw_n - 1] == '\n' || fw_id[fw_n - 1] == '\r'))
+					fw_id[--fw_n] = '\0';
+
+				if (fw_n > 0) {
+					char compound[256];
+					lws_snprintf(compound, sizeof(compound), "%s-%s", fw_id, builder.host ? builder.host : "");
+					
+					char *new_host = lwsac_use(&builder.conf_head, strlen(compound) + 1, 512);
+					if (new_host) {
+						strcpy(new_host, compound);
+						builder.host = new_host;
+						lwsl_notice("%s: Applied dynamic fw_cfg builder identity: %s\n", __func__, builder.host);
+					}
+				}
+			}
+			close(fd);
+		}
+	}
+#elif defined(WIN32)
+	{
+		HKEY hKey;
+		char fw_id[128];
+		DWORD dwType = REG_SZ;
+		DWORD dwSize = sizeof(fw_id);
+
+		if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "HARDWARE\\DESCRIPTION\\System\\BIOS", 0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+			if (RegQueryValueExA(hKey, "SystemSerialNumber", NULL, &dwType, (LPBYTE)fw_id, &dwSize) == ERROR_SUCCESS) {
+				if (!strncmp(fw_id, "sai_builder_id:", 15)) {
+					char *id = fw_id + 15;
+					char compound[256];
+					lws_snprintf(compound, sizeof(compound), "%s-%s", id, builder.host ? builder.host : "");
+					
+					char *new_host = lwsac_use(&builder.conf_head, strlen(compound) + 1, 512);
+					if (new_host) {
+						strcpy(new_host, compound);
+						builder.host = new_host;
+						lwsl_notice("%s: Applied dynamic SMBIOS builder identity: %s\n", __func__, builder.host);
+					}
+				}
+			}
+			RegCloseKey(hKey);
+		}
+	}
+#elif defined(__APPLE__)
+	{
+#if defined(HAVE_KIOMAINPORTDEFAULT)
+		io_service_t platformExpert = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"));
+#else
+		io_service_t platformExpert = IOServiceGetMatchingService(kIOMasterPortDefault, IOServiceMatching("IOPlatformExpertDevice"));
+#endif
+		if (platformExpert) {
+			CFTypeRef serialNumberAsCFString = IORegistryEntryCreateCFProperty(platformExpert, CFSTR("IOPlatformSerialNumber"), kCFAllocatorDefault, 0);
+			if (serialNumberAsCFString) {
+				if (CFGetTypeID(serialNumberAsCFString) == CFStringGetTypeID()) {
+					char fw_id[128];
+					if (CFStringGetCString(serialNumberAsCFString, fw_id, sizeof(fw_id), kCFStringEncodingUTF8)) {
+						if (!strncmp(fw_id, "sai_builder_id:", 15)) {
+							char *id = fw_id + 15;
+							char compound[256];
+							lws_snprintf(compound, sizeof(compound), "%s-%s", id, builder.host ? builder.host : "");
+							
+							char *new_host = lwsac_use(&builder.conf_head, strlen(compound) + 1, 512);
+							if (new_host) {
+								strcpy(new_host, compound);
+								builder.host = new_host;
+								lwsl_notice("%s: Applied dynamic SMBIOS builder identity: %s\n", __func__, builder.host);
+							}
+						}
+					}
+				}
+				CFRelease(serialNumberAsCFString);
+			}
+			IOObjectRelease(platformExpert);
+		}
+	}
+#endif
 
 	/*
 	 * We need to sample the true uid / gid we should use inside

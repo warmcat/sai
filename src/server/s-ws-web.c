@@ -219,34 +219,7 @@ sais_list_pcons(struct vhd *vhd)
 		sqlite3_finalize(pcon_stmt);
 	}
 
-	/* Iterate PCONs and populate controlled builders */
-	lws_start_foreach_dll(struct lws_dll2 *, d, pmb.power_controllers.head) {
-		pc = lws_container_of(d, sai_power_controller_t, list);
-		char query[256];
-		sqlite3_stmt *stmt;
 
-		/* Manually query builders mapped to this pcon to avoid LWS struct nested 0-row ac free bug */
-		lws_snprintf(query, sizeof(query),
-			     "SELECT builder_name FROM pcon_builders WHERE pcon_name = '%s' "
-			     "ORDER BY builder_name LIMIT 100", pc->name);
-
-		if (sqlite3_prepare_v2(vhd->server.pdb, query, -1, &stmt, NULL) == SQLITE_OK) {
-			while (sqlite3_step(stmt) == SQLITE_ROW) {
-				const char *bname = (const char *)sqlite3_column_text(stmt, 0);
-				if (bname) {
-					sai_controlled_builder_t *c =
-						lwsac_use_zero(&ac, sizeof(*c), 2048);
-					if (c) {
-						lws_strncpy(c->name, bname, sizeof(c->name));
-						lws_dll2_add_tail(&c->list,
-								&pc->controlled_builders_owner);
-					}
-				}
-			}
-			sqlite3_finalize(stmt);
-		}
-
-	} lws_end_foreach_dll(d);
 
 	/* Serialize */
 	js = lws_struct_json_serialize_create(lsm_schema_power_managed_builders,

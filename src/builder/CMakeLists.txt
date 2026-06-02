@@ -46,7 +46,7 @@ add_dependencies(${SUB} sai_git_hash)
 
 	if (SAI_BUILDER)
 		if (APPLE)
-		    target_link_libraries(sai-builder "-framework IOKit")
+		    target_link_libraries(sai-builder "-framework IOKit" "-framework CoreFoundation")
 		endif() 
        endif()
 
@@ -80,7 +80,7 @@ add_dependencies(${SUB} sai_git_hash)
 	endif()
 
 	if (MSVC OR WIN32)
-		target_link_libraries(${SUB} ws2_32.lib userenv.lib psapi.lib iphlpapi.lib)
+		target_link_libraries(${SUB} ws2_32.lib userenv.lib psapi.lib iphlpapi.lib advapi32.lib)
 	endif()
 
 	if (MSVC OR WIN32)

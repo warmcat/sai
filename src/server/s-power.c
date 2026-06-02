@@ -288,6 +288,7 @@ bail:
  */
 
 struct pcon_lookup_ctx {
+	char *start;
 	char *p;
 	const char *end;
 	int *n;
@@ -303,6 +304,20 @@ cb_lookup_pcon(void *user, int cols, char **values, char **name)
 		return 0;
 
 	m = strlen(values[0]);
+
+	if (ctx->start) {
+		const char *curr = ctx->start;
+		while (curr && *curr) {
+			const char *comma = strchr(curr, ',');
+			size_t len = comma ? (size_t)(comma - curr) : strlen(curr);
+			if (len == m && !strncmp(curr, values[0], m)) {
+				return 0;
+			}
+			if (!comma)
+				break;
+			curr = comma + 1;
+		}
+	}
 
 	if (*ctx->n)
 		*ctx->p++ = ',';
@@ -400,14 +415,17 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 		char q[256], query[256];
 		int r;
 
+		ctx.start = (char *)start;
 		ctx.p = (char *)p;
 		ctx.end = (const char *)end;
 		ctx.n = &n;
 
 		lws_sql_purify(q, pl->plat, sizeof(q));
 		lws_snprintf(query, sizeof(query),
-			     "SELECT DISTINCT pcon FROM builders WHERE platform = '%s'",
-			     q);
+			     "SELECT DISTINCT pcon FROM builders WHERE platform = '%s' "
+			     "UNION "
+			     "SELECT DISTINCT pcon_name FROM pcon_builders WHERE builder_name = '%s'",
+			     q, q);
 
 		r = sqlite3_exec(vhd->server.pdb, query, cb_lookup_pcon, &ctx, NULL);
 

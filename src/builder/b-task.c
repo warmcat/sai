@@ -177,6 +177,19 @@ saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
 
 	unsigned int executing = 0;
 
+	if (builder.one_shot_active) {
+		if (!builder.one_shot_task_uuid[0]) {
+			lws_strncpy(builder.one_shot_task_uuid, task->uuid,
+				    sizeof(builder.one_shot_task_uuid));
+			lwsl_notice("%s: locked one-shot affinity to task %s\n",
+				    __func__, builder.one_shot_task_uuid);
+		} else if (strcmp(builder.one_shot_task_uuid, task->uuid)) {
+			lwsl_notice("%s: reject task %s: one-shot affinity locked to %s\n",
+				    __func__, task->uuid, builder.one_shot_task_uuid);
+			return 1;
+		}
+	}
+
 	if (builder.event_affinity_active) {
 		if (!builder.event_affinity[0]) {
 			lws_strncpy(builder.event_affinity, task->event_uuid,

@@ -18,12 +18,16 @@
  * When we connect, we masquerade as a builder/pcon and send our platforms
  */
 static lws_ss_state_return_t
-saiv_server_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
-	       size_t *len, int *flags)
+saiv_server_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
+	       int *flags)
 {
 	saiv_server_link_t *g = (saiv_server_link_t *)userobj;
+	lws_ss_state_return_t r;
 
-	return sai_ss_tx_from_buflist_helper(g->ss, &g->bl_tx, buf, len, flags);
+	r = sai_ss_tx_from_buflist_helper(g->ss, &g->bl_tx, buf, len, flags);
+	if (r == LWSSSSRET_OK)
+		lwsl_notice("%s: Transmitted %zu bytes (flags=%d)\n", __func__, *len, *flags);
+	return r;
 }
 
 static void
@@ -87,46 +91,51 @@ saiv_server_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		sai_platform_pending_tasks_t *pt = (sai_platform_pending_tasks_t *)a.dest;
 		lwsl_notice("%s: Pending tasks for pcons: %s\n", __func__, pt->pcons);
 
-		int total_wheel_weight = 0;
+		if (pt && pt->tasks.head) {
+			while (virt.running_vms < virt.max_vms) {
+				int total_wheel_weight = 0;
 
-		/* Step 1: Calculate true demand and populate the wheel */
-		lws_start_foreach_dll(struct lws_dll2 *, p, pt->tasks.head) {
-			sai_platform_pending_task_t *t = lws_container_of(p, sai_platform_pending_task_t, list);
+				/* Step 1: Count true demand */
+				lws_start_foreach_dll(struct lws_dll2 *, p, pt->tasks.head) {
+					sai_platform_pending_task_t *t = lws_container_of(p, sai_platform_pending_task_t, list);
 
-			saiv_plat_t *found_vp = NULL;
-			lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
-				saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
-				if (!strcmp(vp->name, t->plat)) {
-					found_vp = vp;
+					saiv_plat_t *found_vp = NULL;
+					lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
+						saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
+						const char *pname = vp->platform[0] ? vp->platform : vp->name;
+						if (!strcmp(pname, t->plat)) {
+							found_vp = vp;
+							break;
+						}
+					} lws_end_foreach_dll(d);
+
+					if (found_vp) {
+						int true_demand = (int)t->pending - found_vp->starting_vms;
+						if (true_demand > 0) {
+							/* Apply wait magnification factor */
+							total_wheel_weight += true_demand + found_vp->wait_magnification;
+						}
+					}
+				} lws_end_foreach_dll(p);
+
+				if (total_wheel_weight == 0)
 					break;
-				}
-			} lws_end_foreach_dll(d);
 
-			if (found_vp) {
-				int true_demand = (int)t->pending - found_vp->starting_vms;
-				if (true_demand > 0) {
-					/* Apply wait magnification factor */
-					total_wheel_weight += true_demand + found_vp->wait_magnification;
-				}
-			}
-		} lws_end_foreach_dll(p);
+				/* Step 2: Roll the dice */
+				uint32_t r;
+				lws_get_random(virt.context, &r, sizeof(r));
+				int target = (int)(r % (uint32_t)total_wheel_weight);
 
-		/* Step 2: Roll the dice if there is demand */
-		if (total_wheel_weight > 0 && virt.running_vms < virt.max_vms) {
-			/* LWS random */
-			uint32_t r;
-			lws_get_random(virt.context, &r, sizeof(r));
-			int target = (int)(r % (uint32_t)total_wheel_weight);
+				saiv_plat_t *winner = NULL;
 
-			saiv_plat_t *winner = NULL;
-
-			lws_start_foreach_dll(struct lws_dll2 *, p, pt->tasks.head) {
+				lws_start_foreach_dll(struct lws_dll2 *, p, pt->tasks.head) {
 				sai_platform_pending_task_t *t = lws_container_of(p, sai_platform_pending_task_t, list);
 
 				saiv_plat_t *found_vp = NULL;
 				lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
 					saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
-					if (!strcmp(vp->name, t->plat)) {
+					const char *pname = vp->platform[0] ? vp->platform : vp->name;
+					if (!strcmp(pname, t->plat)) {
 						found_vp = vp;
 						break;
 					}
@@ -185,9 +194,13 @@ saiv_server_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 	switch (state) {
 	case LWSSSCS_CREATING:
-		lwsl_notice("%s: CREATING\n", __func__);
-		/* We'd set metadata url here from the config, skipped for skeleton */
+	{
+		saiv_server_t *srv = (saiv_server_t *)g->opaque_data;
+		lwsl_notice("%s: CREATING (url: %s)\n", __func__, srv->url);
+		if (lws_ss_set_metadata(g->ss, "url", srv->url, strlen(srv->url)))
+			return LWSSSSRET_DESTROY_ME;
 		break;
+	}
 
 	case LWSSSCS_CONNECTED:
 		lwsl_notice("%s: Connected to sai-server\n", __func__);
@@ -199,18 +212,21 @@ saiv_server_state(void *userobj, void *sh, lws_ss_constate_t state,
 		sai_power_controller_t *pc = lwsac_use_zero(&ac, sizeof(*pc), 512);
 		if (pc) {
 			lws_strncpy(pc->name, virt.hostname, sizeof(pc->name));
+			lws_strncpy(pc->type, "virt", sizeof(pc->type));
+			pc->on = 1;
 			lws_dll2_add_tail(&pc->list, &pmb.power_controllers);
-		}
 
-		/* Register our platforms as the "builders" we manage */
-		lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
-			saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
-			sai_power_managed_builder_t *bp = lwsac_use_zero(&ac, sizeof(*bp), 512);
-			if (bp) {
-				lws_strncpy(bp->name, vp->name, sizeof(bp->name));
-				lws_dll2_add_tail(&bp->list, &pmb.builders);
-			}
-		} lws_end_foreach_dll(d);
+			/* Register our platforms as the "builders" we manage */
+			lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
+				saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
+				sai_controlled_builder_t *c = lwsac_use_zero(&ac, sizeof(*c), 512);
+				if (c) {
+					const char *pname = vp->platform[0] ? vp->platform : vp->name;
+					lws_strncpy(c->name, pname, sizeof(c->name));
+					lws_dll2_add_tail(&c->list, &pc->controlled_builders_owner);
+				}
+			} lws_end_foreach_dll(d);
+		}
 
 		sai_ss_serialize_queue_helper(g->ss, &g->bl_tx,
 					      lsm_schema_power_managed_builders,

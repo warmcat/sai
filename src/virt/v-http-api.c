@@ -63,6 +63,27 @@ callback_virt_http(struct lws *wsi, enum lws_callback_reasons reason,
 		if (len > 6 && !strncmp(path, "/stay/", 6)) {
 			lws_strncpy(vm_id, path + 6, sizeof(vm_id));
 			lwsl_notice("%s: Received stay for %s\n", __func__, vm_id);
+
+			saiv_vm_t *found_vm = NULL;
+			lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
+				saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
+				lws_start_foreach_dll(struct lws_dll2 *, v, vp->vm_owner.head) {
+					saiv_vm_t *vm = lws_container_of(v, saiv_vm_t, list);
+					if (!strcmp(vm->name, vm_id)) {
+						found_vm = vm;
+						break;
+					}
+				} lws_end_foreach_dll(v);
+				if (found_vm)
+					break;
+			} lws_end_foreach_dll(d);
+
+			if (found_vm) {
+				/* Extend the safety timeout since the VM is alive and communicating */
+				lws_sul_schedule(virt.context, 0, &found_vm->sul_timeout,
+						 saiv_vm_timeout_cb, 5 * 60 * LWS_US_PER_SEC);
+			}
+
 			/* We never return stay = true for ephemeral VMs */
 			uint8_t stay_res = '0';
 			if (lws_write(wsi, &stay_res, 1, LWS_WRITE_HTTP) != 1)

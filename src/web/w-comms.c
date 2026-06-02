@@ -238,8 +238,6 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 	case LWS_CALLBACK_HTTP:
 
-		lwsl_wsi_notice(wsi, "_HTTP");
-
 		if (!vhd) {
 			lwsl_err("%s: NULL vhd\n", __func__);
 			return -1;

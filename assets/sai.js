@@ -1631,7 +1631,7 @@ function createBuilderDiv(plat) {
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-disk w-0"></div></div>` +
 		     `</div>`;
 	if (authd && auth_is_admin && plat.peer_ip)
-		innerHTML += `<span class="plat-peer-ip">${hsanitize(plat.peer_ip)}</span>`;
+		innerHTML += `<div class="plat-peer-ip">${hsanitize(plat.peer_ip)}</div>`;
 	innerHTML +=  `</td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;

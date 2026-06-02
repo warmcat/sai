@@ -124,6 +124,7 @@ add_dependencies(${SUB} sai_git_hash)
 			../../assets/linux-centos-8.svg
 			../../assets/linux-fedora-32-riscv.svg
 			../../assets/linux-fedora-32.svg
+			../../assets/linux-fedora44.svg
 			../../assets/linux-gentoo.svg
 			../../assets/linux-ubuntu-1804.svg
 			../../assets/linux-ubuntu-2004.svg

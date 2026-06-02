@@ -21,6 +21,9 @@ static int interrupted;
 
 static const char * const default_ss_policy =
 	"{"
+	  "\"release\": \"01234567\","
+	  "\"product\": \"sai-virt\","
+	  "\"schema-version\": 1,"
 	  "\"retry\": ["
 		"{\"default\": {"
 			"\"backoff\": [1000, 2000, 3000, 5000, 10000],"
@@ -33,8 +36,11 @@ static const char * const default_ss_policy =
 	  "\"s\": ["
 		"{\"sai_power_client\": {"
 			"\"endpoint\": \"${url}\","
+			"\"port\": 443,"
 			"\"protocol\": \"ws\","
-			"\"ws_subprotocol\": \"com-warmcat-sai-builder\","
+			"\"tls\": true,"
+			"\"nailed_up\": true,"
+			"\"ws_subprotocol\": \"com-warmcat-sai\","
 			"\"http_url\": \"\","
 			"\"retry\": \"default\","
 			"\"metadata\": ["
@@ -75,7 +81,8 @@ int main(int argc, const char **argv)
 	memset(&info, 0, sizeof info);
 	info.port = 8000;
 	info.options = LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
-		       LWS_SERVER_OPTION_VALIDATE_UTF8;
+		       LWS_SERVER_OPTION_VALIDATE_UTF8 |
+		       LWS_SERVER_OPTION_EXPLICIT_VHOSTS;
 	info.pprotocols = pprotocols;
 
 	signal(SIGINT, sigint_handler);
@@ -97,30 +104,11 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
-	/* We can spawn mac-m1, windows-10, etc. (Mocked for now) */
-	const char *plats[] = {"windows-x86_64", "mac-m1"};
-	for (size_t i = 0; i < LWS_ARRAY_SIZE(plats); i++) {
-		saiv_plat_t *vp = malloc(sizeof(*vp));
-		if (vp) {
-			memset(vp, 0, sizeof(*vp));
-			lws_strncpy(vp->name, plats[i], sizeof(vp->name));
-			lws_dll2_add_tail(&vp->list, &virt.plat_owner);
-		}
-	}
+	/* Parse platforms from /etc/sai/virt/conf.d */
+	saiv_config(&virt, "/etc/sai/virt/conf.d");
 
-	/* We create the server link manually for testing skeleton */
-	saiv_server_t *srv = malloc(sizeof(*srv));
-	if (srv) {
-		memset(srv, 0, sizeof(*srv));
-		srv->url = "warmcat.com"; /* example */
-		if (lws_ss_create(virt.context, 0, &ssi_saiv_server_link_t,
-				  srv, &srv->ss, NULL, NULL)) {
-			lwsl_err("%s: failed to create ss\n", __func__);
-			free(srv);
-		} else {
-			lws_dll2_add_tail(&srv->list, &virt.sai_server_owner);
-		}
-	}
+	/* Parse global configuration from /etc/sai/virt/conf */
+	saiv_config_global(&virt, "/etc/sai/virt/conf");
 
 	while (!lws_service(virt.context, 0) && !interrupted)
 		;
@@ -129,11 +117,22 @@ int main(int argc, const char **argv)
 		saiv_server_t *s = lws_container_of(d, saiv_server_t, list);
 		lws_ss_destroy(&s->ss);
 		lws_dll2_remove(d);
+		free((void *)s->url);
 		free(s);
 	} lws_end_foreach_dll_safe(d, d1);
 
 	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, virt.plat_owner.head) {
 		saiv_plat_t *p = lws_container_of(d, saiv_plat_t, list);
+
+		lws_start_foreach_dll_safe(struct lws_dll2 *, v, v1, p->vm_owner.head) {
+			saiv_vm_t *vm = lws_container_of(v, saiv_vm_t, list);
+			if (virt.ops)
+				virt.ops->destroy(&virt, vm);
+			lws_dll2_remove(v);
+			lws_sul_cancel(&vm->sul_timeout);
+			free(vm);
+		} lws_end_foreach_dll_safe(v, v1);
+
 		lws_dll2_remove(d);
 		free(p);
 	} lws_end_foreach_dll_safe(d, d1);
