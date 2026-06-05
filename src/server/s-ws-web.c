@@ -67,6 +67,10 @@ static lws_struct_map_t lsm_browser_platreset[] = {
 	LSM_CARRAY	(sai_browse_rx_platreset_t, platform,   "platform"),
 };
 
+static lws_struct_map_t lsm_browser_builderdelete[] = {
+	LSM_CARRAY	(sai_browse_rx_builderdelete_t, builder_name, "builder_name"),
+};
+
 static const lws_struct_map_t lsm_viewercount_members[] = {
 	LSM_UNSIGNED(sai_viewer_state_t, viewers,		"count"),
 };
@@ -105,7 +109,9 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.taskpause"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
-			/* shares struct */   "com.warmcat.sai.taskresume")
+			/* shares struct */   "com.warmcat.sai.taskresume"),
+	LSM_SCHEMA	(sai_browse_rx_builderdelete_t, NULL, lsm_browser_builderdelete,
+					      "com.warmcat.sai.builderdelete")
 };
 
 enum {
@@ -122,6 +128,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_TASKINFO,
 	SAIS_WS_WEBSRV_RX_TASKPAUSE,
 	SAIS_WS_WEBSRV_RX_TASKRESUME,
+	SAIS_WS_WEBSRV_RX_BUILDERDELETE,
 };
 
 static int
@@ -666,6 +673,32 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				lwsl_wsi_notice(pss_power->wsi, "queued stay on power conn");
 			}
 		} lws_end_foreach_dll(p);
+
+		lwsac_free(&a.ac);
+		break;
+	}
+	case SAIS_WS_WEBSRV_RX_BUILDERDELETE:
+	{
+		sai_browse_rx_builderdelete_t *bd = (sai_browse_rx_builderdelete_t *)a.dest;
+		char q[256], esc[96];
+
+		if (sais_validate_builder_name(bd->builder_name))
+			goto soft_error;
+
+		lwsl_notice("%s: builder delete received for %s\n", __func__, bd->builder_name);
+
+		lws_sql_purify(esc, bd->builder_name, sizeof(esc));
+
+		lws_snprintf(q, sizeof(q), "DELETE FROM builders WHERE name = '%s'", esc);
+		if (sai_sqlite3_statement(m->vhd->server.pdb, q, "delete builder"))
+			lwsl_err("%s: failed to delete builder %s\n", __func__, esc);
+
+		lws_snprintf(q, sizeof(q), "DELETE FROM pcon_builders WHERE builder_name = '%s'", esc);
+		if (sai_sqlite3_statement(m->vhd->server.pdb, q, "delete pcon builder"))
+			lwsl_err("%s: failed to delete pcon_builders %s\n", __func__, esc);
+
+		/* Force broadcast of updated builders list */
+		sais_list_builders(m->vhd);
 
 		lwsac_free(&a.ac);
 		break;

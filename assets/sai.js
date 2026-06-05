@@ -1590,6 +1590,9 @@ function createContextMenu(event, menuItems) {
 function createBuilderDiv(plat) {
 	const platDiv = document.createElement("div");
 	platDiv.className = "ibuil bdr";
+	if (plat.name.startsWith("sai-vm-")) {
+		platDiv.className += " vm-builder";
+	}
 	if (!plat.online)
 		platDiv.className += " offline";
 	else {
@@ -1649,6 +1652,21 @@ function createBuilderDiv(plat) {
 		{ label: `<b>SAI:</b> ${plat.sai_hash}` },
 		{ label: `<b>LWS:</b> ${plat.lws_hash}` },
 	];
+
+	if (authd && auth_is_admin && !plat.online) {
+		menuItems.push({
+			label: "<span style='color:#e74c3c; font-weight:bold;'>Delete Builder</span>",
+			callback: () => {
+				if (confirm("Are you sure you want to delete builder " + plat.name + "?")) {
+					const msg = {
+						schema: "com.warmcat.sai.builderdelete",
+						builder_name: plat.name
+					};
+					sai.send(JSON.stringify(msg));
+				}
+			}
+		});
+	}
 
 	platDiv.addEventListener("contextmenu", function(event) {
 		if (!authd)

@@ -330,33 +330,19 @@ skip:
 
 	lwsl_notice("%s: ns finished\n", __func__);
 
-	saib_task_grace(ns);
-	saib_set_ns_state(ns, NSSTATE_DONE);
-	if (ns->state != NSSTATE_FAILED)
-		saib_set_ns_state(ns, NSSTATE_UPLOADING_ARTIFACTS);
-
 	ns->reap_cb_called = 1;
 
 	if (ns)
 		ns->op = NULL;
 
+	saib_task_grace(ns);
+	saib_set_ns_state(ns, NSSTATE_DONE);
+	if (ns->state != NSSTATE_FAILED)
+		saib_set_ns_state(ns, NSSTATE_UPLOADING_ARTIFACTS);
+
 	if (!op->lsp || lws_spawn_get_stdwsi_open_count(op->lsp) == 0) {
 		lwsl_notice("%s: freeing op from reap_cb\n", __func__);
 		free(op);
-	}
-
-	if (ns->task) {
-		saib_queue_task_status_update(ns->sp, ns->spm, ns->task->uuid,
-					      (unsigned int)ns->retcode,
-					      SAI_TASK_REASON_DESTROYED);
-		saib_reassess_idle_situation();
-
-		builder.ram_reserved_kib	-= ns->task->est_peak_mem_kib;
-		builder.disk_reserved_kib	-= ns->task->est_disk_kib;
-		if (ns->spm)
-			lws_sul_schedule(builder.context, 0,
-					 &ns->spm->sul_load_report,
-					 saib_sul_load_report_cb, 1);
 	}
 
 	return;
@@ -370,20 +356,6 @@ fail:
 	saib_set_ns_state(ns, NSSTATE_FAILED);
 
 	saib_log_chunk_create(ns, NULL, 0, 2);
-
-	if (ns->task) {
-		saib_queue_task_status_update(ns->sp, ns->spm, ns->task->uuid,
-					      (unsigned int)ns->retcode,
-					      SAI_TASK_REASON_DESTROYED);
-		saib_reassess_idle_situation();
-
-		builder.ram_reserved_kib	-= ns->task->est_peak_mem_kib;
-		builder.disk_reserved_kib	-= ns->task->est_disk_kib;
-		if (ns->spm)
-			lws_sul_schedule(builder.context, 0,
-					 &ns->spm->sul_load_report,
-					 saib_sul_load_report_cb, 1);
-	}
 
 	if (op->spawn)
 		free(op->spawn);

@@ -555,7 +555,7 @@ int main(int argc, const char **argv)
 					lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1, temp_owner.head) {
 						sai_builder_registration_t *r = lws_container_of(p, sai_builder_registration_t, list);
 						
-						lwsl_notice("%s: Sticky registration found for PCON %s\n", __func__, r->power_controller_name);
+						// lwsl_notice("%s: Sticky registration found for PCON %s\n", __func__, r->power_controller_name);
 						saip_pcon_t *pc = saip_pcon_create(&power, r->power_controller_name);
 						if (pc) {
 							if (r->power_on_type[0])

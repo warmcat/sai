@@ -137,6 +137,7 @@ int main(int argc, const char **argv)
 		free(p);
 	} lws_end_foreach_dll_safe(d, d1);
 
+	lwsac_free(&virt.pending_tasks_ac);
 	lws_context_destroy(virt.context);
 
 	return 0;

@@ -518,10 +518,13 @@ next_plat: ;
 				 */
 
 				c = 2; /* git mirror and checkout */
-				p = pl->build;
-				while (*p)
-					if (*p++ == '\n')
-						c++;
+				if (pl->build[0]) {
+					c++;
+					p = pl->build;
+					while (*p)
+						if (*p++ == '\n')
+							c++;
+				}
 
 				pss->sn.t.build_step_count = c;
 
@@ -952,7 +955,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 
 		lwsl_notice("%s: m = %d\n", __func__, m);
 
-		if (m != 1)
+		if (state != LWS_UFS_FINAL_CONTENT)
 			break;
 
 		lws_genhmac_destroy(&pss->hmac, result);

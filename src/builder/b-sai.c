@@ -94,7 +94,7 @@ struct active_job_uuid {
 };
 
 static const char *config_dir = "/etc/sai/builder", *argv0;
-static int interrupted;
+int interrupted;
 static lws_state_notify_link_t nl;
 
 struct sai_builder builder;
@@ -444,7 +444,10 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 
 		/* let's sample the best possible free RAM + disk situation,
 		 * we will derate it a bit when using it */
-		builder.ram_limit_kib	= saib_get_free_ram_kib();
+		if (builder.one_shot_active)
+			builder.ram_limit_kib	= saib_get_total_ram_kib();
+		else
+			builder.ram_limit_kib	= saib_get_free_ram_kib();
 		builder.disk_total_kib	= saib_get_free_disk_kib(builder.home);
 
 		break;
@@ -517,7 +520,7 @@ crash_handler(int signum)
 int
 saib_app_run(int argc, const char **argv)
 {
-	int logs = LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE;
+	int logs = 1039 | LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE;
 	struct lws_context_creation_info info;
 #if defined(WIN32)
 	char temp[256], stg_config_dir[256];
@@ -651,12 +654,9 @@ saib_app_run(int argc, const char **argv)
 					fw_id[--fw_n] = '\0';
 
 				if (fw_n > 0) {
-					char compound[256];
-					lws_snprintf(compound, sizeof(compound), "%s-%s", fw_id, builder.host ? builder.host : "");
-					
-					char *new_host = lwsac_use(&builder.conf_head, strlen(compound) + 1, 512);
+					char *new_host = lwsac_use(&builder.conf_head, strlen(fw_id) + 1, 512);
 					if (new_host) {
-						strcpy(new_host, compound);
+						strcpy(new_host, fw_id);
 						builder.host = new_host;
 						lwsl_notice("%s: Applied dynamic fw_cfg builder identity: %s\n", __func__, builder.host);
 					}
@@ -676,12 +676,9 @@ saib_app_run(int argc, const char **argv)
 			if (RegQueryValueExA(hKey, "SystemSerialNumber", NULL, &dwType, (LPBYTE)fw_id, &dwSize) == ERROR_SUCCESS) {
 				if (!strncmp(fw_id, "sai_builder_id:", 15)) {
 					char *id = fw_id + 15;
-					char compound[256];
-					lws_snprintf(compound, sizeof(compound), "%s-%s", id, builder.host ? builder.host : "");
-					
-					char *new_host = lwsac_use(&builder.conf_head, strlen(compound) + 1, 512);
+					char *new_host = lwsac_use(&builder.conf_head, strlen(id) + 1, 512);
 					if (new_host) {
-						strcpy(new_host, compound);
+						strcpy(new_host, id);
 						builder.host = new_host;
 						lwsl_notice("%s: Applied dynamic SMBIOS builder identity: %s\n", __func__, builder.host);
 					}
@@ -705,12 +702,9 @@ saib_app_run(int argc, const char **argv)
 					if (CFStringGetCString(serialNumberAsCFString, fw_id, sizeof(fw_id), kCFStringEncodingUTF8)) {
 						if (!strncmp(fw_id, "sai_builder_id:", 15)) {
 							char *id = fw_id + 15;
-							char compound[256];
-							lws_snprintf(compound, sizeof(compound), "%s-%s", id, builder.host ? builder.host : "");
-							
-							char *new_host = lwsac_use(&builder.conf_head, strlen(compound) + 1, 512);
+							char *new_host = lwsac_use(&builder.conf_head, strlen(id) + 1, 512);
 							if (new_host) {
-								strcpy(new_host, compound);
+								strcpy(new_host, id);
 								builder.host = new_host;
 								lwsl_notice("%s: Applied dynamic SMBIOS builder identity: %s\n", __func__, builder.host);
 							}

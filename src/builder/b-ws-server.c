@@ -558,8 +558,8 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 	const char *pq;
 	int n;
 
-	// lwsl_user("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
-	//	  (unsigned int)ack);
+	lwsl_user("%s: %s, ord 0x%x\n", __func__, lws_ss_state_name(state),
+		  (unsigned int)ack);
 
 	switch (state) {
 
@@ -604,6 +604,8 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		memcpy((char *)spm->name, pq, (unsigned int)n);
 		((char *)spm->name)[n] = '\0';
 
+		lwsl_user("%s: initial spm->name: '%s', url: '%s'\n", __func__, spm->name, spm->url);
+
 		{
 			char *p_name = (char *)spm->name;
 			char *p_found;
@@ -614,6 +616,8 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 				*p_found = '_';
 		}
 
+		lwsl_user("%s: processed spm->name: '%s'\n", __func__, spm->name);
+
 		/* add us to the builder list of unique servers */
 		lws_dll2_add_head(&spm->list, &a->builder->sai_plat_server_owner);
 
@@ -621,6 +625,14 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		a->mref->spm = spm;
 		spm->refcount++;
 		lws_dll2_add_tail(&a->mref->list, &a->sai_plat->servers);
+
+		{
+			lws_ss_state_return_t r;
+			lwsl_user("%s: explicitly requesting tx to kickstart connection\n", __func__);
+			r = lws_ss_request_tx(spm->ss);
+			if (r)
+				lwsl_notice("%s: lws_ss_request_tx returned %d\n", __func__, (int)r);
+		}
 
 		break;
 

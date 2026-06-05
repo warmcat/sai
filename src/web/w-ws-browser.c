@@ -55,6 +55,10 @@ static lws_struct_map_t lsm_browser_platreset[] = {
 	LSM_CARRAY	(sai_browse_rx_platreset_t, platform,   "platform"),
 };
 
+static lws_struct_map_t lsm_browser_builderdelete[] = {
+	LSM_CARRAY	(sai_browse_rx_builderdelete_t, builder_name, "builder_name"),
+};
+
 static lws_struct_map_t lsm_browser_taskinfo[] = {
 	LSM_CARRAY	(sai_browse_rx_taskinfo_t, task_hash,		"task_hash"),
 	LSM_UNSIGNED	(sai_browse_rx_taskinfo_t, logs,		"logs"),
@@ -96,6 +100,8 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 			/* shares struct */   "com.warmcat.sai.pcon_control"),
 	LSM_SCHEMA_DLL2	(sai_watcher_service_t, list, NULL, lsm_watcher_service,
 					      "com.warmcat.sai.watcher_services"),
+	LSM_SCHEMA	(sai_browse_rx_builderdelete_t, NULL, lsm_browser_builderdelete,
+					      "com.warmcat.sai.builderdelete"),
 };
 
 enum {
@@ -111,6 +117,8 @@ enum {
 	SAIM_WS_BROWSER_RX_PLATRESET,
 	SAIM_WS_BROWSER_RX_STAY,
 	SAIM_WS_BROWSER_RX_PCON_CONTROL,
+	SAIM_WS_BROWSER_RX_WATCHER_SERVICES,
+	SAIM_WS_BROWSER_RX_BUILDERDELETE,
 };
 
 
@@ -768,6 +776,15 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		/*
 		 * User is asking us to reset / rebuild a whole platform
 		 */
+		break;
+
+	case SAIM_WS_BROWSER_RX_BUILDERDELETE:
+		/*
+		 * User is asking us to delete a builder
+		 */
+		break;
+
+	case SAIM_WS_BROWSER_RX_WATCHER_SERVICES:
 		break;
 
 	default:

@@ -68,7 +68,7 @@ sai_get_head_status(struct vhd *vhd, const char *projname)
 	sai_event_t *e;
 	int state;
 
-	if (lws_struct_sq3_deserialize(vhd->server.pdb, NULL, "created ",
+	if (lws_struct_sq3_deserialize(vhd->server.pdb, " and state != 7", "created ",
 			lsm_schema_sq3_map_event, &o, &ac, 0, -1))
 		return -1;
 

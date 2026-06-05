@@ -673,22 +673,22 @@ sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 
 	task = lws_container_of(o.head, sai_task_t, list);
 
-	if (task->build_step > 0) {
-		lws_snprintf(cmd, sizeof(cmd),
-			     "update tasks set build_step=%d where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
-			     task->build_step - 1, esc, esc);
+	int new_step = task->build_step > 0 ? task->build_step - 1 : 0;
 
-		ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
-		if (ret != SQLITE_OK) {
-			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
-			lwsac_free(&ac);
-			if (ret == SQLITE_BUSY)
-				return SAI_DB_RESULT_BUSY;
+	lws_snprintf(cmd, sizeof(cmd),
+		     "update tasks set build_step=%d%s where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
+		     new_step, new_step == 0 ? ",builder_name='',builder=''" : "", esc, esc);
 
-			lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
-				 sqlite3_errmsg(pdb));
-			return SAI_DB_RESULT_ERROR;
-		}
+	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+	if (ret != SQLITE_OK) {
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+		lwsac_free(&ac);
+		if (ret == SQLITE_BUSY)
+			return SAI_DB_RESULT_BUSY;
+
+		lwsl_err("%s: %s: %s: fail\n", __func__, cmd,
+			 sqlite3_errmsg(pdb));
+		return SAI_DB_RESULT_ERROR;
 	}
 
 	lwsac_free(&ac);

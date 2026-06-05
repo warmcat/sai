@@ -461,6 +461,7 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 			if (ptask) {
 				lws_strncpy(ptask->plat, pl->plat, sizeof(ptask->plat));
 				ptask->pending = (unsigned int)pl->pending_count;
+				ptask->unmet = (unsigned int)pl->unmet_count;
 				lws_dll2_add_tail(&ptask->list, &pt.tasks);
 			}
 		} lws_end_foreach_dll(px1);

@@ -77,7 +77,7 @@ struct saib_opaque_spawn {
 };
 
 #define SAI_LOAD_REPORT_US			(1 * LWS_US_PER_SEC)
-#define SAI_IDLE_GRACE_US			(builder.one_shot_active ? LWS_US_PER_SEC : (30 * LWS_US_PER_SEC))
+#define SAI_IDLE_GRACE_US			(builder.one_shot_active ? (10 * LWS_US_PER_SEC) : (30 * LWS_US_PER_SEC))
 #define SAI_STAY_POLL_US			(20 * LWS_US_PER_SEC)
 #define SAI_CLEANUP_JOBS_INTERVAL_US		(60 * 60 * LWS_US_PER_SEC)
 #define SAI_CLEANUP_JOB_DIR_MIN_AGE_SECS	(24ull * 3600u)
@@ -325,6 +325,8 @@ extern void
 suspender_destroy(void);
 int
 saib_reassess_idle_situation(void);
+
+extern int interrupted;
 
 int
 saib_app_run(int argc, const char **argv);

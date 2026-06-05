@@ -155,7 +155,7 @@ sais_prune_inflight_list(struct vhd *vhd)
 		lws_start_foreach_dll_safe(struct lws_dll2 *, p1, p2, sp->inflight_owner.head) {
 			sai_uuid_list_t *u = lws_container_of(p1, sai_uuid_list_t, list);
 
-			if (!u->started && (t - u->us_time_listed) > 3 * 1000 * 1000)
+			if (!u->started && (t - u->us_time_listed) > 30 * 1000 * 1000)
 				sais_inflight_entry_destroy(u);
 
 		} lws_end_foreach_dll_safe(p1, p2);
@@ -222,7 +222,7 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
          *	SAIES_BEING_BUILT_HAS_FAILURES          = 6,
          *	SAIES_DELETED                           = 7,
 	 */
-	lws_snprintf(pf, sizeof(pf)," and (state != 3 and state != 4 and state != 5) and (created < %llu)",
+	lws_snprintf(pf, sizeof(pf)," and (state != 3 and state != 4 and state != 5 and state != 7) and (created < %llu)",
 			(unsigned long long)(lws_now_secs() - 10));
 
 	n = lws_struct_sq3_deserialize(vhd->server.pdb, pf, "created desc ",
@@ -256,9 +256,10 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		 * on this event
 		 */
 
-		lws_snprintf(query, sizeof(query), "select count(state) from tasks where "
+		lws_snprintf(query, sizeof(query), "select count(state) from tasks t1 where "
 						   "state IN(0,9) and platform='%s' and "
-						   "(builder_name IS NULL or builder_name IN('','%s'))",
+						   "(builder_name IS NULL or builder_name IN('','%s'))"
+						   " and run = (select max(run) from tasks t2 where t1.uuid = t2.uuid)",
 						   esc_plat, esc_bname);
 		m = sqlite3_exec(pdb, query, sql3_get_integer_cb, &pending_count, NULL);
 
@@ -335,8 +336,9 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 			/* we are looking for failed tasks here */
 
 			lws_snprintf(query, sizeof(query),
-				     "select taskname from tasks where "
-				     "state = 4 and platform = ?");
+				     "select taskname from tasks t1 where "
+				     "state = 4 and platform = ?"
+				     " and run = (select max(run) from tasks t2 where t1.uuid = t2.uuid)");
 
 			if (sqlite3_prepare_v2(prev_pdb, query, -1, &sm, NULL) == SQLITE_OK) {
 				const unsigned char *t;
@@ -391,7 +393,8 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 			lws_sql_purify(esc_taskname, fti->taskname, sizeof(esc_taskname));
 			lws_snprintf(pf, sizeof(pf),
 				     " and state IN(0,9) and platform='%s' and taskname='%s' and "
-				     "(builder_name IS NULL or builder_name IN('','%s'))",
+				     "(builder_name IS NULL or builder_name IN('','%s'))"
+				     " and run = (select max(run) from tasks t2 where tasks.uuid = t2.uuid)",
 				     esc_plat, esc_taskname, esc_bname);
 
 			lwsac_free(&pss->ac_alloc_task);
@@ -410,8 +413,8 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 				return NULL;
 			}
 
-			lwsl_notice("%s: Prioritizing failed task for %s ('%s')\n",
-				    __func__, platform, fti->taskname);
+			// lwsl_notice("%s: Prioritizing failed task for %s ('%s')\n",
+			//	    __func__, platform, fti->taskname);
 
 			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			lwsac_free(&ac);
@@ -430,7 +433,8 @@ next1: ;
 
 		lws_snprintf(pf, sizeof(pf),
 			     " and state IN(0,9) and platform='%s' and "
-			     "(builder_name IS NULL or builder_name IN('','%s'))",
+			     "(builder_name IS NULL or builder_name IN('','%s'))"
+			     " and run = (select max(run) from tasks t2 where tasks.uuid = t2.uuid)",
 			     esc_plat, esc_bname);
 
 		lwsac_free(&pss->ac_alloc_task);
@@ -482,7 +486,7 @@ bail:
  */
 
 static int
-sais_find_or_add_pending_plat(struct vhd *vhd, const char *name, int count)
+sais_find_or_add_pending_plat(struct vhd *vhd, const char *name, int count, int unmet)
 {
 	sais_plat_t *sp;
 
@@ -491,6 +495,7 @@ sais_find_or_add_pending_plat(struct vhd *vhd, const char *name, int count)
 
 		if (!strcmp(pl->plat, name)) {
 			pl->pending_count += count;
+			pl->unmet_count += unmet;
 			return 1;
 		}
 
@@ -503,6 +508,7 @@ sais_find_or_add_pending_plat(struct vhd *vhd, const char *name, int count)
 	sp->plat = (const char *)&sp[1]; /* start of overcommit */
 	memcpy(&sp[1], name, strlen(name) + 1);
 	sp->pending_count = count;
+	sp->unmet_count = unmet;
 
 	lws_dll2_add_tail(&sp->list, &vhd->pending_plats);
 
@@ -549,7 +555,7 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 	 * Collect a list of *events* (not tasks) that still have any open tasks
 	 */
 
-	lws_snprintf(pf, sizeof(pf)," and (state != 3 and state != 5 and state != 7) and (created < %llu)",
+	lws_snprintf(pf, sizeof(pf)," and (state != 3 and state != 4 and state != 5 and state != 7) and (created < %llu)",
 			(unsigned long long)(lws_now_secs() - 10));
 
 	n = lws_struct_sq3_deserialize(vhd->server.pdb, pf, "created desc ",
@@ -574,9 +580,11 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 		if (!sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
 				      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
 
-			if (sqlite3_prepare_v2(pdb, "select platform, count(*) "
-						    "from tasks where "
-						    "(state = 0 or state = 1 or state = 2) group by platform", -1, &sm,
+			if (sqlite3_prepare_v2(pdb, "select platform, count(*), "
+						    "sum(case when state = 0 or state = 9 then 1 else 0 end) "
+						    "from tasks t1 where "
+						    "run = (select max(run) from tasks t2 where t1.uuid = t2.uuid) and "
+						    "(state = 0 or state = 1 or state = 2 or state = 9) group by platform", -1, &sm,
 							   NULL) != SQLITE_OK) {
 				lwsl_err("%s: Unable to %s\n",
 					 __func__, sqlite3_errmsg(pdb));
@@ -589,7 +597,8 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 				if (n == SQLITE_ROW)
 					sais_find_or_add_pending_plat(vhd,
 						(const char *)sqlite3_column_text(sm, 0),
-						sqlite3_column_int(sm, 1));
+						sqlite3_column_int(sm, 1),
+						sqlite3_column_int(sm, 2));
 			} while (n == SQLITE_ROW);
 
 			sqlite3_reset(sm);
@@ -747,7 +756,7 @@ sais_activity_cb(lws_sorted_usec_list_t *sul)
 			goto next;
 
 		if (lws_struct_sq3_deserialize(pdb,
-				" and (state = 1 or state = 2)",
+                                " and (state = 1 or state = 2) and run = (select max(run) from tasks t2 where tasks.uuid = t2.uuid)",
 				NULL, lsm_schema_sq3_map_task, &o_tasks,
 				&ac_tasks, 0, 100) < 0 || !o_tasks.head)
 			goto next1;

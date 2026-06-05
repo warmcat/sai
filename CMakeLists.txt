@@ -1,5 +1,8 @@
 cmake_minimum_required(VERSION 3.10)
 project(sai C)
+if (WIN32)
+	list(APPEND CMAKE_PREFIX_PATH "C:/Program Files (x86)/libwebsockets" "C:/Program Files/libwebsockets")
+endif()
 find_package(libwebsockets CONFIG REQUIRED)
 list(APPEND CMAKE_MODULE_PATH ${LWS_CMAKE_DIR})
 include(CheckCSourceCompiles)

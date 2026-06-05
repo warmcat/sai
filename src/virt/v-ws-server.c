@@ -30,7 +30,26 @@ saiv_server_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len
 	return r;
 }
 
-static void
+void
+saiv_vm_destroy_cb(lws_sorted_usec_list_t *sul)
+{
+	saiv_vm_t *vm = lws_container_of(sul, saiv_vm_t, sul_destroy);
+
+	lwsl_notice("%s: delayed destruction of %s executing\n", __func__, vm->name);
+
+	if (virt.ops)
+		virt.ops->destroy(&virt, vm);
+
+	virt.running_vms--;
+
+	lws_dll2_remove(&vm->list);
+	lws_sul_cancel(&vm->sul_timeout);
+	free(vm);
+
+	saiv_try_spawn();
+}
+
+void
 saiv_vm_timeout_cb(lws_sorted_usec_list_t *sul)
 {
 	saiv_vm_t *vm = lws_container_of(sul, saiv_vm_t, sul_timeout);
@@ -40,14 +59,129 @@ saiv_vm_timeout_cb(lws_sorted_usec_list_t *sul)
 	if (virt.ops)
 		virt.ops->destroy(&virt, vm);
 
-	if (vm->plat->starting_vms > 0)
-		vm->plat->starting_vms--;
-
 	virt.running_vms--;
 
 	lws_dll2_remove(&vm->list);
 	free(vm);
+
+	saiv_try_spawn();
 }
+
+void
+saiv_try_spawn(void)
+{
+	sai_platform_pending_tasks_t *pt = virt.pending_tasks;
+
+	if (!pt || !pt->tasks.head)
+		return;
+
+	while (virt.running_vms < virt.max_vms) {
+		int total_wheel_weight = 0;
+
+		/* Step 1: Count true demand */
+		lws_start_foreach_dll(struct lws_dll2 *, p, pt->tasks.head) {
+			sai_platform_pending_task_t *t = lws_container_of(p, sai_platform_pending_task_t, list);
+
+			saiv_plat_t *found_vp = NULL;
+			lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
+				saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
+				const char *pname = vp->platform[0] ? vp->platform : vp->name;
+				if (!strcmp(pname, t->plat)) {
+					found_vp = vp;
+					break;
+				}
+			} lws_end_foreach_dll(d);
+
+			if (found_vp) {
+				int true_demand = (int)t->unmet - (int)found_vp->vm_owner.count;
+				if (true_demand > 0) {
+					/* Apply wait magnification factor */
+					total_wheel_weight += true_demand + found_vp->wait_magnification;
+				}
+			}
+		} lws_end_foreach_dll(p);
+
+		if (total_wheel_weight == 0)
+			break;
+
+		/* Step 2: Roll the dice */
+		uint32_t r;
+		lws_get_random(virt.context, &r, sizeof(r));
+		int target = (int)(r % (uint32_t)total_wheel_weight);
+
+		saiv_plat_t *winner = NULL;
+
+		lws_start_foreach_dll(struct lws_dll2 *, p, pt->tasks.head) {
+			sai_platform_pending_task_t *t = lws_container_of(p, sai_platform_pending_task_t, list);
+
+			saiv_plat_t *found_vp = NULL;
+			lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
+				saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
+				const char *pname = vp->platform[0] ? vp->platform : vp->name;
+				if (!strcmp(pname, t->plat)) {
+					found_vp = vp;
+					break;
+				}
+			} lws_end_foreach_dll(d);
+
+			if (found_vp) {
+				int true_demand = (int)t->unmet - (int)found_vp->vm_owner.count;
+				if (true_demand > 0) {
+					target -= (true_demand + found_vp->wait_magnification);
+					if (target < 0) {
+						winner = found_vp;
+						break;
+					} else {
+						/* This platform wasn't picked, increase its wait magnification */
+						found_vp->wait_magnification++;
+					}
+				}
+			}
+		} lws_end_foreach_dll(p);
+
+		/* Step 3: Spawn the winner and reset its magnification */
+		if (winner && virt.ops) {
+			lwsl_notice("%s: Wheel picked platform %s (wait factor %d reset)\n", 
+				    __func__, winner->name, winner->wait_magnification);
+			
+			saiv_vm_t *vm = malloc(sizeof(*vm));
+			if (vm) {
+				int i;
+				memset(vm, 0, sizeof(*vm));
+				vm->plat = winner;
+				
+				/* Find lowest unused index */
+				for (i = 0; i < virt.max_vms; i++) {
+					int used = 0;
+					lws_start_foreach_dll(struct lws_dll2 *, d, winner->vm_owner.head) {
+						saiv_vm_t *v = lws_container_of(d, saiv_vm_t, list);
+						if (v->vm_index == i) {
+							used = 1;
+							break;
+						}
+					} lws_end_foreach_dll(d);
+					if (!used)
+						break;
+				}
+				vm->vm_index = i;
+				
+				lws_snprintf(vm->name, sizeof(vm->name), "sai-vm-%s-%d", winner->name, vm->vm_index);
+				lws_dll2_add_tail(&vm->list, &winner->vm_owner);
+
+				virt.running_vms++;
+				winner->wait_magnification = 0;
+				virt.ops->spawn(&virt, vm);
+
+				/* Clean up if it never connects and terminates itself */
+				lws_sul_schedule(virt.context, 0, &vm->sul_timeout,
+						 saiv_vm_timeout_cb, 5 * 60 * LWS_US_PER_SEC); /* 5 min */
+			}
+		} else {
+			break;
+		}
+	}
+}
+
 
 static lws_ss_state_return_t
 saiv_server_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
@@ -89,99 +223,20 @@ saiv_server_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			    stay->builder_name);
 	} else if (a.top_schema_index == 0) {
 		sai_platform_pending_tasks_t *pt = (sai_platform_pending_tasks_t *)a.dest;
-		lwsl_notice("%s: Pending tasks for pcons: %s\n", __func__, pt->pcons);
+		// lwsl_notice("%s: Pending tasks for pcons: %s\n", __func__, pt->pcons);
 
-		if (pt && pt->tasks.head) {
-			while (virt.running_vms < virt.max_vms) {
-				int total_wheel_weight = 0;
+		if (virt.pending_tasks_ac)
+			lwsac_free(&virt.pending_tasks_ac);
 
-				/* Step 1: Count true demand */
-				lws_start_foreach_dll(struct lws_dll2 *, p, pt->tasks.head) {
-					sai_platform_pending_task_t *t = lws_container_of(p, sai_platform_pending_task_t, list);
+		virt.pending_tasks_ac = a.ac;
+		virt.pending_tasks = pt;
+		a.ac = NULL;
 
-					saiv_plat_t *found_vp = NULL;
-					lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
-						saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
-						const char *pname = vp->platform[0] ? vp->platform : vp->name;
-						if (!strcmp(pname, t->plat)) {
-							found_vp = vp;
-							break;
-						}
-					} lws_end_foreach_dll(d);
-
-					if (found_vp) {
-						int true_demand = (int)t->pending - found_vp->starting_vms;
-						if (true_demand > 0) {
-							/* Apply wait magnification factor */
-							total_wheel_weight += true_demand + found_vp->wait_magnification;
-						}
-					}
-				} lws_end_foreach_dll(p);
-
-				if (total_wheel_weight == 0)
-					break;
-
-				/* Step 2: Roll the dice */
-				uint32_t r;
-				lws_get_random(virt.context, &r, sizeof(r));
-				int target = (int)(r % (uint32_t)total_wheel_weight);
-
-				saiv_plat_t *winner = NULL;
-
-				lws_start_foreach_dll(struct lws_dll2 *, p, pt->tasks.head) {
-				sai_platform_pending_task_t *t = lws_container_of(p, sai_platform_pending_task_t, list);
-
-				saiv_plat_t *found_vp = NULL;
-				lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
-					saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
-					const char *pname = vp->platform[0] ? vp->platform : vp->name;
-					if (!strcmp(pname, t->plat)) {
-						found_vp = vp;
-						break;
-					}
-				} lws_end_foreach_dll(d);
-
-				if (found_vp) {
-					int true_demand = (int)t->pending - found_vp->starting_vms;
-					if (true_demand > 0) {
-						target -= (true_demand + found_vp->wait_magnification);
-						if (target < 0) {
-							winner = found_vp;
-							break;
-						} else {
-							/* This platform wasn't picked, increase its wait magnification */
-							found_vp->wait_magnification++;
-						}
-					}
-				}
-			} lws_end_foreach_dll(p);
-
-			/* Step 3: Spawn the winner and reset its magnification */
-			if (winner && virt.ops) {
-				lwsl_notice("%s: Wheel picked platform %s (wait factor %d reset)\n", 
-					    __func__, winner->name, winner->wait_magnification);
-				
-				saiv_vm_t *vm = malloc(sizeof(*vm));
-				if (vm) {
-					memset(vm, 0, sizeof(*vm));
-					vm->plat = winner;
-					lws_snprintf(vm->name, sizeof(vm->name), "sai-vm-%s-%u", winner->name, (unsigned int)lws_now_usecs());
-					lws_dll2_add_tail(&vm->list, &winner->vm_owner);
-
-					winner->starting_vms++;
-					virt.running_vms++;
-					winner->wait_magnification = 0;
-					virt.ops->spawn(&virt, vm);
-
-					/* Clean up if it never connects and terminates itself */
-					lws_sul_schedule(virt.context, 0, &vm->sul_timeout,
-							 saiv_vm_timeout_cb, 5 * 60 * LWS_US_PER_SEC); /* 5 min */
-				}
-			}
-		}
+		saiv_try_spawn();
 	}
 
-	lwsac_free(&a.ac);
+	if (a.ac)
+		lwsac_free(&a.ac);
 	return LWSSSSRET_OK;
 }
 

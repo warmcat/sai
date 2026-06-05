@@ -34,7 +34,6 @@ typedef struct saiv_plat {
 	char			overlay_size[32];
 
 	int			wait_magnification;
-	int			starting_vms;
 
 	lws_dll2_owner_t	vm_owner;
 } saiv_plat_t;
@@ -43,7 +42,9 @@ typedef struct saiv_vm {
 	lws_dll2_t		list;
 	saiv_plat_t		*plat;
 	char			name[64];
+	int			vm_index;
 	lws_sorted_usec_list_t	sul_timeout;
+	lws_sorted_usec_list_t	sul_destroy;
 } saiv_vm_t;
 
 /*
@@ -65,6 +66,9 @@ struct sai_virt {
 	const char		*port;		/* port we listen on */
 
 	char			hostname[64];
+
+	struct lwsac		*pending_tasks_ac;
+	struct sai_platform_pending_tasks *pending_tasks;
 };
 
 typedef struct saiv_server {
@@ -88,5 +92,14 @@ extern const struct lws_protocols virt_protocols[];
 
 int saiv_config(struct sai_virt *virt, const char *d);
 int saiv_config_global(struct sai_virt *virt, const char *filepath);
+
+void
+saiv_vm_timeout_cb(lws_sorted_usec_list_t *sul);
+
+void
+saiv_vm_destroy_cb(lws_sorted_usec_list_t *sul);
+
+void
+saiv_try_spawn(void);
 
 #endif

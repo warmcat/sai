@@ -55,7 +55,7 @@ saip_pcon_create(struct sai_power *power, const char *name)
 
 	lws_dll2_add_tail(&pc->list, &power->sai_pcon_owner);
 
-	lwsl_notice("%s: Created dynamic PCON '%s'\n", __func__, name);
+	// lwsl_notice("%s: Created dynamic PCON '%s'\n", __func__, name);
 
 	return pc;
 }

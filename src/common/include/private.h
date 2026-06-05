@@ -342,6 +342,11 @@ typedef struct sai_platreset {
 	char				platform[65];
 } sai_browse_rx_platreset_t;
 
+typedef struct sai_builderdelete {
+	lws_dll2_t			list;
+	char				builder_name[96];
+} sai_browse_rx_builderdelete_t;
+
 struct sai_event;
 
 typedef struct sai_event {
@@ -763,6 +768,7 @@ typedef struct sai_platform_pending_task {
 	lws_dll2_t		list;
 	char			plat[64];
 	unsigned int		pending;
+	unsigned int		unmet;
 } sai_platform_pending_task_t;
 
 typedef struct sai_platform_pending_tasks {
@@ -838,7 +844,7 @@ extern const lws_struct_map_t
 	lsm_schema_sq3_map_watcher[1],
 	lsm_schema_json_map_watcher[1],
 	lsm_watcher_conf[1],
-	lsm_pending_task[2],
+	lsm_pending_task[3],
 	lsm_pending_tasks[2],
 	lsm_schema_pending_tasks[1];
 

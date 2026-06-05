@@ -453,7 +453,7 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 			 */
 
 			n = lws_struct_sq3_deserialize(vhd->server.pdb,
-				" and (state != 3 and state != 4 and state != 5)",
+				" and (state != 3 and state != 4 and state != 5 and state != 7)",
 				NULL, lsm_schema_sq3_map_event, &o, &ac, 0, 100);
 			if (n >= 0 && o.head) {
 				lws_start_foreach_dll(struct lws_dll2 *, pe, o.head) {
@@ -609,8 +609,7 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 			break;
 
 		/* leave the uuid listed as inflight until step completed */
-		if (sais_is_task_inflight(vhd, sp, rej->task_uuid, &ul)) {
-			// lwsl_notice("%s: setting inflight started to 1 for %s\n", __func__, rej->task_uuid);
+		if (sais_is_task_inflight(vhd, NULL, rej->task_uuid, &ul)) {
 			ul->started = 1;
 		}
 		break;
@@ -624,6 +623,7 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 		lwsl_notice("%s: SAI_TASK_REASON_BUSY: Set busy: %s\n",
 				__func__, rej->task_uuid);
 		do_remove_uuid = 1;
+		sais_set_task_state(vhd, rej->task_uuid, SAIES_WAITING, 0, 0);
 		sais_plat_busy(sp, 1);
 		break;
 
@@ -663,7 +663,7 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 	}
 
 	if (do_remove_uuid &&
-	    sais_is_task_inflight(vhd, sp, rej->task_uuid, &ul)) {
+	    sais_is_task_inflight(vhd, NULL, rej->task_uuid, &ul)) {
 		lwsl_notice("%s: ### Removing %s from inflight\n",
 				__func__, rej->task_uuid);
 		sais_inflight_entry_destroy(ul);
@@ -891,6 +891,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					live_sp->online				= 1;
 					live_sp->avail_mem_kib			= (unsigned int)-1;
 					live_sp->avail_sto_kib			= (unsigned int)-1;
+					sais_plat_busy(live_sp, 0);
 				} else {
 					/* New builder, create a deep-copied, malloc'd object */
 					size_t nlen = strlen(build->name) + 1;

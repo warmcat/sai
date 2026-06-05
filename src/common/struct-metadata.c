@@ -523,6 +523,7 @@ const lws_struct_map_t lsm_watcher_conf[] = {
 const lws_struct_map_t lsm_pending_task[] = {
 	LSM_CARRAY	(sai_platform_pending_task_t, plat,		"plat"),
 	LSM_UNSIGNED	(sai_platform_pending_task_t, pending,		"pending"),
+	LSM_UNSIGNED	(sai_platform_pending_task_t, unmet,		"unmet"),
 };
 
 const lws_struct_map_t lsm_pending_tasks[] = {

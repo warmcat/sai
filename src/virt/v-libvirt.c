@@ -144,6 +144,16 @@ ops_libvirt_spawn(struct sai_virt *virt, struct saiv_vm *vm)
 		capacity_unit, capacity_size,
 		vm->plat->base_image);
 
+	/* Ensure no stale volume exists */
+	char vol_name[128];
+	lws_snprintf(vol_name, sizeof(vol_name), "%s.qcow2", vm->name);
+	vol = virStorageVolLookupByName(pool, vol_name);
+	if (vol) {
+		lwsl_notice("Stale storage volume %s found, deleting...\n", vol_name);
+		virStorageVolDelete(vol, 0);
+		virStorageVolFree(vol);
+	}
+
 	vol = virStorageVolCreateXML(pool, vol_xml, 0);
 	if (!vol) {
 		lwsl_err("Failed to create libvirt storage volume for overlay\n");

@@ -156,6 +156,8 @@ saib_reassess_idle_situation()
 {
 	char in_use = 0;
 
+	lwsl_notice("%s: Assessing idle situation for %s (stay=%d)\n", __func__, builder.host, builder.stay);
+
 	if (builder.stay) {
 		/*
 		 * We need to deal with finding we have been manually powered-on.
@@ -177,15 +179,21 @@ saib_reassess_idle_situation()
 		struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
 				sai_plat_list);
 
+		lwsl_notice("%s: Checking plat %s (has %d nspawns)\n", __func__, sp->name, sp->nspawn_owner.count);
+
 		if (sp->nspawn_owner.head) {
 			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
 						   sp->nspawn_owner.head) {
 				struct sai_nspawn *xns = lws_container_of(d,
 							struct sai_nspawn, list);
 
-				if (xns->task)
-				lwsl_info("%s: ongoing task: %s\n", __func__,
-							xns->task->uuid);
+				if (xns->task) {
+					lwsl_info("%s: ongoing task: %s\n", __func__,
+								xns->task->uuid);
+					lwsl_notice("%s: Plat %s is busy with task %s\n", __func__, sp->name, xns->task->uuid);
+				} else {
+					lwsl_notice("%s: Plat %s is busy with an nspawn (no task uuid)\n", __func__, sp->name);
+				}
 
 			} lws_end_foreach_dll_safe(d, d1);
 
@@ -209,10 +217,13 @@ saib_reassess_idle_situation()
 	*/
 
 	if (lws_dll2_is_detached(&builder.sul_idle.list)) {
-		lwsl_warn("%s: %s: no stay: starting idle grace time\n",
-			__func__, builder.host);
+		int grace_secs = builder.event_affinity_active ? 1 : (int)(SAI_IDLE_GRACE_US / LWS_US_PER_SEC);
+		lwsl_notice("%s: %s: NO STAY and NO TASKS: starting %d sec idle grace time before auto-power-off\n",
+			__func__, builder.host, grace_secs);
 		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
-				 sul_idle_cb, SAI_IDLE_GRACE_US);
+				 sul_idle_cb, grace_secs * LWS_US_PER_SEC);
+	} else {
+		lwsl_notice("%s: %s: Idle grace time is ALREADY running\n", __func__, builder.host);
 	}
 
 	return 0;
@@ -238,6 +249,7 @@ saib_power_stay_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		return 0;
 
 	builder.stay = *buf != '0';
+	lwsl_notice("%s: Received stay command: '%c' (stay=%d)\n", __func__, *buf, builder.stay);
 
 	saib_reassess_idle_situation();
 
@@ -308,8 +320,19 @@ saib_stay_init(void)
 LWS_SS_USER_TYPEDEF
         char                    payload[200];
         size_t                  size;
-        size_t                  pos;
+	size_t                  pos;
 } saib_power_link_t;
+
+static lws_ss_state_return_t
+saib_power_link_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
+		   size_t *len, int *flags)
+{
+	lwsl_notice("====== saib_power_link_tx called (GET request firing) ======\n");
+	*len = 0;
+	*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+
+	return LWSSSSRET_OK;
+}
 
 static lws_ss_state_return_t
 saib_power_link_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
@@ -348,6 +371,7 @@ saib_power_link_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 LWS_SS_INFO("sai_power", saib_power_link_t)
 	.rx				= saib_power_link_rx,
+	.tx				= saib_power_link_tx,
 };
 
 
@@ -378,8 +402,14 @@ sul_do_suspend_cb(lws_sorted_usec_list_t *sul)
 		lwsl_notice("%s: resuming after suspend\n", __func__);
 		} else
 			lwsl_err("%s: failed to request suspend\n", __func__);
-	} else
+	} else {
 		lwsl_err("%s: no suspender pipe\n", __func__);
+		if (builder.one_shot_active) {
+			lwsl_notice("%s: one-shot active and no suspender pipe, exiting cleanly\n", __func__);
+			interrupted = 1;
+			lws_cancel_service(builder.context);
+		}
+	}
 #endif
 }
 
@@ -424,12 +454,14 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 	char path[256];
 
 #if !defined(WIN32)
-	if (builder.stay)
+	if (builder.stay) {
+		lwsl_err("====== SUL_IDLE_CB returning due to builder.stay ======\n");
 		return;
+	}
 
 	lwsl_notice("%s: idle period ended...\n", __func__);
 
-	if (builder.power_off_type &&
+	if (!builder.one_shot_active && builder.power_off_type &&
 	    !strcmp(builder.power_off_type, "suspend")) {
 
 		lwsl_notice("%s: starting suspend...\n", __func__);
@@ -468,8 +500,18 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 	}
 #endif
 
-	if (!builder.url_sai_power)
+
+	lwsl_notice("%s: Idle grace period expired, initiating auto-power-off sequence\n", __func__);
+
+	if (!builder.url_sai_power) {
+		lwsl_warn("%s: no builder.url_sai_power set, cannot auto-power-off\n", __func__);
+		if (builder.one_shot_active) {
+			lwsl_notice("%s: one_shot_active (-O) is set and no url_sai_power. Exiting builder to allow VM to cleanly terminate.\n", __func__);
+			interrupted = 1;
+			lws_cancel_service(builder.context);
+		}
 		return;
+	}
 
 	/*
 	 * We're planning to get ourselves turned off after we have shutdown
@@ -482,11 +524,15 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 	snprintf(path, sizeof(path) - 1, "%s/auto-power-off/%s",
 		 builder.url_sai_power, builder.host);
 
-	lwsl_notice("%s: setting url metadata %s\n", __func__, path);
+	lwsl_notice("%s: requesting sai-power (or virt) to terminate us: %s\n", __func__, path);
 
 	r = lws_ss_set_metadata(builder.ss_power_off, "url", path, strlen(path));
 	if (r)
 		lwsl_err("%s: set_metadata said %d\n", __func__, (int)r);
+
+	r = lws_ss_client_connect(builder.ss_power_off);
+	if (r)
+		lwsl_ss_err(builder.ss_power_off, "Unable to connect ss_power_off (%d)", (int)r);
 
 	lws_ss_start_timeout(builder.ss_power_off, 3000); /* 3 sec */
 
@@ -530,11 +576,14 @@ saib_power_init(void)
 
 	lwsl_notice("%s: *** creating sai-power client ss...\n", __func__);
 
-	if (lws_ss_create(builder.context, 0, &ssi_saib_power_client_t,
-			  NULL, &ss_power_client, NULL, NULL)) {
-		lwsl_err("%s: *** failed to create sai-power client ss\n", __func__);
-
-		return 1;
+	if (!builder.one_shot_active) {
+		if (lws_ss_create(builder.context, 0, &ssi_saib_power_client_t,
+				  NULL, &ss_power_client, NULL, NULL)) {
+			lwsl_err("%s: *** failed to create sai-power client ss\n", __func__);
+			return 1;
+		}
+	} else {
+		lwsl_notice("%s: ephemeral VM, skipping sai_power_client websocket registration\n", __func__);
 	}
 
 	/*
@@ -544,15 +593,17 @@ saib_power_init(void)
 	 */
 	lws_ss_state_return_t r;
 
-	lwsl_notice("%s: ****** starting sai-power-client link %s\n", __func__, builder.url_sai_power);
+	if (ss_power_client) {
+		lwsl_notice("%s: ****** starting sai-power-client link %s\n", __func__, builder.url_sai_power);
 
-	if (lws_ss_set_metadata(ss_power_client, "url", builder.url_sai_power,
-				strlen(builder.url_sai_power)))
-		lwsl_warn("%s: unable to set url metadata\n", __func__);
+		if (lws_ss_set_metadata(ss_power_client, "url", builder.url_sai_power,
+					strlen(builder.url_sai_power)))
+			lwsl_warn("%s: unable to set url metadata\n", __func__);
 
-	r = lws_ss_request_tx(ss_power_client);
-	if (r)
-		lwsl_notice("%s: initial tx request says %d\n", __func__, (int)r);
+		r = lws_ss_request_tx(ss_power_client);
+		if (r)
+			lwsl_notice("%s: initial tx request says %d\n", __func__, (int)r);
+	}
 
 	return 0;
 }

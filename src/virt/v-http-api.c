@@ -43,17 +43,9 @@ callback_virt_http(struct lws *wsi, enum lws_callback_reasons reason,
 			} lws_end_foreach_dll(d);
 
 			if (found_vm) {
-				if (virt.ops)
-					virt.ops->destroy(&virt, found_vm);
-				
-				if (found_vm->plat->starting_vms > 0)
-					found_vm->plat->starting_vms--;
-				
-				virt.running_vms--;
-				
-				lws_dll2_remove(&found_vm->list);
-				lws_sul_cancel(&found_vm->sul_timeout);
-				free(found_vm);
+				/* Delay destruction by 2s so sai-builder can cleanly flush its TCP FIN to sai-server */
+				lws_sul_schedule(virt.context, 0, &found_vm->sul_destroy,
+						 saiv_vm_destroy_cb, 2 * LWS_US_PER_SEC);
 			}
 
 			lws_return_http_status(wsi, HTTP_STATUS_OK, NULL);
@@ -62,7 +54,7 @@ callback_virt_http(struct lws *wsi, enum lws_callback_reasons reason,
 
 		if (len > 6 && !strncmp(path, "/stay/", 6)) {
 			lws_strncpy(vm_id, path + 6, sizeof(vm_id));
-			lwsl_notice("%s: Received stay for %s\n", __func__, vm_id);
+			lwsl_notice("%s: Received stay request for %s. Replying '0' (do not stay, proceed with auto-power-off grace period)\n", __func__, vm_id);
 
 			saiv_vm_t *found_vm = NULL;
 			lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
@@ -85,8 +77,19 @@ callback_virt_http(struct lws *wsi, enum lws_callback_reasons reason,
 			}
 
 			/* We never return stay = true for ephemeral VMs */
+			uint8_t buf[LWS_PRE + 256], *p = buf + LWS_PRE, *end = p + 256;
+			
+			if (lws_add_http_header_status(wsi, HTTP_STATUS_OK, &p, end)) return -1;
+			if (lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_TYPE,
+					(unsigned char *)"text/plain", 10, &p, end)) return -1;
+			if (lws_add_http_header_content_length(wsi, 1, &p, end)) return -1;
+			if (lws_finalize_http_header(wsi, &p, end)) return -1;
+			
+			if (lws_write(wsi, buf + LWS_PRE, (size_t)(p - (buf + LWS_PRE)), LWS_WRITE_HTTP_HEADERS) < 0)
+				return -1;
+			
 			uint8_t stay_res = '0';
-			if (lws_write(wsi, &stay_res, 1, LWS_WRITE_HTTP) != 1)
+			if (lws_write(wsi, &stay_res, 1, LWS_WRITE_HTTP_FINAL) != 1)
 				return -1;
 			return -1; /* hang up */
 		}

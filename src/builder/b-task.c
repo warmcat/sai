@@ -244,6 +244,7 @@ static void saib_start_artifact_upload(struct sai_nspawn *ns);
 int
 saib_set_ns_state(struct sai_nspawn *ns, int state)
 {
+	struct sai_plat_server *spm = ns ? ns->spm : NULL;
 	ns->state		= (uint8_t)state;
 	ns->state_changed	= 1;
 
@@ -267,10 +268,10 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 		break;
 	}
 
-	if (!ns->spm || !ns->spm->ss)
+	if (!spm || !spm->ss)
 		return 0;
 
-	return lws_ss_request_tx(ns->spm->ss) ? -1 : 0;
+	return lws_ss_request_tx(spm->ss) ? -1 : 0;
 }
 
 /*
@@ -383,10 +384,17 @@ saib_task_destroy(struct sai_nspawn *ns)
 		}
 	}
 
-	if (ns->task && ns->task->ac_task_container) {
-		 /* contains the task object */
-		lwsac_free(&ns->task->ac_task_container);
-		ns->task = NULL;
+	if (ns->task) {
+		saib_queue_task_status_update(ns->sp, ns->spm, ns->task->uuid,
+					      (unsigned int)ns->retcode,
+					      SAI_TASK_REASON_DESTROYED);
+
+		builder.ram_reserved_kib	-= ns->task->est_peak_mem_kib;
+		builder.disk_reserved_kib	-= ns->task->est_disk_kib;
+		if (ns->spm)
+			lws_sul_schedule(builder.context, 0,
+					 &ns->spm->sul_load_report,
+					 saib_sul_load_report_cb, 1);
 	}
 
 	if (ns->script_path[0])
@@ -410,11 +418,12 @@ saib_task_destroy(struct sai_nspawn *ns)
 	 */
 
 	if (ns->task && (ns->retcode & SAISPRF_EXIT) &&
-	    (ns->retcode & 0xff) == 0) {
-		/* Task succeeded, so clean up the directory. */
+	    (ns->retcode & 0xff) == 0 &&
+	    ns->task->build_step == ns->task->build_step_count - 1) {
+		/* Task succeeded completely, so clean up the directory. */
 
-		lwsl_notice("%s: task %s succeeded, requesting deletion of job dir %s\n",
-			    __func__, ns->task->uuid, ns->inp);
+		lwsl_notice("%s: task %s succeeded (all %d steps), requesting deletion of job dir %s\n",
+			    __func__, ns->task->uuid, ns->task->build_step_count, ns->inp);
 #if defined(LWS_WITH_STUB)
 		if (builder.mgr_deletion) {
 			char json[256];
@@ -425,9 +434,18 @@ saib_task_destroy(struct sai_nspawn *ns)
 #endif
 	}
 
+	if (ns->task && ns->task->ac_task_container) {
+		 /* contains the task object */
+		lwsac_free(&ns->task->ac_task_container);
+		ns->task = NULL;
+	}
+
 	lws_dll2_remove(&ns->list);
 	lwsl_user("%s: free(ns) %p\n", __func__, (void *)ns);
 	free(ns);
+
+	saib_reassess_idle_situation();
+	lwsl_notice("====== saib_task_destroy completely finished ======\n");
 }
 
 static void
@@ -673,8 +691,8 @@ scan:
 	if (!ns->count_artifacts) {
 		lwsl_notice("%s: no artifacts, destroying ns now\n", __func__);
 		/* no artifacts to hang around for... nuke the ns now */
-        	lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
-                         saib_sub_cleaner_cb, 1);
+		lws_sul_cancel(&ns->sul_cleaner);
+		saib_task_destroy(ns);
 	} else
 		lwsl_notice("%s: created / waiting on %d artifact uploads\n",
 				__func__, ns->count_artifacts);

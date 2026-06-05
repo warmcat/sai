@@ -206,6 +206,7 @@ typedef struct sais_plat {
 	const char	*plat;
 	char		busy;
 	int		pending_count;
+	int		unmet_count;
 } sais_plat_t;
 
 struct vhd {

@@ -73,7 +73,7 @@ sais_central_clean_abandoned(struct vhd *vhd)
 	 */
 
 	n = lws_struct_sq3_deserialize(vhd->server.pdb,
-				       " and (state != 3 and state != 4 and state != 5)",
+				       " and (state != 3 and state != 4 and state != 5 and state != 7)",
 				       NULL, lsm_schema_sq3_map_event, &o,
 				       &ac, 0, 10);
 	if (n < 0 || !o.head)
@@ -117,22 +117,46 @@ sais_central_clean_abandoned(struct vhd *vhd)
 			sqlite3_stmt *sm;
 
 			lws_snprintf(s, sizeof(s),
-				     "SELECT uuid FROM tasks WHERE "
+				     "SELECT uuid, started, builder_name FROM tasks WHERE "
 				     "(state = %d OR state = %d) AND "
-				     "started != 0 AND started < %llu AND "
 				     "run=(SELECT max(run) FROM tasks t2 WHERE t2.uuid = tasks.uuid)",
 				     SAIES_PASSED_TO_BUILDER,
-				     SAIES_BEING_BUILT, (unsigned long long)
-					(lws_now_secs() -
-					 (vhd->task_abandoned_timeout_mins * 60)));
+				     SAIES_BEING_BUILT);
 
 			if (sqlite3_prepare_v2(pdb, s, -1, &sm, NULL) == SQLITE_OK) {
 				while (sqlite3_step(sm) == SQLITE_ROW) {
 					const unsigned char *task_uuid = sqlite3_column_text(sm, 0);
-					if (task_uuid) {
-						lwsl_notice("%s: resetting abandoned task %s\n",
-								__func__, (const char *)task_uuid);
-						sais_task_clear_build_and_logs(vhd, (const char *)task_uuid, 0);
+					unsigned long long started = (unsigned long long)sqlite3_column_int64(sm, 1);
+					const unsigned char *bname = sqlite3_column_text(sm, 2);
+					int orphaned_reason = 0;
+
+					if (started != 0 && started < (lws_now_secs() - (vhd->task_abandoned_timeout_mins * 60))) {
+						orphaned_reason = 1;
+					} else if (bname) {
+						/* Check if ANY connected builder has this task inflight */
+						if (!sais_is_task_inflight(vhd, NULL, (const char *)task_uuid, NULL)) {
+							orphaned_reason = 2;
+						}
+					} else {
+						orphaned_reason = 3;
+					}
+
+					if (orphaned_reason && task_uuid) {
+						const char *reason_str = "unknown";
+						if (orphaned_reason == 1)
+							reason_str = "timeout exceeded";
+						else if (orphaned_reason == 2)
+							reason_str = "not found in any builder's inflight list";
+						else if (orphaned_reason == 3)
+							reason_str = "bname is NULL";
+
+						lwsl_err("%s: DIAGNOSTIC: WOULD HAVE reset task %s (reason: %s, started: %llu, bname: %s)\n",
+								__func__, (const char *)task_uuid, reason_str,
+								started, bname ? (const char *)bname : "NULL");
+						/*
+						 * Temporarily disabled to gather information on why tasks are being killed:
+						 * sais_task_clear_build_and_logs(vhd, (const char *)task_uuid, 0);
+						 */
 					}
 				}
 				sqlite3_finalize(sm);
