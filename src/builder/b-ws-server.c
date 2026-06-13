@@ -626,14 +626,6 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		spm->refcount++;
 		lws_dll2_add_tail(&a->mref->list, &a->sai_plat->servers);
 
-		{
-			lws_ss_state_return_t r;
-			lwsl_user("%s: explicitly requesting tx to kickstart connection\n", __func__);
-			r = lws_ss_request_tx(spm->ss);
-			if (r)
-				lwsl_notice("%s: lws_ss_request_tx returned %d\n", __func__, (int)r);
-		}
-
 		break;
 
 	case LWSSSCS_DESTROYING:
@@ -671,8 +663,6 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		lws_sul_cancel(&spm->sul_load_report);
 		lws_dll2_foreach_safe(&builder.sai_plat_owner, spm,
 				      cleanup_on_ss_disconnect);
-		if (lws_ss_request_tx(spm->ss))
-			lwsl_err("%s: failed to reconnect\n", __func__);
 		break;
 
 	case LWSSSCS_ALL_RETRIES_FAILED:

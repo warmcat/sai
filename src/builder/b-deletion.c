@@ -228,6 +228,8 @@ sai_deletion_worker(const char *home_dir_unused)
 
 	while (rx < 128) {
 		ssize_t n = read(0, secret + rx, 128 - (unsigned int)rx);
+		if (n < 0 && errno == EINTR)
+			continue;
 		if (n <= 0)
 			break;
 		rx += (size_t)n;
@@ -241,7 +243,11 @@ sai_deletion_worker(const char *home_dir_unused)
 
 	/* 2. Read home_dir from stdin */
 	{
-		ssize_t n = read(0, home_dir, sizeof(home_dir) - 1);
+		ssize_t n;
+		do {
+			n = read(0, home_dir, sizeof(home_dir) - 1);
+		} while (n < 0 && errno == EINTR);
+		
 		if (n <= 0) {
 			lwsl_err("%s: Failed to read home_dir\n", __func__);
 			return 1;
