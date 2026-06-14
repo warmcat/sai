@@ -256,8 +256,19 @@ saib_power_stay_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	return 0;
 }
 
+static lws_ss_state_return_t
+saib_power_stay_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
+		   size_t *len, int *flags)
+{
+	*len = 0;
+	*flags = LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+
+	return LWSSSSRET_OK;
+}
+
 LWS_SS_INFO("sai_power", saib_power_stay_t)
 	.rx				= saib_power_stay_rx,
+	.tx				= saib_power_stay_tx,
 };
 
 
@@ -273,6 +284,9 @@ sul_stay_cb(lws_sorted_usec_list_t *sul)
 	r = lws_ss_client_connect(builder.ss_stay);
 	if (r)
 		lwsl_ss_err(builder.ss_stay, "Unable to start stay connection (%d)", (int)r);
+
+	if (lws_ss_request_tx(builder.ss_stay))
+		lwsl_ss_warn(builder.ss_stay, "Unable to request tx");
 
 	lws_sul_schedule(builder.context, 0, &builder.sul_stay,
 			 sul_stay_cb, SAI_STAY_POLL_US);

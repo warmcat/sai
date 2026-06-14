@@ -493,6 +493,10 @@ typedef struct sai_plat_server {
 	int				index;  /* used to create unique build dir path */
 
 	uint16_t			retries;
+	unsigned int			tx_flags;
+
+	char				last_msg_start[128];
+	uint8_t				inside_msg;
 } sai_plat_server_t;
 
 struct sai_env {

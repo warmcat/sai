@@ -121,7 +121,7 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 			return -1;
 		}
 
-		if (saib_srv_queue_tx(h, buf + LWS_PRE, w, ssf))
+		if (saib_srv_queue_tx(h, buf + LWS_PRE, w, ssf) < 0)
 			return -1;
 
 		ssf &= ~((unsigned int)LWSSS_FLAG_SOM);
@@ -316,47 +316,49 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	  int *flags)
 {
 	struct sai_plat_server *spm = (struct sai_plat_server *)userobj;
-	int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&spm->bl_to_srv), depi;
+	unsigned int *pi = (unsigned int *)lws_buflist_get_frag_start_or_NULL(&spm->bl_to_srv);
 	char som, som1, eom, final = 1;
 	size_t fsl, used;
 
 	if (!spm->bl_to_srv)
 		return LWSSSSRET_TX_DONT_SEND;
 
-	depi = *pi;
-	*pi = (*pi) & (~(LWSSS_FLAG_SOM)); /* no SOM twice even on partial */
-
-	/*
-	 * We can only issue *len at a time.
-	 *
-	 * Notice we are getting the stored flags from the START of the fragment each time.
-	 * that means we can still see the right flags stored with the fragment, even if we
-	 * have partially used the buflist frag and are partway through it.
-	 *
-	 * Ergo, only something to skip if we are at som=1.  And also notice that although
-	 * *pi will be right, after the lws_buflist..._use() api, what it points to has been
-	 * destroyed.  So we also dereference *pi into depi for use below.
-	 */
-
 	fsl = lws_buflist_next_segment_len(&spm->bl_to_srv, NULL);
 
 	lws_buflist_fragment_use(&spm->bl_to_srv, NULL, 0, &som, &eom);
 	if (som) {
+		spm->tx_flags = *pi;
 		fsl -= sizeof(int);
 		lws_buflist_fragment_use(&spm->bl_to_srv, buf, sizeof(int), &som1, &eom);
 	}
-	if (!(depi & LWSSS_FLAG_SOM))
+	if (!(spm->tx_flags & LWSSS_FLAG_SOM))
 		som = 0;
 
-	used = (size_t)lws_buflist_fragment_use(&spm->bl_to_srv, (uint8_t *)buf, *len, &som1, &eom);
-	if (!used)
-		return LWSSSSRET_TX_DONT_SEND;
+	if (fsl == 0)
+		used = 0;
+	else
+		used = (size_t)lws_buflist_fragment_use(&spm->bl_to_srv, (uint8_t *)buf, *len, &som1, &eom);
 
-	if (used < fsl || !(depi & LWSSS_FLAG_EOM))
+	if (used < fsl || !(spm->tx_flags & LWSSS_FLAG_EOM))
 		final = 0;
+
+	if (!used && !som && !final && fsl > 0)
+		return LWSSSSRET_TX_DONT_SEND;
 
 	*len = used;
 	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
+
+	if (*flags & LWSSS_FLAG_SOM) {
+		if (spm->inside_msg) {
+			lwsl_err("%s: ILLEGAL SOM! Interrupted previous message starting with: %s\n",
+				 __func__, spm->last_msg_start);
+			lwsl_hexdump_err(buf, *len);
+		}
+		lws_strnncpy(spm->last_msg_start, (const char *)buf, *len, sizeof(spm->last_msg_start));
+		spm->inside_msg = 1;
+	}
+	if (*flags & LWSSS_FLAG_EOM)
+		spm->inside_msg = 0;
 
 //	lwsl_ss_notice(spm->ss, "Sending %d builder->srv: ssflags %d", (int)*len, (int)*flags);
 //	lwsl_hexdump_notice(buf, *len);
