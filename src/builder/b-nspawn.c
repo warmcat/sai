@@ -415,6 +415,7 @@ fail:
 
 static const char * const runscript_win_first =
 	"set SAI_INSTANCE_IDX=%d\n"
+	"set SAI_WRAP14=%d\n"
 	"set SAI_PARALLEL=%d\n"
 	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"set SAI_LOGPROXY=%s\n"
@@ -428,6 +429,7 @@ static const char * const runscript_win_first =
 
 static const char * const runscript_win_next =
 	"set SAI_INSTANCE_IDX=%d\n"
+	"set SAI_WRAP14=%d\n"
 	"set SAI_PARALLEL=%d\n"
 	"set SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"set SAI_LOGPROXY=%s\n"
@@ -453,6 +455,7 @@ static const char * const runscript_first =
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
 	"export SAI_INSTANCE_IDX=%d\n"
+	"export SAI_WRAP14=%d\n"
 	"export SAI_PARALLEL=%d\n"
 	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"export SAI_LOGPROXY=%s\n"
@@ -478,6 +481,7 @@ static const char * const runscript_next =
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
 	"export SAI_INSTANCE_IDX=%d\n"
+	"export SAI_WRAP14=%d\n"
 	"export SAI_PARALLEL=%d\n"
 	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"export SAI_LOGPROXY=%s\n"
@@ -502,6 +506,7 @@ static const char * const runscript_build =
 	"export SAI_PROJECT=%s\n"
 	"export SAI_REMOTE_REF=%s\n"
 	"export SAI_INSTANCE_IDX=%d\n"
+	"export SAI_WRAP14=%d\n"
 	"export SAI_PARALLEL=%d\n"
 	"export SAI_BUILDER_RESOURCE_PROXY=%s\n"
 	"export SAI_LOGPROXY=%s\n"
@@ -580,11 +585,12 @@ saib_spawn_script(struct sai_nspawn *ns)
 
 		respath = cm->resproxy_path;
 	}
+	builder.wrap14 = (builder.wrap14 + 8) & 0x3fff;
 
 #if defined(WIN32)
 	n = lws_snprintf(st, sizeof(st),
 			 ns->task->build_step ? runscript_win_next : runscript_win_first,
-			 ns->instance_ordinal + 1,
+			 ns->instance_ordinal + 1, builder.wrap14,
 			 ns->task->parallel ? ns->task->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath, builder.home,
@@ -607,6 +613,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 	n = lws_snprintf(st, sizeof(st), script_template,
 			 builder.home, ns->fsm.ovname, ns->inp_vn,
 			 ns->project_name, ns->ref, ns->instance_ordinal + 1,
+			 builder.wrap14,
 			 ns->task->parallel ? ns->task->parallel : 1,
 			 respath, ns->slp_control.sockpath,
 			 ns->slp[0].sockpath, ns->slp[1].sockpath,
