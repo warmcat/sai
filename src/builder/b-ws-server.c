@@ -373,25 +373,31 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	if (*flags & LWSSS_FLAG_EOM)
 		spm->inside_msg = 0;
 
+	{
+		size_t hysteresis_limit = (LWS_BUFLIST_OOM_LIMIT - (256 * 1024)) / 10;
+		if (lws_buflist2_total_len(&spm->bl_to_srv) <= hysteresis_limit) {
+			/* buflist drained enough, unpause any backpressured stdwsi */
+			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, builder.sai_plat_owner.head) {
+				sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);
+				lws_start_foreach_dll_safe(struct lws_dll2 *, d2, d3, sp->nspawn_owner.head) {
+					struct sai_nspawn *ns = lws_container_of(d2, struct sai_nspawn, list);
+					if (ns->spm == spm) {
+						for (int i = 0; i < 3; i++) {
+							if (ns->stdwsi_paused[i] && ns->stdwsi[i]) {
+								lwsl_notice("%s: Unpausing ch %d (tot %zu)\n", __func__, i,
+									lws_buflist2_total_len(&spm->bl_to_srv));
+								ns->stdwsi_paused[i] = 0;
+								lws_rx_flow_control(ns->stdwsi[i], 1 | LWS_RXFLOW_REASON_USER_BOOL);
+							}
+						}
+					}
+				} lws_end_foreach_dll_safe(d2, d3);
+			} lws_end_foreach_dll_safe(d, d1);
+		}
+	}
+
 	if (spm->bl_to_srv.owner.head)
 		return lws_ss_request_tx(spm->ss);
-
-	/* buflist is empty, unpause any backpressured stdwsi */
-	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, builder.sai_plat_owner.head) {
-		sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);
-		lws_start_foreach_dll_safe(struct lws_dll2 *, d2, d3, sp->nspawn_owner.head) {
-			struct sai_nspawn *ns = lws_container_of(d2, struct sai_nspawn, list);
-			if (ns->spm == spm) {
-				for (int i = 0; i < 3; i++) {
-					if (ns->stdwsi_paused[i] && ns->stdwsi[i]) {
-						lwsl_notice("%s: Unpausing ch %d\n", __func__, i);
-						ns->stdwsi_paused[i] = 0;
-						lws_rx_flow_control(ns->stdwsi[i], 1 | LWS_RXFLOW_REASON_USER_BOOL);
-					}
-				}
-			}
-		} lws_end_foreach_dll_safe(d2, d3);
-	} lws_end_foreach_dll_safe(d, d1);
 
 	return LWSSSSRET_OK;
 }

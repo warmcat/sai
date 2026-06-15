@@ -216,6 +216,7 @@ typedef struct {
 	unsigned int			est_disk_kib;
 	unsigned int			est_wallclock_ms;
 	unsigned int			est_compute_ms;
+	unsigned int			task_log_limit;
 
 	int				parallel;
 	char				told_ongoing;
@@ -250,6 +251,9 @@ struct sai_nspawn {
 	struct lws_fsmount		fsm;
 	struct saib_opaque_spawn	*op;
 	sai_task_t			*task;
+
+	unsigned int			log_count;
+	unsigned int			killed_for_spew:1;
 
 	struct lws			*stdwsi[3];
 	uint8_t				stdwsi_paused[3];
@@ -812,7 +816,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[12],
-	lsm_task[31],
+	lsm_task[32],
 	lsm_log[8],
 	lsm_artifact[9],
 	lsm_plat_list[1],

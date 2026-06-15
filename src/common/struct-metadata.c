@@ -176,6 +176,7 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_UNSIGNED	(sai_task_t, est_disk_kib,	"est_disk_kib"),
 	LSM_UNSIGNED	(sai_task_t, est_wallclock_ms,	"est_wallclock_ms"),
 	LSM_UNSIGNED	(sai_task_t, est_compute_ms,	"est_compute_ms"),
+	LSM_UNSIGNED	(sai_task_t, task_log_limit,	"task_log_limit"),
 	LSM_SIGNED	(sai_task_t, parallel,		"parallel"),
 	LSM_SIGNED	(sai_task_t, rebuildable,	"rebuildable"),
 	LSM_SIGNED	(sai_task_t, run,		"run"),

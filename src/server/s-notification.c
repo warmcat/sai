@@ -75,6 +75,7 @@ static const char * const saifile_paths[] = {
 	"configurations.*.artifacts",
 	"configurations.*.cpack",
 	"configurations.*.branches",
+	"configurations.*.task_log_limit",
 	"configurations.*",
 };
 
@@ -92,6 +93,7 @@ enum enum_saifile_paths {
 	LEJPNSAIF_CONFIGURATIONS_ARTIFACTS,
 	LEJPNSAIF_CONFIGURATIONS_CPACK,
 	LEJPNSAIF_CONFIGURATIONS_BRANCHES,
+	LEJPNSAIF_CONFIGURATIONS_TASK_LOG_LIMIT,
 	LEJPNSAIF_CONFIGURATIONS_NAME,
 };
 
@@ -757,6 +759,10 @@ next_plat: ;
 
 	case LEJPNSAIF_CONFIGURATIONS_BRANCHES:
 		lws_strncpy(sn->t.branches, ctx->buf, sizeof(sn->t.branches));
+		break;
+
+	case LEJPNSAIF_CONFIGURATIONS_TASK_LOG_LIMIT:
+		sn->t.task_log_limit = (unsigned int)atoi(ctx->buf);
 		break;
 
 	case LEJPNSAIF_PLAT_BUILD:

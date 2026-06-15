@@ -51,7 +51,22 @@ saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 	if (!ns->task)
 		return 0;
 
+	{
+		unsigned int limit = ns->task->task_log_limit ? ns->task->task_log_limit : 30000;
+		ns->log_count++;
 
+		if (ns->log_count > limit) {
+			if (!ns->killed_for_spew) {
+				ns->killed_for_spew = 1;
+				if (ns->op && ns->op->lsp) {
+					const char *msg = ">saib> <=== Killed by Sai due to log spew limit exceeded\n";
+					saib_log_chunk_create(ns, (void *)msg, strlen(msg), 3);
+					lws_spawn_piped_kill_child_process(ns->op->lsp);
+				}
+			}
+			return 0;
+		}
+	}
 	n = lws_snprintf(lj + LWS_PRE, sizeof(lj) - LWS_PRE,
 		"{\"schema\":\"com-warmcat-sai-logs\","
 		 "\"task_uuid\":\"%s\", \"timestamp\": %llu,"
@@ -234,7 +249,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		goto fail;
 	}
 
-	if (we_killed_him & 2) {
+	if ((we_killed_him & 2) || ns->killed_for_spew) {
 		lwsl_notice("%s: Process killed by Sai due to spew\n", __func__);
 		exit_code = -1;
 		ns->retcode = SAISPRF_TERMINATED;
