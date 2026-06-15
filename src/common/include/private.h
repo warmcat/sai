@@ -251,6 +251,9 @@ struct sai_nspawn {
 	struct saib_opaque_spawn	*op;
 	sai_task_t			*task;
 
+	struct lws			*stdwsi[3];
+	uint8_t				stdwsi_paused[3];
+
 #if defined(LWS_WITH_SPAWN)
 	lws_spawn_resource_us_t		res;
 #endif
@@ -471,7 +474,7 @@ typedef struct sai_plat_server {
 
 	lws_dll2_owner_t		resource_pss_list; /* so we can find the cookie */
 
-	struct lws_buflist		*bl_to_srv;
+	struct lws_buflist2_owner	bl_to_srv;
 
 	char				resproxy_path[128];
 
@@ -497,6 +500,7 @@ typedef struct sai_plat_server {
 
 	char				last_msg_start[128];
 	uint8_t				inside_msg;
+	uint8_t				tx_corrupted;
 } sai_plat_server_t;
 
 struct sai_env {

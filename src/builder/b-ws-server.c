@@ -82,9 +82,12 @@ saib_srv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned int s
 	// lwsl_ss_notice(h, "Queuing builder -> sai-server");
 	// lwsl_hexdump_notice(buf, len);
 
-	if (lws_buflist_append_segment(&spm->bl_to_srv, (uint8_t *)buf - sizeof(int),
-				       len + sizeof(int)) < 0)
-		lwsl_ss_err(h, "failed to append"); /* still ask to drain */
+	if (lws_buflist2_append_segment(&spm->bl_to_srv, (uint8_t *)buf - sizeof(int),
+					 len + sizeof(int)) < 0) {
+		lwsl_err("%s: failed to append\n", __func__);
+		spm->tx_corrupted = 1; /* Mark the stream as permanently corrupted */
+		return -1;
+	}
 
 	if (lws_ss_request_tx(h))
 		lwsl_ss_err(h, "failed to request tx");
@@ -118,6 +121,10 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 			break;
 		case LSJS_RESULT_ERROR:
 			lwsl_warn("%s: serialization failed\n", __func__);
+			{
+				struct sai_plat_server *spm = (struct sai_plat_server *)lws_ss_to_user_object(h);
+				spm->tx_corrupted = 1;
+			}
 			return -1;
 		}
 
@@ -316,20 +323,26 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	  int *flags)
 {
 	struct sai_plat_server *spm = (struct sai_plat_server *)userobj;
-	unsigned int *pi = (unsigned int *)lws_buflist_get_frag_start_or_NULL(&spm->bl_to_srv);
+	unsigned int *pi = (unsigned int *)lws_buflist2_get_frag_start_or_NULL(&spm->bl_to_srv);
 	char som, som1, eom, final = 1;
 	size_t fsl, used;
 
-	if (!spm->bl_to_srv)
+	if (spm->tx_corrupted) {
+		lwsl_err("%s: tx_corrupted, dropping connection\n", __func__);
+		return LWSSSSRET_DISCONNECT_ME;
+	}
+
+	if (!spm->bl_to_srv.owner.head)
 		return LWSSSSRET_TX_DONT_SEND;
 
-	fsl = lws_buflist_next_segment_len(&spm->bl_to_srv, NULL);
+	fsl = lws_buflist2_next_segment_len(&spm->bl_to_srv, NULL);
 
-	lws_buflist_fragment_use(&spm->bl_to_srv, NULL, 0, &som, &eom);
+	lws_buflist2_fragment_use(&spm->bl_to_srv, NULL, 0, &som, &eom);
+
 	if (som) {
 		spm->tx_flags = *pi;
 		fsl -= sizeof(int);
-		lws_buflist_fragment_use(&spm->bl_to_srv, buf, sizeof(int), &som1, &eom);
+		lws_buflist2_fragment_use(&spm->bl_to_srv, buf, sizeof(int), &som1, &eom);
 	}
 	if (!(spm->tx_flags & LWSSS_FLAG_SOM))
 		som = 0;
@@ -337,7 +350,7 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	if (fsl == 0)
 		used = 0;
 	else
-		used = (size_t)lws_buflist_fragment_use(&spm->bl_to_srv, (uint8_t *)buf, *len, &som1, &eom);
+		used = (size_t)lws_buflist2_fragment_use(&spm->bl_to_srv, (uint8_t *)buf, *len, &som1, &eom);
 
 	if (used < fsl || !(spm->tx_flags & LWSSS_FLAG_EOM))
 		final = 0;
@@ -360,13 +373,27 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	if (*flags & LWSSS_FLAG_EOM)
 		spm->inside_msg = 0;
 
-//	lwsl_ss_notice(spm->ss, "Sending %d builder->srv: ssflags %d", (int)*len, (int)*flags);
-//	lwsl_hexdump_notice(buf, *len);
-
-	if (spm->bl_to_srv)
+	if (spm->bl_to_srv.owner.head)
 		return lws_ss_request_tx(spm->ss);
 
-	return 0;
+	/* buflist is empty, unpause any backpressured stdwsi */
+	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, builder.sai_plat_owner.head) {
+		sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d2, d3, sp->nspawn_owner.head) {
+			struct sai_nspawn *ns = lws_container_of(d2, struct sai_nspawn, list);
+			if (ns->spm == spm) {
+				for (int i = 0; i < 3; i++) {
+					if (ns->stdwsi_paused[i] && ns->stdwsi[i]) {
+						lwsl_notice("%s: Unpausing ch %d\n", __func__, i);
+						ns->stdwsi_paused[i] = 0;
+						lws_rx_flow_control(ns->stdwsi[i], 1 | LWS_RXFLOW_REASON_USER_BOOL);
+					}
+				}
+			}
+		} lws_end_foreach_dll_safe(d2, d3);
+	} lws_end_foreach_dll_safe(d, d1);
+
+	return LWSSSSRET_OK;
 }
 
 static int
@@ -644,6 +671,13 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 	case LWSSSCS_CONNECTED:
 		lwsl_ss_user(spm->ss, "CONNECTED");
+
+		/* Reset corruption flags and discard broken buflist on reconnect */
+		spm->tx_corrupted = 0;
+		spm->inside_msg = 0;
+		spm->last_msg_start[0] = '\0';
+		lws_buflist2_destroy_all_segments(&spm->bl_to_srv);
+
 		/* Initialize the load report SUL timer for this server connection */
 		lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
 				 saib_sul_load_report_cb, 1);

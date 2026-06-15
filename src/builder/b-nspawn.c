@@ -51,6 +51,7 @@ saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 	if (!ns->task)
 		return 0;
 
+
 	n = lws_snprintf(lj + LWS_PRE, sizeof(lj) - LWS_PRE,
 		"{\"schema\":\"com-warmcat-sai-logs\","
 		 "\"task_uuid\":\"%s\", \"timestamp\": %llu,"
@@ -100,6 +101,12 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 	switch (reason) {
 
 	case LWS_CALLBACK_RAW_CLOSE_FILE:
+		{
+			int ch = lws_spawn_get_stdfd(wsi);
+			if (ch == 0) ch = 1;
+			if (op && op->ns && ch < 3)
+				op->ns->stdwsi[ch] = NULL;
+		}
 		if (op && op->lsp) {
 			if (lws_spawn_stdwsi_closed(op->lsp, wsi) &&
 			    ns->reap_cb_called) {
@@ -142,8 +149,32 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 			int ch = lws_spawn_get_stdfd(wsi);
 			if (ch == 0)
 				ch = 1;
+				
+			if (ch < 3)
+				op->ns->stdwsi[ch] = wsi;
+
 			if (saib_log_chunk_create(op->ns, buf, len, ch))
 				return -1;
+
+			if (lws_buflist2_total_len(&op->ns->spm->bl_to_srv) > (LWS_BUFLIST_OOM_LIMIT - (256 * 1024))) {
+				/* buflist is getting full, backpressure ALL active stdwsi for this connection */
+				lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, builder.sai_plat_owner.head) {
+					sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);
+					lws_start_foreach_dll_safe(struct lws_dll2 *, d2, d3, sp->nspawn_owner.head) {
+						struct sai_nspawn *ns = lws_container_of(d2, struct sai_nspawn, list);
+						if (ns->spm == op->ns->spm) {
+							for (int i = 0; i < 3; i++) {
+								if (!ns->stdwsi_paused[i] && ns->stdwsi[i]) {
+									ns->stdwsi_paused[i] = 1;
+									lws_rx_flow_control(ns->stdwsi[i], 0); /* 0 disables RX */
+									lwsl_notice("%s: Backpressure applied to ch %d (tot %zu)\n",
+										__func__, i, lws_buflist2_total_len(&op->ns->spm->bl_to_srv));
+								}
+							}
+						}
+					} lws_end_foreach_dll_safe(d2, d3);
+				} lws_end_foreach_dll_safe(d, d1);
+			}
 		}
 
 		return lws_ss_request_tx(op->ns->spm->ss) ? -1 : 0;
