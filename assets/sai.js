@@ -2359,7 +2359,7 @@ function ws_open_sai()
 					}
 				}
 
-				s = "<table>";
+				s = "<table class=\"events-table\">";
 
 				/*
 				 * Update existing?

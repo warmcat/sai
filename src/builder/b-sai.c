@@ -665,6 +665,22 @@ saib_app_run(int argc, const char **argv)
 			close(fd);
 		}
 	}
+#elif defined(__FreeBSD__)
+	{
+#include <kenv.h>
+		char fw_id[128];
+		if (kenv(KENV_GET, "smbios.system.serial", fw_id, sizeof(fw_id)) > 0) {
+			if (!strncmp(fw_id, "sai_builder_id:", 15)) {
+				char *id = fw_id + 15;
+				char *new_host = lwsac_use(&builder.conf_head, strlen(id) + 1, 512);
+				if (new_host) {
+					strcpy(new_host, id);
+					builder.host = new_host;
+					lwsl_notice("%s: Applied dynamic SMBIOS builder identity: %s\n", __func__, builder.host);
+				}
+			}
+		}
+	}
 #elif defined(WIN32)
 	{
 		HKEY hKey;

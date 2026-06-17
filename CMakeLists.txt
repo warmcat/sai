@@ -120,6 +120,7 @@ endif()
 
 if (CMAKE_SYSTEM_NAME MATCHES "FreeBSD")
 	set(CMAKE_C_FLAGS "-I/usr/local/include ${CMAKE_C_FLAGS}")
+	set(CMAKE_EXE_LINKER_FLAGS "-L/usr/local/lib ${CMAKE_EXE_LINKER_FLAGS}")
 	link_directories("/usr/local/lib")
 endif()
 

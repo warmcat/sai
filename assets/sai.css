@@ -98,6 +98,10 @@ td.waiting_gi {
 	border-radius:2px;
 }
 
+table.events-table {
+	border-spacing: 0 10px;
+}
+
 table.comp {
 	border-radius:7px;
 	width: 100%
@@ -1352,48 +1356,48 @@ canvas.power-graph {
 	background: #ffdc00;
 	color: black;
 }
-.taskstate1.prog-0 { background: linear-gradient(90deg, #d0d0d0 0%, transparent 0%); }
-.taskstate1.prog-5 { background: linear-gradient(90deg, #d0d0d0 5%, transparent 5%); }
-.taskstate1.prog-10 { background: linear-gradient(90deg, #d0d0d0 10%, transparent 10%); }
-.taskstate1.prog-15 { background: linear-gradient(90deg, #d0d0d0 15%, transparent 15%); }
-.taskstate1.prog-20 { background: linear-gradient(90deg, #d0d0d0 20%, transparent 20%); }
-.taskstate1.prog-25 { background: linear-gradient(90deg, #d0d0d0 25%, transparent 25%); }
-.taskstate1.prog-30 { background: linear-gradient(90deg, #d0d0d0 30%, transparent 30%); }
-.taskstate1.prog-35 { background: linear-gradient(90deg, #d0d0d0 35%, transparent 35%); }
-.taskstate1.prog-40 { background: linear-gradient(90deg, #d0d0d0 40%, transparent 40%); }
-.taskstate1.prog-45 { background: linear-gradient(90deg, #d0d0d0 45%, transparent 45%); }
-.taskstate1.prog-50 { background: linear-gradient(90deg, #d0d0d0 50%, transparent 50%); }
-.taskstate1.prog-55 { background: linear-gradient(90deg, #d0d0d0 55%, transparent 55%); }
-.taskstate1.prog-60 { background: linear-gradient(90deg, #d0d0d0 60%, transparent 60%); }
-.taskstate1.prog-65 { background: linear-gradient(90deg, #d0d0d0 65%, transparent 65%); }
-.taskstate1.prog-70 { background: linear-gradient(90deg, #d0d0d0 70%, transparent 70%); }
-.taskstate1.prog-75 { background: linear-gradient(90deg, #d0d0d0 75%, transparent 75%); }
-.taskstate1.prog-80 { background: linear-gradient(90deg, #d0d0d0 80%, transparent 80%); }
-.taskstate1.prog-85 { background: linear-gradient(90deg, #d0d0d0 85%, transparent 85%); }
-.taskstate1.prog-90 { background: linear-gradient(90deg, #d0d0d0 90%, transparent 90%); }
-.taskstate1.prog-95 { background: linear-gradient(90deg, #d0d0d0 95%, transparent 95%); }
-.taskstate1.prog-100 { background: linear-gradient(90deg, #d0d0d0 100%, transparent 100%); }
-.taskstate2.prog-0 { background: linear-gradient(90deg, #a0a0a0 0%, transparent 0%); }
-.taskstate2.prog-5 { background: linear-gradient(90deg, #a0a0a0 5%, transparent 5%); }
-.taskstate2.prog-10 { background: linear-gradient(90deg, #a0a0a0 10%, transparent 10%); }
-.taskstate2.prog-15 { background: linear-gradient(90deg, #a0a0a0 15%, transparent 15%); }
-.taskstate2.prog-20 { background: linear-gradient(90deg, #a0a0a0 20%, transparent 20%); }
-.taskstate2.prog-25 { background: linear-gradient(90deg, #a0a0a0 25%, transparent 25%); }
-.taskstate2.prog-30 { background: linear-gradient(90deg, #a0a0a0 30%, transparent 30%); }
-.taskstate2.prog-35 { background: linear-gradient(90deg, #a0a0a0 35%, transparent 35%); }
-.taskstate2.prog-40 { background: linear-gradient(90deg, #a0a0a0 40%, transparent 40%); }
-.taskstate2.prog-45 { background: linear-gradient(90deg, #a0a0a0 45%, transparent 45%); }
-.taskstate2.prog-50 { background: linear-gradient(90deg, #a0a0a0 50%, transparent 50%); }
-.taskstate2.prog-55 { background: linear-gradient(90deg, #a0a0a0 55%, transparent 55%); }
-.taskstate2.prog-60 { background: linear-gradient(90deg, #a0a0a0 60%, transparent 60%); }
-.taskstate2.prog-65 { background: linear-gradient(90deg, #a0a0a0 65%, transparent 65%); }
-.taskstate2.prog-70 { background: linear-gradient(90deg, #a0a0a0 70%, transparent 70%); }
-.taskstate2.prog-75 { background: linear-gradient(90deg, #a0a0a0 75%, transparent 75%); }
-.taskstate2.prog-80 { background: linear-gradient(90deg, #a0a0a0 80%, transparent 80%); }
-.taskstate2.prog-85 { background: linear-gradient(90deg, #a0a0a0 85%, transparent 85%); }
-.taskstate2.prog-90 { background: linear-gradient(90deg, #a0a0a0 90%, transparent 90%); }
-.taskstate2.prog-95 { background: linear-gradient(90deg, #a0a0a0 95%, transparent 95%); }
-.taskstate2.prog-100 { background: linear-gradient(90deg, #a0a0a0 100%, transparent 100%); }
+.taskstate1.prog-0 { background: linear-gradient(90deg, #01ff70 0%, transparent 0%); }
+.taskstate1.prog-5 { background: linear-gradient(90deg, #01ff70 5%, transparent 5%); }
+.taskstate1.prog-10 { background: linear-gradient(90deg, #01ff70 10%, transparent 10%); }
+.taskstate1.prog-15 { background: linear-gradient(90deg, #01ff70 15%, transparent 15%); }
+.taskstate1.prog-20 { background: linear-gradient(90deg, #01ff70 20%, transparent 20%); }
+.taskstate1.prog-25 { background: linear-gradient(90deg, #01ff70 25%, transparent 25%); }
+.taskstate1.prog-30 { background: linear-gradient(90deg, #01ff70 30%, transparent 30%); }
+.taskstate1.prog-35 { background: linear-gradient(90deg, #01ff70 35%, transparent 35%); }
+.taskstate1.prog-40 { background: linear-gradient(90deg, #01ff70 40%, transparent 40%); }
+.taskstate1.prog-45 { background: linear-gradient(90deg, #01ff70 45%, transparent 45%); }
+.taskstate1.prog-50 { background: linear-gradient(90deg, #01ff70 50%, transparent 50%); }
+.taskstate1.prog-55 { background: linear-gradient(90deg, #01ff70 55%, transparent 55%); }
+.taskstate1.prog-60 { background: linear-gradient(90deg, #01ff70 60%, transparent 60%); }
+.taskstate1.prog-65 { background: linear-gradient(90deg, #01ff70 65%, transparent 65%); }
+.taskstate1.prog-70 { background: linear-gradient(90deg, #01ff70 70%, transparent 70%); }
+.taskstate1.prog-75 { background: linear-gradient(90deg, #01ff70 75%, transparent 75%); }
+.taskstate1.prog-80 { background: linear-gradient(90deg, #01ff70 80%, transparent 80%); }
+.taskstate1.prog-85 { background: linear-gradient(90deg, #01ff70 85%, transparent 85%); }
+.taskstate1.prog-90 { background: linear-gradient(90deg, #01ff70 90%, transparent 90%); }
+.taskstate1.prog-95 { background: linear-gradient(90deg, #01ff70 95%, transparent 95%); }
+.taskstate1.prog-100 { background: linear-gradient(90deg, #01ff70 100%, transparent 100%); }
+.taskstate2.prog-0 { background: linear-gradient(90deg, #01ff70 0%, transparent 0%); }
+.taskstate2.prog-5 { background: linear-gradient(90deg, #01ff70 5%, transparent 5%); }
+.taskstate2.prog-10 { background: linear-gradient(90deg, #01ff70 10%, transparent 10%); }
+.taskstate2.prog-15 { background: linear-gradient(90deg, #01ff70 15%, transparent 15%); }
+.taskstate2.prog-20 { background: linear-gradient(90deg, #01ff70 20%, transparent 20%); }
+.taskstate2.prog-25 { background: linear-gradient(90deg, #01ff70 25%, transparent 25%); }
+.taskstate2.prog-30 { background: linear-gradient(90deg, #01ff70 30%, transparent 30%); }
+.taskstate2.prog-35 { background: linear-gradient(90deg, #01ff70 35%, transparent 35%); }
+.taskstate2.prog-40 { background: linear-gradient(90deg, #01ff70 40%, transparent 40%); }
+.taskstate2.prog-45 { background: linear-gradient(90deg, #01ff70 45%, transparent 45%); }
+.taskstate2.prog-50 { background: linear-gradient(90deg, #01ff70 50%, transparent 50%); }
+.taskstate2.prog-55 { background: linear-gradient(90deg, #01ff70 55%, transparent 55%); }
+.taskstate2.prog-60 { background: linear-gradient(90deg, #01ff70 60%, transparent 60%); }
+.taskstate2.prog-65 { background: linear-gradient(90deg, #01ff70 65%, transparent 65%); }
+.taskstate2.prog-70 { background: linear-gradient(90deg, #01ff70 70%, transparent 70%); }
+.taskstate2.prog-75 { background: linear-gradient(90deg, #01ff70 75%, transparent 75%); }
+.taskstate2.prog-80 { background: linear-gradient(90deg, #01ff70 80%, transparent 80%); }
+.taskstate2.prog-85 { background: linear-gradient(90deg, #01ff70 85%, transparent 85%); }
+.taskstate2.prog-90 { background: linear-gradient(90deg, #01ff70 90%, transparent 90%); }
+.taskstate2.prog-95 { background: linear-gradient(90deg, #01ff70 95%, transparent 95%); }
+.taskstate2.prog-100 { background: linear-gradient(90deg, #01ff70 100%, transparent 100%); }
 .taskstate6.prog-0 { background: linear-gradient(90deg, #df3030 0%, transparent 0%); }
 .taskstate6.prog-5 { background: linear-gradient(90deg, #df3030 5%, transparent 5%); }
 .taskstate6.prog-10 { background: linear-gradient(90deg, #df3030 10%, transparent 10%); }
@@ -1417,8 +1421,8 @@ canvas.power-graph {
 .taskstate6.prog-100 { background: linear-gradient(90deg, #df3030 100%, transparent 100%); }
 
 .taskstate.has_runs {
-	border: 2px solid black;
-	margin: -1px;
+	border: 1px solid black;
+	margin: 0px;
 	position: relative;
 	z-index: 10;
 }
