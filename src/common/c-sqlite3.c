@@ -75,6 +75,21 @@ sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache
 		return 3;
 	}
 
+	{
+		char *err = NULL;
+		sqlite3_exec(*ppdb, "ALTER TABLE tasks ADD COLUMN task_log_limit integer;", NULL, NULL, &err);
+		if (err) sqlite3_free(err);
+		err = NULL;
+		sqlite3_exec(*ppdb, "ALTER TABLE tasks ADD COLUMN parallel integer;", NULL, NULL, &err);
+		if (err) sqlite3_free(err);
+		err = NULL;
+		sqlite3_exec(*ppdb, "ALTER TABLE tasks ADD COLUMN rebuildable integer;", NULL, NULL, &err);
+		if (err) sqlite3_free(err);
+		err = NULL;
+		sqlite3_exec(*ppdb, "ALTER TABLE tasks ADD COLUMN run integer;", NULL, NULL, &err);
+		if (err) sqlite3_free(err);
+	}
+
 	sai_sqlite3_statement(*ppdb, "CREATE UNIQUE INDEX IF NOT EXISTS idx_task_uuid ON tasks(uuid, run);", "create task index");
 
 	sai_sqlite3_statement(*ppdb, "PRAGMA journal_mode=WAL;", "set WAL");

@@ -133,11 +133,13 @@ add_dependencies(${SUB} sai_git_hash)
 			../../assets/netbsd-OSX-catalina.svg
 			../../assets/netbsd-OSX-bigsur.svg
 			../../assets/rocky9.svg
+			../../assets/rocky9-ca.svg
 			../../assets/sai-event.svg
 			../../assets/sai-icon.svg
 			../../assets/sai.svg
 			../../assets/stop.svg
 			../../assets/strict-csp.svg
+			../../assets/tc-clang.svg
 			../../assets/tc-gcc.svg
 			../../assets/tc-llvm.svg
 			../../assets/tc-mingw32.svg

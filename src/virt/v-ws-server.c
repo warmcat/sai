@@ -170,7 +170,13 @@ saiv_try_spawn(void)
 
 				virt.running_vms++;
 				winner->wait_magnification = 0;
-				virt.ops->spawn(&virt, vm);
+				if (virt.ops->spawn(&virt, vm)) {
+					lwsl_err("%s: Failed to spawn VM %s\n", __func__, vm->name);
+					lws_dll2_remove(&vm->list);
+					free(vm);
+					virt.running_vms--;
+					break;
+				}
 
 				/* Clean up if it never connects and terminates itself */
 				lws_sul_schedule(virt.context, 0, &vm->sul_timeout,
