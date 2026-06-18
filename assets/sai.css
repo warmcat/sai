@@ -738,7 +738,10 @@ div.bdr {
 }
 
 .bdr.offline {
-	opacity: 0.35;
+	background: #e0e0e0;
+	color: #666666;
+	border: 1px solid #b0b0b0;
+	filter: grayscale(100%);
 }
 
 /* Style for the powering-up state */

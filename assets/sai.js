@@ -1920,6 +1920,46 @@ function renderPconHierarchy(container) {
     roots.sort(sortByName);
     pcons.forEach(p => p.children.sort(sortByName));
 
+    const appendBuilderRows = (buildersList, tbody) => {
+        let prevBaseName = null;
+        let prevTr = null;
+        let stackedCount = 0;
+
+        buildersList.forEach(b => {
+            let baseName = b.name.split('.')[0].replace(/-\d+$/, '');
+            if (!b.online && baseName === prevBaseName && prevTr) {
+                stackedCount++;
+                const tdInfo = prevTr.querySelector(".builder-info");
+                const builderDiv = createBuilderDiv(b);
+                
+                /* Stacking visual effect */
+                builderDiv.style.position = "absolute";
+                builderDiv.style.top = (stackedCount * 6) + "px";
+                builderDiv.style.left = (stackedCount * 6) + "px";
+                builderDiv.style.zIndex = 10 - stackedCount;
+                builderDiv.style.boxShadow = "-2px -2px 4px rgba(0,0,0,0.15)";
+                
+                tdInfo.style.position = "relative";
+                tdInfo.style.paddingBottom = (stackedCount * 6) + "px";
+                tdInfo.style.paddingRight = (stackedCount * 6) + "px";
+
+                tdInfo.appendChild(builderDiv);
+            } else {
+                const tr = createBuilderRow(b);
+                tbody.appendChild(tr);
+                prevTr = tr;
+                prevBaseName = baseName;
+                stackedCount = 0;
+
+                const builderDiv = tr.querySelector(".builder-info .ibuil");
+                if (builderDiv) {
+                    builderDiv.style.position = "relative";
+                    builderDiv.style.zIndex = 10;
+                }
+            }
+        });
+    };
+
     /* Helper to recursively render PCONs and their builders */
     function renderPcon(pcon, parentDiv) {
         const div = createPconDiv(pcon);
@@ -1936,9 +1976,7 @@ function renderPconHierarchy(container) {
             table.className = "builders";
             const tbody = document.createElement("tbody");
             table.appendChild(tbody);
-            myBuilders.forEach(b => {
-                tbody.appendChild(createBuilderRow(b));
-            });
+            appendBuilderRows(myBuilders, tbody);
             childrenContainer.appendChild(table);
         }
 
@@ -1966,9 +2004,7 @@ function renderPconHierarchy(container) {
         table.className = "builders";
         const tbody = document.createElement("tbody");
         table.appendChild(tbody);
-        orphanBuilders.forEach(b => {
-            tbody.appendChild(createBuilderRow(b));
-        });
+        appendBuilderRows(orphanBuilders, tbody);
         childrenContainer.appendChild(table);
 
         container.appendChild(orphanDiv);
