@@ -1,18 +1,22 @@
 #!/bin/sh
 #
-
 # PROVIDE: sai_builder
 # REQUIRE: FILESYSTEMS NETWORK
-
 . /etc/rc.subr
-
 name="sai_builder"
 desc="Sai CI builder"
 rcvar="sai_builder_enable"
-command="/usr/sbin/daemon"
-pidfile="/var/run/${name}.pid"
-sai_builder_flags="-S /usr/local/bin/sai-builder"
-
 load_rc_config $name
+# Set defaults
+: ${sai_builder_enable:="NO"}
+: ${sai_builder_args:=""}
+pidfile="/var/run/${name}.pid"
+command="/usr/sbin/daemon"
+# -P writes the daemon supervisor's PID to the pidfile so rc.subr can stop it
+# -S redirects the child's stdout/stderr to syslog
+# -T sets the syslog tag to the service name
+# -r (optional, added here) automatically restarts the child if it crashes
+command_args="-P ${pidfile} -r -S -T ${name} /usr/local/bin/sai-builder ${sai_builder_args}"
 run_rc_command "$1"
+
 
