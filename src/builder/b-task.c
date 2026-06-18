@@ -29,7 +29,7 @@
 #include "b-private.h"
 
 const char *git_helper_sh =
-	"#!/bin/bash\n"
+	"#!/usr/bin/env bash\n"
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
 	"set -e\n"
 	"echo \"git_helper_sh: starting\"\n"

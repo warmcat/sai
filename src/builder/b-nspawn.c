@@ -443,7 +443,7 @@ static const char * const runscript_win_next =
 #else
 
 static const char * const runscript_first =
-	"#!/bin/bash\n" /* use -x to see what it does for these */
+	"#!/usr/bin/env bash\n" /* use -x to see what it does for these */
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
 #else
@@ -469,7 +469,7 @@ static const char * const runscript_first =
 ;
 
 static const char * const runscript_next =
-	"#!/bin/bash\n" /* use -x to see what it does for these */
+	"#!/usr/bin/env bash\n" /* use -x to see what it does for these */
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
 #else
@@ -494,7 +494,7 @@ static const char * const runscript_next =
 ;
 
 static const char * const runscript_build =
-	"#!/bin/bash\n" /* use -x to see what it does for these */
+	"#!/usr/bin/env bash\n" /* use -x to see what it does for these */
 #if defined(__APPLE__)
 	"export PATH=/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/sbin:/usr/sbin\n"
 #else
