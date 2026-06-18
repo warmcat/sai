@@ -178,6 +178,8 @@ callback_sai_deletion_uds(struct lws *wsi, enum lws_callback_reasons reason,
 
 	case LWS_CALLBACK_RAW_CLOSE:
 		lejp_destruct(&conn->jctx);
+		lwsl_notice("%s: parent connection closed, stub exiting\\n", __func__);
+		lws_cancel_service(lws_get_context(wsi));
 		break;
 
 	default:
