@@ -581,7 +581,7 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 				      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
 
 			if (sqlite3_prepare_v2(pdb, "select platform, count(*), "
-						    "sum(case when state = 0 or state = 9 then 1 else 0 end) "
+						    "sum(case when (state = 0 or state = 9) and (builder_name IS NULL or builder_name = '') then 1 else 0 end) "
 						    "from tasks t1 where "
 						    "run = (select max(run) from tasks t2 where t1.uuid = t2.uuid) and "
 						    "(state = 0 or state = 1 or state = 2 or state = 9) group by platform", -1, &sm,
@@ -845,10 +845,13 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 
 	inflight = sais_is_task_inflight(vhd, NULL, task_uuid, &ul);
        
-	if (inflight /* && ul->started */) {
-		lwsl_notice("%s: ~~~ not continuing %s as listed on inflight\n",
-			    __func__, task_uuid);
-		return 1;
+	if (inflight) {
+		if (!ul->started) {
+			lwsl_notice("%s: ~~~ not continuing %s as listed on inflight\n",
+				    __func__, task_uuid);
+			return 1;
+		}
+		ul->started = 0;
 	}
 
 	event_uuid[0] = '\0';
@@ -924,15 +927,12 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 		goto bail;
 	}
 
-	if (sais_is_task_inflight(vhd, NULL, task_uuid, &ul)) {
-		lwsl_warn("%s: bailing as inflight %s\n", __func__, task_uuid);
-		goto bail;
-	}
-
-	if (sais_add_to_inflight_list_if_absent(vhd, sp, task_uuid)) {
-		lwsl_warn("%s: bailing as can't add to inflight %s\n", __func__, task_uuid);
-		sais_task_clear_build_and_logs(vhd, task_uuid, 0);
-		goto bail;
+	if (!inflight) {
+		if (sais_add_to_inflight_list_if_absent(vhd, sp, task_uuid)) {
+			lwsl_warn("%s: bailing as can't add to inflight %s\n", __func__, task_uuid);
+			sais_task_clear_build_and_logs(vhd, task_uuid, 0);
+			goto bail;
+		}
 	}
 
 	lws_strncpy(url, temp_task->one_event->repo_fetchurl, sizeof(url));
@@ -1015,10 +1015,12 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 
 	temp_task->server_name = pss->server_name;
 
-	if (sais_add_to_inflight_list_if_absent(vhd, sp, temp_task->uuid)) {
-		lwsl_warn("%s: bailing as can't add to inflight %s\n", __func__, task_uuid);
-		sais_task_clear_build_and_logs(vhd, temp_task->uuid, 0);
-		goto bail;
+	if (!inflight) {
+		if (sais_add_to_inflight_list_if_absent(vhd, sp, temp_task->uuid)) {
+			lwsl_warn("%s: bailing as can't add to inflight %s\n", __func__, task_uuid);
+			sais_task_clear_build_and_logs(vhd, temp_task->uuid, 0);
+			goto bail;
+		}
 	}
 
 	/*

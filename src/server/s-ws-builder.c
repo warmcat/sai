@@ -466,7 +466,7 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 
 						lws_snprintf(q, sizeof(q),
 							"SELECT uuid FROM tasks WHERE "
-							"builder_name=? AND (state = %d OR state = %d) "
+							"builder_name=? AND (state = 0 OR state = %d OR state = %d) "
 							"AND run=(SELECT max(run) FROM tasks t2 WHERE t2.uuid = tasks.uuid)",
 							SAIES_PASSED_TO_BUILDER,
 							SAIES_BEING_BUILT);
@@ -623,6 +623,7 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 		lwsl_notice("%s: SAI_TASK_REASON_BUSY: Set busy: %s\n",
 				__func__, rej->task_uuid);
 		do_remove_uuid = 1;
+		sais_bind_task_to_builder(vhd, NULL, NULL, rej->task_uuid);
 		sais_set_task_state(vhd, rej->task_uuid, SAIES_WAITING, 0, 0);
 		sais_plat_busy(sp, 1);
 		break;
@@ -658,7 +659,10 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 					lws_now_secs() - pss->first_log_timestamp))
 			lwsl_notice("%s: task state update failed, possibly event deleted\n", __func__);
 
-		sais_plat_busy(sp, 0);
+		if (n == SAIES_STEP_SUCCESS)
+			do_remove_uuid = 0;
+		else
+			sais_plat_busy(sp, 0);
 		break;
 	}
 

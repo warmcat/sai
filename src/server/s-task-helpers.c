@@ -156,7 +156,7 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 		    sai_event_state_t state, uint64_t started, uint64_t duration)
 {
 	char update[512], esc1[96], esc2[96], esc3[32], esc4[32], event_uuid[33];
-	sai_event_state_t oes, sta, task_ostate, ostate = state;
+	sai_event_state_t oes, sta, task_ostate;
 	unsigned int count = 0, count_good = 0, count_bad = 0;
 	uint64_t started_orig = started;
 	struct lwsac *ac = NULL;
@@ -274,7 +274,8 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 			lws_sul_schedule(vhd->context, 0, &vhd->sul_central,
 					 sais_central_cb, 1);
 
-		sais_platforms_with_tasks_pending(vhd);
+		if (state != SAIES_STEP_SUCCESS)
+			sais_platforms_with_tasks_pending(vhd);
 
 		/*
 		 * So, how many tasks for this event?
@@ -357,10 +358,7 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 	sai_event_db_close(&vhd->sqlite3_cache, (sqlite3 **)&e->pdb);
 	lwsac_free(&ac);
 
-	if (ostate == SAIES_STEP_SUCCESS) {
-		lwsl_notice("%s: sais_set_task_state() is calling sais_create_and_offer_task_step()\n", __func__);
-		sais_create_and_offer_task_step(vhd, task_uuid);
-	}
+
 
 	return 0;
 
