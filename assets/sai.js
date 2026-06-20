@@ -2529,8 +2529,9 @@ function ws_open_sai()
 							tr.style.transition = 'opacity 0.3s';
 							tr.style.opacity = '0';
 							setTimeout(function() {
-								if (tr && tr.parentNode) {
-									tr.parentNode.removeChild(tr);
+								var tbody = document.getElementById("ev-group-" + uuid);
+								if (tbody && tbody.parentNode) {
+									tbody.parentNode.removeChild(tbody);
 								}
 							}, 300);
 						}
