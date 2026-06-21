@@ -29,6 +29,7 @@
 #include <libwebsockets.h>
 #include <string.h>
 #include <signal.h>
+#include <sys/ioctl.h>
 
 #include "b-private.h"
 
@@ -309,35 +310,46 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 		break;
 	}
 
-	case SAIB_RX_PTYDATA:
-	{
-		sai_ptydata_t *pd = (sai_ptydata_t *)a.dest;
-		struct sai_shell *sh = NULL;
+		case SAIB_RX_PTYDATA:
+		{
+			sai_ptydata_t *pd = (sai_ptydata_t *)a.dest;
+			struct sai_shell *sh = NULL;
 
-		lws_start_foreach_dll(struct lws_dll2 *, d, builder.shell_owner.head) {
-			struct sai_shell *s = lws_container_of(d, struct sai_shell, list);
-			if (!strcmp(s->task_uuid, pd->task_uuid)) {
-				sh = s;
-				break;
-			}
-		} lws_end_foreach_dll(d);
-
-		if (sh && sh->lsp && pd->data) {
-			int fd = lws_spawn_get_fd_stdxxx(sh->lsp, 0);
-			if (fd >= 0) {
-				char dec[1024];
-				int dl = lws_b64_decode_string(pd->data, dec, sizeof(dec));
-				if (dl > 0) {
-					lwsl_notice("%s: PTYDATA received from server (len %d), writing to shell %s\n", __func__, dl, pd->task_uuid);
-					if (write(fd, dec, LWS_POSIX_LENGTH_CAST(dl)) < 0)
-						lwsl_err("%s: failed to write to pty\n", __func__);
+			lws_start_foreach_dll(struct lws_dll2 *, d, builder.shell_owner.head) {
+				struct sai_shell *s = lws_container_of(d, struct sai_shell, list);
+				if (!strcmp(s->task_uuid, pd->task_uuid)) {
+					sh = s;
+					break;
 				}
+			} lws_end_foreach_dll(d);
+
+			if (sh && sh->lsp && (pd->data || (pd->cols && pd->rows))) {
+				int fd = lws_spawn_get_fd_stdxxx(sh->lsp, 0);
+				if (fd >= 0) {
+					if (pd->cols && pd->rows) {
+						struct winsize ws;
+						memset(&ws, 0, sizeof(ws));
+						ws.ws_col = (unsigned short)pd->cols;
+						ws.ws_row = (unsigned short)pd->rows;
+						if (ioctl(fd, TIOCSWINSZ, &ws) < 0)
+							lwsl_err("%s: failed to set pty size\n", __func__);
+					}
+
+					if (pd->data && pd->len > 0) {
+						char dec[1024];
+						int dl = lws_b64_decode_string(pd->data, dec, sizeof(dec));
+						if (dl > 0) {
+							// lwsl_notice("%s: PTYDATA received from server (len %d), writing to shell %s\n", __func__, dl, pd->task_uuid);
+							if (write(fd, dec, LWS_POSIX_LENGTH_CAST(dl)) < 0)
+								lwsl_err("%s: failed to write to pty\n", __func__);
+						}
+					}
+				}
+			} else {
+				lwsl_warn("%s: PTYDATA for unknown shell %s\n", __func__, pd->task_uuid);
 			}
-		} else {
-			lwsl_warn("%s: PTYDATA for unknown shell %s\n", __func__, pd->task_uuid);
+			break;
 		}
-		break;
-	}
 
 	case SAIB_RX_RESOURCE_REPLY:
 		reso = (sai_resource_t *)a.dest;
@@ -452,6 +464,21 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 						}
 					}
 				} lws_end_foreach_dll_safe(d2, d3);
+			} lws_end_foreach_dll_safe(d, d1);
+
+			/* unpause any backpressured shell stdwsi */
+			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, builder.shell_owner.head) {
+				struct sai_shell *sh = lws_container_of(d, struct sai_shell, list);
+				if (sh->spm == spm) {
+					for (int i = 0; i < 3; i++) {
+						if (sh->stdwsi_paused[i] && sh->stdwsi[i]) {
+							lwsl_notice("%s: Unpausing shell %s ch %d (tot %zu)\n", __func__, sh->task_uuid, i,
+								lws_buflist2_total_len(&spm->bl_to_srv));
+							sh->stdwsi_paused[i] = 0;
+							lws_rx_flow_control(sh->stdwsi[i], 1 | LWS_RXFLOW_REASON_USER_BOOL);
+						}
+					}
+				}
 			} lws_end_foreach_dll_safe(d, d1);
 		}
 	}
@@ -753,6 +780,29 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 				LWS_ARRAY_SIZE(lsm_schema_map_plat),
 				&builder.sai_plat_owner))
 			return -1;
+
+		{
+			sai_active_shells_t ash;
+			struct lwsac *ac = NULL;
+			
+			memset(&ash, 0, sizeof(ash));
+			lws_start_foreach_dll(struct lws_dll2 *, d, builder.shell_owner.head) {
+				struct sai_shell *sh = lws_container_of(d, struct sai_shell, list);
+				sai_active_shell_t *s = lwsac_use_zero(&ac, sizeof(*s), 512);
+				if (s) {
+					lws_strncpy(s->task_uuid, sh->task_uuid, sizeof(s->task_uuid));
+					lws_dll2_add_tail(&s->list, &ash.shells);
+				}
+			} lws_end_foreach_dll(d);
+
+			if (ash.shells.head) {
+				saib_srv_queue_json_fragments_helper(spm->ss,
+					lsm_schema_map_active_shells,
+					LWS_ARRAY_SIZE(lsm_schema_map_active_shells),
+					&ash);
+			}
+			lwsac_free(&ac);
+		}
 
 		return 0;
 

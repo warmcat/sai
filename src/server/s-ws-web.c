@@ -693,32 +693,36 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		lwsl_notice("%s: OPENSHELL received from web for %s, passing to builder\n", __func__, os->builder_name);
 
-		sp = sais_builder_from_uuid(m->vhd, os->builder_name);
-		if (!sp) {
-			lwsl_err("%s: unknown builder %s for openshell\n",
-				    __func__, os->builder_name);
-			lwsac_free(&a.ac);
-			break;
-		}
-
 		if (!os->task_uuid[0])
 			sai_uuid16_create(m->vhd->context, os->task_uuid);
 
-		lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
-			struct pss *pss = lws_container_of(p, struct pss, same);
+		/* Add it to in-memory shell sessions list */
+		sai_shell_session_t *sh = malloc(sizeof(*sh));
+		if (sh) {
+			memset(sh, 0, sizeof(*sh));
+			lws_strncpy(sh->task_uuid, os->task_uuid, sizeof(sh->task_uuid));
+			lws_strncpy(sh->builder_name, os->builder_name, sizeof(sh->builder_name));
+			lws_dll2_add_tail(&sh->list, &m->vhd->shell_sessions);
+		}
 
-			if (pss->wsi == sp->wsi) {
-				sai_openshell_t *s = malloc(sizeof(*s));
-				if (s) {
-					*s = *os;
-					lws_dll2_add_tail(&s->list, &pss->openshell_owner);
-					lws_callback_on_writable(pss->wsi);
+		sp = sais_builder_from_uuid(m->vhd, os->builder_name);
+		if (sp) {
+			lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
+				struct pss *pss = lws_container_of(p, struct pss, same);
+
+				if (pss->wsi == sp->wsi) {
+					sai_openshell_t *s = malloc(sizeof(*s));
+					if (s) {
+						*s = *os;
+						lws_dll2_add_tail(&s->list, &pss->openshell_owner);
+						lws_callback_on_writable(pss->wsi);
+					}
+					break;
 				}
-				break;
-			}
-		} lws_end_foreach_dll(p);
+			} lws_end_foreach_dll(p);
+		}
 
-
+		sais_platforms_with_tasks_pending(m->vhd);
 
 		lwsac_free(&a.ac);
 		break;
@@ -727,7 +731,26 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	case SAIS_WS_WEBSRV_RX_CLOSESHELL:
 	{
 		sai_closeshell_t *cs = (sai_closeshell_t *)a.dest;
+
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, m->vhd->shell_sessions.head) {
+			sai_shell_session_t *sh = lws_container_of(d, sai_shell_session_t, list);
+			if (!strcmp(sh->task_uuid, cs->task_uuid)) {
+				lws_start_foreach_dll_safe(struct lws_dll2 *, pd, pd1, sh->ptydata_owner.head) {
+					sai_ptydata_t *pdy = lws_container_of(pd, sai_ptydata_t, list);
+					lws_dll2_remove(&pdy->list);
+					if (pdy->data) free(pdy->data);
+					free(pdy);
+				} lws_end_foreach_dll_safe(pd, pd1);
+
+				lws_dll2_remove(&sh->list);
+				free(sh);
+				break;
+			}
+		} lws_end_foreach_dll_safe(d, d1);
+
 		sais_task_cancel(m->vhd, cs->task_uuid, 0);
+		sais_platforms_with_tasks_pending(m->vhd);
+
 		lwsac_free(&a.ac);
 		break;
 	}
@@ -739,12 +762,31 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		sp = sais_builder_from_uuid(m->vhd, pd->builder_name);
 		if (!sp) {
-			lwsl_err("%s: PTYDATA from web: unknown builder %s\n", __func__, pd->builder_name);
+			/* Builder offline, buffer it! */
+			lws_start_foreach_dll(struct lws_dll2 *, d, m->vhd->shell_sessions.head) {
+				sai_shell_session_t *sh = lws_container_of(d, sai_shell_session_t, list);
+				if (!strcmp(sh->task_uuid, pd->task_uuid)) {
+					sai_ptydata_t *s = malloc(sizeof(*s));
+					if (s) {
+						size_t slen = pd->data ? strlen(pd->data) : 0;
+						*s = *pd;
+						s->data = pd->data ? malloc(slen + 1) : NULL;
+						if (s->data || !pd->data) {
+							if (pd->data)
+								memcpy((char *)s->data, pd->data, slen + 1);
+							lws_dll2_add_tail(&s->list, &sh->ptydata_owner);
+						} else
+							free(s);
+					}
+					break;
+				}
+			} lws_end_foreach_dll(d);
+
 			lwsac_free(&a.ac);
 			break;
 		}
 
-		lwsl_notice("%s: PTYDATA received from web (len %d), passing to builder %s\n", __func__, (int)pd->len, pd->builder_name);
+		// lwsl_notice("%s: PTYDATA received from web (len %d), passing to builder %s\n", __func__, (int)pd->len, pd->builder_name);
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
 			struct pss *pss = lws_container_of(p, struct pss, same);
@@ -752,11 +794,12 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			if (pss->wsi == sp->wsi) {
 				sai_ptydata_t *s = malloc(sizeof(*s));
 				if (s) {
-					size_t slen = strlen(pd->data);
+					size_t slen = pd->data ? strlen(pd->data) : 0;
 					*s = *pd;
-					s->data = malloc(slen + 1);
-					if (s->data) {
-						memcpy((char *)s->data, pd->data, slen + 1);
+					s->data = pd->data ? malloc(slen + 1) : NULL;
+					if (s->data || !pd->data) {
+						if (pd->data)
+							memcpy((char *)s->data, pd->data, slen + 1);
 						lws_dll2_add_tail(&s->list, &pss->ptydata_owner);
 						lws_callback_on_writable(pss->wsi);
 					} else

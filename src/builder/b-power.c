@@ -203,8 +203,14 @@ saib_reassess_idle_situation()
 
 	} lws_end_foreach_dll_safe(mp, mp1);
 
+	if (builder.shell_owner.head) {
+		lwsl_notice("%s: Builder has %d active shell sessions\n", __func__, builder.shell_owner.count);
+		lws_sul_cancel(&builder.sul_idle);
+		in_use = 1;
+	}
+
 	if (in_use) {
-		lwsl_warn("%s: cancelling idle grace time as ongoing task steps\n", __func__);
+		lwsl_warn("%s: cancelling idle grace time as ongoing task steps or shells\n", __func__);
 
 		return 0;
 	}
@@ -217,7 +223,7 @@ saib_reassess_idle_situation()
 	*/
 
 	if (lws_dll2_is_detached(&builder.sul_idle.list)) {
-		int grace_secs = builder.event_affinity_active ? 1 : (int)(SAI_IDLE_GRACE_US / LWS_US_PER_SEC);
+		int grace_secs = builder.one_shot_active ? 2 : (builder.event_affinity_active ? 15 : (int)(SAI_IDLE_GRACE_US / LWS_US_PER_SEC));
 		lwsl_notice("%s: %s: NO STAY and NO TASKS: starting %d sec idle grace time before auto-power-off\n",
 			__func__, builder.host, grace_secs);
 		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
@@ -309,9 +315,6 @@ saib_stay_init(void)
 
 	if (!builder.url_sai_power)
 		return 0;
-
-	if (!suspender_exists)
-		return LWSSSSRET_OK;
 
 	snprintf(builder.path, sizeof(builder.path) - 1, "%s/stay/%s",
 		 builder.url_sai_power, builder.host);

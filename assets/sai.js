@@ -404,6 +404,18 @@ active_terminals = {};
 var segment_stack = [];
 var seg_counter = 0;
 
+window.addEventListener('beforeunload', () => {
+	for (const task_uuid in active_terminals) {
+		const closeMsg = {
+			schema: "com.warmcat.sai.closeshell",
+			task_uuid: task_uuid
+		};
+		if (typeof sai !== 'undefined' && sai && sai.readyState === WebSocket.OPEN) {
+			sai.send(JSON.stringify(closeMsg));
+		}
+	}
+});
+
 /* Global caches for reconcilation */
 var pcon_topology = {};
 var pcon_energy_cache = {};
@@ -1669,7 +1681,7 @@ function createBuilderDiv(plat) {
 		});
 	}
 
-	if (authd && auth_is_admin && plat.online) {
+	if (authd && auth_is_admin) {
 		menuItems.push({
 			label: "<span class='builder-shell-btn'>Open Shell</span>",
 			callback: () => {
@@ -1685,6 +1697,7 @@ function createBuilderDiv(plat) {
 
 				const term = new SaiTerminal(document.body, {
 					title: "Terminal: " + plat.name,
+					platform: plat.platform,
 					onData: (data) => {
 						const ptyMsg = {
 							schema: "com.warmcat.sai.ptydata",
@@ -1695,6 +1708,19 @@ function createBuilderDiv(plat) {
 							len: data.length
 						};
 						sai.send(JSON.stringify(ptyMsg));
+					},
+					onResize: (cols, rows) => {
+						const resizeMsg = {
+							schema: "com.warmcat.sai.ptydata",
+							builder_name: plat.name,
+							task_uuid: task_uuid,
+							channel: 0,
+							cols: cols,
+							rows: rows,
+							data: "",
+							len: 0
+						};
+						sai.send(JSON.stringify(resizeMsg));
 					},
 					onClose: () => {
 						const closeMsg = {
@@ -2426,9 +2452,16 @@ function ws_open_sai()
 
 			case "com.warmcat.sai.ptydata":
 				if (jso.task_uuid) {
-					const term = active_terminals[jso.task_uuid];
+					let term = active_terminals[jso.task_uuid];
 					if (!term) {
+						let platformStr = null;
+						if (typeof last_builder_list !== 'undefined' && jso.builder_name) {
+							const b = last_builder_list.find(x => x.name === jso.builder_name);
+							if (b) platformStr = b.platform;
+						}
 						term = new SaiTerminal(document.body, {
+							title: "Terminal: " + (jso.builder_name || "Unknown"),
+							platform: platformStr,
 							onData: function(input) {
 								const msg = {
 									schema: "com.warmcat.sai.ptydata",
@@ -2436,6 +2469,18 @@ function ws_open_sai()
 									channel: 0,
 									len: input.length,
 									data: btoa(input)
+								};
+								sai.send(JSON.stringify(msg));
+							},
+							onResize: function(cols, rows) {
+								const msg = {
+									schema: "com.warmcat.sai.ptydata",
+									task_uuid: jso.task_uuid,
+									channel: 0,
+									cols: cols,
+									rows: rows,
+									len: 0,
+									data: ""
 								};
 								sai.send(JSON.stringify(msg));
 							},

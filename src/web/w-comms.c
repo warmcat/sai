@@ -163,6 +163,28 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		vhd->context = lws_get_context(wsi);
 		vhd->vhost = lws_get_vhost(wsi);
 
+		{
+			const struct lws_protocol_vhost_options *pvo = (const struct lws_protocol_vhost_options *)in;
+			const char *jwk_path = "/etc/sai/web/auth.jwk";
+
+			lws_strncpy(vhd->cookie_name, "auth_session", sizeof(vhd->cookie_name));
+
+			while (pvo) {
+				if (!strcmp(pvo->name, "jwt-auth-jwk-path"))
+					jwk_path = pvo->value;
+				if (!strcmp(pvo->name, "cookie-name"))
+					lws_strncpy(vhd->cookie_name, pvo->value, sizeof(vhd->cookie_name));
+				pvo = pvo->next;
+			}
+			lws_strncpy(vhd->jwk_path, jwk_path, sizeof(vhd->jwk_path));
+			if (!lws_jwk_load(&vhd->jwk, vhd->jwk_path, NULL, NULL)) {
+				vhd->has_jwk = 1;
+				lwsl_notice("Loaded JWT jwk from %s\n", vhd->jwk_path);
+			} else {
+				lwsl_err("FAILED to load JWT jwk from %s\n", vhd->jwk_path);
+			}
+		}
+
 		if (lws_pvo_get_str(in, "database", &vhd->sqlite3_path_lhs)) {
 			lwsl_err("%s: database pvo required\n", __func__);
 			return -1;
@@ -482,6 +504,36 @@ http_resp:
 				return -1;
 			}
 #endif
+
+		pss->authorized = 0;
+		if (vhd->has_jwk) {
+#if defined(LWS_WITH_JOSE)
+			const char *reason = "unknown";
+			struct lws_jwt_auth *ja = lws_jwt_auth_create(wsi, &vhd->jwk, vhd->cookie_name, NULL, NULL, &reason);
+			if (ja) {
+				if (lws_jwt_auth_query_grant(ja, "*") >= 1 || lws_jwt_auth_query_grant(ja, "com.warmcat.sai") >= 1) {
+					pss->authorized = 1;
+					lwsl_wsi_notice(wsi, "Authorized WebSocket connection (admin/grant)");
+				} else {
+					lwsl_wsi_err(wsi, "JWT validation passed, but no grant found");
+				}
+				lws_jwt_auth_destroy(&ja);
+			} else {
+				if (reason && !strcmp(reason, "Cookie not found")) {
+					char cookies[512];
+					int n = lws_hdr_copy(wsi, cookies, sizeof(cookies), WSI_TOKEN_HTTP_COOKIE);
+					if (n > 0)
+						lwsl_wsi_err(wsi, "JWT auth failed (cookie: '%s'): Cookie not found (available cookies: '%s') (using JWK from %s)", vhd->cookie_name, cookies, vhd->jwk_path);
+					else
+						lwsl_wsi_err(wsi, "JWT auth failed (cookie: '%s'): Cookie not found (no cookies sent by browser) (using JWK from %s)", vhd->cookie_name, vhd->jwk_path);
+				} else {
+					lwsl_wsi_err(wsi, "JWT auth failed (cookie: '%s'): %s (using JWK from %s)", vhd->cookie_name, reason ? reason : "unknown", vhd->jwk_path);
+				}
+			}
+#endif
+		} else {
+			lwsl_wsi_err(wsi, "Cannot validate JWT because no JWK was loaded (expected at %s)", vhd->jwk_path);
+		}
 
 		if (!memcmp((char *)start, "/sai", 4))
 			start += 4;

@@ -641,6 +641,22 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	 * matched on
 	 */
 
+	if (!pss->authorized && (
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_TASKRESET ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_TASKREBUILDLASTSTEP ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_EVENTRESET ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_EVENTDELETE ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_TASKCANCEL ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_REBUILD ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_PLATRESET ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_BUILDERDELETE ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_OPENSHELL ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_CLOSESHELL ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_PTYDATA)) {
+		lwsl_notice("%s: Unauthorized attempt to execute administrative action (schema %d)\n", __func__, a.top_schema_index);
+		goto soft_error;
+	}
+
 	switch (a.top_schema_index) {
 
 	case SAIM_WS_BROWSER_RX_TASKINFO:

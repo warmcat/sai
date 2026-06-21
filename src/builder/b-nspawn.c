@@ -645,6 +645,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.reap_cb		= sai_lsp_reap_cb;
 	info.pty_mode		= 1;
+	info.disable_ctrlc	= 1;
 	memset(&ns->res, 0, sizeof(ns->res));
 	info.res		= &ns->res;
 #if defined(__linux__)
@@ -697,6 +698,7 @@ sai_shell_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *s
 		lws_dll2_remove(&sh->list);
 		free(sh);
 	}
+	saib_reassess_idle_situation();
 }
 
 static int
@@ -757,6 +759,23 @@ callback_sai_shell_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		lwsl_notice("%s: PTYDATA queueing %d bytes from shell %s to server\n", __func__, (int)len, sh->task_uuid);
 
 		saib_srv_queue_tx(sh->spm->ss, lj + LWS_PRE, (size_t)n, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+
+		if (lws_buflist2_total_len(&sh->spm->bl_to_srv) > (LWS_BUFLIST_OOM_LIMIT - (256 * 1024))) {
+			/* buflist is getting full, backpressure ALL active shell stdwsi for this connection */
+			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, builder.shell_owner.head) {
+				struct sai_shell *s = lws_container_of(d, struct sai_shell, list);
+				if (s->spm == sh->spm) {
+					for (int i = 0; i < 3; i++) {
+						if (!s->stdwsi_paused[i] && s->stdwsi[i]) {
+							s->stdwsi_paused[i] = 1;
+							lws_rx_flow_control(s->stdwsi[i], 0); /* 0 disables RX */
+							lwsl_notice("%s: Backpressure applied to shell %s ch %d (tot %zu)\n",
+								__func__, s->task_uuid, i, lws_buflist2_total_len(&sh->spm->bl_to_srv));
+						}
+					}
+				}
+			} lws_end_foreach_dll_safe(d, d1);
+		}
 		break;
 
 	default:
@@ -802,6 +821,7 @@ saib_shell_spawn(struct sai_plat_server *spm, const char *task_uuid)
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.reap_cb		= sai_shell_reap_cb;
 	info.pty_mode		= 1;
+	info.disable_ctrlc	= 0;
 	info.opaque		= sh;
 	info.owner		= &builder.lsp_owner;
 	info.plsp		= &sh->lsp;
@@ -817,5 +837,6 @@ saib_shell_spawn(struct sai_plat_server *spm, const char *task_uuid)
 	}
 
 	lwsl_notice("%s: Spawned shell successfully for %s\n", __func__, task_uuid);
+	saib_reassess_idle_situation();
 	return 0;
 }

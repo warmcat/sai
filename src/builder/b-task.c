@@ -367,7 +367,7 @@ saib_task_destroy(struct sai_nspawn *ns)
 		 * Schedule informing all the servers we're connected to
 		 */
 
-		if (!m) {
+		if (!m && !builder.shell_owner.head) {
 #if defined(__APPLE__)
 			if (!saib_need_wakelock()) {
 				lwsl_notice("%s: last task finished, scheduling wakelock release\n", __func__);

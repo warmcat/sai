@@ -73,7 +73,7 @@ callback_virt_http(struct lws *wsi, enum lws_callback_reasons reason,
 			if (found_vm) {
 				/* Extend the safety timeout since the VM is alive and communicating */
 				lws_sul_schedule(virt.context, 0, &found_vm->sul_timeout,
-						 saiv_vm_timeout_cb, 5 * 60 * LWS_US_PER_SEC);
+						 saiv_vm_timeout_cb, 30 * LWS_US_PER_SEC);
 			}
 
 			/* We never return stay = true for ephemeral VMs */

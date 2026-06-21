@@ -74,6 +74,8 @@ static const lws_struct_map_t lsm_schema_map_ba[] = {
 						"com.warmcat.sai.build-metric"),
 	LSM_SCHEMA	(sai_ptydata_t, NULL, lsm_ptydata,
 						"com.warmcat.sai.ptydata"),
+	LSM_SCHEMA	(sai_active_shells_t, NULL, lsm_schema_active_shells,
+						"com.warmcat.sai.active_shells"),
 };
 
 enum {
@@ -85,6 +87,7 @@ enum {
 	SAIM_WSSCH_BUILDER_RESOURCE_REQ,
 	SAIM_WSSCH_BUILDER_METRIC,
 	SAIM_WSSCH_BUILDER_PTYDATA,
+	SAIM_WSSCH_BUILDER_ACTIVE_SHELLS,
 };
 
 static void
@@ -960,16 +963,42 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 						goto bail;
 				}
 			} lws_end_foreach_dll(p);
-	#if 0
-			lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.builder_owner.head) {
-				sp = lws_container_of(p, sai_plat_t, sai_plat_list);
-				if (sp->wsi == pss->wsi) {
-					/* This platform belongs to the connection that sent the message */
-					if (sais_allocate_task(vhd, pss, sp, sp->platform) < 0)
-						goto bail;
-				}
-			} lws_end_foreach_dll(p);
-	#endif
+			/*
+			 * Also, if there are any pending in-memory shell sessions for this builder,
+			 * send them down now!
+			 */
+			lws_start_foreach_dll(struct lws_dll2 *, p_sh, vhd->shell_sessions.head) {
+				sai_shell_session_t *sh = lws_container_of(p_sh, sai_shell_session_t, list);
+				lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.builder_owner.head) {
+					sai_plat_t *sp = lws_container_of(p, sai_plat_t, sai_plat_list);
+					const char *sh_plat = strchr(sh->builder_name, '.');
+					if (sh_plat) sh_plat++; else sh_plat = sh->builder_name;
+
+					const char *sp_plat = strchr(sp->name, '.');
+					if (sp_plat) sp_plat++; else sp_plat = sp->name;
+
+					if (sp->wsi == pss->wsi &&
+					    (!strcmp(sh->builder_name, sp->name) || !strcmp(sh_plat, sp_plat))) {
+						sai_openshell_t *s = malloc(sizeof(*s));
+						if (s) {
+							memset(s, 0, sizeof(*s));
+							lws_strncpy(s->task_uuid, sh->task_uuid, sizeof(s->task_uuid));
+							lws_strncpy(s->builder_name, sp->name, sizeof(s->builder_name));
+							lws_dll2_add_tail(&s->list, &pss->openshell_owner);
+
+							lws_start_foreach_dll_safe(struct lws_dll2 *, pd, pd1, sh->ptydata_owner.head) {
+								sai_ptydata_t *pdy = lws_container_of(pd, sai_ptydata_t, list);
+								lws_dll2_remove(pd);
+								lws_strncpy(pdy->builder_name, sp->name, sizeof(pdy->builder_name));
+								lws_dll2_add_tail(&pdy->list, &pss->ptydata_owner);
+							} lws_end_foreach_dll_safe(pd, pd1);
+
+							lws_callback_on_writable(pss->wsi);
+						}
+						break;
+					}
+				} lws_end_foreach_dll(p);
+			} lws_end_foreach_dll(p_sh);
 
 			/*
 			 * If we did allocate a task in pss->a.ac, responsibility of
@@ -1026,6 +1055,46 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 
 			lwsac_free(&pss->a.ac);
 			break;
+
+		case SAIM_WSSCH_BUILDER_ACTIVE_SHELLS:
+		{
+			sai_active_shells_t *ash = (sai_active_shells_t *)pss->a.dest;
+			lws_start_foreach_dll(struct lws_dll2 *, d, ash->shells.head) {
+				sai_active_shell_t *s = lws_container_of(d, sai_active_shell_t, list);
+				int found = 0;
+				lws_start_foreach_dll(struct lws_dll2 *, d2, vhd->shell_sessions.head) {
+					sai_shell_session_t *sh = lws_container_of(d2, sai_shell_session_t, list);
+					if (!strcmp(sh->task_uuid, s->task_uuid)) {
+						found = 1;
+						break;
+					}
+				} lws_end_foreach_dll(d2);
+
+				if (!found) {
+					sai_shell_session_t *nsh = malloc(sizeof(*nsh));
+					if (nsh) {
+						memset(nsh, 0, sizeof(*nsh));
+						lws_strncpy(nsh->task_uuid, s->task_uuid, sizeof(nsh->task_uuid));
+						if (vhd->server.builder_owner.head) {
+							lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.builder_owner.head) {
+								sai_plat_t *sp = lws_container_of(p, sai_plat_t, sai_plat_list);
+								if (sp->wsi == pss->wsi) {
+									lws_strncpy(nsh->builder_name, sp->name, sizeof(nsh->builder_name));
+									break;
+								}
+							} lws_end_foreach_dll(p);
+						}
+						lws_dll2_add_tail(&nsh->list, &vhd->shell_sessions);
+						lwsl_notice("%s: Rediscovered shell %s for builder %s\n", __func__, nsh->task_uuid, nsh->builder_name);
+					}
+				}
+			} lws_end_foreach_dll(d);
+
+			sais_platforms_with_tasks_pending(vhd);
+
+			lwsac_free(&pss->a.ac);
+			break;
+		}
 
 		case SAIM_WSSCH_BUILDER_LOADREPORT:
 
@@ -1432,7 +1501,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				info.len		= used;
 				info.ss_flags		= LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
 
-				lwsl_notice("%s: PTYDATA received from builder shell %s, relaying %d bytes to web\n", __func__, pd->task_uuid, (int)used);
+				// lwsl_notice("%s: PTYDATA received from builder shell %s, relaying %d bytes to web\n", __func__, pd->task_uuid, (int)used);
 
 				if (sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info) < 0)
 					lwsl_warn("%s: unable to broadcast to web\n", __func__);

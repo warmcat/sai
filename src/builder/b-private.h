@@ -104,6 +104,7 @@ struct sai_shell {
 	struct sai_plat_server	*spm;
 	struct lws_spawn_piped	*lsp;
 	struct lws		*stdwsi[3];
+	char			stdwsi_paused[3];
 	int			user_cancel;
 };
 

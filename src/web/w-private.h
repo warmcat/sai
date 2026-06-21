@@ -124,11 +124,17 @@ struct pss {
 	unsigned int		announced:1;
 	unsigned int		bulk_binary_data:1;
 	unsigned int		toggle_favour_sch:1;
+	unsigned int		authorized:1;
 };
 
 struct vhd {
 	struct lws_context		*context;
 	struct lws_vhost		*vhost;
+
+	struct lws_jwk			jwk;
+	int				has_jwk;
+	char				cookie_name[64];
+	char				jwk_path[256];
 
 	/* pss lists */
 	struct lws_dll2_owner		browsers;

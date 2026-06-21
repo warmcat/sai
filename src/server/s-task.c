@@ -618,6 +618,18 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 
 	} lws_end_foreach_dll(p);
 
+	/*
+	 * Also account for any in-memory interactive shell sessions
+	 */
+	lws_start_foreach_dll(struct lws_dll2 *, p_sh, vhd->shell_sessions.head) {
+		sai_shell_session_t *sh = lws_container_of(p_sh, sai_shell_session_t, list);
+		const char *plat = strchr(sh->builder_name, '.');
+		if (plat)
+			sais_find_or_add_pending_plat(vhd, plat + 1, 1, 1);
+		else
+			sais_find_or_add_pending_plat(vhd, sh->builder_name, 1, 1);
+	} lws_end_foreach_dll(p_sh);
+
 	sais_notify_all_sai_power(vhd);
 
 	/*

@@ -7,6 +7,9 @@ class TerminalCore {
         this.cols = cols;
         this.rows = rows;
         this.buffer = []; // Array of { char: ' ', fg: null, bg: null, bold: false }
+        this.scrollback = []; // Array of pushed-out rows
+        this.maxScrollback = 10000;
+        this.scrollOffset = 0; // Number of lines scrolled back (0 = bottom)
         this.cx = 0;
         this.cy = 0;
         
@@ -17,6 +20,7 @@ class TerminalCore {
     }
 
     initBuffer() {
+        this.wrapNext = false;
         this.buffer = [];
         for (let r = 0; r < this.rows; r++) {
             let row = [];
@@ -28,6 +32,7 @@ class TerminalCore {
     }
 
     resize(cols, rows) {
+        this.wrapNext = false;
         let newBuffer = [];
         for (let r = 0; r < rows; r++) {
             let row = [];
@@ -48,27 +53,38 @@ class TerminalCore {
     }
 
     write(data) {
+        if (this.scrollOffset > 0 && data.length > 0) {
+            this.scrollOffset = 0;
+        }
         for (let i = 0; i < data.length; i++) {
             let char = data[i];
 
             if (char === '\n') {
                 this.cy++;
                 this.cx = 0;
+                this.wrapNext = false;
                 if (this.cy >= this.rows) {
                     this.scrollUp();
                     this.cy = this.rows - 1;
                 }
             } else if (char === '\r') {
                 this.cx = 0;
+                this.wrapNext = false;
             } else if (char === '\b') {
                 if (this.cx > 0) this.cx--;
+                this.wrapNext = false;
             } else if (char === '\t') {
                 this.cx = (this.cx + 8) - (this.cx % 8);
-                if (this.cx >= this.cols) this.cx = this.cols - 1;
+                if (this.cx >= this.cols) {
+                    this.cx = this.cols - 1;
+                    this.wrapNext = true;
+                } else {
+                    this.wrapNext = false;
+                }
             } else if (char === '\x07') {
                 // Bell
             } else if (char === '\x1b') { // ESC
-                if (data[i + 1] === '[') {
+                if (i + 1 < data.length && data[i + 1] === '[') {
                     // CSI
                     let j = i + 2;
                     let paramStr = "";
@@ -81,30 +97,42 @@ class TerminalCore {
                         this.handleCSI(cmd, paramStr);
                         i = j;
                     }
-                } else if (data[i+1] === ']') {
+                } else if (i + 1 < data.length && data[i+1] === ']') {
                     // OSC
                     let j = i + 2;
                     while (j < data.length && data[j] !== '\x07' && data[j] !== '\x1b') j++;
-                    if (data[j] === '\x1b' && data[j+1] === '\\') j++;
+                    if (j < data.length && data[j] === '\x1b' && j + 1 < data.length && data[j+1] === '\\') j++;
                     i = j;
+                } else if (i + 1 < data.length && (data[i+1] === '(' || data[i+1] === ')' || data[i+1] === '*' || data[i+1] === '+')) {
+                    // Designate G0-G3 Character Set (3 bytes)
+                    i += 2;
                 } else {
-                    i++; // Skip unknown ESC sequence
+                    i++; // Skip unknown 2-byte ESC sequence
                 }
             } else {
+                if (this.wrapNext) {
+                    this.cx = 0;
+                    this.cy++;
+                    this.wrapNext = false;
+                    if (this.cy >= this.rows) {
+                        this.scrollUp();
+                        this.cy = this.rows - 1;
+                    }
+                }
+                
+                if (this.cy >= this.rows) this.cy = this.rows - 1;
+
                 this.buffer[this.cy][this.cx] = {
                     char: char,
                     fg: this.currentStyle.fg,
                     bg: this.currentStyle.bg,
                     bold: this.currentStyle.bold
                 };
-                this.cx++;
-                if (this.cx >= this.cols) {
-                    this.cx = 0;
-                    this.cy++;
-                    if (this.cy >= this.rows) {
-                        this.scrollUp();
-                        this.cy = this.rows - 1;
-                    }
+                
+                if (this.cx < this.cols - 1) {
+                    this.cx++;
+                } else {
+                    this.wrapNext = true;
                 }
             }
         }
@@ -113,6 +141,11 @@ class TerminalCore {
     handleCSI(cmd, paramStr) {
         if (paramStr.startsWith('?')) paramStr = paramStr.substring(1);
         let params = paramStr.split(';').map(p => parseInt(p, 10));
+        
+        if (cmd !== 'm') {
+            this.wrapNext = false;
+        }
+
         switch (cmd) {
             case 'A': // Cursor Up
                 this.cy = Math.max(0, this.cy - (params[0] || 1)); break;
@@ -158,6 +191,31 @@ class TerminalCore {
                     for (let c = 0; c < this.cols; c++) this.buffer[this.cy][c] = {...this.defaultCell};
                 }
                 break;
+            case '@': // Insert Character
+                let nInsert = params[0] || 1;
+                for (let c = this.cols - 1; c >= this.cx + nInsert; c--) {
+                    this.buffer[this.cy][c] = {...this.buffer[this.cy][c - nInsert]};
+                }
+                for (let c = this.cx; c < this.cx + nInsert && c < this.cols; c++) {
+                    this.buffer[this.cy][c] = {...this.defaultCell};
+                }
+                break;
+            case 'P': // Delete Character
+                let nDelete = params[0] || 1;
+                if (nDelete > this.cols - this.cx) nDelete = this.cols - this.cx;
+                for (let c = this.cx; c < this.cols - nDelete; c++) {
+                    this.buffer[this.cy][c] = {...this.buffer[this.cy][c + nDelete]};
+                }
+                for (let c = Math.max(this.cx, this.cols - nDelete); c < this.cols; c++) {
+                    this.buffer[this.cy][c] = {...this.defaultCell};
+                }
+                break;
+            case 'X': // Erase Character
+                let nErase = params[0] || 1;
+                for (let c = this.cx; c < this.cx + nErase && c < this.cols; c++) {
+                    this.buffer[this.cy][c] = {...this.defaultCell};
+                }
+                break;
             case 'm': // SGR
                 for (let i = 0; i < params.length; i++) {
                     let code = params[i] || 0;
@@ -171,10 +229,20 @@ class TerminalCore {
     }
 
     scrollUp() {
-        this.buffer.shift();
+        let shiftedRow = this.buffer.shift();
+        this.scrollback.push(shiftedRow);
+        if (this.scrollback.length > this.maxScrollback) {
+            this.scrollback.shift();
+        }
         let row = [];
         for (let c = 0; c < this.cols; c++) row.push({...this.defaultCell});
         this.buffer.push(row);
+    }
+
+    scroll(amount) {
+        this.scrollOffset += amount;
+        if (this.scrollOffset < 0) this.scrollOffset = 0;
+        if (this.scrollOffset > this.scrollback.length) this.scrollOffset = this.scrollback.length;
     }
 
     renderHtml() {
@@ -183,11 +251,26 @@ class TerminalCore {
 
         const colorMap = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'];
 
+        let viewBuffer = [];
+        if (this.scrollOffset > 0) {
+            let startIdx = this.scrollback.length - this.scrollOffset;
+            for (let i = 0; i < this.rows; i++) {
+                let idx = startIdx + i;
+                if (idx < this.scrollback.length) {
+                    viewBuffer.push(this.scrollback[idx]);
+                } else {
+                    viewBuffer.push(this.buffer[idx - this.scrollback.length]);
+                }
+            }
+        } else {
+            viewBuffer = this.buffer;
+        }
+
         for (let r = 0; r < this.rows; r++) {
             for (let c = 0; c < this.cols; c++) {
-                let cell = this.buffer[r][c];
+                let cell = viewBuffer[r][c];
                 
-                let isCursor = (r === this.cy && c === this.cx);
+                let isCursor = (this.scrollOffset === 0 && r === this.cy && c === this.cx);
                 let styleKey = `${cell.fg}-${cell.bg}-${cell.bold}-${isCursor}`;
                 
                 if (styleKey !== lastStyle) {
@@ -208,7 +291,7 @@ class TerminalCore {
                 }
                 html += (cell.char === ' ' || cell.char === '') ? '&nbsp;' : this.escapeHtml(cell.char);
             }
-            html += '<br>';
+            if (r < this.rows - 1) html += '<br>';
         }
         if (lastStyle !== null) html += '</span>';
         return html;

@@ -40,6 +40,19 @@ const lws_struct_map_t lsm_active_task_info[] = {
 	LSM_CARRAY	(sai_active_task_info_t, git_hash,		"git_hash"),
 };
 
+const lws_struct_map_t lsm_active_shell[] = {
+	LSM_CARRAY	(sai_active_shell_t, task_uuid,		"task_uuid"),
+};
+
+const lws_struct_map_t lsm_schema_active_shells[] = {
+	LSM_LIST	(sai_active_shells_t, shells, sai_active_shell_t, list,
+			 NULL, lsm_active_shell,			"shells"),
+};
+
+const lws_struct_map_t lsm_schema_map_active_shells[] = {
+	LSM_SCHEMA(sai_active_shells_t, NULL, lsm_schema_active_shells, "com.warmcat.sai.active_shells")
+};
+
 const lws_struct_map_t lsm_load_report_members[] = {
 	LSM_CARRAY	(sai_load_report_t, builder_name,		"builder_name"),
 	LSM_SIGNED	(sai_load_report_t, core_count,			"core_count"),
@@ -237,6 +250,8 @@ const lws_struct_map_t lsm_ptydata[] = {
 	LSM_SIGNED	(sai_ptydata_t, channel,	"channel"),
 	LSM_STRING_PTR	(sai_ptydata_t, data,		"data"),
 	LSM_UNSIGNED	(sai_ptydata_t, len,		"len"),
+	LSM_UNSIGNED	(sai_ptydata_t, cols,		"cols"),
+	LSM_UNSIGNED	(sai_ptydata_t, rows,		"rows"),
 };
 
 const lws_struct_map_t lsm_schema_ptydata[] = {

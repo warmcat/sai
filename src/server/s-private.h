@@ -211,6 +211,13 @@ typedef struct sais_plat {
 	int		unmet_count;
 } sais_plat_t;
 
+typedef struct sai_shell_session {
+	lws_dll2_t	list;
+	char		task_uuid[65];
+	char		builder_name[96];
+	lws_dll2_owner_t ptydata_owner;
+} sai_shell_session_t;
+
 struct vhd {
 	struct lws_context	*context;
 	struct lws_vhost	*vhost;
@@ -224,6 +231,7 @@ struct vhd {
 	struct lws_dll2_owner	sai_powers;
 	struct lws_dll2_owner	pending_plats;
 	lws_dll2_owner_t	powering_up_list; /* sai_powering_up_plat_t */
+	lws_dll2_owner_t	shell_sessions; /* sai_shell_session_t */
 
 	struct lwsac		*ac_plats;
 

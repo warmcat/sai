@@ -136,6 +136,15 @@ typedef struct sai_active_task_info {
 	char				git_hash[65];
 } sai_active_task_info_t;
 
+typedef struct sai_active_shell {
+	lws_dll2_t			list;
+	char				task_uuid[65];
+} sai_active_shell_t;
+
+typedef struct sai_active_shells {
+	lws_dll2_owner_t		shells;
+} sai_active_shells_t;
+
 typedef struct sai_load_report {
 	lws_dll2_t			list; /* For queuing on sai_plat_server */
 	char				builder_name[64];
@@ -358,6 +367,8 @@ typedef struct sai_ptydata {
 	int				channel;
 	char				*data;
 	size_t				len;
+	unsigned int			cols;
+	unsigned int			rows;
 } sai_ptydata_t;
 
 /*
@@ -857,8 +868,10 @@ extern const lws_struct_map_t
 	lsm_openshell[2],
 	lsm_schema_openshell[1],
 	lsm_closeshell[1],
+	lsm_schema_map_active_shells[1],
+	lsm_schema_active_shells[1],
 	lsm_schema_closeshell[1],
-	lsm_ptydata[5],
+	lsm_ptydata[7],
 	lsm_schema_ptydata[1],
 	lsm_rebuild[1],
 	lsm_schema_rebuild[1],
