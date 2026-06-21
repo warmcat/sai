@@ -1508,3 +1508,103 @@ canvas.power-graph {
 div.ibuil.vm-builder {
         background: #e6ce8a;
 }
+
+.sai-terminal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 600px;
+    height: 400px;
+    background: #1e1e1e;
+    color: #00ff00;
+    font-family: 'Iosevka', monospace;
+    font-size: 14px;
+    display: flex;
+    flex-direction: column;
+    border: 2px solid #555;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    z-index: 9999;
+    resize: both;
+    overflow: hidden;
+}
+
+.sai-terminal-titlebar {
+    background: #333;
+    color: #fff;
+    padding: 5px 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: move;
+    user-select: none;
+    font-family: sans-serif;
+    border-bottom: 1px solid #555;
+}
+
+.sai-terminal-title {
+    font-weight: bold;
+}
+
+.sai-terminal-content {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    overflow: hidden;
+}
+
+.sai-terminal-output {
+    flex-grow: 1;
+    overflow: hidden;
+    margin: 0;
+    white-space: pre;
+    color: #ddd;
+    line-height: 16px;
+}
+
+.sai-terminal-input {
+    background: transparent;
+    color: #fff;
+    border: none;
+    outline: none;
+    font-family: inherit;
+    font-size: inherit;
+    margin: 0;
+    padding: 0;
+    min-width: 200px;
+}
+
+.sai-terminal-err {
+    color: #ff5555;
+}
+
+.builder-delete-btn {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+.builder-shell-btn {
+    color: #3498db;
+    font-weight: bold;
+}
+
+.sai-terminal-close {
+    background: #e74c3c;
+    border: none;
+    color: #fff;
+    border-radius: 3px;
+    cursor: pointer;
+    font-weight: bold;
+    padding: 2px 6px;
+}
+
+.sai-terminal-close:hover {
+    background: #c0392b;
+}
+
+.term-cursor {
+    background-color: rgba(0, 255, 0, 0.7);
+    color: #1e1e1e;
+}

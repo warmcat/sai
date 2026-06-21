@@ -335,6 +335,32 @@ typedef struct sai_cancel {
 } sai_cancel_t;
 
 /*
+ * Browser -> sai-web -> sai-server
+ *
+ * Open an ad-hoc shell on a builder
+ */
+
+typedef struct sai_openshell {
+	lws_dll2_t			list;
+	char				builder_name[96];
+	char				task_uuid[65];
+} sai_openshell_t;
+
+typedef struct sai_closeshell {
+	lws_dll2_t			list;
+	char				task_uuid[65];
+} sai_closeshell_t;
+
+typedef struct sai_ptydata {
+	lws_dll2_t			list;
+	char				builder_name[96];
+	char				task_uuid[65];
+	int				channel;
+	char				*data;
+	size_t				len;
+} sai_ptydata_t;
+
+/*
  * Browser is asking a builder to rebuild
  */
 
@@ -828,6 +854,12 @@ extern const lws_struct_map_t
 	lsm_schema_json_map_event[1],
 	lsm_resource[4],
 	lsm_power_state[3],
+	lsm_openshell[2],
+	lsm_schema_openshell[1],
+	lsm_closeshell[1],
+	lsm_schema_closeshell[1],
+	lsm_ptydata[5],
+	lsm_schema_ptydata[1],
 	lsm_rebuild[1],
 	lsm_schema_rebuild[1],
 	lsm_schema_build_metric[1],

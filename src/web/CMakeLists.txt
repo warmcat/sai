@@ -83,6 +83,8 @@ add_dependencies(${SUB} sai_git_hash)
 		      ../../assets/coverity.svg
 		      ../../assets/sai.css
 		      ../../assets/sai.js
+		      ../../assets/terminal-core.js
+		      ../../assets/sai-terminal.js
 		      ../../assets/sai.svg
 		      ../../assets/sai-icon.svg
 		      ../../assets/builder-instance.svg

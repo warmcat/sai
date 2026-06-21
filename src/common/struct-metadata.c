@@ -212,6 +212,38 @@ const lws_struct_map_t lsm_task_cancel[] = {
 	LSM_UNSIGNED	(sai_cancel_t, erase,		 "erase"),
 };
 
+const lws_struct_map_t lsm_openshell[] = {
+	LSM_CARRAY	(sai_openshell_t, builder_name,	"builder_name"),
+	LSM_CARRAY	(sai_openshell_t, task_uuid,	"task_uuid"),
+};
+
+const lws_struct_map_t lsm_schema_openshell[] = {
+	LSM_SCHEMA	(sai_openshell_t, NULL, lsm_openshell,
+						     "com.warmcat.sai.openshell")
+};
+
+const lws_struct_map_t lsm_closeshell[] = {
+	LSM_CARRAY	(sai_closeshell_t, task_uuid,	"task_uuid"),
+};
+
+const lws_struct_map_t lsm_schema_closeshell[] = {
+	LSM_SCHEMA	(sai_closeshell_t, NULL, lsm_closeshell,
+						     "com.warmcat.sai.closeshell")
+};
+
+const lws_struct_map_t lsm_ptydata[] = {
+	LSM_CARRAY	(sai_ptydata_t, builder_name,	"builder_name"),
+	LSM_CARRAY	(sai_ptydata_t, task_uuid,	"task_uuid"),
+	LSM_SIGNED	(sai_ptydata_t, channel,	"channel"),
+	LSM_STRING_PTR	(sai_ptydata_t, data,		"data"),
+	LSM_UNSIGNED	(sai_ptydata_t, len,		"len"),
+};
+
+const lws_struct_map_t lsm_schema_ptydata[] = {
+	LSM_SCHEMA	(sai_ptydata_t, NULL, lsm_ptydata,
+						     "com.warmcat.sai.ptydata")
+};
+
 const lws_struct_map_t lsm_rebuild[] = {
 	LSM_CARRAY	(sai_rebuild_t, builder_name,	"builder_name"),
 };

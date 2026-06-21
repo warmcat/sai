@@ -98,11 +98,21 @@ enum nsstate {
  * This represents this builder process as a whole
  */
 
+struct sai_shell {
+	struct lws_dll2		list;
+	char			task_uuid[33];
+	struct sai_plat_server	*spm;
+	struct lws_spawn_piped	*lsp;
+	struct lws		*stdwsi[3];
+	int			user_cancel;
+};
+
 struct sai_builder {
 	lws_dll2_owner_t	sai_plat_owner; /* list of platforms we offer */
 	lws_dll2_owner_t	sai_plat_server_owner; /* servers we connect to */
 	lws_dll2_owner_t	devices_owner; /* sai_serial_t */
 	lws_dll2_owner_t	lsp_owner; /* list of lws_spawn_piped */
+	lws_dll2_owner_t	shell_owner; /* list of sai_shell */
 
 	struct lws_ss_handle	*ss_stay;
 	struct lws_ss_handle	*ss_power_off;

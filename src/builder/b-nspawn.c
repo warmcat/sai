@@ -685,3 +685,137 @@ saib_spawn_script(struct sai_nspawn *ns)
 	return 0;
 }
 
+static void
+sai_shell_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
+		  int we_killed_him)
+{
+	struct sai_shell *sh = (struct sai_shell *)opaque;
+
+	lwsl_notice("%s: shell exited\n", __func__);
+
+	if (sh) {
+		lws_dll2_remove(&sh->list);
+		free(sh);
+	}
+}
+
+static int
+callback_sai_shell_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
+			  void *user, void *in, size_t len)
+{
+	struct sai_shell *sh = (struct sai_shell *)lws_get_opaque_user_data(wsi);
+	uint8_t buf[1024];
+	int ilen;
+
+	switch (reason) {
+	case LWS_CALLBACK_RAW_CLOSE_FILE:
+	{
+		int ch = lws_spawn_get_stdfd(wsi);
+		if (ch == 0) ch = 1;
+		if (sh && ch < 3)
+			sh->stdwsi[ch] = NULL;
+		break;
+	}
+
+	case LWS_CALLBACK_RAW_RX_FILE:
+#if defined(WIN32)
+	{
+		DWORD rb;
+		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1, &rb, NULL))
+			return -1;
+		ilen = (int)rb;
+	}
+#else
+		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1);
+		if (ilen < 1)
+			return -1;
+#endif
+		if (!sh || !sh->spm)
+			return -1;
+
+		len = (size_t)ilen;
+		int ch = lws_spawn_get_stdfd(wsi);
+		if (ch == 0) ch = 1;
+
+		lwsl_notice("%s: read %d bytes from shell %s (ch %d)\n", __func__, ilen, sh->task_uuid, ch);
+
+		if (ch < 3)
+			sh->stdwsi[ch] = wsi;
+
+		char lj[4000 + LWS_PRE];
+		int n = lws_snprintf(lj + LWS_PRE, sizeof(lj) - LWS_PRE,
+			"{\"schema\":\"com.warmcat.sai.ptydata\","
+			 "\"task_uuid\":\"%s\", \"channel\": %d, \"len\": %d, \"data\":\"",
+			 sh->task_uuid, ch, (int)len);
+		
+		n += lws_b64_encode_string((char *)buf, (int)len, lj + LWS_PRE + n,
+					   (int)sizeof(lj) - LWS_PRE - n - 5);
+		lj[LWS_PRE + n++] = '\"';
+		lj[LWS_PRE + n++] = '}';
+		lj[LWS_PRE + n] = '\0';
+
+		lwsl_notice("%s: PTYDATA queueing %d bytes from shell %s to server\n", __func__, (int)len, sh->task_uuid);
+
+		saib_srv_queue_tx(sh->spm->ss, lj + LWS_PRE, (size_t)n, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+		break;
+
+	default:
+		break;
+	}
+	return 0;
+}
+
+struct lws_protocols protocol_saishell = {
+	.name			= "sai-saishell",
+	.callback		= callback_sai_shell_stdwsi,
+	.per_session_data_size	= 0,
+	.rx_buffer_size		= 0,
+};
+
+int
+saib_shell_spawn(struct sai_plat_server *spm, const char *task_uuid)
+{
+	struct lws_spawn_piped_info info;
+	struct sai_shell *sh;
+	const char *cmd[] = { "/bin/bash", "-i", NULL };
+	const char *env[] = {
+		"PATH=/usr/local/bin:/usr/bin:/bin",
+		"LANG=en_US.UTF-8",
+		"TERM=xterm-256color",
+		NULL
+	};
+
+	sh = malloc(sizeof(*sh));
+	if (!sh)
+		return 1;
+	memset(sh, 0, sizeof(*sh));
+
+	lws_strncpy(sh->task_uuid, task_uuid, sizeof(sh->task_uuid));
+	sh->spm = spm;
+
+	memset(&info, 0, sizeof(info));
+	info.vh			= builder.vhost;
+	info.env_array		= (const char **)env;
+	info.exec_array		= cmd;
+	info.protocol_name	= "sai-saishell";
+	info.max_log_lines	= 10000;
+	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
+	info.reap_cb		= sai_shell_reap_cb;
+	info.pty_mode		= 1;
+	info.opaque		= sh;
+	info.owner		= &builder.lsp_owner;
+	info.plsp		= &sh->lsp;
+
+	lws_dll2_add_tail(&sh->list, &builder.shell_owner);
+
+	lws_spawn_piped(&info);
+	if (!sh->lsp) {
+		lwsl_err("%s: Failed to spawn shell for %s\n", __func__, task_uuid);
+		lws_dll2_remove(&sh->list);
+		free(sh);
+		return 1;
+	}
+
+	lwsl_notice("%s: Spawned shell successfully for %s\n", __func__, task_uuid);
+	return 0;
+}

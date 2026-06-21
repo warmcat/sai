@@ -111,7 +111,13 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.taskresume"),
 	LSM_SCHEMA	(sai_browse_rx_builderdelete_t, NULL, lsm_browser_builderdelete,
-					      "com.warmcat.sai.builderdelete")
+					      "com.warmcat.sai.builderdelete"),
+	LSM_SCHEMA	(sai_openshell_t, NULL, lsm_openshell,
+					      "com.warmcat.sai.openshell"),
+	LSM_SCHEMA	(sai_closeshell_t, NULL, lsm_closeshell,
+					      "com.warmcat.sai.closeshell"),
+	LSM_SCHEMA	(sai_ptydata_t, NULL, lsm_ptydata,
+					      "com.warmcat.sai.ptydata")
 };
 
 enum {
@@ -129,6 +135,9 @@ enum {
 	SAIS_WS_WEBSRV_RX_TASKPAUSE,
 	SAIS_WS_WEBSRV_RX_TASKRESUME,
 	SAIS_WS_WEBSRV_RX_BUILDERDELETE,
+	SAIS_WS_WEBSRV_RX_OPENSHELL,
+	SAIS_WS_WEBSRV_RX_CLOSESHELL,
+	SAIS_WS_WEBSRV_RX_PTYDATA,
 };
 
 static int
@@ -677,6 +686,90 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lwsac_free(&a.ac);
 		break;
 	}
+	case SAIS_WS_WEBSRV_RX_OPENSHELL:
+	{
+		sai_openshell_t *os = (sai_openshell_t *)a.dest;
+		sai_plat_t *sp;
+
+		lwsl_notice("%s: OPENSHELL received from web for %s, passing to builder\n", __func__, os->builder_name);
+
+		sp = sais_builder_from_uuid(m->vhd, os->builder_name);
+		if (!sp) {
+			lwsl_err("%s: unknown builder %s for openshell\n",
+				    __func__, os->builder_name);
+			lwsac_free(&a.ac);
+			break;
+		}
+
+		if (!os->task_uuid[0])
+			sai_uuid16_create(m->vhd->context, os->task_uuid);
+
+		lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
+			struct pss *pss = lws_container_of(p, struct pss, same);
+
+			if (pss->wsi == sp->wsi) {
+				sai_openshell_t *s = malloc(sizeof(*s));
+				if (s) {
+					*s = *os;
+					lws_dll2_add_tail(&s->list, &pss->openshell_owner);
+					lws_callback_on_writable(pss->wsi);
+				}
+				break;
+			}
+		} lws_end_foreach_dll(p);
+
+
+
+		lwsac_free(&a.ac);
+		break;
+	}
+
+	case SAIS_WS_WEBSRV_RX_CLOSESHELL:
+	{
+		sai_closeshell_t *cs = (sai_closeshell_t *)a.dest;
+		sais_task_cancel(m->vhd, cs->task_uuid, 0);
+		lwsac_free(&a.ac);
+		break;
+	}
+
+	case SAIS_WS_WEBSRV_RX_PTYDATA:
+	{
+		sai_ptydata_t *pd = (sai_ptydata_t *)a.dest;
+		sai_plat_t *sp;
+
+		sp = sais_builder_from_uuid(m->vhd, pd->builder_name);
+		if (!sp) {
+			lwsl_err("%s: PTYDATA from web: unknown builder %s\n", __func__, pd->builder_name);
+			lwsac_free(&a.ac);
+			break;
+		}
+
+		lwsl_notice("%s: PTYDATA received from web (len %d), passing to builder %s\n", __func__, (int)pd->len, pd->builder_name);
+
+		lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
+			struct pss *pss = lws_container_of(p, struct pss, same);
+
+			if (pss->wsi == sp->wsi) {
+				sai_ptydata_t *s = malloc(sizeof(*s));
+				if (s) {
+					size_t slen = strlen(pd->data);
+					*s = *pd;
+					s->data = malloc(slen + 1);
+					if (s->data) {
+						memcpy((char *)s->data, pd->data, slen + 1);
+						lws_dll2_add_tail(&s->list, &pss->ptydata_owner);
+						lws_callback_on_writable(pss->wsi);
+					} else
+						free(s);
+				}
+				break;
+			}
+		} lws_end_foreach_dll(p);
+
+		lwsac_free(&a.ac);
+		break;
+	}
+
 	case SAIS_WS_WEBSRV_RX_BUILDERDELETE:
 	{
 		sai_browse_rx_builderdelete_t *bd = (sai_browse_rx_builderdelete_t *)a.dest;

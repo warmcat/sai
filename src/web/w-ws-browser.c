@@ -102,6 +102,12 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 					      "com.warmcat.sai.watcher_services"),
 	LSM_SCHEMA	(sai_browse_rx_builderdelete_t, NULL, lsm_browser_builderdelete,
 					      "com.warmcat.sai.builderdelete"),
+	LSM_SCHEMA	(sai_openshell_t, NULL, lsm_openshell,
+					      "com.warmcat.sai.openshell"),
+	LSM_SCHEMA	(sai_closeshell_t, NULL, lsm_closeshell,
+					      "com.warmcat.sai.closeshell"),
+	LSM_SCHEMA	(sai_ptydata_t, NULL, lsm_ptydata,
+					      "com.warmcat.sai.ptydata"),
 };
 
 enum {
@@ -119,6 +125,9 @@ enum {
 	SAIM_WS_BROWSER_RX_PCON_CONTROL,
 	SAIM_WS_BROWSER_RX_WATCHER_SERVICES,
 	SAIM_WS_BROWSER_RX_BUILDERDELETE,
+	SAIM_WS_BROWSER_RX_OPENSHELL,
+	SAIM_WS_BROWSER_RX_CLOSESHELL,
+	SAIM_WS_BROWSER_RX_PTYDATA,
 };
 
 
@@ -785,6 +794,9 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		break;
 
 	case SAIM_WS_BROWSER_RX_WATCHER_SERVICES:
+	case SAIM_WS_BROWSER_RX_OPENSHELL:
+	case SAIM_WS_BROWSER_RX_CLOSESHELL:
+	case SAIM_WS_BROWSER_RX_PTYDATA:
 		break;
 
 	default:

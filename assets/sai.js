@@ -395,6 +395,7 @@ var lang_zhs = "{" +
 "}}";
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, auth_is_admin = 0, auth_grant_level = -1, exptimer, auth_user = "",
+active_terminals = {};
 	logAnsiState = {}, logs_pending = "", lines_pending = "", times_pending = "",
 	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {},
 	watcher_services = [],
@@ -1655,7 +1656,7 @@ function createBuilderDiv(plat) {
 
 	if (authd && auth_is_admin && !plat.online) {
 		menuItems.push({
-			label: "<span style='color:#e74c3c; font-weight:bold;'>Delete Builder</span>",
+			label: "<span class='builder-delete-btn'>Delete Builder</span>",
 			callback: () => {
 				if (confirm("Are you sure you want to delete builder " + plat.name + "?")) {
 					const msg = {
@@ -1664,6 +1665,47 @@ function createBuilderDiv(plat) {
 					};
 					sai.send(JSON.stringify(msg));
 				}
+			}
+		});
+	}
+
+	if (authd && auth_is_admin && plat.online) {
+		menuItems.push({
+			label: "<span class='builder-shell-btn'>Open Shell</span>",
+			callback: () => {
+				const task_uuid = Array.from(crypto.getRandomValues(new Uint8Array(8)))
+					.map(b => b.toString(16).padStart(2, '0')).join('');
+
+				const msg = {
+					schema: "com.warmcat.sai.openshell",
+					builder_name: plat.name,
+					task_uuid: task_uuid
+				};
+				sai.send(JSON.stringify(msg));
+
+				const term = new SaiTerminal(document.body, {
+					title: "Terminal: " + plat.name,
+					onData: (data) => {
+						const ptyMsg = {
+							schema: "com.warmcat.sai.ptydata",
+							builder_name: plat.name,
+							task_uuid: task_uuid,
+							channel: 0,
+							data: btoa(data),
+							len: data.length
+						};
+						sai.send(JSON.stringify(ptyMsg));
+					},
+					onClose: () => {
+						const closeMsg = {
+							schema: "com.warmcat.sai.closeshell",
+							task_uuid: task_uuid
+						};
+						sai.send(JSON.stringify(closeMsg));
+						delete active_terminals[task_uuid];
+					}
+				});
+				active_terminals[task_uuid] = term;
 			}
 		});
 	}
@@ -2380,6 +2422,45 @@ function ws_open_sai()
 
 			case "com.warmcat.sai.watcher_services":
 				watcher_services = jso;
+				break;
+
+			case "com.warmcat.sai.ptydata":
+				if (jso.task_uuid) {
+					const term = active_terminals[jso.task_uuid];
+					if (!term) {
+						term = new SaiTerminal(document.body, {
+							onData: function(input) {
+								const msg = {
+									schema: "com.warmcat.sai.ptydata",
+									task_uuid: jso.task_uuid,
+									channel: 0,
+									len: input.length,
+									data: btoa(input)
+								};
+								sai.send(JSON.stringify(msg));
+							},
+							onClose: function() {
+								const msg = {
+									schema: "com.warmcat.sai.closeshell",
+									task_uuid: jso.task_uuid
+								};
+								sai.send(JSON.stringify(msg));
+								delete active_terminals[jso.task_uuid];
+							}
+						});
+
+						active_terminals[jso.task_uuid] = term;
+					}
+					if (jso.data) {
+						const binString = atob(jso.data);
+						const bytes = new Uint8Array(binString.length);
+						for (let i = 0; i < binString.length; i++) {
+							bytes[i] = binString.charCodeAt(i);
+						}
+						const text = new TextDecoder().decode(bytes);
+						term.write(jso.channel, text);
+					}
+				}
 				break;
 
 			case "sai.warmcat.com.overview":

@@ -61,6 +61,8 @@ const lws_struct_map_t lsm_schema_json_map[] = {
 			"com.warmcat.sai.power_managed_builders"),
 	LSM_SCHEMA	(sai_pcon_energy_report_t, NULL, lsm_pcon_energy_report,
 			 /* shares struct */ "com.warmcat.sai.pcon_energy"),
+	LSM_SCHEMA	(sai_ptydata_t, NULL, lsm_ptydata,
+			 "com.warmcat.sai.ptydata"),
 };
 
 enum {
@@ -74,6 +76,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_BUILD_METRIC,
 	SAIS_WS_WEBSRV_RX_POWER_MANAGED_BUILDERS,
 	SAIS_WS_WEBSRV_RX_PCON_ENERGY,
+	SAIS_WS_WEBSRV_RX_PTYDATA,
 };
 
 /*
@@ -126,19 +129,34 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			 */
 			switch (m->a.top_schema_index) {
 			case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
-				saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, p, rem,
-					lws_write_ws_flags(LWS_WRITE_TEXT,
-							   is_start,
-							   0)); /* Not EOM */
+			case SAIS_WS_WEBSRV_RX_PTYDATA:
+			{
+				uint8_t *tmp = malloc(LWS_PRE + rem);
+				if (tmp) {
+					memcpy(tmp + LWS_PRE, p, rem);
+					saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, tmp + LWS_PRE, rem,
+						lws_write_ws_flags(LWS_WRITE_TEXT,
+								   is_start,
+								   0)); /* Not EOM */
+					free(tmp);
+				}
 				break;
+			}
 			case SAIS_WS_WEBSRV_RX_LOADREPORT:
-				lws_start_foreach_dll(struct lws_dll2 *, pt, vhd->browsers.head) {
-					struct pss *pss = lws_container_of(pt, struct pss, same);
-					if (!pss->is_gitohashi)
-						saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, p, rem,
-							lws_write_ws_flags(LWS_WRITE_TEXT, is_start, 0));
-				} lws_end_foreach_dll(pt);
+			{
+				uint8_t *tmp = malloc(LWS_PRE + rem);
+				if (tmp) {
+					memcpy(tmp + LWS_PRE, p, rem);
+					lws_start_foreach_dll(struct lws_dll2 *, pt, vhd->browsers.head) {
+						struct pss *pss = lws_container_of(pt, struct pss, same);
+						if (!pss->is_gitohashi)
+							saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, tmp + LWS_PRE, rem,
+								lws_write_ws_flags(LWS_WRITE_TEXT, is_start, 0));
+					} lws_end_foreach_dll(pt);
+					free(tmp);
+				}
 				break;
+			}
 			default:
 				// lwsl_err("%s: SWALLOWING %.*s\n", __func__, (int)len, buf);
 				break;
@@ -156,19 +174,34 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		case SAIS_WS_WEBSRV_RX_TASKCHANGE:
 		case SAIS_WS_WEBSRV_RX_EVENTCHANGE:
 		case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
-			saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, p, consumed,
-				lws_write_ws_flags(LWS_WRITE_TEXT,
-						   is_start,
-						   1)); /* Force EOM */
+		case SAIS_WS_WEBSRV_RX_PTYDATA:
+		{
+			uint8_t *tmp = malloc(LWS_PRE + consumed);
+			if (tmp) {
+				memcpy(tmp + LWS_PRE, p, consumed);
+				saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(vhd, tmp + LWS_PRE, consumed,
+					lws_write_ws_flags(LWS_WRITE_TEXT,
+							   is_start,
+							   1)); /* Force EOM */
+				free(tmp);
+			}
 			break;
+		}
 		case SAIS_WS_WEBSRV_RX_LOADREPORT:
-			lws_start_foreach_dll(struct lws_dll2 *, pt, vhd->browsers.head) {
-				struct pss *pss = lws_container_of(pt, struct pss, same);
-				if (!pss->is_gitohashi)
-					saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, p, consumed,
-						lws_write_ws_flags(LWS_WRITE_TEXT, is_start, 1));
-			} lws_end_foreach_dll(pt);
+		{
+			uint8_t *tmp = malloc(LWS_PRE + consumed);
+			if (tmp) {
+				memcpy(tmp + LWS_PRE, p, consumed);
+				lws_start_foreach_dll(struct lws_dll2 *, pt, vhd->browsers.head) {
+					struct pss *pss = lws_container_of(pt, struct pss, same);
+					if (!pss->is_gitohashi)
+						saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, tmp + LWS_PRE, consumed,
+							lws_write_ws_flags(LWS_WRITE_TEXT, is_start, 1));
+				} lws_end_foreach_dll(pt);
+				free(tmp);
+			}
 			break;
+		}
 		}
 
 		/*

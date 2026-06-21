@@ -72,6 +72,8 @@ static const lws_struct_map_t lsm_schema_map_ba[] = {
 						"com-warmcat-sai-resource"),
 	LSM_SCHEMA	(sai_build_metric_t, NULL, lsm_build_metric,
 						"com.warmcat.sai.build-metric"),
+	LSM_SCHEMA	(sai_ptydata_t, NULL, lsm_ptydata,
+						"com.warmcat.sai.ptydata"),
 };
 
 enum {
@@ -82,6 +84,7 @@ enum {
 	SAIM_WSSCH_BUILDER_LOADREPORT,
 	SAIM_WSSCH_BUILDER_RESOURCE_REQ,
 	SAIM_WSSCH_BUILDER_METRIC,
+	SAIM_WSSCH_BUILDER_PTYDATA,
 };
 
 static void
@@ -1404,6 +1407,41 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 
 			lwsac_free(&pss->a.ac);
 			break;
+
+		case SAIM_WSSCH_BUILDER_PTYDATA:
+		{
+			sai_ptydata_t *pd = (sai_ptydata_t *)pss->a.dest;
+
+			js = lws_struct_json_serialize_create(lsm_schema_ptydata,
+					LWS_ARRAY_SIZE(lsm_schema_ptydata), 0, pd);
+			if (!js) {
+				lwsac_free(&pss->a.ac);
+				break;
+			}
+
+			switch (lws_struct_json_serialize(js, xbuf + LWS_PRE,
+							  sizeof(xbuf) - LWS_PRE, &used)) {
+			case LSJS_RESULT_CONTINUE:
+			case LSJS_RESULT_ERROR:
+				break;
+			case LSJS_RESULT_FINISH:
+				memset(&info, 0, sizeof(info));
+
+				info.private_source_idx	= SAI_WEBSRV_PB__PROXIED_FROM_BUILDER;
+				info.buf		= xbuf + LWS_PRE;
+				info.len		= used;
+				info.ss_flags		= LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+
+				lwsl_notice("%s: PTYDATA received from builder shell %s, relaying %d bytes to web\n", __func__, pd->task_uuid, (int)used);
+
+				if (sais_websrv_broadcast_REQUIRES_LWS_PRE(vhd->h_ss_websrv, &info) < 0)
+					lwsl_warn("%s: unable to broadcast to web\n", __func__);
+				break;
+			}
+			lws_struct_json_serialize_destroy(&js);
+			lwsac_free(&pss->a.ac);
+			break;
+		}
 		}
 
 		buf += ((int)bl - m);
@@ -1519,6 +1557,44 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		goto send_json;
 	}
 
+	if (pss->openshell_owner.head) {
+		sai_openshell_t *os = lws_container_of(pss->openshell_owner.head,
+						       sai_openshell_t, list);
+
+		js = lws_struct_json_serialize_create(lsm_schema_openshell,
+				LWS_ARRAY_SIZE(lsm_schema_openshell), 0, os);
+		if (!js)
+			return 1;
+
+		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+		lws_struct_json_serialize_destroy(&js);
+
+		lws_dll2_remove(&os->list);
+		free(os);
+
+		goto send_json;
+	}
+
+	if (pss->ptydata_owner.head) {
+		sai_ptydata_t *pd = lws_container_of(pss->ptydata_owner.head,
+						     sai_ptydata_t, list);
+
+		js = lws_struct_json_serialize_create(lsm_schema_ptydata,
+				LWS_ARRAY_SIZE(lsm_schema_ptydata), 0, pd);
+		if (!js)
+			return 1;
+
+		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
+		lws_struct_json_serialize_destroy(&js);
+
+		lws_dll2_remove(&pd->list);
+		if (pd->data)
+			free(pd->data);
+		free(pd);
+
+		goto send_json;
+	}
+
 	/*
 	 * resource response?
 	 */
@@ -1595,7 +1671,8 @@ send_json:
 
 	if (pss->viewer_state_owner.head || pss->task_cancel_owner.head ||
 	    pss->res_pending_reply_owner.count ||
-	    pss->issue_task_owner.count)
+	    pss->issue_task_owner.count || pss->openshell_owner.head ||
+	    pss->ptydata_owner.head)
 		lws_callback_on_writable(pss->wsi);
 
 	return 0;

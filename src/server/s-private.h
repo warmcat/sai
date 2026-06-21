@@ -144,6 +144,8 @@ struct pss {
 	lws_dll2_owner_t	rebuild_owner;
 	lws_dll2_owner_t	stay_owner;
 	lws_dll2_owner_t	pcon_control_owner;
+	lws_dll2_owner_t	openshell_owner;
+	lws_dll2_owner_t	ptydata_owner;
 	lws_dll2_owner_t	aft_owner; /* for statefully spooling artifact info */
 	lws_dll2_owner_t	res_owner; /* sai_resource_requisition_t
 					    * owner of resource objects related

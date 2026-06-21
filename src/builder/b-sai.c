@@ -100,6 +100,7 @@ static lws_state_notify_link_t nl;
 struct sai_builder builder;
 
 extern struct lws_protocols protocol_stdxxx;
+extern struct lws_protocols protocol_saishell;
 extern struct lws_protocols protocol_suspender_stdxxx;
 extern struct lws_protocols protocol_deletion_stdxxx;
 
@@ -201,6 +202,7 @@ static const char * const default_ss_policy =
 
 static const struct lws_protocols *pprotocols[] = {
 	&protocol_stdxxx,
+	&protocol_saishell,
 	&protocol_logproxy,
 	&protocol_resproxy,
 	&protocol_suspender_stdxxx,

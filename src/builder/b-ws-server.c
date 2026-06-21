@@ -48,7 +48,9 @@ const lws_struct_map_t lsm_schema_map_m_to_b[] = {
 	LSM_SCHEMA	(sai_viewer_state_t, NULL, lsm_viewerstate_members,
 						 "com.warmcat.sai.viewerstate"),
 	LSM_SCHEMA	(sai_resource_t, NULL, lsm_resource, "com-warmcat-sai-resource"),
-	LSM_SCHEMA	(sai_rebuild_t, NULL, lsm_rebuild, "com.warmcat.sai.rebuild")
+	LSM_SCHEMA	(sai_rebuild_t, NULL, lsm_rebuild, "com.warmcat.sai.rebuild"),
+	LSM_SCHEMA	(sai_openshell_t, NULL, lsm_openshell, "com.warmcat.sai.openshell"),
+	LSM_SCHEMA	(sai_ptydata_t, NULL, lsm_ptydata, "com.warmcat.sai.ptydata")
 };
 
 enum {
@@ -56,7 +58,9 @@ enum {
 	SAIB_RX_TASK_CANCEL,
 	SAIB_RX_VIEWERSTATE,
 	SAIB_RX_RESOURCE_REPLY,
-	SAIB_RX_REBUILD
+	SAIB_RX_REBUILD,
+	SAIB_RX_OPENSHELL,
+	SAIB_RX_PTYDATA
 };
 
 /*
@@ -72,10 +76,13 @@ enum {
  */
 
 int
-saib_srv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned int ss_flags)
+saib_srv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len,
+                  unsigned int ss_flags)
 {
 	struct sai_plat_server *spm = (struct sai_plat_server *)lws_ss_to_user_object(h);
 	unsigned int *pi = (unsigned int *)((const char *)buf - sizeof(int));
+
+	lwsl_notice("%s: queuing %d bytes to server\n", __func__, (int)len);
 
 	*pi = ss_flags;
 	
@@ -234,6 +241,18 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 			} lws_end_foreach_dll_safe(p, p1);
 
 		} lws_end_foreach_dll_safe(mp, mp1);
+
+		lws_start_foreach_dll_safe(struct lws_dll2 *, shd, shd1,
+					   builder.shell_owner.head) {
+			struct sai_shell *sh = lws_container_of(shd, struct sai_shell, list);
+
+			if (!strcmp(can->task_uuid, sh->task_uuid)) {
+				lwsl_notice("%s: cancelling shell %s\n", __func__, can->task_uuid);
+				if (sh->lsp)
+					lws_spawn_piped_kill_child_process(sh->lsp);
+				sh->user_cancel = 1;
+			}
+		} lws_end_foreach_dll_safe(shd, shd1);
 		break;
 
 	case SAIB_RX_VIEWERSTATE:
@@ -280,6 +299,45 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 					 saib_sul_load_report_cb, 1);
 		}
 		break;
+
+	case SAIB_RX_OPENSHELL:
+	{
+		extern int saib_shell_spawn(struct sai_plat_server *spm, const char *task_uuid);
+		sai_openshell_t *os = (sai_openshell_t *)a.dest;
+		lwsl_notice("%s: OPENSHELL received from server for task %s\n", __func__, os->task_uuid);
+		saib_shell_spawn(spm, os->task_uuid);
+		break;
+	}
+
+	case SAIB_RX_PTYDATA:
+	{
+		sai_ptydata_t *pd = (sai_ptydata_t *)a.dest;
+		struct sai_shell *sh = NULL;
+
+		lws_start_foreach_dll(struct lws_dll2 *, d, builder.shell_owner.head) {
+			struct sai_shell *s = lws_container_of(d, struct sai_shell, list);
+			if (!strcmp(s->task_uuid, pd->task_uuid)) {
+				sh = s;
+				break;
+			}
+		} lws_end_foreach_dll(d);
+
+		if (sh && sh->lsp && pd->data) {
+			int fd = lws_spawn_get_fd_stdxxx(sh->lsp, 0);
+			if (fd >= 0) {
+				char dec[1024];
+				int dl = lws_b64_decode_string(pd->data, dec, sizeof(dec));
+				if (dl > 0) {
+					lwsl_notice("%s: PTYDATA received from server (len %d), writing to shell %s\n", __func__, dl, pd->task_uuid);
+					if (write(fd, dec, LWS_POSIX_LENGTH_CAST(dl)) < 0)
+						lwsl_err("%s: failed to write to pty\n", __func__);
+				}
+			}
+		} else {
+			lwsl_warn("%s: PTYDATA for unknown shell %s\n", __func__, pd->task_uuid);
+		}
+		break;
+	}
 
 	case SAIB_RX_RESOURCE_REPLY:
 		reso = (sai_resource_t *)a.dest;
@@ -357,6 +415,8 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 
 	if (!used && !som && !final && fsl > 0)
 		return LWSSSSRET_TX_DONT_SEND;
+
+	lwsl_notice("%s: sending %d bytes to server (fsl %d, len %d, flags 0x%x)\n", __func__, (int)used, (int)fsl, (int)*len, spm->tx_flags);
 
 	*len = used;
 	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
