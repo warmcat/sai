@@ -83,7 +83,7 @@ saib_srv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len,
 	struct sai_plat_server *spm = (struct sai_plat_server *)lws_ss_to_user_object(h);
 	unsigned int *pi = (unsigned int *)((const char *)buf - sizeof(int));
 
-	lwsl_notice("%s: queuing %d bytes to server\n", __func__, (int)len);
+	lwsl_info("%s: queuing %d bytes to server\n", __func__, (int)len);
 
 	*pi = ss_flags;
 	
@@ -425,10 +425,13 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	if (used < fsl || !(spm->tx_flags & LWSSS_FLAG_EOM))
 		final = 0;
 
-	if (!used && !som && !final && fsl > 0)
-		return LWSSSSRET_TX_DONT_SEND;
+	if (!used && !som && !final && fsl > 0) {
+		if (lws_ss_request_tx(spm->ss))
+			return LWSSSSRET_DISCONNECT_ME;
+		return LWSSSSRET_OK;
+	}
 
-	lwsl_notice("%s: sending %d bytes to server (fsl %d, len %d, flags 0x%x)\n", __func__, (int)used, (int)fsl, (int)*len, spm->tx_flags);
+	lwsl_info("%s: sending %d bytes to server (fsl %d, len %d, flags 0x%x)\n", __func__, (int)used, (int)fsl, (int)*len, spm->tx_flags);
 
 	*len = used;
 	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
