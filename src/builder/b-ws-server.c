@@ -29,7 +29,9 @@
 #include <libwebsockets.h>
 #include <string.h>
 #include <signal.h>
+#ifndef _WIN32
 #include <sys/ioctl.h>
+#endif
 
 #include "b-private.h"
 
@@ -324,15 +326,17 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 			} lws_end_foreach_dll(d);
 
 			if (sh && sh->lsp && (pd->data || (pd->cols && pd->rows))) {
-				int fd = lws_spawn_get_fd_stdxxx(sh->lsp, 0);
-				if (fd >= 0) {
+				lws_filefd_type fd = lws_spawn_get_fd_stdxxx(sh->lsp, 0);
+				if (fd != LWS_INVALID_FILE) {
 					if (pd->cols && pd->rows) {
+#ifndef _WIN32
 						struct winsize ws;
 						memset(&ws, 0, sizeof(ws));
 						ws.ws_col = (unsigned short)pd->cols;
 						ws.ws_row = (unsigned short)pd->rows;
 						if (ioctl(fd, TIOCSWINSZ, &ws) < 0)
 							lwsl_err("%s: failed to set pty size\n", __func__);
+#endif
 					}
 
 					if (pd->data && pd->len > 0) {
@@ -340,7 +344,12 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 						int dl = lws_b64_decode_string(pd->data, dec, sizeof(dec));
 						if (dl > 0) {
 							// lwsl_notice("%s: PTYDATA received from server (len %d), writing to shell %s\n", __func__, dl, pd->task_uuid);
+#if defined(WIN32)
+							DWORD written;
+							if (!WriteFile(fd, dec, (DWORD)dl, &written, NULL))
+#else
 							if (write(fd, dec, LWS_POSIX_LENGTH_CAST(dl)) < 0)
+#endif
 								lwsl_err("%s: failed to write to pty\n", __func__);
 						}
 					}
@@ -425,11 +434,8 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	if (used < fsl || !(spm->tx_flags & LWSSS_FLAG_EOM))
 		final = 0;
 
-	if (!used && !som && !final && fsl > 0) {
-		if (lws_ss_request_tx(spm->ss))
-			return LWSSSSRET_DISCONNECT_ME;
-		return LWSSSSRET_OK;
-	}
+	if (!used && !som && !final && fsl > 0)
+		return LWSSSSRET_TX_DONT_SEND;
 
 	lwsl_info("%s: sending %d bytes to server (fsl %d, len %d, flags 0x%x)\n", __func__, (int)used, (int)fsl, (int)*len, spm->tx_flags);
 

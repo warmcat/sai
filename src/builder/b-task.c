@@ -129,7 +129,7 @@ const char *git_helper_bat =
 	"    )\n"
 	"    set \"REFSPEC=!REF!:ref-!HASH!\"\n"
 	"    echo \"REFSPEC: !REFSPEC!\"\n"
-	"    git -C \"!MIRROR_PATH!\" fetch \"!REMOTE_URL!\" \"!REFSPEC!\" 2>&1\n"
+	"    git -C \"!MIRROR_PATH!\" fetch -q \"!REMOTE_URL!\" \"!REFSPEC!\" 2>&1\n"
 	"    if !ERRORLEVEL! neq 0 (\n"
 	"        echo \"git fetch failed with errorlevel !ERRORLEVEL!\"\n"
 	"        rmdir \"!MIRROR_PATH!.lock\"\n"

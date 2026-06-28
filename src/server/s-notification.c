@@ -526,6 +526,8 @@ next_plat: ;
 					while (*p)
 						if (*p++ == '\n')
 							c++;
+					if (pl->build[strlen(pl->build) - 1] == '\n')
+						c--;
 				}
 
 				pss->sn.t.build_step_count = c;
