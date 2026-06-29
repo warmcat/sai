@@ -1563,8 +1563,10 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		js = lws_struct_json_serialize_create(lsm_schema_viewerstate,
 				LWS_ARRAY_SIZE(lsm_schema_viewerstate), 0, vs);
-		if (!js)
+		if (!js) {
+			lwsl_err("%s: lws_struct_json_serialize_create failed for viewerstate\n", __func__);
 			return 1;
+		}
 
 		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 		lws_struct_json_serialize_destroy(&js);
@@ -1593,8 +1595,10 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		js = lws_struct_json_serialize_create(lsm_schema_rebuild,
 				LWS_ARRAY_SIZE(lsm_schema_rebuild), 0, r);
-		if (!js)
+		if (!js) {
+			lwsl_err("%s: lws_struct_json_serialize_create failed for rebuild\n", __func__);
 			return 1;
+		}
 
 		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 		lws_struct_json_serialize_destroy(&js);
@@ -1614,8 +1618,10 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		js = lws_struct_json_serialize_create(lsm_schema_json_map_can,
 				LWS_ARRAY_SIZE(lsm_schema_json_map_can), 0, c);
-		if (!js)
+		if (!js) {
+			lwsl_err("%s: lws_struct_json_serialize_create failed for task_cancel\n", __func__);
 			return 1;
+		}
 
 		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 		lws_struct_json_serialize_destroy(&js);
@@ -1632,8 +1638,10 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		js = lws_struct_json_serialize_create(lsm_schema_openshell,
 				LWS_ARRAY_SIZE(lsm_schema_openshell), 0, os);
-		if (!js)
+		if (!js) {
+			lwsl_err("%s: lws_struct_json_serialize_create failed for openshell\n", __func__);
 			return 1;
+		}
 
 		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 		lws_struct_json_serialize_destroy(&js);
@@ -1650,8 +1658,10 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		js = lws_struct_json_serialize_create(lsm_schema_ptydata,
 				LWS_ARRAY_SIZE(lsm_schema_ptydata), 0, pd);
-		if (!js)
+		if (!js) {
+			lwsl_err("%s: lws_struct_json_serialize_create failed for ptydata\n", __func__);
 			return 1;
+		}
 
 		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
 		lws_struct_json_serialize_destroy(&js);
@@ -1735,8 +1745,10 @@ send_json:
 	// lwsl_hexdump_notice(start, p - start);
 
 	if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
-			(enum lws_write_protocol)flags) < 0)
+			(enum lws_write_protocol)flags) < 0) {
+		lwsl_err("%s: lws_write failed for task allocation\n", __func__);
 		return -1;
+	}
 
 	if (pss->viewer_state_owner.head || pss->task_cancel_owner.head ||
 	    pss->res_pending_reply_owner.count ||
@@ -1747,6 +1759,7 @@ send_json:
 	return 0;
 
 bail:
+	lwsl_err("%s: bailing, returning 1\n", __func__);
 	lwsac_free(&task->ac_task_container);
 	free(task);
 

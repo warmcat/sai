@@ -115,7 +115,18 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 	switch (reason) {
 
+#if defined(WIN32)
+	case LWS_CALLBACK_RAW_ADOPT_FILE:
+		lwsl_user("%s: wsi %p, reason %d, op %p, fd %d\n", __func__,
+			    wsi, reason, op, lws_spawn_get_stdfd(wsi));
+		break;
+#endif
+
 	case LWS_CALLBACK_RAW_CLOSE_FILE:
+#if defined(WIN32)
+		lwsl_user("%s: wsi %p, CLOSE_FILE, op %p, fd %d\n", __func__,
+			    wsi, op, lws_spawn_get_stdfd(wsi));
+#endif
 		{
 			int ch = lws_spawn_get_stdfd(wsi);
 			if (ch == 0) ch = 1;
@@ -138,9 +149,10 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 	{
 		DWORD rb;
 		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1, &rb, NULL)) {
-			lwsl_debug("%s: read on stdwsi failed\n", __func__);
+			if (GetLastError() != 109 && GetLastError() != 232) lwsl_user("%s: read on stdwsi failed, err %lu\n", __func__, GetLastError());
 			return -1;
 		}
+		lwsl_user("%s: WIN32 RX_FILE read %lu bytes on fd %d\n", __func__, rb, lws_spawn_get_stdfd(wsi));
 		ilen = (int)rb;
 	}
 #else
@@ -155,9 +167,9 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		buf[len] = '\0';
 
 		if (!op || !op->ns || !op->ns->spm) {
-			printf("%s: (%d) %s\n", __func__,
+			lwsl_notice("%s: (%d) [orphaned] %s\n", __func__,
 			       (int)lws_spawn_get_stdfd(wsi), (const char *)buf);
-			return -1;
+			return 0;
 		}
 
 		{
@@ -168,8 +180,10 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 			if (ch < 3)
 				op->ns->stdwsi[ch] = wsi;
 
-			if (saib_log_chunk_create(op->ns, buf, len, ch))
+			if (saib_log_chunk_create(op->ns, buf, len, ch)) {
+				lwsl_user("%s: saib_log_chunk_create failed (ch %d, len %d)\n", __func__, ch, (int)len);
 				return -1;
+			}
 
 			if (lws_buflist2_total_len(&op->ns->spm->bl_to_srv) > (LWS_BUFLIST_OOM_LIMIT - (256 * 1024))) {
 				/* buflist is getting full, backpressure ALL active stdwsi for this connection */
@@ -644,7 +658,11 @@ saib_spawn_script(struct sai_nspawn *ns)
 	info.max_log_lines	= 10000;
 	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
 	info.reap_cb		= sai_lsp_reap_cb;
+#if defined(WIN32)
+	info.pty_mode		= 0;
+#else
 	info.pty_mode		= 1;
+#endif
 	info.disable_ctrlc	= 1;
 	memset(&ns->res, 0, sizeof(ns->res));
 	info.res		= &ns->res;
@@ -672,8 +690,10 @@ saib_spawn_script(struct sai_nspawn *ns)
 	info.owner		= &builder.lsp_owner;
 	info.plsp		= &op->lsp;
 
+	lwsl_user("%s: calling lws_spawn_piped for task uuid %s\n", __func__, ns->task->uuid);
 	lws_spawn_piped(&info);
 	if (!op->lsp) {
+		lwsl_user("%s: lws_spawn_piped failed to provide lsp\n", __func__);
 		/*
 		 * op is attached to wsi and will be freed in reap cb,
 		 * we can't free it here
@@ -682,6 +702,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 
 		return 1;
 	}
+	lwsl_user("%s: lws_spawn_piped success, op->lsp %p\n", __func__, op->lsp);
 
 	return 0;
 }
@@ -710,7 +731,19 @@ callback_sai_shell_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 	int ilen;
 
 	switch (reason) {
+
+#if defined(WIN32)
+	case LWS_CALLBACK_RAW_ADOPT_FILE:
+		lwsl_user("%s: wsi %p, reason %d, sh %p, fd %d\n", __func__,
+			    wsi, reason, sh, lws_spawn_get_stdfd(wsi));
+		break;
+#endif
+
 	case LWS_CALLBACK_RAW_CLOSE_FILE:
+#if defined(WIN32)
+		lwsl_user("%s: wsi %p, CLOSE_FILE, sh %p, fd %d\n", __func__,
+			    wsi, sh, lws_spawn_get_stdfd(wsi));
+#endif
 	{
 		int ch = lws_spawn_get_stdfd(wsi);
 		if (ch == 0) ch = 1;
@@ -723,8 +756,11 @@ callback_sai_shell_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 #if defined(WIN32)
 	{
 		DWORD rb;
-		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1, &rb, NULL))
+		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1, &rb, NULL)) {
+			lwsl_user("%s: read on shell stdwsi failed, err %lu\n", __func__, GetLastError());
 			return -1;
+		}
+		lwsl_user("%s: WIN32 RX_FILE read %lu bytes on shell fd %d\n", __func__, rb, lws_spawn_get_stdfd(wsi));
 		ilen = (int)rb;
 	}
 #else

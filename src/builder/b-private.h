@@ -158,6 +158,7 @@ struct sai_builder {
 	const char		*rebuild_script_root;
 
 	char			path[256];
+	char			path_power_off[256];
 
 #if defined(__linux__) || defined(__APPLE__)
 	/* For system-wide load calculation */

@@ -87,6 +87,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.taskreset"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
+			/* shares struct */   "com.warmcat.sai.taskremovealltries"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.taskrebuildlaststep"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.eventreset"),
@@ -122,6 +124,7 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 
 enum {
 	SAIS_WS_WEBSRV_RX_TASKRESET,
+	SAIS_WS_WEBSRV_RX_TASKREMOVEALLTRIES,
 	SAIS_WS_WEBSRV_RX_TASKREBUILDLASTSTEP,
 	SAIS_WS_WEBSRV_RX_EVENTRESET,
 	SAIS_WS_WEBSRV_RX_EVENTDELETE,
@@ -480,6 +483,17 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		if (sais_task_clear_build_and_logs(m->vhd, ei->event_hash, 0))
 			lwsl_ss_err(m->ss, "taskreset failed");
 		break;
+
+	case SAIS_WS_WEBSRV_RX_TASKREMOVEALLTRIES:
+		ei = (sai_browse_rx_evinfo_t *)a.dest;
+		if (sais_validate_id(ei->event_hash, SAI_TASKID_LEN))
+			goto soft_error;
+
+		lwsl_ss_warn(m->ss, "SAIS_WS_WEBSRV_RX_TASKREMOVEALLTRIES: %s: received", ei->event_hash);
+		if (sais_task_remove_all_tries(m->vhd, ei->event_hash))
+			lwsl_ss_err(m->ss, "taskremovealltries failed");
+		break;
+
 
 	case SAIS_WS_WEBSRV_RX_TASKPAUSE:
 		ei = (sai_browse_rx_evinfo_t *)a.dest;

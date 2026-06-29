@@ -434,6 +434,9 @@ sai_db_result_t
 sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_rejection);
 
 sai_db_result_t
+sais_task_remove_all_tries(struct vhd *vhd, const char *task_uuid);
+
+sai_db_result_t
 sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid);
 
 int

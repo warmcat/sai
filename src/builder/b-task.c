@@ -245,6 +245,11 @@ int
 saib_set_ns_state(struct sai_nspawn *ns, int state)
 {
 	struct sai_plat_server *spm = ns ? ns->spm : NULL;
+
+	if (ns)
+		lwsl_notice("%s: ns=%p (%s) changing state from %d to %d\n", __func__, 
+			(void*)ns, ns->task ? ns->task->uuid : "null", ns->state, state);
+
 	ns->state		= (uint8_t)state;
 	ns->state_changed	= 1;
 
@@ -271,7 +276,10 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 	if (!spm || !spm->ss)
 		return 0;
 
-	return lws_ss_request_tx(spm->ss) ? -1 : 0;
+	int ret = lws_ss_request_tx(spm->ss) ? -1 : 0;
+	if (ret)
+		lwsl_notice("TRAP: saib_set_ns_state lws_ss_request_tx failed\n");
+	return ret;
 }
 
 /*
@@ -307,8 +315,10 @@ saib_queue_task_status_update(sai_plat_t *sp, struct sai_plat_server *spm,
 	rej.reason		= (uint8_t)reason;
 
 	if (saib_srv_queue_json_fragments_helper(spm->ss, lsm_schema_json_task_rej,
-				LWS_ARRAY_SIZE(lsm_schema_json_task_rej), &rej))
+				LWS_ARRAY_SIZE(lsm_schema_json_task_rej), &rej)) {
+		lwsl_notice("TRAP: saib_queue_task_status_update saib_srv_queue_json_fragments_helper failed\n");
 		return -1;
+	}
 
 	return 0;
 }
@@ -317,6 +327,9 @@ void
 saib_task_destroy(struct sai_nspawn *ns)
 {
 	int n;
+
+	lwsl_notice("====== saib_task_destroy START (ns=%p, uuid=%s, spm=%p) ======\n", 
+		(void*)ns, ns->task ? ns->task->uuid : "null", (void*)ns->spm);
 
 	lwsl_notice("%s: destroying task %s\n", __func__,
 		    ns->task ? ns->task->uuid : "null");
@@ -331,11 +344,10 @@ saib_task_destroy(struct sai_nspawn *ns)
 
 	if (ns->spm) {
 
-		if (saib_srv_queue_json_fragments_helper(ns->spm->ss,
+		saib_srv_queue_json_fragments_helper(ns->spm->ss,
 				lsm_schema_map_plat,
 				LWS_ARRAY_SIZE(lsm_schema_map_plat),
-				&builder.sai_plat_owner))
-			return;
+				&builder.sai_plat_owner);
 
                /*
                 * If spm is holding on to us as the last reference point,
@@ -596,8 +608,14 @@ saib_start_artifact_upload(struct sai_nspawn *ns)
 	lws_dir_glob_t g;
 	int m;
 
-	if (!ns->spm)
+	lwsl_notice("====== saib_start_artifact_upload START (ns=%p, uuid=%s, spm=%p) ======\n", 
+		(void*)ns, ns->task ? ns->task->uuid : "null", (void*)ns->spm);
+
+	if (!ns->spm) {
+		lwsl_notice("%s: ns->spm is NULL, calling saib_task_destroy\n", __func__);
+		saib_task_destroy(ns);
 		return;
+	}
 
 	/*
 	 * Let's look for any artifacts the saifile lists...
@@ -801,8 +819,11 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 		if (xns->task && !strcmp(xns->task->uuid, task->uuid)) {
 			lwsl_warn("%s: server offered task that's already running. State %d, artifacts %d, op %p\n",
 				__func__, xns->state, xns->count_artifacts, xns->op);
-			saib_queue_task_status_update(sp, spm, task->uuid, 0,
-						      SAI_TASK_REASON_DUPE);
+			if (saib_queue_task_status_update(sp, spm, task->uuid, 0,
+						      SAI_TASK_REASON_DUPE)) {
+				lwsl_notice("TRAP: saib_queue_task_status_update failed (DUPE)\n");
+				return -1;
+			}
 			saib_reassess_idle_situation();
 
 			return 0;
@@ -817,8 +838,10 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 	if (saib_can_accept_task(task, sp)) {
 		lwsl_warn("%s: builder rejects offered task\n", __func__);
 		if (saib_queue_task_status_update(sp, spm, task->uuid, 0,
-						  SAI_TASK_REASON_BUSY))
+						  SAI_TASK_REASON_BUSY)) {
+			lwsl_notice("TRAP: saib_queue_task_status_update failed (BUSY)\n");
 			return -1;
+		}
 		saib_reassess_idle_situation();
 
 		return 0;

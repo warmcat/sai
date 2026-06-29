@@ -468,7 +468,6 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 #endif
 
 	lws_ss_state_return_t r;
-	char path[256];
 
 #if !defined(WIN32)
 	if (builder.stay) {
@@ -538,12 +537,12 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 	 * request our suspender process to shutdown the device.
 	 */
 
-	snprintf(path, sizeof(path) - 1, "%s/auto-power-off/%s",
+	snprintf(builder.path_power_off, sizeof(builder.path_power_off) - 1, "%s/auto-power-off/%s",
 		 builder.url_sai_power, builder.host);
 
-	lwsl_notice("%s: requesting sai-power (or virt) to terminate us: %s\n", __func__, path);
+	lwsl_notice("%s: requesting sai-power (or virt) to terminate us: %s\n", __func__, builder.path_power_off);
 
-	r = lws_ss_set_metadata(builder.ss_power_off, "url", path, strlen(path));
+	r = lws_ss_set_metadata(builder.ss_power_off, "url", builder.path_power_off, strlen(builder.path_power_off));
 	if (r)
 		lwsl_err("%s: set_metadata said %d\n", __func__, (int)r);
 

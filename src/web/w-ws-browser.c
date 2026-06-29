@@ -81,6 +81,8 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.taskreset"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
+			/* shares struct */   "com.warmcat.sai.taskremovealltries"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.taskrebuildlaststep"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.eventreset"),
@@ -114,6 +116,7 @@ enum {
 	SAIM_WS_BROWSER_RX_TASKINFO,
 	SAIM_WS_BROWSER_RX_EVENTINFO,
 	SAIM_WS_BROWSER_RX_TASKRESET,
+	SAIM_WS_BROWSER_RX_TASKREMOVEALLTRIES,
 	SAIM_WS_BROWSER_RX_TASKREBUILDLASTSTEP,
 	SAIM_WS_BROWSER_RX_EVENTRESET,
 	SAIM_WS_BROWSER_RX_EVENTDELETE,
@@ -643,6 +646,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 	if (!pss->authorized && (
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_TASKRESET ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_TASKREMOVEALLTRIES ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_TASKREBUILDLASTSTEP ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_EVENTRESET ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_EVENTDELETE ||
@@ -714,6 +718,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		goto ok;
 
+	case SAIM_WS_BROWSER_RX_TASKREMOVEALLTRIES:
 	case SAIM_WS_BROWSER_RX_TASKRESET:
 
 		/*
@@ -1157,6 +1162,13 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 				lws_start_foreach_dll(struct lws_dll2 *, pt, task_owner.head) {
 					t = lws_container_of(pt, sai_task_t, list);
 
+					if (lws_ptr_diff_size_t(end, p) < 128) {
+						saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
+										       lws_ptr_diff_size_t(p, start),
+										       lws_write_ws_flags(LWS_WRITE_TEXT, 0, 0));
+						p = start;
+					}
+
 					if (task_index)
 						*p++ = ',';
 
@@ -1187,6 +1199,11 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 					do {
 						n = (int)lws_struct_json_serialize(js, (uint8_t *)p, lws_ptr_diff_size_t(end, p), &w);
 						switch (n) {
+						case LSJS_RESULT_ERROR:
+							lwsl_err("%s: json ser error for task\n", __func__);
+							lws_struct_json_serialize_destroy(&js);
+							return 1;
+
 						case LSJS_RESULT_FINISH:
 							lws_struct_json_serialize_destroy(&js);
 							p += w;

@@ -460,7 +460,14 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	case LWS_CALLBACK_CLOSED:
 		lwsac_free(&pss->query_ac);
 
-		lwsl_wsi_user(wsi, "#### sai-server: CLOSED builder conn ####");
+		{
+			const unsigned char *cp = lws_get_close_payload(wsi);
+			int clen = lws_get_close_length(wsi);
+			if (clen)
+				lwsl_wsi_user(wsi, "#### sai-server: CLOSED builder conn (reason: %.*s) ####", clen, cp);
+			else
+				lwsl_wsi_user(wsi, "#### sai-server: CLOSED builder conn (no close payload) ####");
+		}
 		/* remove pss from vhd->builders (active connection list) */
 		lws_dll2_remove(&pss->same);
 
@@ -510,8 +517,10 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		// lwsl_wsi_notice(wsi, "rx from builder, len %d, : ss_flags: %d\n", (int)len, ssf);
 
-		if (sais_ws_json_rx_builder(vhd, pss, in, len, ssf))
+		if (sais_ws_json_rx_builder(vhd, pss, in, len, ssf)) {
+			lwsl_err("%s: sais_ws_json_rx_builder returned error, dropping connection\n", __func__);
 			return -1;
+		}
 
 		if (!pss->announced) {
 			/*
@@ -533,14 +542,22 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (pss->is_power || pss->stay_owner.head)
 			return sais_power_tx(vhd, pss, buf, sizeof(buf));
 
-		return sais_ws_json_tx_builder(vhd, pss, buf, sizeof(buf));
+		int ret = sais_ws_json_tx_builder(vhd, pss, buf, sizeof(buf));
+		if (ret != 0) {
+			lwsl_err("%s: sais_ws_json_tx_builder returned %d, dropping connection\n", __func__, ret);
+		}
+		return ret;
 
 	default:
 passthru:
 			break;
 	}
 
-	return lws_callback_http_dummy(wsi, reason, user, in, len);
+	int dummy_ret = lws_callback_http_dummy(wsi, reason, user, in, len);
+	if (dummy_ret != 0 && reason != LWS_CALLBACK_CLOSED && reason != LWS_CALLBACK_WSI_DESTROY) {
+		lwsl_err("%s: dummy returned %d for reason %d, dropping connection\n", __func__, dummy_ret, reason);
+	}
+	return dummy_ret;
 }
 
 const struct lws_protocols protocol_ws = {

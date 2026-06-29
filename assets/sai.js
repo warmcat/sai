@@ -3328,6 +3328,15 @@ window.addEventListener("load", function() {
 						}
 					},
 					{
+						label: "Remove all tries",
+						callback: () => {
+							sai.send(JSON.stringify({
+								schema: "com.warmcat.sai.taskremovealltries",
+								uuid: taskUuid
+							}));
+						}
+					},
+					{
 						label: `Rebuild all <b>${hsanitize(platform)}</b>`,
 						callback: () => {
 							sai.send(JSON.stringify({

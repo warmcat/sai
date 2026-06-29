@@ -634,6 +634,58 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 }
 
 sai_db_result_t
+sais_task_remove_all_tries(struct vhd *vhd, const char *task_uuid)
+{
+	char esc[96], cmd[384], event_uuid[33];
+	sqlite3 *pdb = NULL;
+
+	lwsl_notice("%s: ================== task remove all tries %s\n", __func__, task_uuid);
+
+	if (!task_uuid[0])
+		return SAI_DB_RESULT_OK;
+
+	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
+
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
+		lwsl_err("%s: unable to open event-specific database\n",
+				__func__);
+		return SAI_DB_RESULT_ERROR;
+	}
+
+	lws_sql_purify(esc, task_uuid, sizeof(esc));
+
+	sais_task_stop_on_builders(vhd, task_uuid);
+
+	lws_snprintf(cmd, sizeof(cmd), "DELETE FROM logs WHERE task_uuid='%s'", esc);
+	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+
+	lws_snprintf(cmd, sizeof(cmd), "DELETE FROM artifacts WHERE task_uuid='%s'", esc);
+	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+
+	lws_snprintf(cmd, sizeof(cmd), "DELETE FROM tasks WHERE uuid='%s' AND run > 0", esc);
+	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+
+	lws_snprintf(cmd, sizeof(cmd), 
+		"update tasks set state=%d,started=0,duration=0,build_step=0,builder_name='',builder='',server_name='' where uuid='%s' and run=0",
+		SAIES_WAITING, esc);
+	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+
+	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+
+	sais_set_task_state(vhd, task_uuid, SAIES_WAITING, 0, 0);
+	sais_taskchange(vhd->h_ss_websrv, task_uuid, SAIES_WAITING);
+	sais_eventchange(vhd->h_ss_websrv, event_uuid, SAIES_WAITING);
+
+	lwsl_notice("%s: scheduling sul_central to find a new task\n", __func__);
+	lws_sul_schedule(vhd->context, 0, &vhd->sul_central, sais_central_cb, 1);
+
+	sais_platforms_with_tasks_pending(vhd);
+
+	return SAI_DB_RESULT_OK;
+}
+
+sai_db_result_t
 sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 {
 	char esc[96], cmd[384], event_uuid[33];

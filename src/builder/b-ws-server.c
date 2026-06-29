@@ -99,8 +99,10 @@ saib_srv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len,
 		return -1;
 	}
 
-	if (lws_ss_request_tx(h))
+	if (lws_ss_request_tx(h)) {
 		lwsl_ss_err(h, "failed to request tx");
+		return -1;
+	}
 
 	return 0;
 }
@@ -117,7 +119,7 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 
 	js = lws_struct_json_serialize_create(map, map_entries, 0, object);
 	if (!js) {
-		lwsl_warn("%s: failed to serialize\n", __func__);
+		lwsl_notice("TRAP: lws_struct_json_serialize_create failed\n");
 		return -1;
 	}
 
@@ -130,7 +132,7 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 			ssf |= LWSSS_FLAG_EOM;
 			break;
 		case LSJS_RESULT_ERROR:
-			lwsl_warn("%s: serialization failed\n", __func__);
+			lwsl_notice("TRAP: lws_struct_json_serialize returned ERROR\n");
 			{
 				struct sai_plat_server *spm = (struct sai_plat_server *)lws_ss_to_user_object(h);
 				spm->tx_corrupted = 1;
@@ -138,8 +140,11 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 			return -1;
 		}
 
-		if (saib_srv_queue_tx(h, buf + LWS_PRE, w, ssf) < 0)
+		if (saib_srv_queue_tx(h, buf + LWS_PRE, w, ssf) < 0) {
+			lwsl_notice("TRAP: saib_srv_queue_tx failed in helper\n");
+			lws_struct_json_serialize_destroy(&js);
 			return -1;
+		}
 
 		ssf &= ~((unsigned int)LWSSS_FLAG_SOM);
 	} while (!(ssf & LWSSS_FLAG_EOM));
@@ -175,6 +180,7 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 		return LWSSSSRET_OK;
 
 	if (m < 0) {
+		lwsl_notice("TRAP: saib_m_rx lejp_parse failed m=%d\n", m);
 		lwsl_hexdump_err(in, len);
 		lwsl_err("%s: builder rx JSON decode failed '%s'\n",
 			    __func__, lejp_error_to_string(m));
@@ -490,8 +496,12 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 		}
 	}
 
-	if (spm->bl_to_srv.owner.head)
-		return lws_ss_request_tx(spm->ss);
+	if (spm->bl_to_srv.owner.head) {
+		lws_ss_state_return_t ret = lws_ss_request_tx(spm->ss);
+		if (ret != LWSSSSRET_OK)
+			lwsl_err("%s: lws_ss_request_tx returned %d\n", __func__, ret);
+		return ret;
+	}
 
 	return LWSSSSRET_OK;
 }
@@ -533,6 +543,8 @@ cleanup_on_ss_disconnect(struct lws_dll2 *d, void *user)
 
 		if (ns->spm == spm) {
 
+			lwsl_notice("%s: orphaning task %s from disconnected spm\n", __func__, ns->task ? ns->task->uuid : "unknown");
+
 			/*
 			 * This pss is about to go away, make sure the ns
 			 * can't reference it any more no matter what happens
@@ -540,8 +552,10 @@ cleanup_on_ss_disconnect(struct lws_dll2 *d, void *user)
 
 			ns->spm = NULL;
 
-			if (ns->op && ns->op->lsp)
+			if (ns->op && ns->op->lsp) {
+				lwsl_notice("%s: killing child process for task %s due to disconnect\n", __func__, ns->task ? ns->task->uuid : "unknown");
 				lws_spawn_piped_kill_child_process(ns->op->lsp);
+			}
 		}
 	} lws_end_foreach_dll_safe(d, d1);
 
