@@ -519,6 +519,18 @@ crash_handler(int signum)
 }
 #endif
 
+#if defined(WIN32)
+static int log_fd = -1;
+
+static void
+lwsl_emit_file(int level, const char *line)
+{
+	if (log_fd >= 0) {
+		write(log_fd, line, (unsigned int)strlen(line));
+	}
+}
+#endif
+
 int
 saib_app_run(int argc, const char **argv)
 {
@@ -593,16 +605,17 @@ saib_app_run(int argc, const char **argv)
 		lws_set_log_level(logs, lwsl_emit_syslog);
 	} else
 #endif
-
+	{
 #if defined(__linux__) || defined(__APPLE__)
-	signal(SIGSEGV, crash_handler);
-	signal(SIGABRT, crash_handler);
-	signal(SIGBUS, crash_handler);
-	signal(SIGILL, crash_handler);
-	signal(SIGFPE, crash_handler);
+		signal(SIGSEGV, crash_handler);
+		signal(SIGABRT, crash_handler);
+		signal(SIGBUS, crash_handler);
+		signal(SIGILL, crash_handler);
+		signal(SIGFPE, crash_handler);
 #endif
 
-	lws_set_log_level(logs, NULL);
+		lws_set_log_level(logs, NULL);
+	}
 
 #if defined(WIN32)
 	{
@@ -622,6 +635,14 @@ saib_app_run(int argc, const char **argv)
 
 		lws_snprintf(stg_config_dir, sizeof(stg_config_dir),
 				"%s\\sai\\builder", temp);
+
+		if (lws_cmdline_option(argc, argv, "--service")) {
+			char logpath[512];
+			lws_snprintf(logpath, sizeof(logpath), "%s\\sai-builder-service.log", stg_config_dir);
+			log_fd = open(logpath, O_CREAT | O_TRUNC | O_WRONLY, 0600);
+			if (log_fd >= 0)
+				lws_set_log_level(logs, lwsl_emit_file);
+		}
 
 		config_dir = stg_config_dir;
 		CoTaskMemFree(wdi);

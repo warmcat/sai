@@ -155,51 +155,49 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 	struct sai_plat_server *spm = (struct sai_plat_server *)userobj;
 	sai_plat_t *sp = NULL;
 	sai_resource_t *reso;
-	struct lejp_ctx ctx;
-	lws_struct_args_t a;
 	sai_rebuild_t *reb;
 	sai_cancel_t *can;
 	int m;
 
 	lws_ss_validity_confirmed(spm->ss);
 
-	/*
-	 * use the schema name on the incoming JSON to decide what kind of
-	 * structure to instantiate
-	 */
+	if (flags & LWSSS_FLAG_SOM) {
+		memset(&spm->a, 0, sizeof(spm->a));
+		spm->a.map_st[0]		= lsm_schema_map_m_to_b;
+		spm->a.map_entries_st[0]	= LWS_ARRAY_SIZE(lsm_schema_map_m_to_b);
+		spm->a.ac_block_size		= 512;
 
-	memset(&a, 0, sizeof(a));
-	a.map_st[0]		= lsm_schema_map_m_to_b;
-	a.map_entries_st[0]	= LWS_ARRAY_SIZE(lsm_schema_map_m_to_b);
-	a.ac_block_size		= 512;
+		lws_struct_json_init_parse(&spm->ctx, NULL, &spm->a);
+	}
 
-//	lwsl_hexdump_warn(in, len);
+	m = lejp_parse(&spm->ctx, (uint8_t *)in, (int)len);
+	if (m == LEJP_CONTINUE)
+		return LWSSSSRET_OK;
 
-	lws_struct_json_init_parse(&ctx, NULL, &a);
-	m = lejp_parse(&ctx, (uint8_t *)in, (int)len);
 	if (m < 0) {
 		lwsl_hexdump_err(in, len);
 		lwsl_err("%s: builder rx JSON decode failed '%s'\n",
 			    __func__, lejp_error_to_string(m));
+		lwsac_free(&spm->a.ac);
 		return m;
 	}
 
-	if (!a.dest) {
-		lwsac_free(&a.ac);
+	if (!spm->a.dest) {
+		lwsac_free(&spm->a.ac);
 		return LWSSSSRET_OK;
 	}
 
-	switch (a.top_schema_index) {
+	switch (spm->a.top_schema_index) {
 
 	case SAIB_RX_TASK_ALLOCATION:
-		if (saib_consider_allocating_task(spm, &a, in, len, flags))
+		if (saib_consider_allocating_task(spm, &spm->a, in, len, flags))
 			break;
 
 		break;
 
 	case SAIB_RX_TASK_CANCEL:
 
-		can = (sai_cancel_t *)a.dest;
+		can = (sai_cancel_t *)spm->a.dest;
 
 		lwsl_notice("%s: received task cancel for %s, erase %d\n", __func__, can->task_uuid, can->erase);
 
@@ -260,7 +258,7 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 
 	case SAIB_RX_VIEWERSTATE:
 		{
-			sai_viewer_state_t *vs = (sai_viewer_state_t *)a.dest;
+			sai_viewer_state_t *vs = (sai_viewer_state_t *)spm->a.dest;
 			char any_busy = 0;
 
 		       lwsl_notice("Received viewer state update: %u viewers\n", vs->viewers);
@@ -306,7 +304,7 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 	case SAIB_RX_OPENSHELL:
 	{
 		extern int saib_shell_spawn(struct sai_plat_server *spm, const char *task_uuid);
-		sai_openshell_t *os = (sai_openshell_t *)a.dest;
+		sai_openshell_t *os = (sai_openshell_t *)spm->a.dest;
 		lwsl_notice("%s: OPENSHELL received from server for task %s\n", __func__, os->task_uuid);
 		saib_shell_spawn(spm, os->task_uuid);
 		break;
@@ -314,7 +312,7 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 
 		case SAIB_RX_PTYDATA:
 		{
-			sai_ptydata_t *pd = (sai_ptydata_t *)a.dest;
+			sai_ptydata_t *pd = (sai_ptydata_t *)spm->a.dest;
 			struct sai_shell *sh = NULL;
 
 			lws_start_foreach_dll(struct lws_dll2 *, d, builder.shell_owner.head) {
@@ -361,7 +359,7 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 		}
 
 	case SAIB_RX_RESOURCE_REPLY:
-		reso = (sai_resource_t *)a.dest;
+		reso = (sai_resource_t *)spm->a.dest;
 
 		lwsl_notice("%s: RESOURCE_REPLY: cookie %s\n",
 				__func__, reso->cookie);
@@ -370,7 +368,7 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 		break;
 
 	case SAIB_RX_REBUILD:
-		reb = (sai_rebuild_t *)a.dest;
+		reb = (sai_rebuild_t *)spm->a.dest;
 
 		lwsl_notice("%s: REBUILD: %s\n", __func__, reb->builder_name);
 

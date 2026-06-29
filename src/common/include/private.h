@@ -542,6 +542,9 @@ typedef struct sai_plat_server {
 	char				last_msg_start[128];
 	uint8_t				inside_msg;
 	uint8_t				tx_corrupted;
+
+	struct lejp_ctx			ctx;
+	lws_struct_args_t		a;
 } sai_plat_server_t;
 
 struct sai_env {
