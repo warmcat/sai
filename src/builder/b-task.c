@@ -447,8 +447,9 @@ saib_task_destroy(struct sai_nspawn *ns)
 	}
 
 	if (ns->task && ns->task->ac_task_container) {
+		struct lwsac *ac = ns->task->ac_task_container;
 		 /* contains the task object */
-		lwsac_free(&ns->task->ac_task_container);
+		lwsac_free(&ac);
 		ns->task = NULL;
 	}
 
@@ -955,8 +956,10 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 	ns->hash		= task->git_hash;
 	ns->git_repo_url	= task->git_repo_url;
 
-	if (ns->task && ns->task->ac_task_container)
-		lwsac_free(&ns->task->ac_task_container);
+	if (ns->task && ns->task->ac_task_container) {
+		struct lwsac *ac = ns->task->ac_task_container;
+		lwsac_free(&ac);
+	}
 
 	ns->task		= task; /* we are owning this nspawn for the duration */
 	ns->spm			= spm; /* bind this task to the spm the req came in on */
