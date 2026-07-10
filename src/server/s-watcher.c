@@ -1,6 +1,8 @@
 #include <libwebsockets.h>
 #include <string.h>
 #include <time.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include "s-private.h"
 
 typedef struct watcher_fetch {
@@ -30,6 +32,50 @@ sais_watcher_ss_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	return LWSSSSRET_OK;
 }
 
+struct sai_lejp_ctx {
+	watcher_fetch_t *f;
+	char *m;
+	char *mend;
+	int first;
+};
+
+static signed char
+sais_watcher_lejp_cb(struct lejp_ctx *ctx, char reason)
+{
+	struct sai_lejp_ctx *sctx = (struct sai_lejp_ctx *)ctx->user;
+	watcher_fetch_t *f = sctx->f;
+	sai_watcher_t *w = f->watcher;
+	const sai_watcher_service_t *s = w->service;
+	sai_watcher_rule_t *match = NULL;
+	int n = 0;
+
+	if (!(reason & LEJP_FLAG_CB_IS_VALUE) || !ctx->path_match)
+		return 0;
+
+	lws_start_foreach_dll(struct lws_dll2 *, pr, s->rules_owner.head) {
+		sai_watcher_rule_t *r = lws_container_of(pr, sai_watcher_rule_t, list);
+		if (r->json_path) {
+			n++;
+			if (n == ctx->path_match) {
+				match = r;
+				break;
+			}
+		}
+	} lws_end_foreach_dll(pr);
+
+	if (match) {
+		sctx->m += lws_snprintf(sctx->m, lws_ptr_diff_size_t(sctx->mend, sctx->m),
+				  "%s\"%s\":\"%s\"", sctx->first ? "" : ",",
+				  match->label, ctx->buf);
+		sctx->first = 0;
+
+		if (match->final)
+			w->state = SAIWS_FINISHED;
+	}
+
+	return 0;
+}
+
 static void
 sais_watcher_scrape(watcher_fetch_t *f)
 {
@@ -39,6 +85,9 @@ sais_watcher_scrape(watcher_fetch_t *f)
 	size_t len;
 	char metrics[2048], *m = metrics, *mend = metrics + sizeof(metrics) - 1;
 	int first = 1;
+	const char *paths[16];
+	uint8_t num_paths = 0;
+	int uses_json = 0;
 
 	if (!s)
 		return;
@@ -50,60 +99,95 @@ sais_watcher_scrape(watcher_fetch_t *f)
 
 	lws_start_foreach_dll(struct lws_dll2 *, pr, s->rules_owner.head) {
 		sai_watcher_rule_t *r = lws_container_of(pr, sai_watcher_rule_t, list);
-		const char *val = NULL;
-		char valbuf[256];
+		if (r->json_path) {
+			uses_json = 1;
+			if (num_paths < LWS_ARRAY_SIZE(paths))
+				paths[num_paths++] = r->json_path;
+		}
+	} lws_end_foreach_dll(pr);
 
-		/*
-		 * This is a very simple scraper. It looks for prefix and suffix.
-		 * If an anchor is provided, it first finds the anchor.
-		 */
+	if (uses_json) {
+		struct lejp_ctx ctx;
+		struct sai_lejp_ctx sctx;
+
+		sctx.f = f;
+		sctx.m = m;
+		sctx.mend = mend;
+		sctx.first = 1;
+
+		lejp_construct(&ctx, sais_watcher_lejp_cb, &sctx, paths, num_paths);
+
 		p = NULL;
 		len = lws_buflist_next_segment_len(&f->bl_rx, (uint8_t **)&p);
 		while (p) {
-			const char *found = NULL;
-			const char *sp = (const char *)p;
-
-			if (r->anchor) {
-				const char *a = strstr(sp, r->anchor);
-				if (a) {
-					/* Found anchor, now look for prefix near it */
-					/* For now, just look after it. In some cases we might need to look before. */
-					found = strstr(a, r->prefix);
-				}
-			} else {
-				found = strstr(sp, r->prefix);
+			if (lejp_parse(&ctx, p, (int)len) < 0) {
+				lwsl_err("%s: lejp parse failed\n", __func__);
+				break;
 			}
-
-			if (found) {
-				const char *start = found + strlen(r->prefix);
-				const char *end = strstr(start, r->suffix);
-
-				if (end) {
-					size_t vlen = (size_t)lws_ptr_diff(end, start);
-					if (vlen >= sizeof(valbuf))
-						vlen = sizeof(valbuf) - 1;
-					memcpy(valbuf, start, vlen);
-					valbuf[vlen] = '\0';
-					val = valbuf;
-					break;
-				}
-			}
-
 			lws_buflist_use_segment(&f->bl_rx, len);
 			len = lws_buflist_next_segment_len(&f->bl_rx, (uint8_t **)&p);
 		}
+		lejp_destruct(&ctx);
+		m = sctx.m;
+		first = sctx.first;
+	} else {
+		lws_start_foreach_dll(struct lws_dll2 *, pr, s->rules_owner.head) {
+			sai_watcher_rule_t *r = lws_container_of(pr, sai_watcher_rule_t, list);
+			const char *val = NULL;
+			char valbuf[256];
 
-		if (val) {
-			m += lws_snprintf(m, lws_ptr_diff_size_t(mend, m),
-					  "%s\"%s\":\"%s\"", first ? "" : ",",
-					  r->label, val);
-			first = 0;
+			/*
+			 * This is a very simple scraper. It looks for prefix and suffix.
+			 * If an anchor is provided, it first finds the anchor.
+			 */
+			p = NULL;
+			len = lws_buflist_next_segment_len(&f->bl_rx, (uint8_t **)&p);
+			while (p) {
+				const char *found = NULL;
+				const char *sp = (const char *)p;
 
-			if (r->final)
-				w->state = SAIWS_FINISHED;
-		}
+				if (r->anchor) {
+					const char *a = strstr(sp, r->anchor);
+					if (a) {
+						/* Found anchor, now look for prefix near it */
+						/* For now, just look after it. In some cases we might need to look before. */
+						found = strstr(a, r->prefix);
+					}
+				} else {
+					found = strstr(sp, r->prefix);
+				}
 
-	} lws_end_foreach_dll(pr);
+				if (found) {
+					const char *start = found + strlen(r->prefix);
+					const char *end = strstr(start, r->suffix);
+
+					if (end) {
+						size_t vlen = (size_t)lws_ptr_diff(end, start);
+						if (vlen >= sizeof(valbuf))
+							vlen = sizeof(valbuf) - 1;
+						memcpy(valbuf, start, vlen);
+						valbuf[vlen] = '\0';
+						val = valbuf;
+						break;
+					}
+				}
+
+				lws_buflist_use_segment(&f->bl_rx, len);
+				len = lws_buflist_next_segment_len(&f->bl_rx, (uint8_t **)&p);
+			}
+
+			if (val) {
+				m += lws_snprintf(m, lws_ptr_diff_size_t(mend, m),
+						  "%s\"%s\":\"%s\"", first ? "" : ",",
+						  r->label, val);
+				first = 0;
+
+				if (r->final)
+					w->state = SAIWS_FINISHED;
+			}
+
+		} lws_end_foreach_dll(pr);
+	}
 
 	lws_snprintf(m, lws_ptr_diff_size_t(mend, m), "}");
 
@@ -136,6 +220,24 @@ sais_watcher_ss_state(void *userobj, void *sh, lws_ss_constate_t state,
 	switch (state) {
 	case LWSSSCS_CREATING:
 		f->vhd = (struct vhd *)f->watcher->vhd;
+		
+		if (f->watcher->service->auth_token_file) {
+			int fd = open(f->watcher->service->auth_token_file, O_RDONLY);
+			if (fd >= 0) {
+				char token[256];
+				ssize_t n = read(fd, token, sizeof(token) - 1);
+				close(fd);
+				if (n > 0) {
+					while (n > 0 && (token[n - 1] == '\r' || token[n - 1] == '\n'))
+						n--;
+					token[n] = '\0';
+					if (lws_ss_set_metadata(f->ss, "auth", token, (size_t)n))
+						lwsl_err("%s: failed to set auth metadata\n", __func__);
+				}
+			} else
+				lwsl_err("%s: failed to open auth token file %s\n", __func__, f->watcher->service->auth_token_file);
+		}
+
 		return lws_ss_client_connect(f->ss);
 
 	case LWSSSCS_CONNECTED:

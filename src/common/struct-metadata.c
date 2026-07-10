@@ -524,6 +524,7 @@ const lws_struct_map_t lsm_watcher_rule[] = {
 	LSM_STRING_PTR	(sai_watcher_rule_t, prefix,		"prefix"),
 	LSM_STRING_PTR	(sai_watcher_rule_t, suffix,		"suffix"),
 	LSM_STRING_PTR	(sai_watcher_rule_t, anchor,		"anchor"),
+	LSM_STRING_PTR	(sai_watcher_rule_t, json_path,		"json_path"),
 	LSM_UNSIGNED	(sai_watcher_rule_t, final,		"final"),
 };
 
@@ -538,6 +539,7 @@ const lws_struct_map_t lsm_watcher_service[] = {
 	LSM_STRING_PTR	(sai_watcher_service_t, name,		"name"),
 	LSM_STRING_PTR	(sai_watcher_service_t, match,		"match"),
 	LSM_STRING_PTR	(sai_watcher_service_t, icon,		"icon"),
+	LSM_STRING_PTR	(sai_watcher_service_t, auth_token_file, "auth_token_file"),
 	LSM_LIST	(sai_watcher_service_t, rules_owner, sai_watcher_rule_t, list,
 			 NULL, lsm_watcher_rule,		"rules"),
 	LSM_LIST	(sai_watcher_service_t, ui_owner, sai_watcher_ui_rule_t, list,

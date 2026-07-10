@@ -78,6 +78,8 @@ typedef struct sai_watcher_rule {
 	const char			*prefix;
 	const char			*suffix;
 	const char			*anchor;
+	const char			*json_path; /* optional lejp path for json payloads */
+	
 	uint8_t				final;
 } sai_watcher_rule_t;
 
@@ -94,6 +96,8 @@ typedef struct sai_watcher_service {
 	const char			*name;
 	const char			*match;
 	const char			*icon;
+	const char			*auth_token_file; /* optional file with secret token */
+
 	lws_dll2_owner_t		rules_owner; /* sai_watcher_rule_t */
 	lws_dll2_owner_t		ui_owner;    /* sai_watcher_ui_rule_t */
 } sai_watcher_service_t;
@@ -897,9 +901,9 @@ extern const lws_struct_map_t
 	lsm_schema_pcon_energy[1],
 	lsm_pcon_control[2],
 	lsm_schema_pcon_control[1],
-	lsm_watcher_rule[5],
+	lsm_watcher_rule[6],
 	lsm_watcher_ui_rule[4],
-	lsm_watcher_service[5],
+	lsm_watcher_service[6],
 	lsm_watcher[9],
 	lsm_schema_sq3_map_watcher[1],
 	lsm_schema_json_map_watcher[1],
