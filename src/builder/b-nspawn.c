@@ -666,7 +666,7 @@ saib_spawn_script(struct sai_nspawn *ns)
 	info.exec_array		= cmd;
 	info.protocol_name	= "sai-stdxxx";
 	info.max_log_lines	= 10000;
-	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
+	info.timeout_us		= (uint64_t)builder.build_timeout_secs * LWS_US_PER_SEC;
 	info.reap_cb		= sai_lsp_reap_cb;
 #if defined(WIN32)
 	info.pty_mode		= 0;
@@ -864,7 +864,7 @@ saib_shell_spawn(struct sai_plat_server *spm, const char *task_uuid)
 	info.exec_array		= cmd;
 	info.protocol_name	= "sai-saishell";
 	info.max_log_lines	= 10000;
-	info.timeout_us		= 30 * 60 * LWS_US_PER_SEC;
+	info.timeout_us		= (uint64_t)builder.build_timeout_secs * LWS_US_PER_SEC;
 	info.reap_cb		= sai_shell_reap_cb;
 	info.pty_mode		= 1;
 	info.disable_ctrlc	= 0;

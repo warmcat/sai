@@ -185,6 +185,7 @@ struct sai_builder {
 	uint64_t		disk_reserved_kib;
 
 	uint16_t		wrap14;
+	unsigned int		build_timeout_secs;
 
 #if !defined(WIN32)
 	int			pipe_suspender_wr;

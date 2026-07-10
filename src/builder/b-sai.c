@@ -654,6 +654,7 @@ saib_app_run(int argc, const char **argv)
 	 */
 
 	lwsl_notice("%s: config dir %s\n", __func__, config_dir);
+	builder.build_timeout_secs = 30 * 60;
 	if (saib_config_global(&builder, config_dir)) {
 		lwsl_err("%s: global config failed\n", __func__);
 

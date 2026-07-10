@@ -46,7 +46,8 @@ static const char * const paths_global[] = {
 	"power-off.url",
 	"power-monitor.url",
 	"rebuild_script_user",
-	"rebuild_script_root"
+	"rebuild_script_root",
+	"build-timeout-secs"
 };
 
 enum enum_paths_global {
@@ -65,7 +66,8 @@ enum enum_paths_global {
 	LEJPM_POWER_OFF_URL,
 	LEJPM_POWER_MONITOR_URL,
 	LEJPM_REBUILD_SCRIPT_USER,
-	LEJPM_REBUILD_SCRIPT_ROOT
+	LEJPM_REBUILD_SCRIPT_ROOT,
+	LEJPM_BUILD_TIMEOUT_SECS
 };
 
 /* platform-related part */
@@ -257,6 +259,11 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 	/* we only match on the prepared path strings */
 	if (!(reason & LEJP_FLAG_CB_IS_VALUE) || !ctx->path_match)
 		return 0;
+
+	if (ctx->path_match - 1 == LEJPM_BUILD_TIMEOUT_SECS) {
+		a->builder->build_timeout_secs = (unsigned int)atoi(ctx->buf);
+		lwsl_notice("%s: LEJPM_BUILD_TIMEOUT_SECS %u\n", __func__, a->builder->build_timeout_secs);
+	}
 
 	if (reason != LEJPCB_VAL_STR_END)
 		return 0;
