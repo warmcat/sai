@@ -1700,3 +1700,39 @@ div.ibuil.vm-builder {
     background-color: var(--term-cursor-bg);
     color: var(--term-cursor-fg);
 }
+
+/* Color the avatar silhouette based on grant level */
+.login-status-container.grant-admin img,
+.login-status-container.grant-admin svg,
+.login-status-container.grant-admin .avatar {
+	filter: drop-shadow(0 0 2px rgba(46, 204, 64, 0.4));
+	border-color: #2ecc40 !important;
+}
+
+.login-status-container.grant-admin svg path {
+	fill: #2ecc40 !important;
+}
+
+.login-status-container.grant-user img,
+.login-status-container.grant-user svg,
+.login-status-container.grant-user .avatar {
+	filter: drop-shadow(0 0 2px rgba(243, 156, 18, 0.4));
+	border-color: #f39c12 !important;
+}
+
+.login-status-container.grant-user svg path {
+	fill: #f39c12 !important;
+}
+
+.login-status-container.grant-none img,
+.login-status-container.grant-none svg,
+.login-status-container.grant-none .avatar {
+	filter: drop-shadow(0 0 2px rgba(231, 76, 60, 0.4));
+	border-color: #e74c3c !important;
+	opacity: 0.6;
+}
+
+.login-status-container.grant-none svg path {
+	fill: #e74c3c !important;
+}
+

@@ -59,6 +59,14 @@ enum {
 	SAIM_SPECIFIC_TASK,
 };
 
+typedef enum {
+	SAI_AUTH_STATE_NOT_LOGGED_IN,
+	SAI_AUTH_STATE_LOGGED_IN_NO_GRANT,
+	SAI_AUTH_STATE_LOGGED_IN_GRANT_USER,   /* < :2 */
+	SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN   /* >= :2 */
+} sai_auth_state_t;
+
+
 struct pss {
 	struct vhd		*vhd;
 	struct lws		*wsi;
@@ -124,7 +132,7 @@ struct pss {
 	unsigned int		announced:1;
 	unsigned int		bulk_binary_data:1;
 	unsigned int		toggle_favour_sch:1;
-	unsigned int		authorized:1;
+	sai_auth_state_t	auth_state;
 };
 
 struct vhd {

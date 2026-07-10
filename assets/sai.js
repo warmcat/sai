@@ -394,7 +394,14 @@ var lang_zhs = "{" +
 		"\"%{pf}前创建, 创作时间: %{ct}ms \"" +
 "}}";
 
-var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, auth_is_admin = 0, auth_grant_level = -1, exptimer, auth_user = "",
+const SaiAuthState = {
+	NOT_LOGGED_IN: 0,
+	LOGGED_IN_NO_GRANT: 1,
+	LOGGED_IN_GRANT_USER: 2,   // < :2
+	LOGGED_IN_GRANT_ADMIN: 3   // >= :2
+};
+
+var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, auth_is_admin = 0, auth_grant_level = -1, auth_state = SaiAuthState.NOT_LOGGED_IN, exptimer, auth_user = "",
 active_terminals = {};
 	logAnsiState = {}, logs_pending = "", lines_pending = "", times_pending = "",
 	ongoing_task_activities = {}, last_log_timestamp = 0, spreadsheet_data_cache = {}, loadreport_data_cache = {},
@@ -1079,10 +1086,10 @@ function sai_taskinfo_render(t, now_ut)
 		sai_event_render(t, now_ut, 0) + "</table></td><td class=\"ti\">" +
 		"<span class=\"ti1\">" + sai_plat_icon(t.t.platform, 2) +
 		san(t.t.platform) + "</span>&nbsp;";
-	if (auth_is_admin && t.t.state != 0 && t.t.state != 3 && t.t.state != 4 && t.t.state != 5)
+	if (auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN && t.t.state != 0 && t.t.state != 3 && t.t.state != 4 && t.t.state != 5)
 		s += "<img class=\"rebuild\" alt=\"stop build\" src=\"stop.svg\" " +
 			"id=\"stop-" + san(t.t.uuid) + "\">&nbsp;";
-	if (auth_is_admin)
+	if (auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN)
 		s += "<img class=\"rebuild\" alt=\"rebuild\" src=\"rebuild.png\" " +
 			"id=\"rebuild-" + san(t.t.uuid) + "\">&nbsp;";
 	s += sai_stateful_taskname(t.t.state, t.t.taskname, 1);
@@ -1308,7 +1315,7 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		s += "<div class=\"" + cl + "\"><img src=\"/sai/failed.svg\"></div>";
 
 	s += "</a>";
-	if (reset_all_icon && !gitohashi_integ && auth_is_admin) {
+	if (reset_all_icon && !gitohashi_integ && auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
 		s += "<br><img class=\"rebuild\" alt=\"rebuild all\" src=\"/sai/rebuild.png\" " +
 			"id=\"rebuild-ev-" + san(e.uuid) + "\">&nbsp;";
 		s += "<img class=\"rebuild\" alt=\"delete event\" src=\"/sai/delete.png\" " +
@@ -1625,7 +1632,7 @@ function createBuilderDiv(plat) {
 		platDiv.className += " powering-down";
 
 	platDiv.id = "binfo-" + plat.name;
-	platDiv.title = plat.platform + "@" + plat.name.split('.')[0] + (authd && auth_is_admin && plat.peer_ip ? " / " + plat.peer_ip : "");
+	platDiv.title = plat.platform + "@" + plat.name.split('.')[0] + (auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN && plat.peer_ip ? " / " + plat.peer_ip : "");
 
 	let plat_parts = plat.platform.split('/');
 	let plat_os = plat_parts[0] || 'generic';
@@ -1646,7 +1653,7 @@ function createBuilderDiv(plat) {
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-ram w-0"></div></div>` +
 		     `<div class="res-bar"><div class="res-bar-inner res-bar-disk w-0"></div></div>` +
 		     `</div>`;
-	if (authd && auth_is_admin && plat.peer_ip)
+	if (auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN && plat.peer_ip)
 		innerHTML += `<div class="plat-peer-ip">${hsanitize(plat.peer_ip)}</div>`;
 	innerHTML +=  `</td></tr></tbody></table>`;
 
@@ -1666,7 +1673,7 @@ function createBuilderDiv(plat) {
 		{ label: `<b>LWS:</b> ${plat.lws_hash}` },
 	];
 
-	if (authd && auth_is_admin && !plat.online) {
+	if (auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN && !plat.online) {
 		menuItems.push({
 			label: "<span class='builder-delete-btn'>Delete Builder</span>",
 			callback: () => {
@@ -1681,7 +1688,7 @@ function createBuilderDiv(plat) {
 		});
 	}
 
-	if (authd && auth_is_admin) {
+	if (auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
 		menuItems.push({
 			label: "<span class='builder-shell-btn'>Open Shell</span>",
 			callback: () => {
@@ -1895,7 +1902,7 @@ function createPconDiv(pcon) {
         { label: `<b>PCON:</b> ${pcon.name}` }
     ];
 
-    if (authd) {
+    if (auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
         if (isActuallyOn) {
             menuItems.push({
                 label: "Turn Off",
@@ -3268,11 +3275,33 @@ window.addEventListener("load", function() {
 	.then(function(res) { return res.json(); })
 	.then(function(data) {
 		console.log("LOGIN STATUS DEBUG:", data);
-		if (data.logged_in && data.has_grant) {
-			authd = 1;
-			auth_grant_level = data.grant_level !== undefined ? data.grant_level : -1;
-			if (data.is_admin || auth_grant_level >= 2)
-				auth_is_admin = 1;
+		auth_state = SaiAuthState.NOT_LOGGED_IN;
+		if (data.logged_in) {
+			if (data.has_grant) {
+				authd = 1;
+				auth_grant_level = data.grant_level !== undefined ? data.grant_level : -1;
+				const isAdmin = data.is_admin === true || data.is_admin === 1 || data.is_admin === "true" || data.is_admin === "1";
+				if (auth_grant_level >= 2 || (auth_grant_level === -1 && isAdmin)) {
+					auth_state = SaiAuthState.LOGGED_IN_GRANT_ADMIN;
+					auth_is_admin = 1;
+				} else {
+					auth_state = SaiAuthState.LOGGED_IN_GRANT_USER;
+				}
+			} else {
+				auth_state = SaiAuthState.LOGGED_IN_NO_GRANT;
+			}
+
+			const container = document.getElementById('lws-login-status-container');
+			if (container) {
+				container.classList.remove('grant-admin', 'grant-user', 'grant-none');
+				if (auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
+					container.classList.add('grant-admin');
+				} else if (auth_state === SaiAuthState.LOGGED_IN_GRANT_USER) {
+					container.classList.add('grant-user');
+				} else if (auth_state === SaiAuthState.LOGGED_IN_NO_GRANT) {
+					container.classList.add('grant-none');
+				}
+			}
 		}
 	})
 	.catch(function(err) {
@@ -3310,7 +3339,7 @@ window.addEventListener("load", function() {
 				target = target.parentElement;
 			}
 
-			if (taskDiv && auth_is_admin) {
+			if (taskDiv && auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
 				event.preventDefault();
 
 				const taskUuid = taskDiv.id.substring(10);

@@ -505,16 +505,24 @@ http_resp:
 			}
 #endif
 
-		pss->authorized = 0;
+		pss->auth_state = SAI_AUTH_STATE_NOT_LOGGED_IN;
 		if (vhd->has_jwk) {
 #if defined(LWS_WITH_JOSE)
 			const char *reason = "unknown";
 			struct lws_jwt_auth *ja = lws_jwt_auth_create(wsi, &vhd->jwk, vhd->cookie_name, NULL, NULL, &reason);
 			if (ja) {
-				if (lws_jwt_auth_query_grant(ja, "*") >= 1 || lws_jwt_auth_query_grant(ja, "com.warmcat.sai") >= 1) {
-					pss->authorized = 1;
+				int grant = (int)lws_jwt_auth_query_grant(ja, "com.warmcat.sai");
+				int grant_all = (int)lws_jwt_auth_query_grant(ja, "*");
+				int max_grant = grant > grant_all ? grant : grant_all;
+
+				if (max_grant >= 2) {
+					pss->auth_state = SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN;
 					lwsl_wsi_notice(wsi, "Authorized WebSocket connection (admin/grant)");
+				} else if (max_grant >= 1) {
+					pss->auth_state = SAI_AUTH_STATE_LOGGED_IN_GRANT_USER;
+					lwsl_wsi_notice(wsi, "Authorized WebSocket connection (user/grant)");
 				} else {
+					pss->auth_state = SAI_AUTH_STATE_LOGGED_IN_NO_GRANT;
 					lwsl_wsi_err(wsi, "JWT validation passed, but no grant found");
 				}
 				lws_jwt_auth_destroy(&ja);

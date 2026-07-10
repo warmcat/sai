@@ -645,7 +645,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	 * matched on
 	 */
 
-	if (!pss->authorized && (
+	if (pss->auth_state != SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN && (
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_TASKRESET ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_TASKREMOVEALLTRIES ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_TASKREBUILDLASTSTEP ||
@@ -654,6 +654,8 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_TASKCANCEL ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_REBUILD ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_PLATRESET ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_STAY ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_PCON_CONTROL ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_BUILDERDELETE ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_OPENSHELL ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_CLOSESHELL ||
