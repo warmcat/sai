@@ -130,7 +130,9 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		{
 			const char *conf_dir = "/etc/sai/server";
-			lws_pvo_get_str(in, "config-dir", &conf_dir);
+			if (lws_pvo_get_str(in, "config-dir", &conf_dir)) {
+				lwsl_info("%s: config-dir pvo not found, using default %s\n", __func__, conf_dir);
+			}
 			sais_config_watchers(vhd, conf_dir);
 		}
 

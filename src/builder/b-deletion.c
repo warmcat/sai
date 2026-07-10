@@ -285,7 +285,8 @@ sai_deletion_worker(const char *home_dir_unused)
 		return 1;
 	}
 
-	chmod(info.iface, 0600);
+	if (chmod(info.iface, 0600) < 0)
+		lwsl_warn("%s: failed to chmod UDS %s: %s\n", __func__, info.iface, strerror(errno));
 	lwsl_notice("STUB-READY (sai-deletion)\n");
 
 	while (lws_service(cx, 0) >= 0)

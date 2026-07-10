@@ -344,8 +344,9 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub, i
 	memset(&task_reply, 0, sizeof(task_reply));
 	lws_dll2_owner_clear(&task_reply.runs);
 	lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
-	lws_struct_sq3_deserialize(pdb, qu, "run desc", lsm_schema_sq3_map_task,
-				       &task_reply.runs, &runs_ac, 0, 100);
+	if (lws_struct_sq3_deserialize(pdb, qu, "run desc", lsm_schema_sq3_map_task,
+				       &task_reply.runs, &runs_ac, 0, 100) < 0)
+		lwsl_err("%s: runs deserialize failed\n", __func__);
 				       
 	sai_event_db_close(&pss->vhd->sqlite3_cache, &pdb);
 	if (n < 0 || !o.head)
@@ -1076,8 +1077,9 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 			struct lwsac *ac_watchers = NULL;
 			lws_dll2_owner_clear(&e->watcher_owner);
 			lws_snprintf(wfilt, sizeof(wfilt), " and event_hash='%s'", e->uuid);
-			lws_struct_sq3_deserialize(vhd->pdb, wfilt, "created",
-						   lsm_schema_sq3_map_watcher, &e->watcher_owner, &ac_watchers, 0, 0);
+			if (lws_struct_sq3_deserialize(vhd->pdb, wfilt, "created",
+						   lsm_schema_sq3_map_watcher, &e->watcher_owner, &ac_watchers, 0, 0) < 0)
+				lwsl_err("%s: watchers deserialize failed\n", __func__);
 
 		js = lws_struct_json_serialize_create(
 			lsm_schema_json_map_event,

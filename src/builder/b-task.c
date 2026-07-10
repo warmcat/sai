@@ -244,11 +244,15 @@ static void saib_start_artifact_upload(struct sai_nspawn *ns);
 int
 saib_set_ns_state(struct sai_nspawn *ns, int state)
 {
-	struct sai_plat_server *spm = ns ? ns->spm : NULL;
+	struct sai_plat_server *spm;
 
-	if (ns)
-		lwsl_notice("%s: ns=%p (%s) changing state from %d to %d\n", __func__, 
-			(void*)ns, ns->task ? ns->task->uuid : "null", ns->state, state);
+	if (!ns)
+		return -1;
+
+	spm = ns->spm;
+
+	lwsl_notice("%s: ns=%p (%s) changing state from %d to %d\n", __func__, 
+		(void*)ns, ns->task ? ns->task->uuid : "null", ns->state, state);
 
 	ns->state		= (uint8_t)state;
 	ns->state_changed	= 1;
@@ -734,10 +738,8 @@ saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 	lws_spawn_piped_kill_child_process(ns->op->lsp);
 	if (!--ns->term_budget) {
 		lwsl_err("%s: unable to kill child process -> destroying ns forcibly\n", __func__);
-		if (ns->op) {
-			ns->op->ns = NULL;
-			ns->op = NULL;
-		}
+		ns->op->ns = NULL;
+		ns->op = NULL;
 		saib_task_destroy(ns);
 		return;
 	}
