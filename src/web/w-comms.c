@@ -589,6 +589,8 @@ http_resp:
 					}
 				}
 			}
+			if (pss->specificity == SAIM_SPECIFIC_TASK)
+				pss->specific_project[0] = '\0';
 
 			if (!pss->specificity) {
 				pss->specificity = SAIM_SPECIFIC_H;

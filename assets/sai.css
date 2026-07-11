@@ -1736,3 +1736,257 @@ div.ibuil.vm-builder {
 	fill: #e74c3c !important;
 }
 
+/* Three-pane layout styles */
+.right-pane {
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	overflow: hidden;
+}
+
+.event-decals-section {
+	flex: 0 0 auto;
+	height: 110px;
+	box-sizing: border-box;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+	background: #f8f9fa;
+	display: flex;
+	flex-direction: row;
+	overflow-x: auto;
+	align-items: center;
+	padding: 8px 12px;
+	gap: 12px;
+	scrollbar-width: thin;
+}
+
+/* Event Decal Card styles */
+.event-decal-card {
+	display: inline-block;
+	flex: 0 0 auto;
+	background: #f1f5f9;
+	border: 1px solid #cbd5e1;
+	border-radius: 6px;
+	padding: 6px 10px;
+	cursor: pointer;
+	transition: all 0.2s ease-in-out;
+	user-select: none;
+	max-height: 85px;
+	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.event-decal-card:hover {
+	border-color: #94a3b8;
+	transform: translateY(-1px);
+	box-shadow: 0 3px 6px rgba(0, 0, 0, 0.08);
+}
+
+.event-decal-card.comp_pass {
+	background: #01ff70;
+}
+
+.event-decal-card.comp_fail {
+	background: #ff4136;
+	color: #ffffff;
+}
+
+.event-decal-card.comp_fail span,
+.event-decal-card.comp_fail a {
+	color: #ffffff !important;
+}
+
+.event-decal-card.selected {
+	border: 2px solid #000000;
+	box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.event-decal-card table.comp {
+	background: transparent !important;
+	border: none !important;
+	margin: 0 !important;
+	padding: 0 !important;
+}
+
+.event-decal-card table.comp td {
+	padding: 0 4px !important;
+}
+
+.tasks-section {
+	flex: 0 0 200px;
+	box-sizing: border-box;
+	border-bottom: 1px solid rgba(0, 0, 0, 0.15);
+	overflow-y: auto;
+	padding: 12px;
+	background: #ffffff;
+	min-height: 100px;
+}
+
+.resizer-h {
+	height: 5px;
+	cursor: ns-resize;
+	background-color: #ccc;
+	flex-shrink: 0;
+}
+
+.event-tasks-header {
+	margin-bottom: 8px;
+	padding-bottom: 4px;
+	border-bottom: 1px solid #f1f5f9;
+}
+
+.event-tasks-title {
+	font-weight: bold;
+	font-size: 11pt;
+	color: #1e293b;
+}
+
+.tasks-table-display {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.tasks-table-display td.tasks {
+	border: none !important;
+	padding: 0 !important;
+}
+
+.logs-section {
+	flex: 1 1 0%;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: #ffffff;
+	color: #000000;
+	position: relative;
+}
+
+#sai_task_logs_container .undernailed {
+	margin-left: 0;
+	top: 0;
+	flex-grow: 1;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+}
+
+#sai_task_logs_container #summary {
+	flex-grow: 1;
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	background: transparent;
+	margin: 0;
+	padding: 0;
+}
+
+#sai_task_logs_container #sai_overview {
+	flex-grow: 1;
+	overflow-y: auto;
+	min-height: 0;
+	padding: 10px;
+	scrollbar-width: thin;
+}
+
+#sai_task_logs_container #sai_sticky {
+	position: relative;
+	float: none;
+	background: #ffffff;
+	width: 100%;
+	z-index: 10;
+	border-bottom: 1px solid #e2e8f0;
+}
+
+/* Override taskinfo to be relative when inside Section 3 */
+#sai_task_logs_container div.taskinfo {
+	position: relative;
+	background: #ffffff;
+	color: #000000;
+	border-style: none;
+	border-bottom: 1px solid #e2e8f0;
+	margin: 0;
+	padding: 8px 12px;
+	width: auto;
+	z-index: 10;
+	flex-shrink: 0;
+}
+
+#sai_task_logs_container div.taskinfo table {
+	color: #000000;
+}
+
+#sai_task_logs_container div.taskinfo span.ti1 {
+	color: #000000;
+	font-weight: bold;
+}
+
+#sai_task_logs_container div.taskinfo span.ti5 {
+	color: #64748b;
+}
+
+#sai_task_logs_container div.taskinfo table.comp {
+	display: none; /* Hide the duplicate event decal in the logs header since we have Section 1 */
+}
+
+/* Scrolllogs light styling */
+#sai_task_logs_container table.scrollogs {
+	margin-top: 0px;
+	background: #ffffff;
+	width: 100%;
+}
+
+#sai_task_logs_container table.scrollogs td.atop {
+	vertical-align: top;
+}
+
+#sai_task_logs_container div.dlogs {
+	background: #ffffff;
+	color: #000000;
+}
+
+#sai_task_logs_container div.dlogsn a {
+	color: #64748b;
+	text-decoration: none;
+}
+
+#sai_task_logs_container div.dlogsn a:hover {
+	color: #334155;
+}
+
+#sai_task_logs_container div.dlogst {
+	color: #64748b;
+}
+
+.no-tasks, .no-events, .loading-logs {
+	padding: 20px;
+	text-align: center;
+	color: #64748b;
+	font-style: italic;
+}
+
+.loading-logs {
+	color: #888888;
+}
+
+/* Pagination card inside horizontal scroll */
+.pagination-card {
+	display: inline-block;
+	flex: 0 0 auto;
+	background: #e2e8f0;
+	border: 1px solid #cbd5e1;
+	border-radius: 6px;
+	padding: 6px 10px;
+	cursor: pointer;
+	align-self: center;
+	font-weight: bold;
+	height: fit-content;
+	transition: all 0.2s;
+	color: #334155;
+	user-select: none;
+}
+
+.pagination-card:hover {
+	background: #cbd5e1;
+	color: #0f172a;
+}
+
+

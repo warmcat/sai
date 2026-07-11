@@ -479,12 +479,22 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub, i
 					       lws_write_ws_flags(LWS_WRITE_TEXT, fi, 1));
 
 	/* does he want to subscribe to logs? */
-	if (logsub && !pss->subs_list.owner) {
+	if (logsub) {
+		int new_run = run_idx >= 0 ? run_idx : one_task->run;
+		int is_new_task = strcmp(pss->sub_task_uuid, one_task->uuid);
+		int is_new_run = pss->sub_run != new_run;
+
 		strcpy(pss->sub_task_uuid, one_task->uuid);
-		pss->sub_run = run_idx >= 0 ? run_idx : one_task->run;
-		lws_dll2_add_head(&pss->subs_list, &pss->vhd->subs_owner);
-		pss->sub_timestamp = pss->initial_log_timestamp; /* where we got up to */
-		saiw_broadcast_logs_batch(pss->vhd, pss);
+		pss->sub_run = new_run;
+
+		if (!pss->subs_list.owner) {
+			lws_dll2_add_head(&pss->subs_list, &pss->vhd->subs_owner);
+		}
+
+		if (is_new_task || is_new_run || pss->initial_log_timestamp == 0) {
+			pss->sub_timestamp = pss->initial_log_timestamp;
+			saiw_broadcast_logs_batch(pss->vhd, pss);
+		}
 	} else if (!strcmp(pss->sub_task_uuid, one_task->uuid)) {
 		/* If already subscribed to this task, track new runs automatically */
 		int new_run = run_idx >= 0 ? run_idx : one_task->run;
@@ -992,6 +1002,34 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 	esc[0] = '\0';
 	n = -6;
 
+	if (pss->specific_task[0] && !pss->resolved_task_offset) {
+		char event_uuid[33];
+		char q[256];
+		sqlite3_stmt *stmt = NULL;
+		uint64_t ev_created = 0;
+
+		sai_task_uuid_to_event_uuid(event_uuid, pss->specific_task);
+		lws_snprintf(q, sizeof(q), "SELECT created FROM events WHERE uuid='%s'", event_uuid);
+		if (sqlite3_prepare_v2(vhd->pdb, q, -1, &stmt, NULL) == SQLITE_OK) {
+			if (sqlite3_step(stmt) == SQLITE_ROW) {
+				ev_created = (uint64_t)sqlite3_column_int64(stmt, 0);
+			}
+			sqlite3_finalize(stmt);
+		}
+		if (ev_created > 0) {
+			unsigned int events_newer = 0;
+			lws_snprintf(q, sizeof(q), "SELECT COUNT(*) FROM events WHERE state != %d AND created > %llu", SAIES_DELETED, (unsigned long long)ev_created);
+			if (sqlite3_prepare_v2(vhd->pdb, q, -1, &stmt, NULL) == SQLITE_OK) {
+				if (sqlite3_step(stmt) == SQLITE_ROW) {
+					events_newer = (unsigned int)sqlite3_column_int(stmt, 0);
+				}
+				sqlite3_finalize(stmt);
+			}
+			pss->overview_offset = (events_newer / 6) * 6;
+		}
+		pss->resolved_task_offset = 1;
+	}
+
 	if (pss->specific_project[0]) {
 		lws_sql_purify(esc, pss->specific_project, sizeof(esc) - 1);
 		lws_snprintf(filt, sizeof(filt), " and state != %d and repo_name=\"%s\"", SAIES_DELETED, esc);
@@ -1047,7 +1085,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 	 * Walk through events
 	 */
 
-	if (pss->specificity)
+	if (pss->specificity && pss->specificity != SAIM_SPECIFIC_TASK)
 		walk = lws_dll2_get_head(&owner);
 	else
 		walk = lws_dll2_get_tail(&owner);
@@ -1060,7 +1098,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 	while (walk) {
 		sai_event_t *e = lws_container_of(walk, sai_event_t, list);
 
-		if (pss->specificity) {
+		if (pss->specificity && pss->specificity != SAIM_SPECIFIC_TASK) {
 			if (!strcmp(pss->specific_ref, "refs/heads/master") &&
 			    !strcmp(e->ref, "refs/heads/main"))
 				; // any = 1;
@@ -1242,12 +1280,12 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 
 		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "]}");
 
-		if (pss->specificity)
+		if (pss->specificity && pss->specificity != SAIM_SPECIFIC_TASK)
 			walk = walk->next;
 		else
 			walk = walk->prev;
 
-		if (walk && !pss->specificity)
+		if (walk && (!pss->specificity || pss->specificity == SAIM_SPECIFIC_TASK))
 			continue;
 	}
 
