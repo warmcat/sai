@@ -1110,7 +1110,7 @@ function sai_taskinfo_render(t, now_ut)
 		sai_arts = "";
 	}
 
-	if (t.runs && t.runs.length > 0) {
+	if (t.runs && t.runs.length >= 2) {
 		var r1 = "", r2 = "";
 		s += "<div class=\"runs-header-container\"><table class=\"runs-table\"><tr>";
 		for (var n = t.runs.length - 1; n >= 0; n--) {
@@ -1607,6 +1607,8 @@ function selectEvent(uuid) {
 
 	if (ev_obj) {
 		render_selected_event_tasks(ev_obj);
+		/* Notify server of the selected event so it can throttle task state broadcasts */
+		sai.send("{\"schema\":\"com.warmcat.sai.eventinfo\", \"js_api_version\": " + SAI_JS_API_VERSION + ", \"event_hash\": " + JSON.stringify(uuid) + "}");
 	}
 }
 
@@ -2835,6 +2837,8 @@ function ws_open_sai()
 					}
 				}
 
+				var old_latest_uuid = loaded_events.length ? loaded_events[loaded_events.length - 1].e.uuid : null;
+
 				if (jso.overview) {
 					jso.overview.forEach(function(new_ev) {
 						var idx = loaded_events.findIndex(o => o.e.uuid === new_ev.e.uuid);
@@ -2864,10 +2868,16 @@ function ws_open_sai()
 				}
 				render_event_decals();
 
-				if (selected_event_uuid) {
-					var ev_obj = loaded_events.find(o => o.e.uuid === selected_event_uuid);
-					if (ev_obj) {
-						render_selected_event_tasks(ev_obj);
+				var new_latest_uuid = loaded_events.length ? loaded_events[loaded_events.length - 1].e.uuid : null;
+				if (old_latest_uuid && new_latest_uuid !== old_latest_uuid) {
+					/* A new event arrived! Select it and clear logs. */
+					selectEvent(new_latest_uuid);
+				} else {
+					if (selected_event_uuid) {
+						var ev_obj = loaded_events.find(o => o.e.uuid === selected_event_uuid);
+						if (ev_obj) {
+							render_selected_event_tasks(ev_obj);
+						}
 					}
 				}
 

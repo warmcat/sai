@@ -574,6 +574,7 @@ http_resp:
 					lwsl_info("%s:    '%s'\n", __func__, tbuf);
 					if (!strncmp(tbuf, "task=", 5)) {
 						lws_strncpy(pss->specific_task, tbuf + 5, sizeof(pss->specific_task));
+						sai_task_uuid_to_event_uuid(pss->selected_event_uuid, pss->specific_task);
 						pss->specificity = SAIM_SPECIFIC_TASK;
 						saiw_broadcast_logs_batch(vhd, pss);
 					}

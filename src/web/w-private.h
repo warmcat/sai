@@ -85,6 +85,7 @@ struct pss {
 	char			specific_ref[65];
 	char			specific_task[65];
 	char			specific_project[96];
+	char			selected_event_uuid[33];
 
 	sqlite3			*pdb_artifact;
 	sqlite3_blob		*blob_artifact;

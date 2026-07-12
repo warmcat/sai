@@ -587,10 +587,16 @@ saiw_subs_task_state_change(struct vhd *vhd, const char *task_uuid)
 int
 saiw_browsers_task_state_change(struct vhd *vhd, const char *task_uuid)
 {
+	char event_uuid[33];
+
+	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
+
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 		struct pss *pss = lws_container_of(p, struct pss, same);
 
-		if (!pss->is_gitohashi)
+		if (!pss->is_gitohashi &&
+		    (!pss->selected_event_uuid[0] ||
+		     !strcmp(pss->selected_event_uuid, event_uuid)))
 			saiw_pss_schedule_taskinfo(pss, task_uuid, 0, -1);
 	} lws_end_foreach_dll(p);
 
@@ -725,6 +731,8 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	case SAIM_WS_BROWSER_RX_EVENTINFO:
 
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
+
+		lws_strncpy(pss->selected_event_uuid, ei->event_hash, sizeof(pss->selected_event_uuid));
 
 		if (saiw_pss_schedule_eventinfo(pss, ei->event_hash))
 			goto soft_error;
