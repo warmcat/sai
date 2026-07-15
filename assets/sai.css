@@ -1766,12 +1766,30 @@ div.ibuil.vm-builder {
 	background: #f1f5f9;
 	border: 1px solid #cbd5e1;
 	border-radius: 6px;
-	padding: 6px 10px;
+	padding: 5px 10px 8px 10px;
 	cursor: pointer;
 	transition: all 0.2s ease-in-out;
 	user-select: none;
-	max-height: 85px;
+	max-height: 98px;
 	box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+	box-sizing: border-box;
+}
+
+.event-decal-card span.e1 {
+	line-height: 1.0;
+	margin-bottom: 1px;
+	display: inline-block;
+}
+
+.event-decal-card span.e2 {
+	line-height: 1.0;
+	display: inline-block;
+}
+
+.event-decal-card table.nomar td {
+	padding-top: 1px !important;
+	padding-bottom: 1px !important;
+	line-height: 1.0;
 }
 
 .event-decal-card:hover {

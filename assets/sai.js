@@ -952,6 +952,11 @@ var pos = 0, lli = 1, lines = "", times = "", locked = 1, tfirst = 0,
 var deleted_events_cache = new Set();
 var loaded_events = [], selected_event_uuid = null, selected_task_uuid = null, total_events = 0, current_offset = 0;
 
+function sai_event_hash_display(hash) {
+	if (!hash) return "";
+	return "sai-" + hash.substring(0, 8);
+}
+
 function get_appropriate_ws_url()
 {
 	var pcol;
@@ -1371,13 +1376,13 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 				s += san(e.ref);
 
 		s += "</span></td></tr><tr><td class=\"nomar e6\">" +
-		        san(e.hash.substr(0, 8)) +
+		        san(sai_event_hash_display(e.hash)) +
 		     "</td><td class=\"e6 nomar\">" +
 		     agify(now_ut, e.created) + "</td></tr>";
 		 s += "</table>" +
 		     "</td>";
 	} else {
-		s +="<td><table><tr><td class=\"e6 nomar\">" + san(e.hash.substr(0, 8)) + " " + agify(now_ut, e.created) +
+		s +="<td><table><tr><td class=\"e6 nomar\">" + san(sai_event_hash_display(e.hash)) + " " + agify(now_ut, e.created) +
 		     "</td></tr><tr><td class=\"nomar e6\" id=\"sumbs-" + e.uuid + "\"></td></tr>" +
 		     "</table></td>";
 	}
@@ -1473,7 +1478,7 @@ function render_selected_event_tasks(o) {
 	if (o.t && o.t.length) {
 		s += "<div class=\"event-tasks-header\">";
 		var refName = e.ref.replace("refs/heads/", "").replace("refs/tags/", "");
-		s += "<span class=\"event-tasks-title\">" + san(e.repo_name) + " (" + san(refName) + ") - " + san(e.hash.substr(0, 8)) + "</span>";
+		s += "<span class=\"event-tasks-title\">" + san(e.repo_name) + " (" + san(refName) + ") - " + san(sai_event_hash_display(e.hash)) + "</span>";
 		s += "</div>";
 		s += "<table class=\"tasks-table-display\"><tr><td class=\"tasks\" id=\"taskcont-" + san(e.uuid) + "\">";
 
@@ -2893,6 +2898,25 @@ function ws_open_sai()
 					window.current_viewed_task_state = jso.t.state;
 				}
 
+				if (loaded_events) {
+					var event_uuid = jso.t.uuid.substring(0, 32);
+					var ev_obj = loaded_events.find(function(o) { return o.e.uuid === event_uuid; });
+					if (ev_obj) {
+						if (jso.e) {
+							ev_obj.e = Object.assign({}, ev_obj.e, jso.e);
+						}
+						if (ev_obj.t) {
+							var t_run = typeof jso.t.run !== 'undefined' ? jso.t.run : 0;
+							var t_idx = ev_obj.t.findIndex(function(t) { return t.uuid === jso.t.uuid && (typeof t.run !== 'undefined' ? t.run : 0) === t_run; });
+							if (t_idx !== -1) {
+								ev_obj.t[t_idx] = Object.assign({}, ev_obj.t[t_idx], jso.t);
+							} else {
+								ev_obj.t.push(jso.t);
+							}
+						}
+					}
+				}
+
 				if (document.getElementById("taskstate_" + jso.t.uuid)) {
 					console.log("found taskstate_" + jso.t.uuid);
 					refresh_state(jso.t);
@@ -3510,6 +3534,40 @@ window.addEventListener("load", function() {
 					}
 				}, 300);
 			}
+
+			// Clean up selected state if the deleted event was currently selected
+			if (selected_event_uuid === uuid) {
+				var active_events = loaded_events.filter(o => !deleted_events_cache.has(o.e.uuid));
+				if (active_events.length > 0) {
+					var next_selected_uuid = active_events[active_events.length - 1].e.uuid;
+					selectEvent(next_selected_uuid);
+				} else {
+					selected_event_uuid = null;
+					selected_task_uuid = null;
+					window.current_task_run = null;
+
+					var tasksSection = document.getElementById("sai_event_tasks");
+					if (tasksSection) {
+						tasksSection.innerHTML = "<div class=\"event-tasks-header\"><span class=\"event-tasks-title\">No event selected</span></div>";
+					}
+
+					var stickyEl = document.getElementById("sai_sticky");
+					var overviewEl = document.getElementById("sai_overview");
+					if (stickyEl) stickyEl.innerHTML = "";
+					if (overviewEl) overviewEl.innerHTML = "";
+
+					var par = new URLSearchParams(window.location.search);
+					par.delete("task");
+					par.delete("run");
+					par.delete("event");
+					var qs = par.toString();
+					var path = window.location.pathname;
+					if (!path.endsWith('/') && !path.endsWith('index.html')) {
+						path += '/';
+					}
+					window.history.pushState({}, "", path + (qs ? ("?" + qs) : ""));
+				}
+			}
 		}
 	});
 
@@ -3718,7 +3776,32 @@ window.addEventListener("load", function() {
 			document.addEventListener('mouseup', onMouseUp);
 		};
 
+		const onTouchMove = (e) => {
+			if (e.touches.length === 1) {
+				const dx = e.touches[0].clientX - x;
+				const newLeftWidth = leftWidth + dx;
+				leftPane.style.flex = `0 0 ${newLeftWidth}px`;
+				e.preventDefault();
+			}
+		};
+
+		const onTouchEnd = () => {
+			document.removeEventListener('touchmove', onTouchMove);
+			document.removeEventListener('touchend', onTouchEnd);
+			localStorage.setItem('sai-left-pane-flex', leftPane.style.flex);
+		};
+
+		const onTouchStart = (e) => {
+			if (e.touches.length === 1) {
+				x = e.touches[0].clientX;
+				leftWidth = leftPane.getBoundingClientRect().width;
+				document.addEventListener('touchmove', onTouchMove, { passive: false });
+				document.addEventListener('touchend', onTouchEnd);
+			}
+		};
+
 		resizer.addEventListener('mousedown', onMouseDown);
+		resizer.addEventListener('touchstart', onTouchStart);
 	}
 
 	const savedTasksHeight = localStorage.getItem('sai-tasks-height');
@@ -3755,7 +3838,32 @@ window.addEventListener("load", function() {
 			document.addEventListener('mouseup', onMouseUpH);
 		};
 
+		const onTouchMoveH = (e) => {
+			if (e.touches.length === 1) {
+				const dy = e.touches[0].clientY - y;
+				const newHeight = tasksHeight + dy;
+				tasksSection.style.flex = `0 0 ${newHeight}px`;
+				e.preventDefault();
+			}
+		};
+
+		const onTouchEndH = () => {
+			document.removeEventListener('touchmove', onTouchMoveH);
+			document.removeEventListener('touchend', onTouchEndH);
+			localStorage.setItem('sai-tasks-height', tasksSection.style.flex);
+		};
+
+		const onTouchStartH = (e) => {
+			if (e.touches.length === 1) {
+				y = e.touches[0].clientY;
+				tasksHeight = tasksSection.getBoundingClientRect().height;
+				document.addEventListener('touchmove', onTouchMoveH, { passive: false });
+				document.addEventListener('touchend', onTouchEndH);
+			}
+		};
+
 		resizerH.addEventListener('mousedown', onMouseDownH);
+		resizerH.addEventListener('touchstart', onTouchStartH);
 	}
 }, false);
 
