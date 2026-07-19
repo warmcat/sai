@@ -585,14 +585,14 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 			t->builder[0] = '\0';
 			t->builder_name[0] = '\0';
 			t->server_name = "";
+			t->state = -1;
 			/* serialize as a new row */
 			lws_struct_sq3_serialize(pdb, lsm_schema_sq3_map_task, &o, 0);
 		} else {
-			t->state = SAIES_WAITING;
 			/* update the existing row if it's a rejection */
 			lws_snprintf(cmd, sizeof(cmd), 
 				"update tasks set state=%d,started=0,duration=0,build_step=0 where uuid='%s' and run=%d",
-				SAIES_WAITING, esc, t->run);
+				-1, esc, t->run);
 			sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 		}
 	}
@@ -600,14 +600,7 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 	lwsac_free(&ac);
 	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
-	if (!from_rejection) {
-		sais_set_task_state(vhd, task_uuid, SAIES_WAITING, 0, 0);
-		sais_taskchange(vhd->h_ss_websrv, task_uuid, SAIES_WAITING);
-		sais_eventchange(vhd->h_ss_websrv, event_uuid, SAIES_WAITING);
-	} else {
-		sais_taskchange(vhd->h_ss_websrv, task_uuid, SAIES_WAITING);
-		sais_eventchange(vhd->h_ss_websrv, event_uuid, SAIES_WAITING);
-	}
+	sais_set_task_state(vhd, task_uuid, SAIES_WAITING, 0, 0);
 
 	sais_task_stop_on_builders(vhd, task_uuid);
 
@@ -668,14 +661,12 @@ sais_task_remove_all_tries(struct vhd *vhd, const char *task_uuid)
 
 	lws_snprintf(cmd, sizeof(cmd), 
 		"update tasks set state=%d,started=0,duration=0,build_step=0,builder_name='',builder='',server_name='' where uuid='%s' and run=0",
-		SAIES_WAITING, esc);
+		-1, esc);
 	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 
 	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 	sais_set_task_state(vhd, task_uuid, SAIES_WAITING, 0, 0);
-	sais_taskchange(vhd->h_ss_websrv, task_uuid, SAIES_WAITING);
-	sais_eventchange(vhd->h_ss_websrv, event_uuid, SAIES_WAITING);
 
 	lwsl_notice("%s: scheduling sul_central to find a new task\n", __func__);
 	lws_sul_schedule(vhd->context, 0, &vhd->sul_central, sais_central_cb, 1);

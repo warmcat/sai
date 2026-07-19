@@ -117,16 +117,10 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 #if defined(WIN32)
 	case LWS_CALLBACK_RAW_ADOPT_FILE:
-		lwsl_user("%s: wsi %p, reason %d, op %p, fd %d\n", __func__,
-			    wsi, reason, op, lws_spawn_get_stdfd(wsi));
 		break;
 #endif
 
 	case LWS_CALLBACK_RAW_CLOSE_FILE:
-#if defined(WIN32)
-		lwsl_user("%s: wsi %p, CLOSE_FILE, op %p, fd %d\n", __func__,
-			    wsi, op, lws_spawn_get_stdfd(wsi));
-#endif
 		{
 			int ch = lws_spawn_get_stdfd(wsi);
 			if (ch == 0) ch = 1;
@@ -152,7 +146,6 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 			if (GetLastError() != 109 && GetLastError() != 232) lwsl_user("%s: read on stdwsi failed, err %lu\n", __func__, GetLastError());
 			return -1;
 		}
-		lwsl_user("%s: WIN32 RX_FILE read %lu bytes on fd %d\n", __func__, rb, lws_spawn_get_stdfd(wsi));
 		ilen = (int)rb;
 	}
 #else

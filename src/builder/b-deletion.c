@@ -80,6 +80,9 @@ sai_rm_rf_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 
 	if (lde->type == LDOT_DIR) {
 		lws_dir(path, user, sai_rm_rf_cb);
+#if defined(WIN32)
+		SetFileAttributesA(path, FILE_ATTRIBUTE_NORMAL);
+#endif
 		if (rmdir(path))
 			lwsl_notice("%s: rmdir %s failed: errno %d (%s)\n", __func__, path, errno, strerror(errno));
 	} else {
@@ -125,6 +128,11 @@ child_lejp_cb(struct lejp_ctx *ctx, char reason)
 			lws_dir_via_info(&di);
 			
 			/* lws_dir_via_info returns 1 on success. Errors are logged by sai_rm_rf_cb. */
+#if defined(WIN32)
+			SetFileAttributesA(full_path, FILE_ATTRIBUTE_NORMAL);
+#endif
+			rmdir(full_path);
+
 			if (!stat(full_path, &st))
 				lwsl_notice("%s: top level dir %s still exists\n", __func__, full_path);
 		} else {

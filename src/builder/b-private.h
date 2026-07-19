@@ -79,7 +79,7 @@ struct saib_opaque_spawn {
 #define SAI_LOAD_REPORT_US			(1 * LWS_US_PER_SEC)
 #define SAI_IDLE_GRACE_US			(builder.one_shot_active ? (10 * LWS_US_PER_SEC) : (30 * LWS_US_PER_SEC))
 #define SAI_STAY_POLL_US			(20 * LWS_US_PER_SEC)
-#define SAI_CLEANUP_JOBS_INTERVAL_US		(60 * 60 * LWS_US_PER_SEC)
+#define SAI_CLEANUP_JOBS_INTERVAL_US		(60ULL * 60ULL * LWS_US_PER_SEC)
 #define SAI_CLEANUP_JOB_DIR_MIN_AGE_SECS	(24ull * 3600u)
 
 
