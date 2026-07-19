@@ -216,6 +216,27 @@ div.taskinfo {
 	margin-top: -3px;
 }
 
+#sai_task_logs_container div.taskinfo.taskstate1, div.taskinfo.taskstate1 { background: #d0d0d0; border-color: #d0d0d0; transition: background-color 500ms linear; }
+#sai_task_logs_container div.taskinfo.taskstate2, div.taskinfo.taskstate2 { background: #a0a0a0; border-color: #a0a0a0; transition: background-color 500ms linear; }
+#sai_task_logs_container div.taskinfo.taskstate3, div.taskinfo.taskstate3 { background: #01ff70; border-color: #01ff70; transition: background-color 500ms linear; }
+#sai_task_logs_container div.taskinfo.taskstate4, div.taskinfo.taskstate4 { background: #ff851b; border-color: #ff851b; transition: background-color 500ms linear; }
+#sai_task_logs_container div.taskinfo.taskstate5, div.taskinfo.taskstate5 { background: #808080; border-color: #808080; transition: background-color 500ms linear; }
+#sai_task_logs_container div.taskinfo.taskstate6, div.taskinfo.taskstate6 { background: #df3030; border-color: #df3030; transition: background-color 500ms linear; }
+#sai_task_logs_container div.taskinfo.taskstate10, div.taskinfo.taskstate10 { background: #ffdc00; border-color: #ffdc00; transition: background-color 500ms linear; }
+
+#sai_task_logs_container div.taskinfo.taskstate6, #sai_task_logs_container div.taskinfo.taskstate6 span.ti1, #sai_task_logs_container div.taskinfo.taskstate6 span.ti5, #sai_task_logs_container div.taskinfo.taskstate6 div.sai_arts,
+div.taskinfo.taskstate6, div.taskinfo.taskstate6 span.ti1, div.taskinfo.taskstate6 span.ti5, div.taskinfo.taskstate6 div.sai_arts {
+	color: #ffffff;
+}
+#sai_task_logs_container div.taskinfo.taskstate5, #sai_task_logs_container div.taskinfo.taskstate5 span.ti1, #sai_task_logs_container div.taskinfo.taskstate5 span.ti5, #sai_task_logs_container div.taskinfo.taskstate5 div.sai_arts,
+div.taskinfo.taskstate5, div.taskinfo.taskstate5 span.ti1, div.taskinfo.taskstate5 span.ti5, div.taskinfo.taskstate5 div.sai_arts {
+	color: #ffffff;
+}
+#sai_task_logs_container div.taskinfo.taskstate6 a, #sai_task_logs_container div.taskinfo.taskstate5 a,
+div.taskinfo.taskstate6 a, div.taskinfo.taskstate5 a {
+	color: #ffffff;
+}
+
 table.scrollogs {
 	margin-top: 64px;
 }
@@ -296,8 +317,8 @@ img.ip1 {
 }
 
 img.ip2 {
-	width: 19px;
-	height: 19px;
+	width: 28px;
+	height: 28px;
 	vertical-align:text-bottom;
 }
 
@@ -370,7 +391,7 @@ img.bico {
 
 .taskstate6 {
 	background:#df3030;
-	color:#300000;
+	color:#ffffff;
 	opacity:1;
 	transition: background-color 500ms linear;
 }
@@ -1464,7 +1485,7 @@ canvas.power-graph {
 }
 
 .runs-header-container {
-	margin-top: -8px;
+	margin-top: 4px;
 }
 
 .runs-table {
@@ -1491,12 +1512,17 @@ canvas.power-graph {
 	position: relative;
 	border-radius: 4px;
 	display: inline-block;
+	margin-right: 6px;
+	margin-bottom: 6px;
 }
 
 .run-decal {
 	position: relative;
 	border-radius: 4px;
 	display: inline-block;
+	border: 1px solid #bbb;
+	margin-right: 6px;
+	margin-bottom: 6px;
 }
 
 .runs-time-cell {

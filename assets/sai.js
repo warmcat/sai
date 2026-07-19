@@ -1091,7 +1091,7 @@ function sai_taskinfo_render(t, now_ut)
 	s = "<table><tr class=\"nomar\"><td class=\"atop\"><table>" +
 		sai_event_render(t, now_ut, 0) + "</table></td><td class=\"ti\">" +
 		"<span class=\"ti1\">" + sai_plat_icon(t.t.platform, 2) +
-		san(t.t.platform) + "</span>&nbsp;" +
+		san(t.t.builder_name ? t.t.builder_name : t.t.platform) + "</span>&nbsp;" +
 		sai_stateful_taskname(t.t.state, t.t.taskname, 1) + "&nbsp;&nbsp;";
 	if (auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN && t.t.state != 0 && t.t.state != 3 && t.t.state != 4 && t.t.state != 5)
 		s += "<img class=\"rebuild\" alt=\"stop build\" src=\"stop.svg\" " +
@@ -1103,11 +1103,9 @@ function sai_taskinfo_render(t, now_ut)
 	if (t.t.builder_name) {
 		var now_ut = Math.round((new Date().getTime() / 1000));
 
-		s += "&nbsp;&nbsp;<span class=\"ti5\"><img class=\"bico\" src=\"/sai/builder-instance.png\">&nbsp;" +
-			san(t.t.builder_name) + "</span>";
 		if (t.t.started)
 		/* started is a unix time, in seconds */
-		s += ", <span class=\"ti5\"> " +
+		s += "<span class=\"ti5\"> " +
 		     agify(now_ut, t.t.started) + " ago, Dur: " +
 		     (t.t.duration ? t.t.duration / 1000000 :
 			now_ut - t.t.started).toFixed(1) +
@@ -1116,19 +1114,21 @@ function sai_taskinfo_render(t, now_ut)
 	}
 
 	if (t.runs && t.runs.length >= 2) {
-		var r1 = "", r2 = "";
-		s += "<div class=\"runs-header-container\"><table class=\"runs-table\"><tr>";
+		s += "<div class=\"runs-header-container\" style=\"display:flex; flex-wrap:wrap; gap:6px; margin-top:2px;\">";
 		for (var n = t.runs.length - 1; n >= 0; n--) {
 			var r = t.runs[n];
 			var ridx = typeof r.run !== 'undefined' ? r.run : 0;
 			var current = (ridx == (typeof t.t.run !== 'undefined' ? t.t.run : 0));
 			var dcl = current ? "run-current-decal" : "run-decal";
-			var decal = "<div class=\"taskstate taskstate" + r.state + " " + dcl + "\"><a href=\"index.html?task=" + t.t.uuid + "&run=" + ridx + "\">" + sai_plat_icon(r.platform, 0) + "</a></div>";
 			var timeStr = r.started ? agify(now_ut, r.started) + " ago" : "pending";
-			r1 += "<td>" + decal + "</td>";
-			r2 += "<td><span class=\"ti5\">" + timeStr + "</span></td>";
+			var decal = "<div class=\"taskstate taskstate" + r.state + " " + dcl + "\" style=\"padding:4px; text-align:center; border-radius:6px;\">" +
+				"<a href=\"index.html?task=" + t.t.uuid + "&run=" + ridx + "\" style=\"text-decoration:none; color:inherit; display:block;\">" +
+				"<div>" + sai_plat_icon(r.platform, 0) + "</div>" +
+				"<div class=\"ti5\" style=\"margin-top:2px;\">" + timeStr + "</div>" +
+				"</a></div>";
+			s += decal;
 		}
-		s += r1 + "</tr><tr>" + r2 + "</tr></table></div>";
+		s += "</div>";
 	}
 
 	s += "</td></tr>";
@@ -2938,7 +2938,9 @@ function ws_open_sai()
 						window.history.replaceState({}, '', path + '?' + par.toString());
 					}
 					window.current_task_run = jso.t.run;
-					document.getElementById("taskinfo-" + jso.t.uuid).innerHTML = sai_taskinfo_render(jso);
+					var ti_el = document.getElementById("taskinfo-" + jso.t.uuid);
+					ti_el.className = "taskinfo taskstate" + jso.t.state;
+					ti_el.innerHTML = sai_taskinfo_render(jso);
 					if (jso.e) {
 						if (document.getElementById("esr-" + jso.e.uuid))
 							document.getElementById("esr-" + jso.e.uuid).innerHTML =
@@ -2966,7 +2968,7 @@ function ws_open_sai()
 					    document.getElementById("sai_sticky")) {
 						window.current_task_run = jso.t.run;
 						document.getElementById("sai_sticky").innerHTML =
-							"<div class=\"taskinfo\" id=\"taskinfo-" +
+							"<div class=\"taskinfo taskstate" + jso.t.state + "\" id=\"taskinfo-" +
 							san(jso.t.uuid) + "\">" +
 							sai_taskinfo_render(jso) +
 							"</div>";
