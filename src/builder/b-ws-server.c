@@ -237,7 +237,10 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 					 * We're going to send a few signals
 					 * at 500ms intervals
 					 */
-					ns->user_cancel = 1;
+					if (can->killed)
+						ns->user_killed = 1;
+					else
+						ns->user_cancel = 1;
 					ns->term_budget = 5;
 
 					lws_sul_schedule(ns->builder->context, 0,

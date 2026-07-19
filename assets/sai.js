@@ -3735,6 +3735,15 @@ window.addEventListener("load", function() {
 							}));
 						}
 					});
+					menuItems.push({
+						label: "Kill task",
+						callback: () => {
+							sai.send(JSON.stringify({
+								schema: "com.warmcat.sai.taskkill",
+								uuid: taskUuid
+							}));
+						}
+					});
 				}
 			}
 

@@ -262,7 +262,7 @@ sais_central_gc_deleted_events_cb(lws_sorted_usec_list_t *sul)
 				lws_strncpy(tu, u, sizeof(tu));
 				lws_sql_purify(esc, tu, sizeof(esc));
 
-				sais_task_cancel(vhd, tu, 1);
+				sais_task_cancel(vhd, tu, 1, 0);
 
 				lws_snprintf(q, sizeof(q), "DELETE FROM logs WHERE task_uuid='%s'", esc);
 				sqlite3_exec(pdb, q, NULL, NULL, NULL);

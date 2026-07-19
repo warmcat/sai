@@ -323,7 +323,7 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid)
 			while (sqlite3_step(sm) == SQLITE_ROW) {
 				const unsigned char *task_uuid = sqlite3_column_text(sm, 0);
 				if (task_uuid)
-					sais_task_cancel(vhd, (const char *)task_uuid, 0);
+					sais_task_cancel(vhd, (const char *)task_uuid, 0, 1);
 			}
 			sqlite3_finalize(sm);
 		}

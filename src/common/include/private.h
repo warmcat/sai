@@ -309,6 +309,7 @@ struct sai_nspawn {
 	uint8_t				retcode_set:1;
 	uint8_t				state_changed:1;
 	uint8_t				user_cancel:1;
+	uint8_t				user_killed:1;
 	uint8_t				reap_cb_called:1;
 };
 
@@ -345,6 +346,7 @@ typedef struct sai_cancel {
 	struct lws_dll2			list;
 	char				task_uuid[65];
 	unsigned int			erase;
+	unsigned int			killed;
 } sai_cancel_t;
 
 /*
@@ -866,7 +868,7 @@ extern const lws_struct_map_t
 	lsm_plat_list[1],
 	lsm_schema_map_plat[1],
 	lsm_task_rej[4],
-	lsm_task_cancel[2],
+	lsm_task_cancel[3],
 	lsm_schema_json_map_can[1],
 	lsm_schema_json_map_task[1],
 	lsm_schema_json_map_event[1],

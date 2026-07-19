@@ -736,7 +736,10 @@ saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 	if (!ns->op || !ns->op->lsp)
 		return;
 
-	n = lws_snprintf(s, sizeof(s), ">saib> Cancelling...\n");
+	if (ns->user_killed)
+		n = lws_snprintf(s, sizeof(s), "\xe2\x96\xa0 >saib> Build was manually killed\n");
+	else
+		n = lws_snprintf(s, sizeof(s), ">saib> Cancelling...\n");
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	lws_spawn_piped_kill_child_process(ns->op->lsp);

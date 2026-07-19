@@ -246,6 +246,14 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 
 	saib_log_chunk_create(ns, ">saib> <=== Reaping build process\n", 34, 3);
 
+	if (ns->user_killed) {
+		lwsl_notice("%s: Process killed manually by user\n", __func__);
+		exit_code = -1;
+		ns->retcode = SAISPRF_EXIT | 1;
+		ns->retcode_set = 1;
+		goto fail;
+	}
+
 #if !defined(WIN32)
 
 	if (we_killed_him & 1) {

@@ -323,7 +323,7 @@ int
 sais_config_watchers(struct vhd *vhd, const char *config_dir);
 
 int
-sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase);
+sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase, int killed);
 
 int
 sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
@@ -425,10 +425,10 @@ void
 sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task);
 
 int
-sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase);
+sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase, int killed);
 
 int
-sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid);
+sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid, int killed);
 
 sai_db_result_t
 sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_rejection);

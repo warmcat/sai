@@ -112,6 +112,8 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 			/* shares struct */   "com.warmcat.sai.taskpause"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
 			/* shares struct */   "com.warmcat.sai.taskresume"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
+			/* shares struct */   "com.warmcat.sai.taskkill"),
 	LSM_SCHEMA	(sai_browse_rx_builderdelete_t, NULL, lsm_browser_builderdelete,
 					      "com.warmcat.sai.builderdelete"),
 	LSM_SCHEMA	(sai_openshell_t, NULL, lsm_openshell,
@@ -137,6 +139,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_TASKINFO,
 	SAIS_WS_WEBSRV_RX_TASKPAUSE,
 	SAIS_WS_WEBSRV_RX_TASKRESUME,
+	SAIS_WS_WEBSRV_RX_TASKKILL,
 	SAIS_WS_WEBSRV_RX_BUILDERDELETE,
 	SAIS_WS_WEBSRV_RX_OPENSHELL,
 	SAIS_WS_WEBSRV_RX_CLOSESHELL,
@@ -517,6 +520,16 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			sais_platforms_with_tasks_pending(m->vhd);
 		break;
 
+	case SAIS_WS_WEBSRV_RX_TASKKILL:
+		ei = (sai_browse_rx_evinfo_t *)a.dest;
+		if (sais_validate_id(ei->event_hash, SAI_TASKID_LEN))
+			goto soft_error;
+
+		lwsl_ss_warn(m->ss, "SAIS_WS_WEBSRV_RX_TASKKILL: %s: received", ei->event_hash);
+		if (sais_task_stop_on_builders(m->vhd, ei->event_hash, 1))
+			lwsl_ss_err(m->ss, "taskkill failed");
+		break;
+
 	case SAIS_WS_WEBSRV_RX_TASKREBUILDLASTSTEP:
 		ei = (sai_browse_rx_evinfo_t *)a.dest;
 		if (sais_validate_id(ei->event_hash, SAI_TASKID_LEN))
@@ -601,7 +614,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		if (sais_validate_id(ei->event_hash, SAI_TASKID_LEN))
 			goto soft_error;
 
-		sais_task_cancel(m->vhd, ei->event_hash, 0);
+		sais_task_cancel(m->vhd, ei->event_hash, 0, 0);
 
 		break;
 
@@ -762,7 +775,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			}
 		} lws_end_foreach_dll_safe(d, d1);
 
-		sais_task_cancel(m->vhd, cs->task_uuid, 0);
+		sais_task_cancel(m->vhd, cs->task_uuid, 0, 0);
 		sais_platforms_with_tasks_pending(m->vhd);
 
 		lwsac_free(&a.ac);

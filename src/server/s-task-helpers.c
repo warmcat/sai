@@ -410,7 +410,7 @@ sais_task_pause(struct vhd *vhd, const char *task_uuid)
 				     build_step, esc_uuid, esc_uuid);
 			sqlite3_exec(pdb, q, NULL, NULL, NULL);
 		}
-		sais_task_stop_on_builders(vhd, task_uuid);
+		sais_task_stop_on_builders(vhd, task_uuid, 0);
 	}
 
 	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
@@ -419,7 +419,7 @@ sais_task_pause(struct vhd *vhd, const char *task_uuid)
 }
 
 int
-sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase)
+sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase, int killed)
 {
 	sai_cancel_t *can;
 
@@ -440,6 +440,7 @@ sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase)
 
 		lws_strncpy(can->task_uuid, task_uuid, sizeof(can->task_uuid));
 		can->erase = (unsigned int)erase;
+		can->killed = (unsigned int)killed;
 
 		lws_dll2_add_tail(&can->list, &pss->task_cancel_owner);
 
@@ -459,7 +460,7 @@ sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase)
 }
 
 int
-sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid)
+sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid, int killed)
 {
 	char event_uuid[33], builder_name[128], esc_uuid[129], q[128];
 	struct pss *pss_match = NULL;
@@ -529,6 +530,7 @@ sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid)
 
 	lws_strncpy(can->task_uuid, task_uuid, sizeof(can->task_uuid));
 	can->erase = 0;
+	can->killed = (unsigned int)killed;
 
 	lws_dll2_add_tail(&can->list, &pss_match->task_cancel_owner);
 	lws_callback_on_writable(pss_match->wsi);
@@ -602,7 +604,7 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 
 	sais_set_task_state(vhd, task_uuid, SAIES_WAITING, 0, 0);
 
-	sais_task_stop_on_builders(vhd, task_uuid);
+	sais_task_stop_on_builders(vhd, task_uuid, 0);
 
 	/*
 	 * Reassess now if there's a builder we can match to a pending task,
@@ -648,7 +650,7 @@ sais_task_remove_all_tries(struct vhd *vhd, const char *task_uuid)
 
 	lws_sql_purify(esc, task_uuid, sizeof(esc));
 
-	sais_task_stop_on_builders(vhd, task_uuid);
+	sais_task_stop_on_builders(vhd, task_uuid, 0);
 
 	lws_snprintf(cmd, sizeof(cmd), "DELETE FROM logs WHERE task_uuid='%s'", esc);
 	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
@@ -737,7 +739,7 @@ sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 
 	sais_set_task_state(vhd, task_uuid, SAIES_WAITING, 0, 0);
 
-	sais_task_stop_on_builders(vhd, task_uuid);
+	sais_task_stop_on_builders(vhd, task_uuid, 0);
 
 	lwsl_err("%s: scheduling sul_central to find a new task\n", __func__);
 	lws_sul_schedule(vhd->context, 0, &vhd->sul_central, sais_central_cb, 1);
