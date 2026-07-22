@@ -359,10 +359,13 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 		 */
 		 
 		memset(&info, 0, sizeof(info));
-		pvo1a.value = builder.metrics_uri;
-		pvo1b.value = builder.metrics_path;
-		pvo1c.value = builder.metrics_secret;
-		info.pvo = &pvo1;
+		info.port = CONTEXT_PORT_NO_LISTEN;
+		if (builder.metrics_uri && builder.metrics_path && builder.metrics_secret) {
+			pvo1a.value = builder.metrics_uri;
+			pvo1b.value = builder.metrics_path;
+			pvo1c.value = builder.metrics_secret;
+			info.pvo = &pvo1;
+		}
 		info.pprotocols = pprotocols;
 
 		builder.vhost = lws_create_vhost(builder.context, &info);
@@ -805,11 +808,12 @@ saib_app_run(int argc, const char **argv)
 	lwsl_user("   sai-builder [-c <config-file>]\n");
 
 	lwsl_notice("%s: sai-power: %s %s %s %s %s\n",
-		  __func__, builder.power_on_type,
-		builder.power_on_url,
-		builder.power_on_mac,
-		builder.power_off_type,
-		builder.power_off_url);
+		  __func__,
+		  builder.power_on_type ? builder.power_on_type : "none",
+		  builder.power_on_url ? builder.power_on_url : "none",
+		  builder.power_on_mac ? builder.power_on_mac : "none",
+		  builder.power_off_type ? builder.power_off_type : "none",
+		  builder.power_off_url ? builder.power_off_url : "none");
 
 	memset(&info, 0, sizeof info);
 	info.port = CONTEXT_PORT_NO_LISTEN;

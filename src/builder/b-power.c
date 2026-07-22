@@ -84,7 +84,7 @@ saib_power_client_state(void *userobj, void *sh, lws_ss_constate_t state,
 		break;
 
 	case LWSSSCS_CONNECTED:
-		lwsl_notice("%s: Connected to sai-power, sending registration: '%s' '%s'\n", __func__, builder.host, builder.power_controller_name);
+		lwsl_notice("%s: Connected to sai-power, sending registration: '%s' '%s'\n", __func__, builder.host ? builder.host : "unknown", builder.power_controller_name ? builder.power_controller_name : "none");
 
 		/* Prepare registration message */
 		memset(&r, 0, sizeof(r));
@@ -156,7 +156,7 @@ saib_reassess_idle_situation()
 {
 	char in_use = 0;
 
-	lwsl_notice("%s: Assessing idle situation for %s (stay=%d)\n", __func__, builder.host, builder.stay);
+	lwsl_notice("%s: Assessing idle situation for %s (stay=%d)\n", __func__, builder.host ? builder.host : "unknown", builder.stay);
 
 	if (builder.stay) {
 		/*
@@ -166,7 +166,7 @@ saib_reassess_idle_situation()
 		lws_sul_cancel(&builder.sul_idle);
 
 		lwsl_warn("%s: %s: stay applied: cancelled idle grace time\n",
-					__func__, builder.host);
+					__func__, builder.host ? builder.host : "unknown");
 
 		return 0;
 	}
@@ -225,11 +225,11 @@ saib_reassess_idle_situation()
 	if (lws_dll2_is_detached(&builder.sul_idle.list)) {
 		int grace_secs = builder.one_shot_active ? 2 : (builder.event_affinity_active ? 15 : (int)(SAI_IDLE_GRACE_US / LWS_US_PER_SEC));
 		lwsl_notice("%s: %s: NO STAY and NO TASKS: starting %d sec idle grace time before auto-power-off\n",
-			__func__, builder.host, grace_secs);
+			__func__, builder.host ? builder.host : "unknown", grace_secs);
 		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
 				 sul_idle_cb, grace_secs * LWS_US_PER_SEC);
 	} else {
-		lwsl_notice("%s: %s: Idle grace time is ALREADY running\n", __func__, builder.host);
+		lwsl_notice("%s: %s: Idle grace time is ALREADY running\n", __func__, builder.host ? builder.host : "unknown");
 	}
 
 	return 0;
@@ -538,7 +538,7 @@ sul_idle_cb(lws_sorted_usec_list_t *sul)
 	 */
 
 	snprintf(builder.path_power_off, sizeof(builder.path_power_off) - 1, "%s/auto-power-off/%s",
-		 builder.url_sai_power, builder.host);
+		 builder.url_sai_power ? builder.url_sai_power : "", builder.host ? builder.host : "unknown");
 
 	lwsl_notice("%s: requesting sai-power (or virt) to terminate us: %s\n", __func__, builder.path_power_off);
 
@@ -583,7 +583,7 @@ saib_power_init(void)
 	lwsl_notice("%s: *** creating sai-power ss...\n", __func__);
 
 	if (lws_ss_create(builder.context, 0, &ssi_saib_power_link_t,
-			  (void *)builder.host, &builder.ss_power_off, NULL, NULL)) {
+			  (void *)(builder.host ? builder.host : ""), &builder.ss_power_off, NULL, NULL)) {
 		lwsl_err("%s: *** failed to create sai-power ss\n", __func__);
 		return 1;
 	}

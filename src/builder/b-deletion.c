@@ -535,13 +535,15 @@ callback_sai_deletion_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		ilen = (int)rb;
 	}
 #else
-		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf));
+		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1);
 		if (ilen < 1) {
 			return -1;
 		}
 #endif
-		if (ilen > 0)
-			lwsl_notice("[DELETION] %.*s", ilen, buf);
+		if (ilen > 0) {
+			buf[ilen] = '\0';
+			lwsl_notice("[DELETION] %s", (const char *)buf);
+		}
 		break;
 
 	default:
@@ -580,6 +582,11 @@ saib_deletion_init(const char *argv0)
 
 	lws_snprintf(uds_path, sizeof(uds_path), "%s/sai-deletion.sock", builder.home);
 
+	if (!builder.vhost) {
+		lwsl_err("%s: builder.vhost is NULL\n", __func__);
+		return 1;
+	}
+
 	config.cx = builder.context;
 	config.vh = builder.vhost;
 	config.stub_name = "sai-deletion";
@@ -590,6 +597,7 @@ saib_deletion_init(const char *argv0)
 	config.extra_payload = builder.home;
 	config.extra_payload_len = strlen(builder.home) + 1;
 	config.connected_cb = sai_deletion_connected_cb;
+	config.parent_protocol_name = "sai-deletion-stdxxx";
 
 	builder.mgr_deletion = lws_stub_spawn(&config);
 	if (!builder.mgr_deletion) {
