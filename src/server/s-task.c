@@ -957,6 +957,22 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 	}
 	lws_snprintf(mirror_path, sizeof(mirror_path), "%s", url);
 
+	/*
+	 * Defense-in-depth: the notification lejp callback (s-notification.c)
+	 * already validates git_ref / git_hash at the only ingress point.  We
+	 * re-check here before interpolating them unquoted into the shell
+	 * script line, in case a task is created or mutated via another path.
+	 * See sai_is_safe_ref / sai_is_git_hash in src/common/c-utils.c.
+	 */
+	if (build_step <= 1 &&
+	    (!sai_is_safe_ref(temp_task->git_ref) ||
+	     !sai_is_git_hash(temp_task->git_hash))) {
+		lwsl_warn("%s: refusing to offer task %s step %d: unsafe ref "
+			  "'%s' or hash '%s'\n", __func__, task_uuid,
+			  build_step, temp_task->git_ref, temp_task->git_hash);
+		goto bail;
+	}
+
 	switch (build_step) {
 	case 0: /* git mirror */
 		if (sp->windows)

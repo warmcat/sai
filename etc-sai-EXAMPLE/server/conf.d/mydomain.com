@@ -46,7 +46,7 @@
 		#
 		
 		"headers": [{
-		        "content-security-policy": "default-src 'none'; img-src 'self' data:; script-src 'self'; font-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none';",
+		        "content-security-policy": "default-src 'none'; img-src 'self' data:; script-src 'self'; font-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self';",
 		        "x-content-type-options": "nosniff",
 		        "x-xss-protection": "1; mode=block",
 		        "referrer-policy": "no-referrer"

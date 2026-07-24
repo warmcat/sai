@@ -840,20 +840,58 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 
 				/*
 				 * Step 1: Update this platform in the persistent database.
+				 *
+				 * Security: build->name/platform/pcon/sai_hash/lws_hash
+				 * and peer_ip all originate from the (possibly untrusted
+				 * or malicious) builder websocket JSON and are
+				 * interpolated into SQL here.  Reject any value
+				 * containing shell/SQL metacharacters outright, and
+				 * additionally pass each through lws_sql_purify as
+				 * defense-in-depth before interpolation.
 				 */
 				char q[1024];
+				char esc_name[192], esc_platform[192],
+				     esc_pcon[192], esc_sai_hash[192],
+				     esc_lws_hash[192], esc_peer_ip[96];
+
+				if (sai_str_has_shell_metachars(build->name)	||
+				    sai_str_has_shell_metachars(build->platform) ||
+				    (build->pcon &&
+				     sai_str_has_shell_metachars(build->pcon)) ||
+				    sai_str_has_shell_metachars(build->sai_hash) ||
+				    sai_str_has_shell_metachars(build->lws_hash) ||
+				    sai_str_has_shell_metachars(pss->peer_ip)) {
+					lwsl_notice("%s: rejecting builder plats "
+						    "with unsafe chars\n",
+						    __func__);
+					continue;
+				}
+
+				lws_sql_purify(esc_name, build->name,
+					       sizeof(esc_name));
+				lws_sql_purify(esc_platform, build->platform,
+					       sizeof(esc_platform));
+				lws_sql_purify(esc_pcon, build->pcon ? build->pcon : "",
+					       sizeof(esc_pcon));
+				lws_sql_purify(esc_sai_hash, build->sai_hash,
+					       sizeof(esc_sai_hash));
+				lws_sql_purify(esc_lws_hash, build->lws_hash,
+					       sizeof(esc_lws_hash));
+				lws_sql_purify(esc_peer_ip, pss->peer_ip,
+					       sizeof(esc_peer_ip));
 
 				lws_snprintf(q, sizeof(q),
 					     "INSERT INTO builders (name, platform, pcon, last_seen, peer_ip, sai_hash, lws_hash, windows) "
 					     "VALUES ('%s', '%s', %s%s%s, %llu, '%s', '%s', '%s', %d) "
 					     "ON CONFLICT(name) DO UPDATE SET pcon=COALESCE(NULLIF(excluded.pcon, ''), pcon), last_seen=excluded.last_seen, "
 					     "peer_ip=excluded.peer_ip, sai_hash=excluded.sai_hash, lws_hash=excluded.lws_hash",
-					     build->name, build->platform, 
+					     esc_name, esc_platform,
 					     build->pcon ? "'" : "NULL",
-					     build->pcon ? build->pcon : "",
+					     build->pcon ? esc_pcon : "",
 					     build->pcon ? "'" : "",
 					     (unsigned long long)lws_now_secs(),
-					     pss->peer_ip, build->sai_hash, build->lws_hash, build->windows);
+					     esc_peer_ip, esc_sai_hash,
+					     esc_lws_hash, build->windows);
 
 				if (sai_sqlite3_statement(vhd->server.pdb, q, "upsert builder"))
 					lwsl_err("%s: Failed to upsert builder %s\n",
@@ -865,7 +903,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				 * before the builder connected.
 				 */
 				{
-					char host[128];
+					char host[128], esc_host[192];
 					const char *dot = strchr(build->name, '.');
 
 					if (dot)
@@ -873,10 +911,12 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					else
 						lws_strncpy(host, build->name, sizeof(host));
 
+					lws_sql_purify(esc_host, host, sizeof(esc_host));
+
 					lws_snprintf(q, sizeof(q),
 						     "UPDATE builders SET pcon = COALESCE((SELECT pcon_name FROM pcon_builders WHERE builder_name = '%s'), pcon) "
 						     "WHERE name = '%s' OR name LIKE '%s.%%'",
-						     host, build->name, build->name);
+						     esc_host, esc_name, esc_name);
 					lwsl_notice("%s: Syncing pcon for host '%s' (plat '%s'): %s\n", __func__, host, build->name, q);
 					sai_sqlite3_statement(vhd->server.pdb, q, "sync builder pcon");
 				}

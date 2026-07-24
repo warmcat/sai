@@ -718,6 +718,20 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		sai_openshell_t *os = (sai_openshell_t *)a.dest;
 		sai_plat_t *sp;
 
+		/*
+		 * Defense-in-depth: even though this arrives on the trusted
+		 * internal websrv link, validate the builder name so a
+		 * malformed/leaked message cannot target an arbitrary name
+		 * that is later interpolated into shell/SQL contexts on the
+		 * builder.
+		 */
+		if (sais_validate_builder_name(os->builder_name)) {
+			lwsl_notice("%s: OPENSHELL bad builder name '%s'\n",
+				    __func__, os->builder_name);
+			lwsac_free(&a.ac);
+			break;
+		}
+
 		lwsl_notice("%s: OPENSHELL received from web for %s, passing to builder\n", __func__, os->builder_name);
 
 		if (!os->task_uuid[0])
@@ -759,6 +773,12 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	{
 		sai_closeshell_t *cs = (sai_closeshell_t *)a.dest;
 
+		if (sais_validate_id(cs->task_uuid, SAI_TASKID_LEN)) {
+			lwsl_notice("%s: CLOSESHELL bad task_uuid\n", __func__);
+			lwsac_free(&a.ac);
+			break;
+		}
+
 		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, m->vhd->shell_sessions.head) {
 			sai_shell_session_t *sh = lws_container_of(d, sai_shell_session_t, list);
 			if (!strcmp(sh->task_uuid, cs->task_uuid)) {
@@ -786,6 +806,18 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	{
 		sai_ptydata_t *pd = (sai_ptydata_t *)a.dest;
 		sai_plat_t *sp;
+
+		/*
+		 * Validate ids (not pd->data, which is opaque pty payload that
+		 * must pass through to the builder's shell).
+		 */
+		if (sais_validate_id(pd->task_uuid, SAI_TASKID_LEN) ||
+		    sais_validate_builder_name(pd->builder_name)) {
+			lwsl_notice("%s: PTYDATA bad task_uuid/builder\n",
+				    __func__);
+			lwsac_free(&a.ac);
+			break;
+		}
 
 		sp = sais_builder_from_uuid(m->vhd, pd->builder_name);
 		if (!sp) {

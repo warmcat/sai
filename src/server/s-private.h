@@ -253,7 +253,15 @@ struct vhd {
 	const char		*notification_key;
 	unsigned int		task_abandoned_timeout_mins;
 
-	unsigned int		browser_viewer_count; 
+	/*
+	 * Only honor the X-Forwarded-For header for source_ip attribution when
+	 * the operator explicitly set "trust-x-forwarded-for" in the vhost pvo
+	 * (i.e. sai-server is behind a trusted reverse proxy).  Default off:
+	 * use the real peer address, since XFF is trivially spoofable otherwise.
+	 */
+	unsigned int		trust_xff:1;
+
+	unsigned int		browser_viewer_count;
 	unsigned int		viewers_are_present:1;
 };
 

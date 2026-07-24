@@ -54,6 +54,17 @@ saiw_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,
 	 * filename is not used for matching, but make sure the client saves it
 	 * using the name generated along with the link.
 	 *
+	 * Security model: artifact download is intentionally unauthenticated
+	 * at the HTTP layer; access is gated by knowledge of the 32-char hex
+	 * down_nonce (a capability token minted by sai_uuid16_create, 128 bits
+	 * of CSPRNG entropy, see s-notification.c).  The length checks below
+	 * enforce that both task_uuid (64 hex chars) and down_nonce (32 hex
+	 * chars) are exactly the expected length, and both are passed through
+	 * lws_sql_purify before SQL interpolation.  Treat the down_nonce with
+	 * the same care as a credential: it is rendered into the build page
+	 * for every viewer, so anyone who can view the build can fetch the
+	 * artifact.
+	 *
 	 * Extract the pieces from the URL
 	 */
 

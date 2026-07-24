@@ -31,6 +31,7 @@
 #include <limits.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <errno.h>
 
 #include <sys/types.h>
 #if !defined(WIN32)
@@ -291,6 +292,21 @@ saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp,
 		lwsl_notice("%s: failed to create vh %s\n", __func__,
 			    info.vhost_name);
 		return -1;
+	}
+
+	/*
+	 * Security: restrict the listening socket to owner-only.  On Linux the
+	 * socket path is in the abstract namespace (leading '@') which has no
+	 * filesystem permissions, so chmod is a no-op there; on other platforms
+	 * the socket lives on the filesystem and would otherwise inherit the
+	 * process umask (often 0755/0777), letting any local user inject forged
+	 * log lines into another build's task log channel.  Mirror the 0600
+	 * protection applied to the deletion UDS in b-deletion.c.
+	 */
+	if (lp->sockpath[0] != '@') {
+		if (chmod(lp->sockpath, 0600) < 0)
+			lwsl_warn("%s: failed to chmod UDS %s: %s\n",
+				  __func__, lp->sockpath, strerror(errno));
 	}
 
 	return 0;

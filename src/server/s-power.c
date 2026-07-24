@@ -148,19 +148,35 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, pmb->power_controllers.head) {
 			sai_power_controller_t *pc = lws_container_of(p, sai_power_controller_t, list);
-			
+			char esc_pc_name[128], esc_pc_type[96], esc_pc_dep[128];
+
+			/*
+			 * Defense-in-depth: pc->name/type/depends_on originate
+			 * from sai-power which relays untrusted builder-provided
+			 * registration data.  Escape them before SQL interpolation.
+			 */
+			lws_sql_purify(esc_pc_name, pc->name, sizeof(esc_pc_name));
+			lws_sql_purify(esc_pc_type, pc->type, sizeof(esc_pc_type));
+			lws_sql_purify(esc_pc_dep, pc->depends_on,
+				       sizeof(esc_pc_dep));
+
 			/* Insert PCON */
 			lws_snprintf(q, sizeof(q),
 				     "INSERT OR REPLACE INTO power_controllers (name, type, url, depends_on, state, manual_on) VALUES ('%s', '%s', '', '%s', %d, %d)",
-				     pc->name, pc->type, pc->depends_on, pc->on, pc->manual_on);
+				     esc_pc_name, esc_pc_type, esc_pc_dep, pc->on, pc->manual_on);
 			sai_sqlite3_statement(vhd->server.pdb, q, "insert pcon");
 
 			/* Insert Controlled Builders */
 			lws_start_foreach_dll(struct lws_dll2 *, pb, pc->controlled_builders_owner.head) {
 				sai_controlled_builder_t *cb = lws_container_of(pb, sai_controlled_builder_t, list);
+				char esc_cb_name[128];
+
+				lws_sql_purify(esc_cb_name, cb->name,
+					       sizeof(esc_cb_name));
+
 				lws_snprintf(q, sizeof(q),
 					     "INSERT INTO pcon_builders (pcon_name, builder_name) SELECT '%s', '%s' WHERE NOT EXISTS (SELECT 1 FROM pcon_builders WHERE pcon_name = '%s' AND builder_name = '%s')",
-					     pc->name, cb->name, pc->name, cb->name);
+					     esc_pc_name, esc_cb_name, esc_pc_name, esc_cb_name);
 				lwsl_notice("%s: Inserting pcon_builder: pcon='%s', builder='%s'\n", __func__, pc->name, cb->name);
 				sai_sqlite3_statement(vhd->server.pdb, q, "insert pcon_builder");
 
@@ -168,7 +184,7 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 				/* Note: builders table key is 'name'. */
 				lws_snprintf(q, sizeof(q),
 					     "UPDATE builders SET pcon = '%s' WHERE name = '%s' OR name LIKE '%s.%%'",
-					     pc->name, cb->name, cb->name);
+					     esc_pc_name, esc_cb_name, esc_cb_name);
 				sai_sqlite3_statement(vhd->server.pdb, q, "update builder pcon");
 
 			} lws_end_foreach_dll(pb);

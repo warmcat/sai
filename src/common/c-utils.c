@@ -81,6 +81,111 @@ sai_get_ref(const char *fullref)
 	return fullref;
 }
 
+/*
+ * Returns nonzero if s contains any byte that is dangerous to interpolate into
+ * a shell context: the shell metacharacters ` $ ; | & < > ( ) \ and the quote
+ * characters, plus glob chars, any control byte (< 0x20) or DEL.  Used to gate
+ * attacker-influenced strings (repo names, fetch URLs) that end up in shell
+ * scripts or filesystem paths on the builder.
+ */
+int
+sai_str_has_shell_metachars(const char *s)
+{
+	const char *p = s;
+
+	if (!s)
+		return 0;
+
+	while (*p) {
+		unsigned char c = (unsigned char)*p;
+		if (c < 0x20 || c == 0x7f)
+			return 1;
+		switch (c) {
+		case '`':
+		case '$':
+		case ';':
+		case '|':
+		case '&':
+		case '<':
+		case '>':
+		case '(':
+		case ')':
+		case '\\':
+		case '\'':
+		case '"':
+		case '*':
+		case '?':
+		case '[':
+		case ']':
+		case '!':
+		case '~':
+		case '\n':
+		case '\r':
+			return 1;
+		default:
+			break;
+		}
+		p++;
+	}
+
+	return 0;
+}
+
+/*
+ * A git object hash (sha1 or sha256, full or abbreviated) is hex only.
+ * Returns nonzero if s is a plausible hash: [0-9a-fA-F]{4,64}.
+ */
+int
+sai_is_git_hash(const char *s)
+{
+	size_t n = 0;
+
+	if (!s)
+		return 0;
+
+	while (s[n]) {
+		char c = s[n];
+		if (!((c >= '0' && c <= '9') ||
+		      (c >= 'a' && c <= 'f') ||
+		      (c >= 'A' && c <= 'F')))
+			return 0;
+		n++;
+	}
+
+	return n >= 4 && n <= 64;
+}
+
+/*
+ * A git ref short-name (what we store after sai_get_ref strips refs/heads/
+ * etc) may legitimately contain alphanumerics and / . _ - only.  Returns
+ * nonzero if s is a safe refname; rejects shell metacharacters, traversal
+ * segments, and overlong values.
+ */
+int
+sai_is_safe_ref(const char *s)
+{
+	size_t n = 0;
+
+	if (!s || !*s)
+		return 0;
+
+	while (s[n]) {
+		char c = s[n];
+		if (!((c >= '0' && c <= '9') ||
+		      (c >= 'a' && c <= 'z') ||
+		      (c >= 'A' && c <= 'Z') ||
+		      c == '/' || c == '.' || c == '_' || c == '-'))
+			return 0;
+		n++;
+	}
+
+	/* reject traversal-style segments defensively */
+	if (strstr(s, ".."))
+		return 0;
+
+	return n <= 128;
+}
+
 const char *
 sai_task_describe(sai_task_t *task, char *buf, size_t len)
 {

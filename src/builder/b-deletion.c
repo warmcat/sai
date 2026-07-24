@@ -115,6 +115,23 @@ child_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 		lwsl_notice("%s: received delete request for '%s'\n", __func__, ctx->buf);
 
+		/*
+		 * Security: ctx->buf is the JSON "delete" field received over
+		 * the deletion UDS.  It is joined into a path and recursively
+		 * unlinked below.  Reject anything that could escape the
+		 * intended <home>/jobs/ tree: absolute paths, parent-dir
+		 * traversal, and shell/path metacharacters.  Also apply
+		 * lws_filename_purify_inplace as defense-in-depth (this scrubs
+		 * .., :, \, $, % but not / so we check that explicitly above).
+		 */
+		if (ctx->buf[0] == '/' || strstr(ctx->buf, "..") ||
+		    strchr(ctx->buf, '\\')) {
+			lwsl_warn("%s: rejecting unsafe delete path '%s'\n",
+				  __func__, ctx->buf);
+			return -1;
+		}
+		lws_filename_purify_inplace(ctx->buf);
+
 		lws_snprintf(full_path, sizeof(full_path), "%s/jobs/%s", conn->home_dir, ctx->buf);
 
 		if (!stat(full_path, &st)) {

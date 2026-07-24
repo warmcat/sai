@@ -123,6 +123,15 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		else
 			vhd->task_abandoned_timeout_mins = 8 * 60;
 
+		/*
+		 * X-Forwarded-For is only honored when explicitly opted-in.
+		 * See the trust_xff comment in s-private.h.
+		 */
+		if (!lws_pvo_get_str(in, "trust-x-forwarded-for", &num))
+			vhd->trust_xff = !strcmp(num, "1") ||
+					 !strcasecmp(num, "true") ||
+					 !strcasecmp(num, "yes");
+
 		if (lws_pvo_get_str(in, "database", &vhd->sqlite3_path_lhs)) {
 			lwsl_err("%s: database pvo required\n", __func__);
 			return -1;
@@ -299,7 +308,14 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				return -1;
 			}
 
-			if (lws_hdr_copy(wsi, pss->sn.e.source_ip,
+			/*
+			 * Record the source IP of the notifier.  Prefer the
+			 * real peer address; only consult X-Forwarded-For when
+			 * the operator opted in via "trust-x-forwarded-for",
+			 * since it is otherwise trivially spoofable.
+			 */
+			if (!vhd->trust_xff ||
+			    lws_hdr_copy(wsi, pss->sn.e.source_ip,
 					 sizeof(pss->sn.e.source_ip),
 					 WSI_TOKEN_X_FORWARDED_FOR) < 0)
 				lws_get_peer_simple(wsi, pss->sn.e.source_ip,

@@ -676,7 +676,11 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_OPENSHELL ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_CLOSESHELL ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_PTYDATA)) {
-		lwsl_notice("%s: Unauthorized attempt to execute administrative action (schema %d)\n", __func__, a.top_schema_index);
+		uint8_t unauth_buf[LWS_PRE + 128];
+		int n1 = lws_snprintf((char *)unauth_buf + LWS_PRE, sizeof(unauth_buf) - LWS_PRE,
+				     "{\"schema\":\"com.warmcat.sai.unauthorized\"}");
+		saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, unauth_buf + LWS_PRE, (size_t)n1, LWS_WRITE_TEXT);
+		lwsl_notice("%s: Unauthorized attempt to execute administrative action (schema %d, auth_state %d)\n", __func__, a.top_schema_index, (int)pss->auth_state);
 		goto soft_error;
 	}
 
@@ -705,6 +709,14 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 				
 				p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), 
 					"{\"schema\":\"com.warmcat.sai.watcher_services\",\"watchers\":[]}");
+				saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start, lws_ptr_diff_size_t(p, start), LWS_WRITE_TEXT);
+			}
+
+			{
+				uint8_t buf[LWS_PRE + 256], *start = buf + LWS_PRE, *p = start, *end = buf + sizeof(buf);
+				
+				p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), 
+					"{\"schema\":\"com.warmcat.sai.auth_state\",\"auth_state\":%d}", (int)pss->auth_state);
 				saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start, lws_ptr_diff_size_t(p, start), LWS_WRITE_TEXT);
 			}
  

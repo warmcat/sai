@@ -945,6 +945,20 @@ sai_metrics_hash(uint8_t *key, size_t key_len, const char *sp_name,
 const char *
 sai_get_ref(const char *fullref);
 
+/*
+ * Input validation helpers for attacker-influenced strings that arrive via
+ * signed git-hook notifications and are later interpolated into shell scripts
+ * and filesystem paths on the builder.  See src/common/c-utils.c.
+ */
+int
+sai_str_has_shell_metachars(const char *s);
+
+int
+sai_is_git_hash(const char *s);
+
+int
+sai_is_safe_ref(const char *s);
+
 void
 sai_dump_stderr(const uint8_t *buf, size_t w);
 

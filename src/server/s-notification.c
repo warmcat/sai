@@ -58,6 +58,20 @@ enum enum_paths {
 };
 
 /*
+ * Security: git refs, hashes, repository names and fetch URLs arrive in signed
+ * hook notifications but their values are controlled by whoever can push to the
+ * watched repo.  They are later interpolated into shell scripts on the builder
+ * (b-nspawn.c export SAI_REMOTE_REF / git_helper.sh invocation) and into
+ * filesystem paths.  Reject any value containing shell metacharacters or
+ * control bytes here at the only ingress point, before it can reach task
+ * creation or the builder.
+ *
+ * The validation helpers (sai_str_has_shell_metachars, sai_is_git_hash,
+ * sai_is_safe_ref) live in src/common/c-utils.c and are shared with s-task.c
+ * for defense-in-depth re-checks at task-offer time.
+ */
+
+/*
  * Saifile parser
  */
 
@@ -842,15 +856,40 @@ sai_notification_lejp_cb(struct lejp_ctx *ctx, char reason)
 		return -1;
 
 	case LEJPN_REPOSITORY_NAME:
+		if (sai_str_has_shell_metachars(ctx->buf)) {
+			lwsl_notice("%s: rejecting repo name with shell "
+				    "metachars\n", __func__);
+			return -1;
+		}
 		lws_strncpy(sn->e.repo_name, ctx->buf, sizeof(sn->e.repo_name));
 		break;
 
 	case LEJPN_REPOSITORY_FETCHURL:
-		lws_strncpy(sn->e.repo_fetchurl, ctx->buf, sizeof(sn->e.repo_fetchurl));
+		/*
+		 * fetchurl is interpolated into filesystem path and later
+		 * used by git on the builder; reject shell metachars.  URLs
+		 * legitimately contain ':' '/' '.' etc which we allow.
+		 */
+		if (sai_str_has_shell_metachars(ctx->buf)) {
+			lwsl_notice("%s: rejecting fetchurl with shell "
+				    "metachars\n", __func__);
+			return -1;
+		}
+		lws_strncpy(sn->e.repo_fetchurl, ctx->buf,
+			    sizeof(sn->e.repo_fetchurl));
 		break;
 
 	case LEJPN_REF:
 		lws_strncpy(sn->e.ref, ctx->buf, sizeof(sn->e.ref));
+		/*
+		 * The ref is exported unquoted into SAI_REMOTE_REF and passed
+		 * to git_helper.sh on the builder; it MUST be a safe refname.
+		 */
+		if (!sai_is_safe_ref(sn->e.ref)) {
+			lwsl_notice("%s: rejecting unsafe ref '%s'\n",
+				    __func__, sn->e.ref);
+			return -1;
+		}
 		break;
 
 	case LEJPN_SEC:
@@ -859,6 +898,12 @@ sai_notification_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 	case LEJPN_HASH:
 		lws_strncpy(sn->e.hash, ctx->buf, sizeof(sn->e.hash));
+		/* git object hashes are hex-only; anything else is rejected */
+		if (!sai_is_git_hash(sn->e.hash)) {
+			lwsl_notice("%s: rejecting non-hex hash '%s'\n",
+				    __func__, sn->e.hash);
+			return -1;
+		}
 		break;
 
 	case LEJPN_NONCE:
@@ -952,8 +997,6 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		if (len && lws_genhmac_update(&pss->hmac, buf, (unsigned int)len))
 			return -1;
 
-		printf("%.*s", (int)len, buf);
-
 		m = lejp_parse(&pss->ctx, (uint8_t *)buf, len);
 		if (m < 0 && m != LEJP_CONTINUE) {
 			lwsl_notice("%s: notif JSON decode failed '%s' (%d)\n",
@@ -1043,7 +1086,6 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		if (m < 0) {
 			lwsl_notice("%s: saifile JSON 1 decode failed '%s' (%d)\n",
 				    __func__, lejp_error_to_string(m), m);
-			puts(pss->sn.saifile);
 			goto saifile_bail;
 		}
 
@@ -1078,7 +1120,6 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		if (m < 0) {
 			lwsl_notice("%s: saifile JSON 2 decode failed '%s' (%d)\n",
 				    __func__, lejp_error_to_string(m), m);
-			puts(pss->sn.saifile);
 			free(pss->sn.saifile);
 			pss->sn.saifile = NULL;
 			return m;

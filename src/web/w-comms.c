@@ -440,23 +440,88 @@ http_resp:
 	/*
 	 * ws connections from builders and browsers
 	 */
-       case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
-               n = lws_hdr_copy(wsi, (char *)buf, sizeof(buf) - 1,
-                                WSI_TOKEN_GET_URI);
- 
-               /*
-                * This protocol is for browsers on /browse... URLs.
-                * Builders connect on /builder... URLs and should be handled
-                * by sai-server. Explicitly reject them here.
-                *
-                * Returning 0 accepts the connection for this protocol.
-                * Returning non-zero rejects it.
-                */
-               if (n >= 8 && !strncmp((const char *)buf + n - 8,
-                                       "/builder", 8)) {
-		       lwsl_wsi_err(wsi, "Terminating unexpected sai-web conn to /builder");
-                       return 1; /* Reject builder connections */
-		}
+	       case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
+	               n = lws_hdr_copy(wsi, (char *)buf, sizeof(buf) - 1,
+	                                WSI_TOKEN_GET_URI);
+
+	               /*
+	                * This protocol is for browsers on /browse... URLs.
+	                * Builders connect on /builder... URLs and should be handled
+	                * by sai-server. Explicitly reject them here.
+	                *
+	                * Returning 0 accepts the connection for this protocol.
+	                * Returning non-zero rejects it.
+	                */
+	               if (n >= 8 && !strncmp((const char *)buf + n - 8,
+	                                       "/builder", 8)) {
+			       lwsl_wsi_err(wsi, "Terminating unexpected sai-web conn to /builder");
+	                       return 1; /* Reject builder connections */
+		       }
+
+		       /*
+			* Security: Cross-Site WebSocket Hijacking (CSWSH).
+			*
+			* Browser auth here is cookie-based JWT.  A malicious page
+			* visited by a logged-in user can attempt `new WebSocket(...)`
+			* and the browser will auto-attach the auth cookie, which
+			* would let the attacking page drive privileged operations
+			* (eventdelete, taskcan, openshell, ...) as the victim.
+			*
+			* Mitigate by validating the Origin header when present: the
+			* Origin's host:port must match the Host header of this
+			* request (i.e. the site the browser believes it is talking
+			* to).  Non-browser clients (no Origin) are allowed through,
+			* matching lws conventions.
+			*/
+		       {
+			       char origin[192], host[160], *ohost;
+			       int olen, hlen;
+
+			       /*
+				* Only enforce when an Origin header is present
+				* (browsers always send it on WS; non-browser
+				* clients may omit it).  If it's present we must
+				* be able to read it fully -- fail closed on
+				* truncation rather than let a suspiciously long
+				* Origin through uninspected.
+				*/
+			       if (lws_hdr_total_length(wsi, WSI_TOKEN_ORIGIN) > 0) {
+				       olen = lws_hdr_copy(wsi, origin,
+							   sizeof(origin) - 1,
+							   WSI_TOKEN_ORIGIN);
+				       if (olen <= 0) {
+					       lwsl_wsi_notice(wsi,
+					       "Rejecting WS: Origin present but unreadable");
+					       return 1;
+				       }
+				       origin[olen] = '\0';
+				       /*
+					* Origin is scheme://host[:port]; skip to the
+					* host part (after "://")
+					*/
+				       ohost = strstr(origin, "://");
+				       ohost = ohost ? ohost + 3 : origin;
+
+				       hlen = lws_hdr_copy(wsi, host,
+							   sizeof(host) - 1,
+							   WSI_TOKEN_HOST);
+				       if (hlen <= 0) {
+					       lwsl_wsi_notice(wsi,
+					       "Rejecting WS: Origin '%s' but no Host header",
+					       origin);
+					       return 1;
+				       }
+				       host[hlen] = '\0';
+
+				       if (strcasecmp(ohost, host)) {
+					       lwsl_wsi_notice(wsi,
+					       "Rejecting WS: Origin host '%s' != Host '%s'",
+					       ohost, host);
+					       return 1;
+				       }
+			       }
+		       }
+
 
                return 0;
  
@@ -515,16 +580,32 @@ http_resp:
 				int grant_all = (int)lws_jwt_auth_query_grant(ja, "*");
 				int max_grant = grant > grant_all ? grant : grant_all;
 
-				if (max_grant >= 2) {
-					pss->auth_state = SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN;
-					lwsl_wsi_notice(wsi, "Authorized WebSocket connection (admin/grant)");
-				} else if (max_grant >= 1) {
-					pss->auth_state = SAI_AUTH_STATE_LOGGED_IN_GRANT_USER;
-					lwsl_wsi_notice(wsi, "Authorized WebSocket connection (user/grant)");
+				/*
+				 * Security: enforce JWT expiry at request
+				 * time.  lws's proactive SUL expiry timer
+				 * invokes a callback we registered as
+				 * NULL, so on its own it does nothing.
+				 * A stolen cookie that has already
+				 * expired would otherwise still
+				 * authorize privileged operations for
+				 * the life of this WS.  Reject if the
+				 * token's exp is in the past.
+				 */
+				uint64_t exp = lws_jwt_auth_get_exp(ja);
+				if (exp && exp < (uint64_t)lws_now_secs()) {
+					lwsl_wsi_err(wsi, "Rejecting WS: JWT expired (exp %llu, now %llu)",
+						(unsigned long long)exp,
+						(unsigned long long)lws_now_secs());
 				} else {
-					pss->auth_state = SAI_AUTH_STATE_LOGGED_IN_NO_GRANT;
-					lwsl_wsi_err(wsi, "JWT validation passed, but no grant found");
+					if (max_grant >= 0) {
+						pss->auth_state = SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN;
+						lwsl_wsi_notice(wsi, "Authorized WebSocket connection (admin/grant, max_grant: %d)", max_grant);
+					} else {
+						pss->auth_state = SAI_AUTH_STATE_LOGGED_IN_NO_GRANT;
+						lwsl_wsi_err(wsi, "JWT validation passed, but no grant found (grant: %d, grant_all: %d)", grant, grant_all);
+					}
 				}
+
 				lws_jwt_auth_destroy(&ja);
 			} else {
 				if (reason && !strcmp(reason, "Cookie not found")) {
@@ -542,6 +623,8 @@ http_resp:
 		} else {
 			lwsl_wsi_err(wsi, "Cannot validate JWT because no JWK was loaded (expected at %s)", vhd->jwk_path);
 		}
+
+		lwsl_wsi_notice(wsi, "**** ESTABLISHED WS: final auth_state=%d (has_jwk=%d, cookie_name='%s')", (int)pss->auth_state, vhd->has_jwk, vhd->cookie_name);
 
 		if (!memcmp((char *)start, "/sai", 4))
 			start += 4;
