@@ -213,10 +213,18 @@ saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
 		return 1;
 	}
 
-	if ((((builder.disk_total_kib * 7) / 8) - builder.disk_reserved_kib) < task->est_disk_kib) {
-		lwsl_notice("%s: reject task %s: not enough disk: total %u, res %u, needed %u\n", __func__,
-			    task->uuid, (unsigned int)builder.disk_total_kib, (unsigned int)builder.disk_reserved_kib, (unsigned int)task->est_disk_kib);
-		return 1;
+	{
+		unsigned int free_disk = saib_get_free_disk_kib(builder.home);
+		unsigned int needed_disk = task->est_disk_kib + (unsigned int)builder.disk_reserved_kib;
+
+		/* leave 12.5% of free space as a safety margin */
+		if (free_disk < needed_disk + (free_disk / 8)) {
+			lwsl_notice("%s: reject task %s: not enough disk: needed %u (task %u + res %u), actual free %u\n", __func__,
+				    task->uuid, needed_disk, (unsigned int)task->est_disk_kib, (unsigned int)builder.disk_reserved_kib, free_disk);
+			
+			saib_deletion_free_kib(needed_disk + (free_disk / 8));
+			return 1;
+		}
 	}
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, sp->nspawn_owner.head) {

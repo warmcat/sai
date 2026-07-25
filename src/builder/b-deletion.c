@@ -437,6 +437,77 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 	return 0;
 }
 
+int
+saib_deletion_free_kib(unsigned int needed_kib)
+{
+	struct sai_builder *b = &builder;
+	struct cleanup_ctx ctx;
+	char path[256];
+	unsigned int free_kib = saib_get_free_disk_kib(b->home);
+
+	if (free_kib >= needed_kib)
+		return 0;
+
+	memset(&ctx, 0, sizeof(ctx));
+
+	/* find out the uuids of any active jobs */
+	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, b->sai_plat_owner.head) {
+		struct sai_plat *sp = lws_container_of(d, struct sai_plat, sai_plat_list);
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d2, d3, sp->nspawn_owner.head) {
+			struct sai_nspawn *ns = lws_container_of(d2, struct sai_nspawn, list);
+			struct active_job_uuid *aj;
+
+			if (!ns->task) continue;
+
+			aj = lwsac_use_zero(&ctx.ac, sizeof(*aj), 64);
+			if (aj) {
+				lws_strncpy(aj->uuid, ns->inp_vn, sizeof(aj->uuid));
+				lws_dll2_add_tail(&aj->list, &ctx.active_owner);
+			}
+		} lws_end_foreach_dll_safe(d2, d3);
+	} lws_end_foreach_dll_safe(d, d1);
+
+	lws_snprintf(path, sizeof(path), "%s/jobs", b->home);
+	lws_dir(path, &ctx, scan_jobs_dir_cb);
+
+	if (ctx.inactive_count) {
+		int n, to_delete = 1;
+		struct inactive_job **sorted, *ij;
+
+		/* Assume each job frees roughly 100MB to reduce ping-ponging */
+		to_delete = (int)(needed_kib - free_kib) / (100 * 1024);
+		if (to_delete < 1) to_delete = 1;
+		if (to_delete > ctx.inactive_count) to_delete = ctx.inactive_count;
+
+		sorted = lwsac_use(&ctx.ac, sizeof(*sorted) * (unsigned int)ctx.inactive_count, 0);
+		if (sorted) {
+			n = 0;
+			ij = ctx.inactive_head;
+			while (ij) {
+				sorted[n++] = ij;
+				ij = ij->next;
+			}
+			qsort(sorted, (size_t)ctx.inactive_count, sizeof(*sorted), compare_age);
+
+			for (n = 0; n < to_delete; n++) {
+				lwsl_notice("%s: out of space (need %uMiB, free %uMiB): requesting removal of %s (age %llus)\n",
+					__func__, needed_kib / 1024, free_kib / 1024, sorted[n]->name, (unsigned long long)sorted[n]->age);
+
+#if defined(LWS_WITH_STUB)
+				if (builder.mgr_deletion) {
+					char json[256];
+					lws_snprintf(json, sizeof(json), "{\"delete\": \"%s\"}", sorted[n]->name);
+					lws_stub_request(builder.mgr_deletion, json, NULL, 0, NULL, NULL, NULL);
+				}
+#endif
+			}
+		}
+	}
+
+	lwsac_free(&ctx.ac);
+	return 0;
+}
+
 void
 sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul)
 {
@@ -483,44 +554,7 @@ sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul)
 	lws_snprintf(path, sizeof(path), "%s/jobs", b->home);
 	lws_dir(path, &ctx, scan_jobs_dir_cb);
 
-	/* dynamic cleanup */
-	{
-		unsigned int free_kib = saib_get_free_disk_kib(b->home);
-		unsigned int target_free_kib = 3 * 1024 * 1024; /* 3GB target */
 
-		if (free_kib < target_free_kib && ctx.inactive_count) {
-			int n, to_delete = 1;
-			struct inactive_job **sorted, *ij;
-
-			if (to_delete > ctx.inactive_count) to_delete = ctx.inactive_count;
-
-			sorted = lwsac_use(&ctx.ac, sizeof(*sorted) * (unsigned int)ctx.inactive_count, 0);
-			if (sorted) {
-				n = 0;
-				ij = ctx.inactive_head;
-				while (ij) {
-					sorted[n++] = ij;
-					ij = ij->next;
-				}
-
-				qsort(sorted, (size_t)ctx.inactive_count, sizeof(*sorted), compare_age);
-
-				for (n = 0; n < to_delete; n++) {
-					lwsl_notice("%s: dyn cleanup: requesting removal of %s (age %llus, free %uMiB, tgt %uMiB)\n",
-						__func__, sorted[n]->name, (unsigned long long)sorted[n]->age,
-						free_kib / 1024, target_free_kib / 1024);
-
-#if defined(LWS_WITH_STUB)
-					if (builder.mgr_deletion) {
-						char json[256];
-						lws_snprintf(json, sizeof(json), "{\"delete\": \"%s\"}", sorted[n]->name);
-						lws_stub_request(builder.mgr_deletion, json, NULL, 0, NULL, NULL, NULL);
-					}
-#endif
-				}
-			}
-		}
-	}
 
 	lwsac_free(&ctx.ac);
 
@@ -546,7 +580,7 @@ callback_sai_deletion_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 #if defined(WIN32)
 	{
 		DWORD rb;
-		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf), &rb, NULL)) {
+		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1, &rb, NULL)) {
 			return -1;
 		}
 		ilen = (int)rb;
