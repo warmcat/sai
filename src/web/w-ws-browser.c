@@ -59,6 +59,14 @@ static lws_struct_map_t lsm_browser_builderdelete[] = {
 	LSM_CARRAY	(sai_browse_rx_builderdelete_t, builder_name, "builder_name"),
 };
 
+typedef struct sai_browse_rx_builder_visibility {
+	uint8_t visible;
+} sai_browse_rx_builder_visibility_t;
+
+static lws_struct_map_t lsm_browser_builder_visibility[] = {
+	LSM_UNSIGNED	(sai_browse_rx_builder_visibility_t, visible, "visible"),
+};
+
 static lws_struct_map_t lsm_browser_taskinfo[] = {
 	LSM_CARRAY	(sai_browse_rx_taskinfo_t, task_hash,		"task_hash"),
 	LSM_UNSIGNED	(sai_browse_rx_taskinfo_t, logs,		"logs"),
@@ -110,6 +118,8 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 					      "com.warmcat.sai.closeshell"),
 	LSM_SCHEMA	(sai_ptydata_t, NULL, lsm_ptydata,
 					      "com.warmcat.sai.ptydata"),
+	LSM_SCHEMA	(sai_browse_rx_builder_visibility_t, NULL, lsm_browser_builder_visibility,
+					      "com.warmcat.sai.builder_visibility"),
 };
 
 enum {
@@ -131,6 +141,7 @@ enum {
 	SAIM_WS_BROWSER_RX_OPENSHELL,
 	SAIM_WS_BROWSER_RX_CLOSESHELL,
 	SAIM_WS_BROWSER_RX_PTYDATA,
+	SAIM_WS_BROWSER_RX_BUILDER_VISIBILITY,
 };
 
 
@@ -685,6 +696,18 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	}
 
 	switch (a.top_schema_index) {
+
+	case SAIM_WS_BROWSER_RX_BUILDER_VISIBILITY:
+		{
+			sai_browse_rx_builder_visibility_t *v = (sai_browse_rx_builder_visibility_t *)a.dest;
+			pss->wants_builder_info = v->visible;
+			if (v->visible) {
+				saiw_browser_broadcast_queue_builders(pss->vhd, pss);
+				saiw_browser_broadcast_queue_pcons(pss->vhd, pss);
+				saiw_browser_broadcast_queue_power_history(pss->vhd, pss);
+			}
+		}
+		goto ok;
 
 	case SAIM_WS_BROWSER_RX_TASKINFO:
 		ti = (sai_browse_rx_taskinfo_t *)a.dest;
@@ -1395,6 +1418,9 @@ saiw_browser_broadcast_queue_pcon_energy(struct vhd *vhd, struct pss *pss, sai_p
 	lws_struct_json_serialize_result_t r;
 	size_t w;
 
+	if (pss && !pss->wants_builder_info)
+		return 0;
+
 	if (!vhd || !energy)
 		return 0;
 
@@ -1445,7 +1471,10 @@ saiw_browser_broadcast_queue_pcons(struct vhd *vhd, struct pss *pss)
 	lws_struct_json_serialize_result_t r;
 	size_t w;
 
-	if (!vhd || !vhd->pcons)
+	if (pss && !pss->wants_builder_info)
+		return 0;
+
+	if (!vhd || !vhd->pcons || !pss)
 		return 0;
 
 	memset(&d, 0, sizeof(d));
@@ -1491,7 +1520,6 @@ saiw_browser_broadcast_queue_pcons(struct vhd *vhd, struct pss *pss)
 int
 saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 {
-	saiw_browser_broadcast_queue_pcons(vhd, pss);
 	struct sai_dyn_buf d;
 	char buf[1024]; /* temp buffer for serialization before append */
 	lws_struct_serialize_t *js;
@@ -1500,6 +1528,14 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 	char subsequent;
 	size_t w;
 	int n;
+
+	if (pss && !pss->wants_builder_info)
+		return 0;
+
+	if (!vhd || !vhd->builders || !pss)
+		return 0;
+
+	saiw_browser_broadcast_queue_pcons(vhd, pss);
 
 	memset(&d, 0, sizeof(d));
 
@@ -1679,6 +1715,9 @@ saiw_browser_broadcast_queue_power_history(struct vhd *vhd, struct pss *pss)
 	struct sai_dyn_buf d;
 	char buf[2048];
 	int n, i;
+
+	if (pss && !pss->wants_builder_info)
+		return 0;
 
 	if (!vhd)
 		return 0;

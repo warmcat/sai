@@ -134,6 +134,7 @@ struct pss {
 	unsigned int		bulk_binary_data:1;
 	unsigned int		toggle_favour_sch:1;
 	unsigned int		resolved_task_offset:1;
+	uint8_t			wants_builder_info;
 	sai_auth_state_t	auth_state;
 };
 

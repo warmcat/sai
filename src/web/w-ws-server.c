@@ -149,7 +149,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 					memcpy(tmp + LWS_PRE, p, rem);
 					lws_start_foreach_dll(struct lws_dll2 *, pt, vhd->browsers.head) {
 						struct pss *pss = lws_container_of(pt, struct pss, same);
-						if (!pss->is_gitohashi)
+						if (!pss->is_gitohashi && pss->wants_builder_info)
 							saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, tmp + LWS_PRE, rem,
 								lws_write_ws_flags(LWS_WRITE_TEXT, is_start, 0));
 					} lws_end_foreach_dll(pt);
@@ -194,7 +194,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				memcpy(tmp + LWS_PRE, p, consumed);
 				lws_start_foreach_dll(struct lws_dll2 *, pt, vhd->browsers.head) {
 					struct pss *pss = lws_container_of(pt, struct pss, same);
-					if (!pss->is_gitohashi)
+					if (!pss->is_gitohashi && pss->wants_builder_info)
 						saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, tmp + LWS_PRE, consumed,
 							lws_write_ws_flags(LWS_WRITE_TEXT, is_start, 1));
 				} lws_end_foreach_dll(pt);

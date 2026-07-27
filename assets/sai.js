@@ -1586,17 +1586,20 @@ function selectEvent(uuid) {
 		tfirst = 0;
 		lli = 1;
 		last_log_timestamp = 0;
+	}
 
-		var par = new URLSearchParams(window.location.search);
+	var par = new URLSearchParams(window.location.search);
+	par.set("event", uuid);
+	if (!hasTask) {
 		par.delete("task");
 		par.delete("run");
-		var qs = par.toString();
-		var path = window.location.pathname;
-		if (!path.endsWith('/') && !path.endsWith('index.html')) {
-			path += '/';
-		}
-		window.history.pushState({}, "", path + (qs ? ("?" + qs) : ""));
 	}
+	var qs = par.toString();
+	var path = window.location.pathname;
+	if (!path.endsWith('/') && !path.endsWith('index.html')) {
+		path += '/';
+	}
+	window.history.pushState({}, "", path + (qs ? ("?" + qs) : ""));
 	
 	// Highlight card
 	var container = document.getElementById("sai_event_decals");
@@ -2518,6 +2521,13 @@ function ws_open_sai()
 				overlay.parentNode.removeChild(overlay);
 			}
 			document.body.classList.remove("overlay-active");
+
+			let savedRightPaneFlex = localStorage.getItem('sai-right-pane-flex');
+			let initialVisible = 0;
+			if (savedRightPaneFlex && parseInt(savedRightPaneFlex.replace(/[^0-9-]/g, '')) > 0) {
+				initialVisible = 1;
+			}
+			sai.send(JSON.stringify({ schema: "com.warmcat.sai.builder_visibility", visible: initialVisible }));
 
 			var par = new URLSearchParams(window.location.search),
 				tid, eid, run_idx;
@@ -3601,11 +3611,11 @@ window.addEventListener("load", function() {
 		}
 	});
 
-	const savedFlex = localStorage.getItem('sai-left-pane-flex');
+	const savedFlex = localStorage.getItem('sai-right-pane-flex');
 	if (savedFlex) {
-		const leftPane = document.querySelector('.left-pane');
-		if (leftPane) {
-			leftPane.style.flex = savedFlex;
+		const rightPane = document.querySelector('.right-pane');
+		if (rightPane) {
+			rightPane.style.flex = savedFlex;
 		}
 	}
 
@@ -3791,49 +3801,64 @@ window.addEventListener("load", function() {
 	});
 	const resizer = document.getElementById('resizer');
 	if (resizer) {
-		const leftPane = resizer.previousElementSibling;
+		const rightPane = resizer.nextElementSibling;
 
 		let x = 0;
-		let leftWidth = 0;
+		let rightWidth = 0;
+		let lastVisible = -1;
 
 		const onMouseMove = (e) => {
-			const dx = e.clientX - x;
-			const newLeftWidth = leftWidth + dx;
-			leftPane.style.flex = `0 0 ${newLeftWidth}px`;
+			const dx = x - e.clientX;
+			let newRightWidth = rightWidth + dx;
+			if (newRightWidth < 20) newRightWidth = 0;
+			rightPane.style.flex = `0 0 ${newRightWidth}px`;
+			let visible = newRightWidth > 0 ? 1 : 0;
+			if (visible !== lastVisible) {
+				lastVisible = visible;
+				sai.send(JSON.stringify({ schema: "com.warmcat.sai.builder_visibility", visible: visible }));
+			}
 		};
 
 		const onMouseUp = () => {
 			document.removeEventListener('mousemove', onMouseMove);
 			document.removeEventListener('mouseup', onMouseUp);
-			localStorage.setItem('sai-left-pane-flex', leftPane.style.flex);
+			localStorage.setItem('sai-right-pane-flex', rightPane.style.flex);
 		};
 
 		const onMouseDown = (e) => {
 			x = e.clientX;
-			leftWidth = leftPane.getBoundingClientRect().width;
+			rightWidth = rightPane.getBoundingClientRect().width;
+			lastVisible = rightWidth > 0 ? 1 : 0;
 			document.addEventListener('mousemove', onMouseMove);
 			document.addEventListener('mouseup', onMouseUp);
 		};
 
 		const onTouchMove = (e) => {
 			if (e.touches.length === 1) {
-				const dx = e.touches[0].clientX - x;
-				const newLeftWidth = leftWidth + dx;
-				leftPane.style.flex = `0 0 ${newLeftWidth}px`;
+				const dx = x - e.touches[0].clientX;
+				let newRightWidth = rightWidth + dx;
+				if (newRightWidth < 20) newRightWidth = 0;
+				rightPane.style.flex = `0 0 ${newRightWidth}px`;
 				e.preventDefault();
+				let visible = newRightWidth > 0 ? 1 : 0;
+				if (visible !== lastVisible) {
+					lastVisible = visible;
+					sai.send(JSON.stringify({ schema: "com.warmcat.sai.builder_visibility", visible: visible }));
+				}
 			}
 		};
 
 		const onTouchEnd = () => {
 			document.removeEventListener('touchmove', onTouchMove);
 			document.removeEventListener('touchend', onTouchEnd);
-			localStorage.setItem('sai-left-pane-flex', leftPane.style.flex);
+			localStorage.setItem('sai-right-pane-flex', rightPane.style.flex);
 		};
 
 		const onTouchStart = (e) => {
 			if (e.touches.length === 1) {
 				x = e.touches[0].clientX;
-				leftWidth = leftPane.getBoundingClientRect().width;
+				rightWidth = rightPane.getBoundingClientRect().width;
+				lastVisible = rightWidth > 0 ? 1 : 0;
 				document.addEventListener('touchmove', onTouchMove, { passive: false });
 				document.addEventListener('touchend', onTouchEnd);
 			}
