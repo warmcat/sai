@@ -1651,15 +1651,14 @@ function render_sb_events()
 			var sel = (e.uuid === selected_event_uuid) ? " selected" : "";
 			s += "<div class=\"sb-event-row" + stateClass + sel +
 			     "\" data-uuid=\"" + san(e.uuid) + "\">";
-			s += "<div class=\"sb-event-top\">";
+			/* single line: when + tag + status + progress bar */
 			s += "<span class=\"sb-event-when\">" + san(sai_sb_fmt_when(e.created)) +
 			     " <span class='age-0' ut='" + e.created + "'>" +
 			     agify(now_ut, e.created) + "</span></span>";
 			s += "<span class=\"sb-event-tag\">" + san(sai_event_hash_display(e.hash)) + "</span>";
 			s += "<span class=\"sb-event-status\" id=\"sbsum-" + san(e.uuid) + "\"></span>";
-			s += "</div>";
-			/* progress bar slot, filled by sai_sb_render_event_summary() */
-			s += "<div class=\"sb-event-bar\" id=\"sbbar-" + san(e.uuid) + "\"></div>";
+			/* progress bar slot (inline, takes remaining width), filled by sai_sb_render_event_summary() */
+			s += "<span class=\"sb-event-bar\" id=\"sbbar-" + san(e.uuid) + "\"></span>";
 			s += "</div>";
 		});
 	}

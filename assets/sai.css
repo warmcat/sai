@@ -1789,6 +1789,9 @@ div.ibuil.vm-builder {
 .sidebar-pane .sb-col {
 	box-sizing: border-box;
 	min-width: 0;
+	min-height: 0;	/* allow flex children to actually scroll */
+	max-height: 100%;
+	height: 100%;
 	border-right: 1px solid rgba(0, 0, 0, 0.10);
 	padding: 4px 6px;
 	overflow-y: auto;
@@ -1842,12 +1845,11 @@ div.ibuil.vm-builder {
 	flex: 0 0 130px;
 }
 
-/* col 4: events (most-recent-first), takes the remaining space */
+/* col 4: events (most-recent-first), takes the remaining space.
+ * Not a flex container: the rows are block-level and the column itself is
+ * the scroll region (overflow-y:auto comes from .sb-col). */
 .sidebar-pane .sb-col-events {
 	flex: 1 1 50%;
-	display: flex;
-	flex-direction: column;
-	gap: 2px;
 }
 
 /* selectable row in col 2 / col 3 */
@@ -1878,8 +1880,10 @@ div.ibuil.vm-builder {
 /* event rows in col 4 */
 .sb-event-row {
 	display: flex;
-	flex-direction: column;
-	padding: 3px 8px;
+	flex-direction: row;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 6px;
 	margin: 1px 0;
 	border-radius: 4px;
 	cursor: pointer;
@@ -1889,6 +1893,8 @@ div.ibuil.vm-builder {
 	border: 1px solid #cbd5e1;
 	font-size: 9pt;
 	color: #1e293b;
+	white-space: nowrap;
+	overflow: hidden;
 }
 
 .sb-event-row:hover {
@@ -1910,18 +1916,12 @@ div.ibuil.vm-builder {
 	border: 2px solid #000000;
 }
 
-.sb-event-row .sb-event-top {
-	display: flex;
-	align-items: baseline;
-	gap: 8px;
-	flex-wrap: wrap;
-}
-
 .sb-event-row .sb-event-when {
 	font-family: 'OpenSans', sans-serif;
 	font-size: 8pt;
 	color: #64748b;
 	white-space: nowrap;
+	flex: 0 0 auto;
 }
 
 .sb-event-row.comp_fail .sb-event-when {
@@ -1932,19 +1932,29 @@ div.ibuil.vm-builder {
 	font-family: monospace;
 	font-size: 9pt;
 	white-space: nowrap;
+	flex: 0 0 auto;
 }
 
 .sb-event-row .sb-event-status {
 	font-size: 8.5pt;
 	white-space: nowrap;
+	flex: 0 0 auto;
 }
 
+/* progress bar slot: sits inline on the same row, takes the remaining width */
 .sb-event-row .sb-event-bar {
-	margin-top: 2px;
+	flex: 1 1 auto;
+	min-width: 24px;
+	display: inline-flex;
+	align-items: center;
+}
+.sb-event-row .sb-event-bar:empty {
+	display: none;
 }
 
 .sb-event-row .progress-bar {
 	width: 100%;
+	height: 8px;
 }
 
 .sb-empty {
