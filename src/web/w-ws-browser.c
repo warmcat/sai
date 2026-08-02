@@ -1190,6 +1190,87 @@ saiw_broadcast_logs_batch(struct vhd *vhd, struct pss *pss)
 	return 0;
 }
 
+/*
+ * For sidebar-scoped overviews we don't ship the full per-event task array
+ * (it can be hundreds of tasks per event and blow the 2MiB buflist sanity
+ * limit when many events match).  Instead we compute a short summary string
+ * server-side, matching the format the browser's summarize_build_situation()
+ * produces ("All N passed", "OK: g, Bad: b, Building: o, Wait: p", ...).
+ *
+ * The task state values are the SAIES_* enum, bucketed the same way as the
+ * browser: 0 -> pending, {1,2,6} -> ongoing, 3 -> good, {4,5} -> bad.
+ */
+static void
+saiw_event_summary_string(sqlite3 *pdb_event, const char *event_uuid,
+			  char *out, size_t out_len)
+{
+	sqlite3_stmt *stmt = NULL;
+	unsigned int good = 0, bad = 0, ongoing = 0, pending = 0, total = 0;
+	char q[160];
+	int rc;
+
+	if (!pdb_event || !event_uuid || !out || out_len < 16)
+		goto empty;
+
+	/*
+	 * tasks holds one row per (task, run); the browser summarises on the
+	 * latest (max) run per task uuid.  Pick exactly that row per uuid using
+	 * a correlated max-run subquery, so we count each task once.
+	 */
+	lws_snprintf(q, sizeof(q),
+			"SELECT state FROM tasks t WHERE rowid = ("
+			"SELECT rowid FROM tasks t2 WHERE t2.uuid = t.uuid "
+			"ORDER BY t2.run DESC LIMIT 1)");
+
+	if (sqlite3_prepare_v2(pdb_event, q, -1, &stmt, NULL) != SQLITE_OK)
+		goto empty;
+
+	while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+		int s = sqlite3_column_int(stmt, 0);
+		total++;
+		switch (s) {
+		case 0:  pending++;  break;
+		case 1:
+		case 2:
+		case 6:  ongoing++; break;
+		case 3:  good++;    break;
+		case 4:
+		case 5:  bad++;     break;
+		default: break;
+		}
+	}
+	sqlite3_finalize(stmt);
+
+	if (!total)
+		goto empty;
+
+	if (good == total)
+		lws_snprintf(out, out_len, "All %u passed", good);
+	else if (bad == total)
+		lws_snprintf(out, out_len, "All %u failed", bad);
+	else if (pending == total)
+		lws_snprintf(out, out_len, "%u pending", total);
+	else {
+		char *o = out;
+		size_t l = out_len, n;
+		int first = 1;
+#define EMIT(fmt, ...) do { \
+		n = (size_t)lws_snprintf(o, l, "%s" fmt, first ? "" : ", ", ##__VA_ARGS__); \
+		if (n >= l) { o = out + out_len - 1; break; } o += n; l -= n; first = 0; \
+	} while (0)
+		if (good)    EMIT("OK: %u", good);
+		if (bad)     EMIT("Bad: %u", bad);
+		if (ongoing) EMIT("Building: %u", ongoing);
+		if (pending) EMIT("Wait: %u", pending);
+#undef EMIT
+	}
+	return;
+
+empty:
+	if (out && out_len)
+		out[0] = '\0';
+}
+
 int
 saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 {
@@ -1423,6 +1504,34 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		}
 
 		task_index = 0;
+
+		/*
+		 * For sidebar-scoped overviews (project / branch selected in
+		 * the LHS pane), we don't ship the full per-event task array:
+		 * it can be hundreds of tasks per event and overflow the 2MiB
+		 * buflist when many events match.  The sidebar only needs the
+		 * event metadata + a short summary string, so emit an empty
+		 * "t":[] plus a server-computed "summary" the browser shows
+		 * verbatim.  The full task list is fetched on demand when the
+		 * user selects a specific event.
+		 */
+		if (pss->selected_project[0] || pss->selected_ref[0]) {
+			char sum[96], esc_sum[128];
+
+			e = lws_container_of(walk, sai_event_t, list);
+			sum[0] = '\0';
+			if (!sai_event_db_ensure_open(vhd->context,
+					&vhd->sqlite3_cache,
+					vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
+				saiw_event_summary_string(pdb, e->uuid, sum,
+							  sizeof(sum));
+				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+			}
+			p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+				", \"t\":[], \"summary\":\"%s\"",
+				lws_json_purify(esc_sum, sum, sizeof(esc_sum) - 1,
+						NULL));
+		} else {
 		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), ", \"t\":[");
 
 
@@ -1514,6 +1623,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 			lwsac_free(&task_ac);
 			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		}
+		} /* end of full-task (unscoped) path */
 
 		/* none left to do, go back up a level */
 

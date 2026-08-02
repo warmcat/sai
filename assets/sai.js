@@ -1294,6 +1294,16 @@ function summarize_build_situation(event_uuid)
 		ev_obj = loaded_events.find(o => o.e.uuid === event_uuid);
 	}
 
+	/*
+	 * Sidebar-scoped overview events arrive with an empty task array but a
+	 * server-computed "summary" string (shipping full task lists for many
+	 * events overflows the server's buflist).  Prefer that summary when the
+	 * task array isn't present.
+	 */
+	if (ev_obj && (!ev_obj.t || !ev_obj.t.length) && ev_obj.summary) {
+		return { text: ev_obj.summary };
+	}
+
 	if (ev_obj && ev_obj.t) {
 		var run_max = {};
 		for (var q = 0; q < ev_obj.t.length; q++) {
@@ -1599,6 +1609,16 @@ function render_sb_events()
 	if (!c)
 		return;
 	var now_ut = Math.round((new Date().getTime() / 1000));
+
+	/*
+	 * Without a project + branch selected, col 4 stays empty (the events
+	 * shown are scoped to the selection; showing "everything" would just
+	 * mirror the old unscoped behaviour).
+	 */
+	if (!sb_selected_project && !sb_selected_ref) {
+		c.innerHTML = "<div class=\"sb-empty\">Select a project and branch</div>";
+		return;
+	}
 
 	var matching = [];
 	if (loaded_events && loaded_events.length) {
