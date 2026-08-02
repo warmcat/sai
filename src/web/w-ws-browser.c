@@ -46,6 +46,10 @@ static lws_struct_map_t lsm_browser_evinfo[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"event_hash"),
 };
 
+static lws_struct_map_t lsm_browser_branchlist[] = {
+	LSM_CARRAY	(sai_browse_rx_branchlist_t, project,	"project"),
+};
+
 static lws_struct_map_t lsm_browser_taskreset[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"uuid"),
 };
@@ -74,6 +78,9 @@ static lws_struct_map_t lsm_browser_taskinfo[] = {
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, offset,		"offset"),
 	LSM_UNSIGNED    (sai_browse_rx_taskinfo_t, last_log_ts,		"last_log_ts"),
 	LSM_SIGNED      (sai_browse_rx_taskinfo_t, run,			"run"),
+	/* Sidebar selection scoping the overview to project + branch */
+	LSM_CARRAY	(sai_browse_rx_taskinfo_t, project,		"project"),
+	LSM_CARRAY	(sai_browse_rx_taskinfo_t, ref,		"ref"),
 };
 
 /*
@@ -120,6 +127,11 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 					      "com.warmcat.sai.ptydata"),
 	LSM_SCHEMA	(sai_browse_rx_builder_visibility_t, NULL, lsm_browser_builder_visibility,
 					      "com.warmcat.sai.builder_visibility"),
+	/* sidebar project / branch list requests (read-only, no auth) */
+	LSM_SCHEMA	(sai_browse_rx_branchlist_t, NULL, lsm_browser_branchlist,
+					      "com.warmcat.sai.projlist"),
+	LSM_SCHEMA	(sai_browse_rx_branchlist_t, NULL, lsm_browser_branchlist,
+					      "com.warmcat.sai.branchlist"),
 };
 
 enum {
@@ -142,6 +154,8 @@ enum {
 	SAIM_WS_BROWSER_RX_CLOSESHELL,
 	SAIM_WS_BROWSER_RX_PTYDATA,
 	SAIM_WS_BROWSER_RX_BUILDER_VISIBILITY,
+	SAIM_WS_BROWSER_RX_PROJLIST,
+	SAIM_WS_BROWSER_RX_BRANCHLIST,
 };
 
 
@@ -743,6 +757,16 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 				pss->js_api_version = ti->js_api_version;
 			pss->overview_offset = ti->offset;
 
+			/*
+			 * Update the runtime sidebar selection so subsequent
+			 * overview / live pushes are scoped to this project +
+			 * branch.  An empty value means "no constraint".
+			 */
+			lws_strncpy(pss->selected_project, ti->project,
+				    sizeof(pss->selected_project));
+			lws_strncpy(pss->selected_ref, ti->ref,
+				    sizeof(pss->selected_ref));
+
 			saiw_browser_broadcast_queue_builders(pss->vhd, pss);
  
 			{
@@ -791,6 +815,129 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			goto soft_error;
 
 		goto ok;
+
+	case SAIM_WS_BROWSER_RX_PROJLIST:
+	{
+		/*
+		 * Return the set of unique project (repo_name) values seen
+		 * in the events db, ordered by name.  Read-only.
+		 */
+		sqlite3_stmt *stmt = NULL;
+		uint8_t buf[LWS_PRE + 4096], *start = buf + LWS_PRE,
+			*p = start, *end = buf + sizeof(buf);
+		char esc[96];
+		/* first_elem = first array entry (omit leading comma);
+		 * sent_any   = have we already tx'd a ws fragment of this msg */
+		int first_elem = 1, sent_any = 0, rc;
+
+		if (sqlite3_prepare_v2(vhd->pdb,
+				"SELECT DISTINCT repo_name FROM events "
+				"WHERE state != ? ORDER BY repo_name",
+				-1, &stmt, NULL) != SQLITE_OK) {
+			lwsl_notice("%s: projlist prepare failed\n", __func__);
+			goto soft_error;
+		}
+		sqlite3_bind_int(stmt, 1, SAIES_DELETED);
+
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+				  "{\"schema\":\"com.warmcat.sai.projlist\","
+				  "\"projects\":[");
+		while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+			const char *pn = (const char *)
+					sqlite3_column_text(stmt, 0);
+			if (!pn)
+				continue;
+			if (lws_ptr_diff_size_t(end, p) < 96) {
+				saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss,
+					start, lws_ptr_diff_size_t(p, start),
+					lws_write_ws_flags(LWS_WRITE_TEXT,
+							   !sent_any, 0));
+				sent_any = 1;
+				p = start;
+			}
+			p += lws_snprintf((char *)p,
+				lws_ptr_diff_size_t(end, p), "%s\"%s\"",
+				first_elem ? "" : ",",
+				lws_json_purify(esc, pn, sizeof(esc) - 1, NULL));
+			first_elem = 0;
+		}
+		sqlite3_finalize(stmt);
+
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+				  "]}");
+		saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
+				lws_ptr_diff_size_t(p, start),
+				LWS_WRITE_TEXT);
+		goto ok;
+	}
+
+	case SAIM_WS_BROWSER_RX_BRANCHLIST:
+	{
+		/*
+		 * Return the set of unique refs for the given project, in
+		 * most-recent-first order (the ref whose latest event is the
+		 * newest comes first).  Read-only.  project is bound, not
+		 * interpolated.
+		 */
+		sai_browse_rx_branchlist_t *bl =
+				(sai_browse_rx_branchlist_t *)a.dest;
+		sqlite3_stmt *stmt = NULL;
+		uint8_t buf[LWS_PRE + 4096], *start = buf + LWS_PRE,
+			*p = start, *end = buf + sizeof(buf);
+		char esc[96], pesc[96];
+		int first_elem = 1, sent_any = 0, rc;
+
+		if (sqlite3_prepare_v2(vhd->pdb,
+				"SELECT ref, MAX(created) AS mc FROM events "
+				"WHERE state != ? AND repo_name = ? "
+				"GROUP BY ref ORDER BY mc DESC",
+				-1, &stmt, NULL) != SQLITE_OK) {
+			lwsl_notice("%s: branchlist prepare failed\n",
+					__func__);
+			goto soft_error;
+		}
+		sqlite3_bind_int(stmt, 1, SAIES_DELETED);
+		/*
+		 * Belt-and-braces: also purify (the bound param already
+		 * prevents injection, but this keeps the echoed project
+		 * field safe to emit too).
+		 */
+		lws_sql_purify(pesc, bl->project, sizeof(pesc) - 1);
+		sqlite3_bind_text(stmt, 2, pesc, -1, SQLITE_STATIC);
+
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+				  "{\"schema\":\"com.warmcat.sai.branchlist\","
+				  "\"project\":\"%s\",\"branches\":[",
+				  lws_json_purify(esc, pesc,
+						  sizeof(esc) - 1, NULL));
+		while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+			const char *rn = (const char *)
+					sqlite3_column_text(stmt, 0);
+			if (!rn)
+				continue;
+			if (lws_ptr_diff_size_t(end, p) < 96) {
+				saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss,
+					start, lws_ptr_diff_size_t(p, start),
+					lws_write_ws_flags(LWS_WRITE_TEXT,
+							   !sent_any, 0));
+				sent_any = 1;
+				p = start;
+			}
+			p += lws_snprintf((char *)p,
+				lws_ptr_diff_size_t(end, p), "%s\"%s\"",
+				first_elem ? "" : ",",
+				lws_json_purify(esc, rn, sizeof(esc) - 1, NULL));
+			first_elem = 0;
+		}
+		sqlite3_finalize(stmt);
+
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+				  "]}");
+		saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
+				lws_ptr_diff_size_t(p, start),
+				LWS_WRITE_TEXT);
+		goto ok;
+	}
 
 	case SAIM_WS_BROWSER_RX_TASKREMOVEALLTRIES:
 	case SAIM_WS_BROWSER_RX_TASKRESET:
@@ -1048,7 +1195,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 {
 	char buf[4096 + LWS_PRE], *start = buf + LWS_PRE, *p = start,
 	     *end = buf + sizeof(buf);
-	char esc[256], filt[128], subsequent;
+	char esc[256], filt[256], subsequent;
 	struct lwsac *task_ac = NULL, *ac = NULL;
 	lws_dll2_owner_t task_owner, owner;
 	unsigned int task_index = 0;
@@ -1092,11 +1239,49 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 	}
 
 	if (pss->specific_project[0]) {
+		/*
+		 * gitohashi /git/<project> URL-locked mode: lock to that one
+		 * project, no row cap.
+		 */
 		lws_sql_purify(esc, pss->specific_project, sizeof(esc) - 1);
-		lws_snprintf(filt, sizeof(filt), " and state != %d and repo_name=\"%s\"", SAIES_DELETED, esc);
+		lws_snprintf(filt, sizeof(filt),
+			 " and state != %d and repo_name=\"%s\"",
+			 SAIES_DELETED, esc);
 		n = -1;
 	} else {
-		lws_snprintf(filt, sizeof(filt), " and state != %d", SAIES_DELETED);
+		size_t fl;
+
+		/*
+		 * Base filter: hide deleted events.  We keep appending extra
+		 * " and ..." clauses here; the COUNT query below skips the
+		 * leading " and " with filt + 5 and uses the rest verbatim.
+		 */
+		lws_snprintf(filt, sizeof(filt), " and state != %d",
+			 SAIES_DELETED);
+
+		/*
+		 * Sidebar runtime selection: scope to the browser's currently
+		 * selected project and (if set) branch, capping at the newest
+		 * 100 matching events.
+		 */
+		if (pss->selected_project[0]) {
+			fl = strlen(filt);
+			lws_sql_purify(esc, pss->selected_project,
+				       sizeof(esc) - 1);
+			lws_snprintf(filt + fl, sizeof(filt) - fl,
+				     " and repo_name=\"%s\"", esc);
+			n = -100;
+		}
+
+		if (pss->selected_ref[0]) {
+			fl = strlen(filt);
+			lws_sql_purify(esc, pss->selected_ref,
+				       sizeof(esc) - 1);
+			lws_snprintf(filt + fl, sizeof(filt) - fl,
+				     " and ref=\"%s\"", esc);
+			if (n == -6)
+				n = -100;
+		}
 	}
 
 	unsigned int total_events = 0;

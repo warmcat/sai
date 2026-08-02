@@ -691,7 +691,22 @@ typedef struct sai_browse_rx_taskinfo {
 	unsigned int			offset;
 	uint8_t				logs;
 	int				run;
+	/*
+	 * When sent with an empty task_hash (overview request), the browser
+	 * also passes the project + ref it currently has selected, so the
+	 * server can return the overview scoped to that project + branch.
+	 */
+	char				project[65];
+	char				ref[65];
 } sai_browse_rx_taskinfo_t;
+
+/*
+ * Browser -> sai-web requests for the unique project list and the unique
+ * branch list for a given project.  Both are read-only and need no auth.
+ */
+typedef struct sai_browse_rx_branchlist {
+	char				project[65];
+} sai_browse_rx_branchlist_t;
 
 /* sai-power -> sai-server, tells it that a platform is being powered up */
 typedef struct sai_power_state {

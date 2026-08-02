@@ -15,15 +15,19 @@
 		<div class="overlay"></div>
 		<div class="main-container">
 			<div class="left-pane">
-				<div class="logo-login-container">
-					<div class="logo">
-						<img class="logo" src="sai.svg"><br>
-						<span class="logo"><a href="https://warmcat.com/git/sai">Sai git</a></span>
-						<span class="logo" id="apirev"></span>
+				<div class="sidebar-pane" id="sai_sidebar">
+					<div class="sb-col sb-col-logo" id="sai_sb_logo">
+						<div class="logo">
+							<img class="logo" src="sai.svg"><br>
+							<span class="logo"><a href="https://warmcat.com/git/sai">Sai git</a></span>
+							<span class="logo" id="apirev"></span>
+						</div>
+						<div id="lws-login-status-container" class="login-status-container"></div>
 					</div>
-					<div id="lws-login-status-container" class="login-status-container"></div>
+					<div class="sb-col sb-col-projects" id="sai_sb_projects"></div>
+					<div class="sb-col sb-col-branches" id="sai_sb_branches"></div>
+					<div class="sb-col sb-col-events" id="sai_sb_events"></div>
 				</div>
-				<div class="event-decals-section" id="sai_event_decals"></div>
 				<div class="tasks-section" id="sai_event_tasks"></div>
 				<div class="resizer-h" id="resizer_h"></div>
 				<div class="logs-section" id="sai_task_logs_container">

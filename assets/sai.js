@@ -432,9 +432,7 @@ var current_overview_offset = 0;
 
 window.change_page = function(new_offset) {
 	current_overview_offset = new_offset;
-	sai.send("{\"schema\":" +
-		"\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION +
-		", \"offset\": " + current_overview_offset + "}");
+	sai_sb_request_overview(current_overview_offset);
 };
 
 function createPconDiv(pcon) {
@@ -953,6 +951,39 @@ var pos = 0, lli = 1, lines = "", times = "", locked = 1, tfirst = 0,
 var deleted_events_cache = new Set();
 var loaded_events = [], selected_event_uuid = null, selected_task_uuid = null, total_events = 0, current_offset = 0;
 
+/*
+ * Sidebar (merged top pane) state.  The user picks a project (col 2), then a
+ * branch (col 3); col 4 lists that project+branch's events newest-first.
+ * sb_projects / sb_branches are the unique values advertised by the server.
+ */
+var sb_projects = [], sb_branches = [];
+var sb_selected_project = null, sb_selected_ref = null;
+
+/*
+ * Send an overview (taskinfo) request scoped to the current sidebar
+ * selection.  An empty project/ref means "no constraint".
+ */
+function sai_sb_request_overview(offset)
+{
+	var o = (typeof offset === 'number') ? offset : 0;
+	sai.send("{\"schema\":\"com.warmcat.sai.taskinfo\"," +
+		 "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
+		 "\"offset\": " + o + "," +
+		 "\"project\":" + JSON.stringify(sb_selected_project || "") + "," +
+		 "\"ref\":" + JSON.stringify(sb_selected_ref || "") + "}");
+}
+
+function sai_sb_request_projects()
+{
+	sai.send("{\"schema\":\"com.warmcat.sai.projlist\"}");
+}
+
+function sai_sb_request_branches(project)
+{
+	sai.send("{\"schema\":\"com.warmcat.sai.branchlist\"," +
+		 "\"project\":" + JSON.stringify(project || "") + "}");
+}
+
 function sai_event_hash_display(hash) {
 	if (!hash) return "";
 	return "sai-" + hash.substring(0, 8);
@@ -1141,7 +1172,13 @@ function sai_taskinfo_render(t, now_ut)
 
 function update_summary_and_progress(event_uuid) {
     var sumbs = document.getElementById("sumbs-" + event_uuid);
-    if (!sumbs)
+    /*
+     * The sidebar event row (col 4) keeps the status text in its own
+     * #sbsum-<uuid> span; the progress bar slot is the legacy #sumbs-<uuid>.
+     * Either or both may be present depending on what's rendered.
+     */
+    var sbs = document.getElementById("sbsum-" + event_uuid);
+    if (!sumbs && !sbs)
         return;
 
     var summary = summarize_build_situation(event_uuid);
@@ -1190,7 +1227,14 @@ function update_summary_and_progress(event_uuid) {
             "<div class=\"progress-bar-failed float-right " + bad_cls + "\"></div>" +
             "</div>";
     }
-    sumbs.innerHTML = summary_html;
+    if (sumbs)
+        sumbs.innerHTML = summary_html;
+    /*
+     * The sidebar status span shows just the text portion (the bar is in the
+     * separate #sumbs- slot below it).
+     */
+    if (sbs)
+        sbs.innerHTML = san(summary.text || "");
 }
 
 function summarize_build_situation(event_uuid)
@@ -1349,12 +1393,11 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		s += "<div class=\"" + cl + "\"><img src=\"/sai/failed.svg\"></div>";
 
 	s += "</a>";
-	if (reset_all_icon && !gitohashi_integ && auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
-		s += "<br><img class=\"rebuild\" alt=\"rebuild all\" src=\"/sai/rebuild.png\" " +
-			"id=\"rebuild-ev-" + san(e.uuid) + "\">&nbsp;";
-		s += "<img class=\"rebuild\" alt=\"delete event\" src=\"/sai/delete.png\" " +
-				"id=\"delete-ev-" + san(e.uuid) + "\">";
-	}
+	/*
+	 * The per-event restart-all / delete-event buttons have moved to the
+	 * tasks-section header (render_selected_event_tasks) and are no longer
+	 * emitted inside the decal summary.
+	 */
 	s += "</td>";
 
 	if (!gitohashi_integ) {
@@ -1417,59 +1460,190 @@ function find_event_by_task_uuid(taskUuid) {
 	return null;
 }
 
-function render_event_decals() {
-	var now_ut = Math.round((new Date().getTime() / 1000));
+/*
+ * ---------------------------------------------------------------------------
+ * Sidebar (merged top pane) rendering: projects (col 2), branches (col 3),
+ * and the per-project+branch event list (col 4).  All build HTML via string
+ * concatenation + innerHTML and attach handlers with addEventListener (no
+ * inline styles or handlers, per the strict CSP).  Dynamic text is escaped
+ * with san().
+ * ---------------------------------------------------------------------------
+ */
+
+function sai_sb_fmt_when(secs)
+{
+	if (!secs)
+		return "";
+	var d = new Date(secs * 1000);
+	/* compact "YYYY-MM-DD HH:MM" in UTC; the relative age is shown via agify */
+	function p(n, l) { var s = "" + n; while (s.length < l) s = "0" + s; return s; }
+	return p(d.getUTCFullYear(), 4) + "-" + p(d.getUTCMonth() + 1, 2) + "-" +
+	       p(d.getUTCDate(), 2) + " " + p(d.getUTCHours(), 2) + ":" +
+	       p(d.getUTCMinutes(), 2);
+}
+
+function sai_sb_short_ref(ref)
+{
+	if (!ref)
+		return "";
+	if (ref.substr(0, 11) === "refs/heads/")
+		return ref.substr(11);
+	if (ref.substr(0, 10) === "refs/tags/")
+		return ref.substr(10);
+	return ref;
+}
+
+function render_sb_projects()
+{
+	var c = document.getElementById("sai_sb_projects");
+	if (!c)
+		return;
 	var s = "";
-	
-	// Add "Newer" pagination button if applicable
-	if (!gitohashi_integ && total_events > 6 && current_offset > 0) {
-		s += "<div class=\"btn sai-pagination-btn pagination-card\" data-offset=\"" + Math.max(0, current_offset - 6) + "\">&lt; Newer</div>";
-	}
-
-	if (loaded_events && loaded_events.length) {
-		for (var n = loaded_events.length - 1; n >= 0; n--) {
-			var o = loaded_events[n];
-			var isSelected = (o.e.uuid === selected_event_uuid);
-			var stateClass = "";
-			if (o.e && o.e.state == 3) stateClass = "comp_pass";
-			if (o.e && (o.e.state == 4 || o.e.state == 6)) stateClass = "comp_fail";
-			s += "<div class=\"event-decal-card " + stateClass + (isSelected ? " selected" : "") + "\" data-uuid=\"" + san(o.e.uuid) + "\">";
-			s += sai_event_summary_render(o, now_ut, 1);
-			s += "</div>";
-		}
+	if (!sb_projects || !sb_projects.length) {
+		s = "<div class=\"sb-empty\">No projects</div>";
 	} else {
-		s += "<div class=\"no-events\">No events found</div>";
-	}
-
-	// Add "Older" pagination button if applicable
-	if (!gitohashi_integ && total_events > 6 && current_offset + 6 < total_events) {
-		s += "<div class=\"btn sai-pagination-btn pagination-card\" data-offset=\"" + (current_offset + 6) + "\">Older &gt;</div>";
-	}
-
-	var container = document.getElementById("sai_event_decals");
-	if (container) {
-		container.innerHTML = s;
-		
-		container.querySelectorAll(".event-decal-card").forEach(function(card) {
-			card.addEventListener("click", function() {
-				var uuid = card.getAttribute("data-uuid");
-				selectEvent(uuid);
-			});
+		sb_projects.forEach(function(name) {
+			var sel = (name === sb_selected_project) ? " selected" : "";
+			s += "<div class=\"sb-row" + sel + "\" data-project=\"" +
+			     san(name) + "\">" + san(name) + "</div>";
 		});
+	}
+	c.innerHTML = s;
+	c.querySelectorAll(".sb-row").forEach(function(row) {
+		row.addEventListener("click", function() {
+			selectSbProject(row.getAttribute("data-project"));
+		});
+	});
+}
 
-		// Scroll the selected card into view
-		var selectedCard = container.querySelector(".event-decal-card.selected");
-		if (selectedCard) {
-			selectedCard.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "nearest" });
+function render_sb_branches()
+{
+	var c = document.getElementById("sai_sb_branches");
+	if (!c)
+		return;
+	var s = "";
+	if (!sb_branches || !sb_branches.length) {
+		s = "<div class=\"sb-empty\">No branches</div>";
+	} else {
+		sb_branches.forEach(function(ref) {
+			var sel = (ref === sb_selected_ref) ? " selected" : "";
+			s += "<div class=\"sb-row" + sel + "\" data-ref=\"" +
+			     san(ref) + "\">" + san(sai_sb_short_ref(ref)) + "</div>";
+		});
+	}
+	c.innerHTML = s;
+	c.querySelectorAll(".sb-row").forEach(function(row) {
+		row.addEventListener("click", function() {
+			selectSbBranch(row.getAttribute("data-ref"));
+		});
+	});
+}
+
+/*
+ * The newest-first event list (col 4) for the selected project + branch.
+ * Filtered client-side from loaded_events, so a freshly-pushed matching
+ * event appears at the top automatically on the next render.
+ */
+function render_sb_events()
+{
+	var c = document.getElementById("sai_sb_events");
+	if (!c)
+		return;
+	var now_ut = Math.round((new Date().getTime() / 1000));
+
+	var matching = [];
+	if (loaded_events && loaded_events.length) {
+		loaded_events.forEach(function(o) {
+			if (!o || !o.e)
+				return;
+			if (sb_selected_project && o.e.repo_name !== sb_selected_project)
+				return;
+			if (sb_selected_ref && o.e.ref !== sb_selected_ref)
+				return;
+			matching.push(o);
+		});
+	}
+
+	/* newest-first by creation time */
+	matching.sort(function(a, b) {
+		var ca = a.e.created || 0, cb = b.e.created || 0;
+		return cb - ca;
+	});
+
+	var s = "";
+	if (!matching.length) {
+		s = "<div class=\"sb-empty\">No events</div>";
+	} else {
+		matching.forEach(function(o) {
+			var e = o.e;
+			var stateClass = "";
+			if (e.state == 3) stateClass = " comp_pass";
+			if (e.state == 4 || e.state == 6) stateClass = " comp_fail";
+			var sel = (e.uuid === selected_event_uuid) ? " selected" : "";
+			s += "<div class=\"sb-event-row" + stateClass + sel +
+			     "\" data-uuid=\"" + san(e.uuid) + "\">";
+			s += "<div class=\"sb-event-top\">";
+			s += "<span class=\"sb-event-when\">" + san(sai_sb_fmt_when(e.created)) +
+			     " <span class='age-0' ut='" + e.created + "'>" +
+			     agify(now_ut, e.created) + "</span></span>";
+			s += "<span class=\"sb-event-tag\">" + san(sai_event_hash_display(e.hash)) + "</span>";
+			s += "<span class=\"sb-event-status\" id=\"sbsum-" + san(e.uuid) + "\"></span>";
+			s += "</div>";
+			/* sumbs-<uuid> is what update_summary_and_progress() fills */
+			s += "<div class=\"sb-event-bar\" id=\"sumbs-" + san(e.uuid) + "\"></div>";
+			s += "</div>";
+		});
+	}
+	c.innerHTML = s;
+	c.querySelectorAll(".sb-event-row").forEach(function(row) {
+		row.addEventListener("click", function() {
+			selectEvent(row.getAttribute("data-uuid"));
+		});
+	});
+
+	/* Fill status text + progress bar for each visible event */
+	matching.forEach(function(o) {
+		update_summary_and_progress(o.e.uuid);
+	});
+}
+
+function selectSbProject(name)
+{
+	if (sb_selected_project === name)
+		return;
+	sb_selected_project = name;
+	sb_selected_ref = null;
+	render_sb_projects();
+	/* refresh the branch list for this project; auto-selects newest branch */
+	sai_sb_request_branches(name);
+}
+
+function selectSbBranch(ref)
+{
+	if (sb_selected_ref === ref)
+		return;
+	sb_selected_ref = ref;
+	render_sb_branches();
+	/* re-scope the event list + tasks pane to the new selection */
+	sai_sb_request_overview(0);
+	/* Clear any prior task selection that no longer applies */
+	if (selected_task_uuid) {
+		var ev = loaded_events.find(function(o) { return o.e.uuid === selected_event_uuid; });
+		var has = ev && ev.t && ev.t.some(function(t) { return t.uuid === selected_task_uuid; });
+		if (!has) {
+			selected_task_uuid = null;
+			window.current_task_run = null;
 		}
 	}
+	render_sb_events();
+}
 
-	// Refresh summaries/progress bars
-	if (loaded_events) {
-		loaded_events.forEach(o => {
-			update_summary_and_progress(o.e.uuid);
-		});
-	}
+function render_event_decals() {
+	/*
+	 * The decal strip has been replaced by the merged 4-column sidebar
+	 * pane.  Existing call sites still invoke this; just refresh col 4.
+	 */
+	render_sb_events();
 }
 
 function render_selected_event_tasks(o) {
@@ -1480,6 +1654,13 @@ function render_selected_event_tasks(o) {
 		s += "<div class=\"event-tasks-header\">";
 		var refName = e.ref.replace("refs/heads/", "").replace("refs/tags/", "");
 		s += "<span class=\"event-tasks-title\">" + san(e.repo_name) + " (" + san(refName) + ") - " + san(sai_event_hash_display(e.hash)) + "</span>";
+		/* admin-only restart-all / delete-event controls live here now */
+		if (!gitohashi_integ && auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
+			s += "<img class=\"rebuild\" alt=\"rebuild all\" src=\"/sai/rebuild.png\" " +
+				"id=\"rebuild-ev-" + san(e.uuid) + "\">";
+			s += "<img class=\"rebuild\" alt=\"delete event\" src=\"/sai/delete.png\" " +
+				"id=\"delete-ev-" + san(e.uuid) + "\">";
+		}
 		s += "</div>";
 		s += "<table class=\"tasks-table-display\"><tr><td class=\"tasks\" id=\"taskcont-" + san(e.uuid) + "\">";
 
@@ -1602,14 +1783,15 @@ function selectEvent(uuid) {
 	}
 	window.history.pushState({}, "", path + (qs ? ("?" + qs) : ""));
 	
-	// Highlight card
-	var container = document.getElementById("sai_event_decals");
-	if (container) {
-		container.querySelectorAll(".event-decal-card").forEach(function(card) {
-			if (card.getAttribute("data-uuid") === uuid) {
-				card.classList.add("selected");
+	// Highlight the selected event in the sidebar (col 4)
+	var sbContainer = document.getElementById("sai_sb_events");
+	if (sbContainer) {
+		sbContainer.querySelectorAll(".sb-event-row").forEach(function(row) {
+			if (row.getAttribute("data-uuid") === uuid) {
+				row.classList.add("selected");
+				row.scrollIntoView({ behavior: "smooth", block: "nearest" });
 			} else {
-				card.classList.remove("selected");
+				row.classList.remove("selected");
 			}
 		});
 	}
@@ -2550,14 +2732,17 @@ function ws_open_sai()
 					 req += "\"run\":" + run_idx + ",";
 				 else
 					 req += "\"run\": -1,";
-				 req += "\"task_hash\":" + JSON.stringify(tid) + "}";
-				 sai.send(req);
+					 req += "\"task_hash\":" + JSON.stringify(tid) + "}";
+					 sai.send(req);
 
-				 // Also request the overview
-				 sai.send("{\"schema\":" +
-					  "\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION +
-					  ", \"offset\": " + current_overview_offset + "}");
-				 return;
+					 // Also request the overview (unscoped, so the
+					 // deep-linked task's event is included)
+					 sai.send("{\"schema\":" +
+						  "\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION +
+						  ", \"offset\": " + current_overview_offset + "}");
+					 // Populate the sidebar too
+					 sai_sb_request_projects();
+					 return;
 			}
 
 			if (eid) {
@@ -2570,20 +2755,24 @@ function ws_open_sai()
 					  "\"event_hash\":" +
 					  JSON.stringify(eid) + "}");
 
-				 // Also request the overview
+				 // Also request the overview (unscoped, so the
+				 // deep-linked event is included)
 				 sai.send("{\"schema\":" +
 					  "\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION +
 					  ", \"offset\": " + current_overview_offset + "}");
+				 // Populate the sidebar too
+				 sai_sb_request_projects();
 				 return;
 			}
 
 			/*
-			 * request the overview schema
+			 * No deep link: start the sidebar cascade by requesting
+			 * the project list.  Its handler auto-selects the first
+			 * project -> branchlist -> auto-select newest branch ->
+			 * scoped overview.
 			 */
 
-			 sai.send("{\"schema\":" +
-				  "\"com.warmcat.sai.taskinfo\", \"js_api_version\": " + SAI_JS_API_VERSION +
-				  ", \"offset\": " + current_overview_offset + "}");
+			 sai_sb_request_projects();
 		};
 
 		sai.onmessage = function got_packet(msg) {
@@ -2838,13 +3027,44 @@ function ws_open_sai()
 						term.write(jso.channel, text);
 					}
 				}
-				break;
+					break;
 
-			case "sai.warmcat.com.overview":
+				case "com.warmcat.sai.projlist":
+					/*
+					 * Unique project names from the events db.
+					 * On first receipt with no prior selection,
+					 * auto-select the first project to drive the
+					 * rest of the cascade.  Skip the auto-select
+					 * for deep links (?event=/?task=) so the
+					 * deep-linked event isn't displaced.
+					 */
+					sb_projects = (jso.projects && Array.isArray(jso.projects)) ? jso.projects : [];
+					if (!sb_selected_project && !selected_event_uuid &&
+					    !selected_task_uuid && sb_projects.length)
+						selectSbProject(sb_projects[0]);
+					else
+						render_sb_projects();
+					break;
+
+				case "com.warmcat.sai.branchlist":
+					/*
+					 * Unique refs for the selected project,
+					 * newest-first.  Auto-select the most recent
+					 * branch so col 4 populates immediately.
+					 */
+					sb_branches = (jso.branches && Array.isArray(jso.branches)) ? jso.branches : [];
+					if (!sb_selected_ref && sb_branches.length)
+						selectSbBranch(sb_branches[0]);
+					else
+						render_sb_branches();
+					break;
+
+				case "sai.warmcat.com.overview":
 				/*
 				 * Sent with an array of e[] to start, but also
 				 * can send a single e[] if it just changed
-				 * state
+				 * state.  When scoped to the sidebar selection,
+				 * the server only returns matching events.
 				 */
 				if (jso.overview) {
 					jso.overview = jso.overview.filter(o => !deleted_events_cache.has(o.e.uuid));
@@ -2853,7 +3073,26 @@ function ws_open_sai()
 					}
 				}
 
-				var old_latest_uuid = loaded_events.length ? loaded_events[loaded_events.length - 1].e.uuid : null;
+				/*
+				 * Track the newest matching event before merge, so
+				 * we can detect a brand-new event arriving in the
+				 * current selection.
+				 */
+				var sb_newest_before = null;
+				if (loaded_events && loaded_events.length) {
+					var _tmp = loaded_events.filter(function(o) {
+						if (!o || !o.e) return false;
+						if (sb_selected_project && o.e.repo_name !== sb_selected_project) return false;
+						if (sb_selected_ref && o.e.ref !== sb_selected_ref) return false;
+						return true;
+					});
+					if (_tmp.length) {
+						_tmp.sort(function(a, b) {
+							return (b.e.created || 0) - (a.e.created || 0);
+						});
+						sb_newest_before = _tmp[0].e.uuid;
+					}
+				}
 
 				if (jso.overview) {
 					jso.overview.forEach(function(new_ev) {
@@ -2884,10 +3123,36 @@ function ws_open_sai()
 				}
 				render_event_decals();
 
-				var new_latest_uuid = loaded_events.length ? loaded_events[loaded_events.length - 1].e.uuid : null;
-				if (old_latest_uuid && new_latest_uuid !== old_latest_uuid) {
-					/* A new event arrived! Select it and clear logs. */
-					selectEvent(new_latest_uuid);
+				/*
+				 * If a brand-new event for the current selection
+				 * arrived, auto-select it (matches the "live"
+				 * requirement: new matching event appears at the
+				 * top of col 4 and is selected).
+				 */
+				var sb_newest_after = null;
+				if (loaded_events && loaded_events.length) {
+					var _tmp2 = loaded_events.filter(function(o) {
+						if (!o || !o.e) return false;
+						if (sb_selected_project && o.e.repo_name !== sb_selected_project) return false;
+						if (sb_selected_ref && o.e.ref !== sb_selected_ref) return false;
+						return true;
+					});
+					if (_tmp2.length) {
+						_tmp2.sort(function(a, b) {
+							return (b.e.created || 0) - (a.e.created || 0);
+						});
+						sb_newest_after = _tmp2[0].e.uuid;
+					}
+				}
+				if (sb_newest_after && sb_newest_after !== sb_newest_before &&
+				    (sb_selected_project || sb_selected_ref)) {
+					/*
+					 * Only auto-jump to a brand-new event when
+					 * we're in the sidebar-driven flow (a
+					 * selection exists); deep links keep their
+					 * explicitly-selected event.
+					 */
+					selectEvent(sb_newest_after);
 				} else {
 					if (selected_event_uuid) {
 						var ev_obj = loaded_events.find(o => o.e.uuid === selected_event_uuid);
@@ -3205,6 +3470,17 @@ function ws_open_sai()
 					} else if (auth_state === SaiAuthState.LOGGED_IN_NO_GRANT) {
 						statusContainer.classList.add('grant-none');
 					}
+				}
+				/*
+				 * The admin restart-all / delete-event buttons now
+				 * live in the tasks-section header, which is gated
+				 * on auth_state; re-render it so they appear /
+				 * disappear on login state changes.
+				 */
+				if (selected_event_uuid) {
+					var _ev = loaded_events.find(o => o.e.uuid === selected_event_uuid);
+					if (_ev)
+						render_selected_event_tasks(_ev);
 				}
 				break;
 
@@ -3573,8 +3849,8 @@ window.addEventListener("load", function() {
 			console.log(rs);
 			sai.send(rs);
 
-			// Remove / hide the decal card
-			var card = document.querySelector(".event-decal-card[data-uuid='" + uuid + "']");
+			// Remove / hide the event row in the sidebar
+			var card = document.querySelector(".sb-event-row[data-uuid='" + uuid + "']");
 			if (card) {
 				card.style.transition = 'opacity 0.3s';
 				card.style.opacity = '0';

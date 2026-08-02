@@ -123,6 +123,17 @@ struct pss {
 	char			specific_project[96];
 	char			selected_event_uuid[33];
 
+	/*
+	 * Runtime project + branch selection coming from the browser's
+	 * sidebar (com.warmcat.sai.taskinfo overview request).  Unlike the
+	 * specific_* fields above (which are pinned from the connect URL for
+	 * the gitohashi /git/<project> mode), these are updated by the browser
+	 * at any time and scope the overview / live pushes to its current
+	 * selection.
+	 */
+	char			selected_project[65];
+	char			selected_ref[65];
+
 	sqlite3			*pdb_artifact;
 	sqlite3_blob		*blob_artifact;
 
