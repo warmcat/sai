@@ -60,11 +60,47 @@ enum {
 };
 
 typedef enum {
-	SAI_AUTH_STATE_NOT_LOGGED_IN,
-	SAI_AUTH_STATE_LOGGED_IN_NO_GRANT,
-	SAI_AUTH_STATE_LOGGED_IN_GRANT_USER,   /* < :2 */
-	SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN   /* >= :2 */
+	SAI_AUTH_STATE_NOT_LOGGED_IN,		/* 0: also the initial pss value */
+	SAI_AUTH_STATE_LOGGED_IN_NO_GRANT,	/* 1 */
+	SAI_AUTH_STATE_LOGGED_IN_GRANT_USER,	/* 2: < :2 (unused) */
+	SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN,	/* 3: >= :2 */
+	/*
+	 * 4: auth determination is in flight (WS path fetches the cooked
+	 * login status from lws-login asynchronously).  The action gate
+	 * treats anything != GRANT_ADMIN as denied, so this fails closed.
+	 * NOT used as a wire value to the browser (we only push a state
+	 * once resolved); defined to keep numeric values stable.
+	 */
+	SAI_AUTH_STATE_PENDING
 } sai_auth_state_t;
+
+/*
+ * In-flight WS auth fetch state.
+ *
+ * sai's WS path does no JWT/grant logic of its own; instead it fetches the
+ * cooked login status (".lws-login-status") served by the lws-login
+ * interceptor on sai's own mount, forwarding the browser's Cookie header so
+ * lws-login (which holds the JWK, grant name and grant level) can decide.
+ *
+ * One of these is heap-allocated per pss at WS ESTABLISH and freed when the
+ * fetch resolves (success or failure) or when the pss is destroyed.  It is
+ * the ->userdata of the internal client wsi, so the client protocol callback
+ * recovers it with lws_wsi_user().
+ */
+struct sai_auth_pending {
+	struct lws		*wsi_parent;	/* the sai WS wsi this is for */
+	struct lws		*wsi_client;	/* lws writes the client wsi here */
+
+	char			cookie_hdr[1024]; /* raw Cookie: value to forward */
+
+	char			body[1024];	/* accumulated response body */
+	int			body_len;
+
+	char			done;		/* set when resolved, prevents
+						 * double-resolution if both the
+						 * completion callback and the
+						 * timeout/closed try to finish */
+};
 
 
 struct pss {
@@ -136,16 +172,32 @@ struct pss {
 	unsigned int		resolved_task_offset:1;
 	uint8_t			wants_builder_info;
 	sai_auth_state_t	auth_state;
+
+	/* async WS auth-fetch (see struct sai_auth_pending) */
+	struct sai_auth_pending	*auth_pending;
+	lws_sorted_usec_list_t	sul_auth;
 };
 
 struct vhd {
 	struct lws_context		*context;
 	struct lws_vhost		*vhost;
 
-	struct lws_jwk			jwk;
-	int				has_jwk;
-	char				cookie_name[64];
-	char				jwk_path[256];
+	/*
+	 * sai does no JWT/grant validation itself.  At WS establish it
+	 * performs an internal HTTP GET of auth_status_url on its own
+	 * (unix-socket) vhost, forwarding the browser's Cookie so the
+	 * lws-login interceptor -- which holds the JWK and grant name --
+	 * can produce the cooked login status.  These pvos tell sai where
+	 * its own vhost is reachable and which path to fetch:
+	 *
+	 *   self_address    the lws client address of sai's own listener,
+	 *                   "+"-prefixed for a unix socket, eg
+	 *                   "+/var/run/sai" (see lws_client_connect_via_info)
+	 *   auth_status_url the synthetic path lws-login serves, normally
+	 *                   "/sai/.lws-login-status"
+	 */
+	char				self_address[128];
+	char				auth_status_url[128];
 
 	/* pss lists */
 	struct lws_dll2_owner		browsers;
@@ -191,7 +243,17 @@ sai_lws_context_from_json(const char *config_dir,
 			  const struct lws_protocols **pprotocols,
 			  const char *pol);
 extern const struct lws_protocols protocol_ws;
+extern const struct lws_protocols protocol_sai_internal_http_client;
 extern const lws_ss_info_t ssi_saiw_websrv;
+
+/*
+ * Kick off the async internal fetch of the cooked login status from lws-login
+ * for this WS connection.  Sets pss->auth_state to PENDING and arranges for
+ * saiw_browser_queue_auth_state() to be called when it resolves.  Returns 0
+ * if the fetch was started.
+ */
+int
+saiw_auth_fetch_kick(struct vhd *vhd, struct pss *pss, struct lws *wsi);
 
 int
 sai_notification_file_upload_cb(void *data, const char *name,
@@ -250,6 +312,14 @@ saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(struct vhd *vhd, const void *buf, si
 int
 saiw_ws_browser_queue_REQUIRES_LWS_PRE(struct pss *pss, const void *buf,
 				       size_t len, enum lws_write_protocol flags);
+
+/*
+ * Push a com.warmcat.sai.auth_state message to the browser reflecting the
+ * pss's current auth_state.  Used to notify the browser once the async
+ * login-status fetch resolves (the browser re-evaluates admin UI on receipt).
+ */
+void
+saiw_browser_queue_auth_state(struct pss *pss);
 
 void
 saiw_browser_state_changed(struct pss *pss, int established);

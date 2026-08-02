@@ -398,7 +398,8 @@ const SaiAuthState = {
 	NOT_LOGGED_IN: 0,
 	LOGGED_IN_NO_GRANT: 1,
 	LOGGED_IN_GRANT_USER: 2,   // < :2
-	LOGGED_IN_GRANT_ADMIN: 3   // >= :2
+	LOGGED_IN_GRANT_ADMIN: 3,  // >= :2
+	PENDING: 4                 // backend login-status fetch in flight
 };
 
 var logs = "", redpend = 0, gitohashi_integ = 0, authd = 0, auth_is_admin = 0, auth_grant_level = -1, auth_state = SaiAuthState.NOT_LOGGED_IN, exptimer, auth_user = "",
@@ -3170,21 +3171,30 @@ function ws_open_sai()
 				location.reload();
 				break;
 
-			case "com.warmcat.sai.auth_state":
-				console.log("Backend auth_state:", jso.auth_state);
-				if (jso.auth_state === 3) {
-					auth_state = SaiAuthState.LOGGED_IN_GRANT_ADMIN;
-					auth_is_admin = 1;
-				} else if (jso.auth_state === 2) {
-					auth_state = SaiAuthState.LOGGED_IN_GRANT_USER;
-					auth_is_admin = 0;
-				} else if (jso.auth_state === 1) {
-					auth_state = SaiAuthState.LOGGED_IN_NO_GRANT;
-					auth_is_admin = 0;
-				} else {
-					auth_state = SaiAuthState.NOT_LOGGED_IN;
-					auth_is_admin = 0;
-				}
+		case "com.warmcat.sai.auth_state":
+			console.log("Backend auth_state:", jso.auth_state);
+			/*
+			 * 4 = PENDING: the backend hasn't resolved the login
+			 * status yet (it fetches it from lws-login async at WS
+			 * establish).  Leave the UI as-is; a follow-up message
+			 * will deliver the resolved state.
+			 */
+			if (jso.auth_state === 4) {
+				break;
+			}
+			if (jso.auth_state === 3) {
+				auth_state = SaiAuthState.LOGGED_IN_GRANT_ADMIN;
+				auth_is_admin = 1;
+			} else if (jso.auth_state === 2) {
+				auth_state = SaiAuthState.LOGGED_IN_GRANT_USER;
+				auth_is_admin = 0;
+			} else if (jso.auth_state === 1) {
+				auth_state = SaiAuthState.LOGGED_IN_NO_GRANT;
+				auth_is_admin = 0;
+			} else {
+				auth_state = SaiAuthState.NOT_LOGGED_IN;
+				auth_is_admin = 0;
+			}
 				const statusContainer = document.getElementById('lws-login-status-container');
 				if (statusContainer) {
 					statusContainer.classList.remove('grant-admin', 'grant-user', 'grant-none');
