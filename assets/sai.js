@@ -1172,14 +1172,14 @@ function sai_taskinfo_render(t, now_ut)
 
 function update_summary_and_progress(event_uuid) {
     var sumbs = document.getElementById("sumbs-" + event_uuid);
-    /*
-     * The sidebar event row (col 4) keeps the status text in its own
-     * #sbsum-<uuid> span; the progress bar slot is the legacy #sumbs-<uuid>.
-     * Either or both may be present depending on what's rendered.
-     */
-    var sbs = document.getElementById("sbsum-" + event_uuid);
-    if (!sumbs && !sbs)
+    if (!sumbs) {
+	/*
+	 * No legacy combined slot; the sidebar row (if present) is refreshed
+	 * separately by sai_sb_render_event_summary().
+	 */
+	sai_sb_render_event_summary(event_uuid);
         return;
+    }
 
     var summary = summarize_build_situation(event_uuid);
     var summary_html = summary.text;
@@ -1227,14 +1227,59 @@ function update_summary_and_progress(event_uuid) {
             "<div class=\"progress-bar-failed float-right " + bad_cls + "\"></div>" +
             "</div>";
     }
-    if (sumbs)
-        sumbs.innerHTML = summary_html;
-    /*
-     * The sidebar status span shows just the text portion (the bar is in the
-     * separate #sumbs- slot below it).
-     */
+    sumbs.innerHTML = summary_html;
+
+    /* keep the sidebar row (if any) in sync too */
+    sai_sb_render_event_summary(event_uuid);
+}
+
+/*
+ * Build the HTML for an event's progress bar (or "" when complete / empty).
+ */
+function sai_sb_progress_bar_html(summary)
+{
+    if (!summary || !summary.total || summary.good === summary.total)
+	return "";
+
+    var good_pct  = (summary.good / summary.total) * 100;
+    var pend_pct  = (summary.pending / summary.total) * 100;
+    var ong_pct   = (summary.ongoing / summary.total) * 100;
+    var bad_pct   = (summary.bad / summary.total) * 100;
+
+    var up5 = function(n) { return Math.ceil(n / 5) * 5; };
+    var gw = up5(good_pct), pw = up5(pend_pct), ow = up5(ong_pct), bw = up5(bad_pct);
+    var tw = gw + pw + ow + bw;
+    if (tw > 100) {
+	var widths = { g: gw, p: pw, o: ow, b: bw };
+	var largest = Object.keys(widths).reduce(function(a, b){
+				return widths[a] > widths[b] ? a : b; });
+	widths[largest] -= (tw - 100);
+	gw = widths.g; pw = widths.p; ow = widths.o; bw = widths.b;
+    }
+
+    return "<div class=\"progress-bar\">" +
+	"<div class=\"progress-bar-success w-" + gw + "\"></div>" +
+	"<div class=\"progress-bar-pending w-" + pw + "\"></div>" +
+	"<div class=\"progress-bar-ongoing w-" + ow + "\"></div>" +
+	"<div class=\"progress-bar-failed float-right w-" + bw + "\"></div>" +
+	"</div>";
+}
+
+/*
+ * Refresh the sidebar event row's status text (#sbsum-<uuid>) and progress bar
+ * (#sbbar-<uuid>) independently, so the status text isn't duplicated.
+ */
+function sai_sb_render_event_summary(event_uuid)
+{
+    var sbs = document.getElementById("sbsum-" + event_uuid);
+    var bar = document.getElementById("sbbar-" + event_uuid);
+    if (!sbs && !bar)
+	return;
+    var sum = summarize_build_situation(event_uuid);
     if (sbs)
-        sbs.innerHTML = san(summary.text || "");
+	sbs.innerHTML = san(sum.text || "");
+    if (bar)
+	bar.innerHTML = sai_sb_progress_bar_html(sum);
 }
 
 function summarize_build_situation(event_uuid)
@@ -1589,8 +1634,8 @@ function render_sb_events()
 			s += "<span class=\"sb-event-tag\">" + san(sai_event_hash_display(e.hash)) + "</span>";
 			s += "<span class=\"sb-event-status\" id=\"sbsum-" + san(e.uuid) + "\"></span>";
 			s += "</div>";
-			/* sumbs-<uuid> is what update_summary_and_progress() fills */
-			s += "<div class=\"sb-event-bar\" id=\"sumbs-" + san(e.uuid) + "\"></div>";
+			/* progress bar slot, filled by sai_sb_render_event_summary() */
+			s += "<div class=\"sb-event-bar\" id=\"sbbar-" + san(e.uuid) + "\"></div>";
 			s += "</div>";
 		});
 	}
@@ -1603,7 +1648,7 @@ function render_sb_events()
 
 	/* Fill status text + progress bar for each visible event */
 	matching.forEach(function(o) {
-		update_summary_and_progress(o.e.uuid);
+		sai_sb_render_event_summary(o.e.uuid);
 	});
 }
 
@@ -3121,6 +3166,40 @@ function ws_open_sai()
 						}
 					}
 				}
+
+				/*
+				 * Fallback for older sai-web servers that don't
+				 * (yet) answer projlist/branchlist: derive the
+				 * unique projects and branches client-side from
+				 * whatever events we have.  When a real projlist /
+				 * branchlist reply arrives later it overrides this.
+				 */
+				if ((!sb_projects || !sb_projects.length) && loaded_events.length) {
+					var _pset = {};
+					loaded_events.forEach(function(o) {
+						if (o && o.e && o.e.repo_name)
+							_pset[o.e.repo_name] = 1;
+					});
+					sb_projects = Object.keys(_pset).sort();
+					if (!sb_selected_project && sb_projects.length && !selected_event_uuid && !selected_task_uuid)
+						sb_selected_project = sb_projects[0];
+					render_sb_projects();
+				}
+				if (sb_selected_project && (!sb_branches || !sb_branches.length) && loaded_events.length) {
+					var _bset = {};
+					loaded_events.forEach(function(o) {
+						if (o && o.e && o.e.repo_name === sb_selected_project && o.e.ref)
+							_bset[o.e.ref] = o.e.created || 0;
+					});
+					/* sort refs newest-first by their latest event */
+					sb_branches = Object.keys(_bset).sort(function(a, b) {
+						return _bset[b] - _bset[a];
+					});
+					if (!sb_selected_ref && sb_branches.length)
+						sb_selected_ref = sb_branches[0];
+					render_sb_branches();
+				}
+
 				render_event_decals();
 
 				/*
