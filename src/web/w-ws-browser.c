@@ -1377,10 +1377,6 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		}
 	}
 
-	lwsl_notice("%s: DBG overview filt='%s' limit=%d offset=%u total=%u\n",
-			__func__, filt[0] ? filt : "(none)", n,
-			pss->overview_offset, total_events);
-
 	pss->wants_event_updates = 1;
 	if (lws_struct_sq3_deserialize(vhd->pdb, filt[0] ? filt : NULL,
 				       "created ", lsm_schema_sq3_map_event,
@@ -1389,9 +1385,6 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 
 		return 0;
 	}
-
-	lwsl_notice("%s: DBG overview returned %u events\n",
-			__func__, (unsigned int)owner.count);
 
 	/*
 	 * we get zero or more sai_event_t laid out in pss->query_ac,
@@ -1523,6 +1516,14 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		 * user selects a specific event.
 		 */
 		if (pss->selected_project[0] || pss->selected_ref[0]) {
+			/*
+			 * Sidebar-scoped path: emit a tiny per-event payload
+			 * (empty task array + server-computed summary) instead
+			 * of the full task list, so many events fit the buflist.
+			 * We close the {"e":...} wrapper object here with '}'
+			 * and skip the shared "]" below (which closes the task
+			 * array opened by the unscoped path).
+			 */
 			char sum[96], esc_sum[128];
 
 			e = lws_container_of(walk, sai_event_t, list);
@@ -1534,10 +1535,28 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 							  sizeof(sum));
 				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			}
+
+			if (lws_ptr_diff_size_t(end, p) < 160) {
+				saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss,
+					start, lws_ptr_diff_size_t(p, start),
+					lws_write_ws_flags(LWS_WRITE_TEXT, 0, 0));
+				p = start;
+			}
 			p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
-				", \"t\":[], \"summary\":\"%s\"",
+				", \"t\":[], \"summary\":\"%s\"}",
 				lws_json_purify(esc_sum, sum, sizeof(esc_sum) - 1,
 						NULL));
+
+			/* advance to the next event like the unscoped path */
+			if (pss->specificity && pss->specificity != SAIM_SPECIFIC_TASK)
+				walk = walk->next;
+			else
+				walk = walk->prev;
+
+			if (walk && (!pss->specificity ||
+				     pss->specificity == SAIM_SPECIFIC_TASK))
+				continue;
+			goto so_finish;
 		} else {
 		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), ", \"t\":[");
 
