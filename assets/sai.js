@@ -1,4 +1,4 @@
-const SAI_JS_API_VERSION = 3;
+const SAI_JS_API_VERSION = 4;
 
 (function() {
 
@@ -966,6 +966,8 @@ var sb_selected_project = null, sb_selected_ref = null;
 function sai_sb_request_overview(offset)
 {
 	var o = (typeof offset === 'number') ? offset : 0;
+	console.log("[sb] -> overview req project='" + sb_selected_project +
+		    "' ref='" + sb_selected_ref + "'");
 	sai.send("{\"schema\":\"com.warmcat.sai.taskinfo\"," +
 		 "\"js_api_version\": " + SAI_JS_API_VERSION + "," +
 		 "\"offset\": " + o + "," +
@@ -975,11 +977,13 @@ function sai_sb_request_overview(offset)
 
 function sai_sb_request_projects()
 {
+	console.log("[sb] -> requesting projlist");
 	sai.send("{\"schema\":\"com.warmcat.sai.projlist\"}");
 }
 
 function sai_sb_request_branches(project)
 {
+	console.log("[sb] -> requesting branchlist for", project);
 	sai.send("{\"schema\":\"com.warmcat.sai.branchlist\"," +
 		 "\"project\":" + JSON.stringify(project || "") + "}");
 }
@@ -3083,6 +3087,7 @@ function ws_open_sai()
 					 * for deep links (?event=/?task=) so the
 					 * deep-linked event isn't displaced.
 					 */
+					console.log("[sb] <- projlist reply:", jso);
 					sb_projects = (jso.projects && Array.isArray(jso.projects)) ? jso.projects : [];
 					if (!sb_selected_project && !selected_event_uuid &&
 					    !selected_task_uuid && sb_projects.length)
@@ -3097,6 +3102,7 @@ function ws_open_sai()
 					 * newest-first.  Auto-select the most recent
 					 * branch so col 4 populates immediately.
 					 */
+					console.log("[sb] <- branchlist reply:", jso);
 					sb_branches = (jso.branches && Array.isArray(jso.branches)) ? jso.branches : [];
 					if (!sb_selected_ref && sb_branches.length)
 						selectSbBranch(sb_branches[0]);
@@ -3175,6 +3181,7 @@ function ws_open_sai()
 				 * branchlist reply arrives later it overrides this.
 				 */
 				if ((!sb_projects || !sb_projects.length) && loaded_events.length) {
+					console.log("[sb] FALLBACK: deriving projects from loaded_events (no projlist reply)");
 					var _pset = {};
 					loaded_events.forEach(function(o) {
 						if (o && o.e && o.e.repo_name)
@@ -3186,6 +3193,7 @@ function ws_open_sai()
 					render_sb_projects();
 				}
 				if (sb_selected_project && (!sb_branches || !sb_branches.length) && loaded_events.length) {
+					console.log("[sb] FALLBACK: deriving branches from loaded_events (no branchlist reply)");
 					var _bset = {};
 					loaded_events.forEach(function(o) {
 						if (o && o.e && o.e.repo_name === sb_selected_project && o.e.ref)

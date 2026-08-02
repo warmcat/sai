@@ -23,7 +23,7 @@
 #include <sqlite3.h>
 #include <sys/stat.h>
 
-#define SAIW_API_VERSION 3
+#define SAIW_API_VERSION 4
 
 struct sai_plat;
 
