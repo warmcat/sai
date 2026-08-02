@@ -1377,6 +1377,10 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		}
 	}
 
+	lwsl_notice("%s: DBG overview filt='%s' limit=%d offset=%u total=%u\n",
+			__func__, filt[0] ? filt : "(none)", n,
+			pss->overview_offset, total_events);
+
 	pss->wants_event_updates = 1;
 	if (lws_struct_sq3_deserialize(vhd->pdb, filt[0] ? filt : NULL,
 				       "created ", lsm_schema_sq3_map_event,
@@ -1385,6 +1389,9 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 
 		return 0;
 	}
+
+	lwsl_notice("%s: DBG overview returned %u events\n",
+			__func__, (unsigned int)owner.count);
 
 	/*
 	 * we get zero or more sai_event_t laid out in pss->query_ac,

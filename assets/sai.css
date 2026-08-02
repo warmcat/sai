@@ -1941,10 +1941,11 @@ div.ibuil.vm-builder {
 	flex: 0 0 auto;
 }
 
-/* progress bar slot: sits inline on the same row, takes the remaining width */
+/* progress bar slot: fixed compact width, inline on the same row */
 .sb-event-row .sb-event-bar {
-	flex: 1 1 auto;
-	min-width: 24px;
+	flex: 0 0 250px;
+	width: 250px;
+	max-width: 250px;
 	display: inline-flex;
 	align-items: center;
 }
@@ -1953,7 +1954,8 @@ div.ibuil.vm-builder {
 }
 
 .sb-event-row .progress-bar {
-	width: 100%;
+	width: 250px;
+	max-width: 250px;
 	height: 8px;
 }
 

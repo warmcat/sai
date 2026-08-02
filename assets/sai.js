@@ -1718,18 +1718,26 @@ function render_selected_event_tasks(o) {
 	var now_ut = Math.round((new Date().getTime() / 1000));
 	var s = "";
 	var e = o.e;
+
+	/*
+	 * The header (title + admin restart-all / delete-event buttons) is
+	 * always shown for the selected event, even when no task list is
+	 * available yet (sidebar-scoped overview events arrive with t:[] and
+	 * fetch their tasks on demand via selectEvent -> eventinfo).
+	 */
+	s += "<div class=\"event-tasks-header\">";
+	var refName = e.ref.replace("refs/heads/", "").replace("refs/tags/", "");
+	s += "<span class=\"event-tasks-title\">" + san(e.repo_name) + " (" + san(refName) + ") - " + san(sai_event_hash_display(e.hash)) + "</span>";
+	/* admin-only restart-all / delete-event controls live here now */
+	if (!gitohashi_integ && auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
+		s += "<img class=\"rebuild\" alt=\"rebuild all\" src=\"/sai/rebuild.png\" " +
+			"id=\"rebuild-ev-" + san(e.uuid) + "\">";
+		s += "<img class=\"rebuild\" alt=\"delete event\" src=\"/sai/delete.png\" " +
+			"id=\"delete-ev-" + san(e.uuid) + "\">";
+	}
+	s += "</div>";
+
 	if (o.t && o.t.length) {
-		s += "<div class=\"event-tasks-header\">";
-		var refName = e.ref.replace("refs/heads/", "").replace("refs/tags/", "");
-		s += "<span class=\"event-tasks-title\">" + san(e.repo_name) + " (" + san(refName) + ") - " + san(sai_event_hash_display(e.hash)) + "</span>";
-		/* admin-only restart-all / delete-event controls live here now */
-		if (!gitohashi_integ && auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
-			s += "<img class=\"rebuild\" alt=\"rebuild all\" src=\"/sai/rebuild.png\" " +
-				"id=\"rebuild-ev-" + san(e.uuid) + "\">";
-			s += "<img class=\"rebuild\" alt=\"delete event\" src=\"/sai/delete.png\" " +
-				"id=\"delete-ev-" + san(e.uuid) + "\">";
-		}
-		s += "</div>";
 		s += "<table class=\"tasks-table-display\"><tr><td class=\"tasks\" id=\"taskcont-" + san(e.uuid) + "\">";
 
 		var run_max = {}, run_list = {};
