@@ -128,6 +128,13 @@ struct pss {
 	char			specific_task[65];
 	char			specific_project[96];
 	char			selected_event_uuid[33];
+	/*
+	 * One-shot hint set by com.warmcat.sai.eventinfo: when set, the next
+	 * saiw_browser_queue_overview() scopes to just this event and emits its
+	 * full task list (instead of the summary-only multi-event payload used
+	 * for the sidebar list).  Cleared after being consumed.
+	 */
+	char			event_tasks_uuid[33];
 
 	/*
 	 * Runtime project + branch selection coming from the browser's

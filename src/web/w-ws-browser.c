@@ -279,9 +279,6 @@ saiw_subs_request_writeable(struct vhd *vhd, const char *task_uuid)
 static int
 saiw_pss_schedule_eventinfo(struct pss *pss, const char *event_uuid)
 {
-//	char qu[180], esc[66], esc2[96];
-//	int n;
-
 	/*
 	 * This pss may be locked to a specific event
 	 */
@@ -290,25 +287,16 @@ saiw_pss_schedule_eventinfo(struct pss *pss, const char *event_uuid)
 		goto bail;
 
 	/*
-	 * This pss may be locked to a specific project, qualify the db lookup
-	 * vs any project name specificity.
-	 *
-	 * Just collect the event struct into pss->query_owner to dump
+	 * The browser selected a specific event (com.warmcat.sai.eventinfo) and
+	 * wants that one event's full task list in the tasks pane.  Stash the
+	 * event uuid as a one-shot hint so saiw_browser_queue_overview() scopes
+	 * to just that event AND emits full task data for it (bypassing the
+	 * summary-only mode used for the multi-event sidebar list).  The hint
+	 * is cleared by saiw_browser_queue_overview() after it is consumed.
 	 */
-#if 0
-	lws_sql_purify(esc, event_uuid, sizeof(esc));
+	lws_strncpy(pss->event_tasks_uuid, event_uuid,
+		    sizeof(pss->event_tasks_uuid));
 
-	if (pss->specific_project[0]) {
-		lws_sql_purify(esc2, pss->specific_project, sizeof(esc2));
-		lws_snprintf(qu, sizeof(qu), " and uuid='%s' and repo_name='%s'", esc, esc2);
-	} else
-		lws_snprintf(qu, sizeof(qu), " and uuid='%s'", esc);
-	n = lws_struct_sq3_deserialize(pss->vhd->pdb, qu, NULL,
-				       lsm_schema_sq3_map_event,
-				       &sch->owner, &sch->ac, 0, 1);
-	if (n < 0 || !sch->owner.head)
-		goto bail;
-#endif
 	saiw_browser_queue_overview(pss->vhd, pss);
 	saiw_browser_broadcast_queue_builders(pss->vhd, pss);
 
@@ -831,8 +819,9 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		int first_elem = 1, sent_any = 0, rc;
 
 		if (sqlite3_prepare_v2(vhd->pdb,
-				"SELECT DISTINCT repo_name FROM events "
-				"WHERE state != ? ORDER BY repo_name",
+				"SELECT repo_name, MAX(created) AS mc FROM events "
+				"WHERE state != ? GROUP BY repo_name "
+				"ORDER BY mc DESC",
 				-1, &stmt, NULL) != SQLITE_OK) {
 			lwsl_notice("%s: projlist prepare failed\n", __func__);
 			goto soft_error;
@@ -1202,12 +1191,21 @@ saiw_broadcast_logs_batch(struct vhd *vhd, struct pss *pss)
  */
 static void
 saiw_event_summary_string(sqlite3 *pdb_event, const char *event_uuid,
-			  char *out, size_t out_len)
+			  char *out, size_t out_len,
+			  unsigned int *p_good, unsigned int *p_bad,
+			  unsigned int *p_ongoing, unsigned int *p_pending,
+			  unsigned int *p_total)
 {
 	sqlite3_stmt *stmt = NULL;
 	unsigned int good = 0, bad = 0, ongoing = 0, pending = 0, total = 0;
 	char q[160];
 	int rc;
+
+	if (p_good)    *p_good = 0;
+	if (p_bad)     *p_bad = 0;
+	if (p_ongoing) *p_ongoing = 0;
+	if (p_pending) *p_pending = 0;
+	if (p_total)   *p_total = 0;
 
 	if (!pdb_event || !event_uuid || !out || out_len < 16)
 		goto empty;
@@ -1240,6 +1238,12 @@ saiw_event_summary_string(sqlite3 *pdb_event, const char *event_uuid,
 		}
 	}
 	sqlite3_finalize(stmt);
+
+	if (p_good)    *p_good = good;
+	if (p_bad)     *p_bad = bad;
+	if (p_ongoing) *p_ongoing = ongoing;
+	if (p_pending) *p_pending = pending;
+	if (p_total)   *p_total = total;
 
 	if (!total)
 		goto empty;
@@ -1341,11 +1345,26 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 			 SAIES_DELETED);
 
 		/*
+		 * A specific event selection (com.warmcat.sai.eventinfo from
+		 * the browser clicking an event) takes precedence: scope to
+		 * just that one event uuid.  Full task data is emitted for it
+		 * (the summary-only path below is skipped in this case).
+		 */
+		if (pss->event_tasks_uuid[0]) {
+			fl = strlen(filt);
+			lws_sql_purify(esc, pss->event_tasks_uuid,
+				       sizeof(esc) - 1);
+			lws_snprintf(filt + fl, sizeof(filt) - fl,
+				     " and uuid=\"%s\"", esc);
+			n = -1;
+		}
+
+		/*
 		 * Sidebar runtime selection: scope to the browser's currently
 		 * selected project and (if set) branch, capping at the newest
 		 * 100 matching events.
 		 */
-		if (pss->selected_project[0]) {
+		if (!pss->event_tasks_uuid[0] && pss->selected_project[0]) {
 			fl = strlen(filt);
 			lws_sql_purify(esc, pss->selected_project,
 				       sizeof(esc) - 1);
@@ -1354,7 +1373,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 			n = -100;
 		}
 
-		if (pss->selected_ref[0]) {
+		if (!pss->event_tasks_uuid[0] && pss->selected_ref[0]) {
 			fl = strlen(filt);
 			lws_sql_purify(esc, pss->selected_ref,
 				       sizeof(esc) - 1);
@@ -1515,7 +1534,8 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		 * verbatim.  The full task list is fetched on demand when the
 		 * user selects a specific event.
 		 */
-		if (pss->selected_project[0] || pss->selected_ref[0]) {
+		if ((pss->selected_project[0] || pss->selected_ref[0]) &&
+		    !pss->event_tasks_uuid[0]) {
 			/*
 			 * Sidebar-scoped path: emit a tiny per-event payload
 			 * (empty task array + server-computed summary) instead
@@ -1524,28 +1544,33 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 			 * and skip the shared "]" below (which closes the task
 			 * array opened by the unscoped path).
 			 */
-			char sum[96], esc_sum[128];
+				char sum[96], esc_sum[128];
+				unsigned int sg = 0, sb = 0, so = 0, sp = 0, st = 0;
 
-			e = lws_container_of(walk, sai_event_t, list);
-			sum[0] = '\0';
-			if (!sai_event_db_ensure_open(vhd->context,
-					&vhd->sqlite3_cache,
-					vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
-				saiw_event_summary_string(pdb, e->uuid, sum,
-							  sizeof(sum));
-				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
-			}
+				e = lws_container_of(walk, sai_event_t, list);
+				sum[0] = '\0';
+				if (!sai_event_db_ensure_open(vhd->context,
+						&vhd->sqlite3_cache,
+						vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
+					saiw_event_summary_string(pdb, e->uuid, sum,
+								  sizeof(sum),
+								  &sg, &sb, &so, &sp, &st);
+					sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+				}
 
-			if (lws_ptr_diff_size_t(end, p) < 160) {
-				saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss,
-					start, lws_ptr_diff_size_t(p, start),
-					lws_write_ws_flags(LWS_WRITE_TEXT, 0, 0));
-				p = start;
-			}
-			p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
-				", \"t\":[], \"summary\":\"%s\"}",
-				lws_json_purify(esc_sum, sum, sizeof(esc_sum) - 1,
-						NULL));
+				if (lws_ptr_diff_size_t(end, p) < 160) {
+					saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss,
+						start, lws_ptr_diff_size_t(p, start),
+						lws_write_ws_flags(LWS_WRITE_TEXT, 0, 0));
+					p = start;
+				}
+				p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+					", \"t\":[], \"summary\":\"%s\","
+					"\"sum_counts\":{\"good\":%u,\"bad\":%u,"
+					"\"ongoing\":%u,\"pending\":%u,\"total\":%u}}",
+					lws_json_purify(esc_sum, sum, sizeof(esc_sum) - 1,
+							NULL),
+					sg, sb, so, sp, st);
 
 			/* advance to the next event like the unscoped path */
 			if (pss->specificity && pss->specificity != SAIM_SPECIFIC_TASK)
@@ -1684,6 +1709,12 @@ so_finish:
 	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
 					       lws_ptr_diff_size_t(p, start),
 					       lws_write_ws_flags(LWS_WRITE_TEXT, 0, 1));
+
+	/*
+	 * Consume the one-shot single-event hint (set by eventinfo) so later
+	 * overview pushes for the multi-event sidebar list aren't locked to it.
+	 */
+	pss->event_tasks_uuid[0] = '\0';
 
 	return 0;
 }

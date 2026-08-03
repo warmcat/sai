@@ -1297,7 +1297,15 @@ function summarize_build_situation(event_uuid)
 	 * task array isn't present.
 	 */
 	if (ev_obj && (!ev_obj.t || !ev_obj.t.length) && ev_obj.summary) {
-		return { text: ev_obj.summary };
+		var sc = ev_obj.sum_counts || {};
+		return {
+			text: ev_obj.summary,
+			good: sc.good || 0,
+			bad: sc.bad || 0,
+			ongoing: sc.ongoing || 0,
+			pending: sc.pending || 0,
+			total: sc.total || 0
+		};
 	}
 
 	if (ev_obj && ev_obj.t) {
