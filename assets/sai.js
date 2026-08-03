@@ -3256,12 +3256,46 @@ function ws_open_sai()
 					jso.overview.forEach(function(new_ev) {
 						var idx = loaded_events.findIndex(o => o.e.uuid === new_ev.e.uuid);
 						if (idx !== -1) {
-							loaded_events[idx] = new_ev;
+							/*
+							 * Preserve task data we may already hold for this
+							 * event: a sidebar-scoped (summary) overview
+							 * arrives with t:[] + summary/sum_counts, which
+							 * would clobber the full task array fetched for
+							 * the tasks pane (e.g. via a ?task= deep link).
+							 * Keep the richer of the two: use the incoming
+							 * tasks if it has them, else keep the existing.
+							 */
+							var merged = new_ev;
+							if ((!new_ev.t || !new_ev.t.length) &&
+							    loaded_events[idx].t && loaded_events[idx].t.length) {
+								merged = Object.assign({}, new_ev);
+								merged.t = loaded_events[idx].t;
+							}
+							loaded_events[idx] = merged;
 						} else {
 							loaded_events.push(new_ev);
 						}
 					});
 					if (jso.overview.length > 1) {
+						/*
+						 * Carry over any full task arrays we already hold for
+						 * events that the new (possibly summary-only) overview
+						 * replaces with t:[], so the tasks pane keeps its data.
+						 */
+						var _old_by_uuid = {};
+						loaded_events.forEach(function(o) {
+							if (o && o.e && o.e.uuid && o.t && o.t.length)
+								_old_by_uuid[o.e.uuid] = o.t;
+						});
+						jso.overview = jso.overview.map(function(new_ev) {
+							if ((!new_ev.t || !new_ev.t.length) &&
+							    new_ev.e && _old_by_uuid[new_ev.e.uuid]) {
+								var m = Object.assign({}, new_ev);
+								m.t = _old_by_uuid[new_ev.e.uuid];
+								return m;
+							}
+							return new_ev;
+						});
 						loaded_events = jso.overview;
 						if (typeof jso.total_events !== 'undefined') total_events = jso.total_events;
 						if (typeof jso.offset !== 'undefined') current_offset = jso.offset;
