@@ -1688,6 +1688,7 @@ function selectSbProject(name)
 	render_sb_projects();
 	/* refresh the branch list for this project; auto-selects newest branch */
 	sai_sb_request_branches(name);
+	sai_sb_update_url();
 }
 
 function selectSbBranch(ref)
@@ -1708,6 +1709,33 @@ function selectSbBranch(ref)
 		}
 	}
 	render_sb_events();
+	/* reflect the project + branch selection in the URL */
+	sai_sb_update_url();
+}
+
+/*
+ * Keep the project + branch in the URL query string so the view is shareable
+ * and survives a reload.  Event/task params are managed by selectEvent; we
+ * only touch project/branch here.
+ */
+function sai_sb_update_url()
+{
+	try {
+		var par = new URLSearchParams(window.location.search);
+		if (sb_selected_project)
+			par.set("project", sb_selected_project);
+		else
+			par.delete("project");
+		if (sb_selected_ref)
+			par.set("branch", sb_selected_ref);
+		else
+			par.delete("branch");
+		var qs = par.toString();
+		var path = window.location.pathname;
+		if (!path.endsWith('/') && !path.endsWith('index.html'))
+			path += '/';
+		window.history.replaceState({}, "", path + (qs ? ("?" + qs) : ""));
+	} catch (e) {}
 }
 
 function render_event_decals() {
@@ -1749,7 +1777,10 @@ function render_selected_event_tasks(o) {
 	 * available yet (sidebar-scoped overview events arrive with t:[] and
 	 * fetch their tasks on demand via selectEvent -> eventinfo).
 	 */
-	s += "<div class=\"event-tasks-header\">";
+	s += "<div class=\"event-tasks-header";
+	if (e.state == 3) s += " comp_pass";
+	if (e.state == 4 || e.state == 6) s += " comp_fail";
+	s += "\">";
 	var refName = e.ref.replace("refs/heads/", "").replace("refs/tags/", "");
 	s += "<span class=\"event-tasks-title\">" + san(e.repo_name) + " (" + san(refName) + ") - " + san(sai_event_hash_display(e.hash)) + "</span>";
 	/* admin-only restart-all / delete-event controls live here now */
@@ -2870,7 +2901,17 @@ function ws_open_sai()
 			 * the project list.  Its handler auto-selects the first
 			 * project -> branchlist -> auto-select newest branch ->
 			 * scoped overview.
+			 *
+			 * If the URL carries ?project= / ?branch= (a previously
+			 * saved sidebar selection), pre-seed them so the cascade
+			 * restores that view instead of the newest project/branch.
 			 */
+			{
+				var _pp = par.get('project');
+				var _bp = par.get('branch');
+				if (_pp) sb_selected_project = _pp;
+				if (_bp) sb_selected_ref = _bp;
+			}
 
 			 sai_sb_request_projects();
 		};
@@ -3139,23 +3180,41 @@ function ws_open_sai()
 					 */
 					sb_projects = (jso.projects && Array.isArray(jso.projects)) ? jso.projects : [];
 					if (!sb_selected_project && !selected_event_uuid &&
-					    !selected_task_uuid && sb_projects.length)
+					    !selected_task_uuid && sb_projects.length) {
 						selectSbProject(sb_projects[0]);
-					else
+					} else {
 						render_sb_projects();
+						/*
+						 * If a project was pre-selected (e.g. from ?project=
+						 * in the URL), drive the rest of the cascade for it:
+						 * fetch its branch list.  When a branch is also
+						 * pre-selected, the branchlist handler below will
+						 * preserve it and fire the scoped overview.
+						 */
+						if (sb_selected_project && !sb_branches.length)
+							sai_sb_request_branches(sb_selected_project);
+					}
 					break;
 
 				case "com.warmcat.sai.branchlist":
 					/*
 					 * Unique refs for the selected project,
 					 * newest-first.  Auto-select the most recent
-						 * branch so col 4 populates immediately.
-						 */
+					 * branch so col 4 populates immediately.
+					 */
 					sb_branches = (jso.branches && Array.isArray(jso.branches)) ? jso.branches : [];
-					if (!sb_selected_ref && sb_branches.length)
+					if (!sb_selected_ref && sb_branches.length) {
 						selectSbBranch(sb_branches[0]);
-					else
+					} else {
 						render_sb_branches();
+						/*
+						 * If a branch was pre-selected (e.g. from ?branch=),
+						 * fire the scoped overview now that we know the
+						 * branch list for this project.
+						 */
+						if (sb_selected_ref)
+							sai_sb_request_overview(0);
+					}
 					break;
 
 				case "sai.warmcat.com.overview":
@@ -3217,6 +3276,35 @@ function ws_open_sai()
 						}
 						if (!selected_event_uuid) {
 							selected_event_uuid = loaded_events[loaded_events.length - 1].e.uuid;
+						}
+					}
+
+					/*
+					 * Deep-link (?event= / ?task=) support: if the
+					 * URL pinned a specific event/task, derive the
+					 * sidebar project + branch from it so the
+					 * project and branch lists highlight the right
+					 * entries.  We only do this once (until the
+					 * user manually picks something else).
+					 */
+					var _deep = false;
+					try {
+						var _dp = new URLSearchParams(window.location.search);
+						_deep = !!(_dp.get('event') || _dp.get('task'));
+					} catch (e2) {}
+					if (_deep && selected_event_uuid &&
+					    !sb_selected_project && !sb_selected_ref) {
+						var _dev = loaded_events.find(
+							o => o.e.uuid === selected_event_uuid);
+						if (_dev && _dev.e) {
+							sb_selected_project = _dev.e.repo_name || null;
+							sb_selected_ref = _dev.e.ref || null;
+							render_sb_projects();
+							render_sb_branches();
+							/* refresh this project's branch list from
+							 * the server so the highlight is correct */
+							if (sb_selected_project)
+								sai_sb_request_branches(sb_selected_project);
 						}
 					}
 				}
@@ -4095,6 +4183,19 @@ window.addEventListener("load", function() {
 				} else if (auth_state === SaiAuthState.LOGGED_IN_NO_GRANT) {
 					container.classList.add('grant-none');
 				}
+			}
+
+			/*
+			 * Re-render the tasks pane header so the admin
+			 * restart-all / delete-event buttons appear now that
+			 * auth_state has resolved (the buttons are gated on
+			 * LOGGED_IN_GRANT_ADMIN and are absent from the initial
+			 * render while auth_state was still NOT_LOGGED_IN).
+			 */
+			if (selected_event_uuid) {
+				var _ev = loaded_events.find(o => o.e.uuid === selected_event_uuid);
+				if (_ev)
+					render_selected_event_tasks(_ev);
 			}
 		}
 	})

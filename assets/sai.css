@@ -1891,12 +1891,18 @@ div.ibuil.vm-builder {
 }
 
 /* event rows in col 4 */
+/*
+ * Tabular event rows: CSS grid with fixed-width columns so the date/time,
+ * tag, status and progress-bar cells line up across all rows regardless of
+ * their content width (the date/time and tag are constant width; status is
+ * auto so it takes its natural size; the bar is a fixed 250px).
+ */
 .sb-event-row {
-	display: flex;
-	flex-direction: row;
+	display: grid;
+	grid-template-columns: 150px 96px minmax(60px, auto) 250px;
 	align-items: center;
-	gap: 6px;
-	padding: 2px 6px;
+	column-gap: 10px;
+	padding: 2px 10px;
 	margin: 1px 0;
 	border-radius: 4px;
 	cursor: pointer;
@@ -1934,7 +1940,8 @@ div.ibuil.vm-builder {
 	font-size: 8pt;
 	color: #64748b;
 	white-space: nowrap;
-	flex: 0 0 auto;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .sb-event-row.comp_fail .sb-event-when {
@@ -1945,30 +1952,30 @@ div.ibuil.vm-builder {
 	font-family: monospace;
 	font-size: 9pt;
 	white-space: nowrap;
-	flex: 0 0 auto;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 .sb-event-row .sb-event-status {
 	font-size: 8.5pt;
 	white-space: nowrap;
-	flex: 0 0 auto;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 /* progress bar slot: fixed compact width, inline on the same row */
 .sb-event-row .sb-event-bar {
-	flex: 0 0 250px;
-	width: 250px;
-	max-width: 250px;
 	display: inline-flex;
 	align-items: center;
+	min-width: 0;
 }
 .sb-event-row .sb-event-bar:empty {
 	display: none;
 }
 
 .sb-event-row .progress-bar {
-	width: 250px;
-	max-width: 250px;
+	width: 100%;
+	min-width: 0;
 	height: 8px;
 }
 
@@ -2016,6 +2023,20 @@ div.ibuil.vm-builder {
 
 .event-tasks-header img.rebuild {
 	display: inline-block;
+}
+
+/* reflect the event's completion state on the header background, like div4 */
+.event-tasks-header.comp_pass {
+	background: #01ff70;
+	border-bottom-color: #2ecc40;
+}
+.event-tasks-header.comp_fail {
+	background: #ff4136;
+	color: #ffffff;
+	border-bottom-color: #df3030;
+}
+.event-tasks-header.comp_fail .event-tasks-title {
+	color: #ffffff;
 }
 
 .tasks-table-display {
