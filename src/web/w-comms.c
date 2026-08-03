@@ -163,30 +163,12 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		vhd->context = lws_get_context(wsi);
 		vhd->vhost = lws_get_vhost(wsi);
 
-		{
-			const struct lws_protocol_vhost_options *pvo = (const struct lws_protocol_vhost_options *)in;
-
-			/*
-			 * Defaults match the example deployment: sai listens on
-			 * the unix socket /var/run/sai and lws-login serves the
-			 * cooked login status on /sai/.lws-login-status.  Both
-			 * are overridable per-vhost.
-			 */
-			lws_strncpy(vhd->self_address, "+/var/run/sai",
-				    sizeof(vhd->self_address));
-			lws_strncpy(vhd->auth_status_url, "/sai/.lws-login-status",
-				    sizeof(vhd->auth_status_url));
-
-			while (pvo) {
-				if (!strcmp(pvo->name, "self-address"))
-					lws_strncpy(vhd->self_address, pvo->value,
-						    sizeof(vhd->self_address));
-				if (!strcmp(pvo->name, "auth-status-url"))
-					lws_strncpy(vhd->auth_status_url, pvo->value,
-						    sizeof(vhd->auth_status_url));
-				pvo = pvo->next;
-			}
-		}
+		/*
+		 * sai-web needs no auth-related pvos: it takes its login state
+		 * from the x-lws-login-* headers the lws-login interceptor (in
+		 * the front-end lwsws) injects and the proxy forwards.  See
+		 * LWS_CALLBACK_ESTABLISHED.
+		 */
 
 		if (lws_pvo_get_str(in, "database", &vhd->sqlite3_path_lhs)) {
 			lwsl_err("%s: database pvo required\n", __func__);
@@ -581,19 +563,25 @@ http_resp:
 #endif
 
 		/*
-		 * sai takes its login state from lws-login rather than
-		 * validating any JWT itself.  Kick off an async internal
-		 * GET of the cooked login status on our own vhost,
-		 * forwarding the browser's Cookie so lws-login can decide.
-		 * auth_state stays PENDING (=> not admin => fails closed at
-		 * the action gate) until the fetch resolves and pushes the
-		 * result to the browser.
+		 * sai does no JWT/grant validation of its own.  The lws-login
+		 * interceptor (in the front-end lwsws process) authenticated
+		 * this WS upgrade and stamped the cooked result as trusted
+		 * headers (x-lws-login-admin: 0/1) which the proxy forwarded
+		 * to us.  Read the admin flag; everything else (the action gate
+		 * at w-ws-browser.c) keys off auth_state.  If the header is
+		 * absent (no interceptor configured) we fail closed: not admin.
 		 */
-		pss->auth_state = SAI_AUTH_STATE_PENDING;
-		if (saiw_auth_fetch_kick(vhd, pss, wsi))
-			lwsl_wsi_err(wsi, "unable to start auth-status fetch");
+		{
+			char admin[8];
+			int a = lws_hdr_custom_copy(wsi, admin, sizeof(admin),
+						    "x-lws-login-admin:", 18);
 
-		lwsl_wsi_notice(wsi, "**** ESTABLISHED WS: auth fetch started (auth_state=%d pending)", (int)pss->auth_state);
+			pss->auth_state = (a == 1 && admin[0] == '1') ?
+				SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN :
+				SAI_AUTH_STATE_LOGGED_IN_NO_GRANT;
+			lwsl_wsi_notice(wsi, "ESTABLISHED WS: x-lws-login-admin=%c (auth_state=%d)",
+					a == 1 ? admin[0] : '-', (int)pss->auth_state);
+		}
 
 		if (!memcmp((char *)start, "/sai", 4))
 			start += 4;
@@ -678,25 +666,6 @@ http_resp:
 		saiw_browser_state_changed(pss, 0);
 		lws_dll2_remove(&pss->subs_list);
 		lws_sul_cancel(&pss->sul_logcache);
-		lws_sul_cancel(&pss->sul_auth);
-
-		/*
-		 * Tear down any in-flight auth fetch: detach it from the pss
-		 * so the client callback can no longer touch the pss, and
-		 * close the client wsi so its CLOSED callback frees the
-		 * pending struct promptly rather than lingering.
-		 */
-		if (pss->auth_pending) {
-			struct lws *cwsi = pss->auth_pending->wsi_client;
-
-			pss->auth_pending->wsi_parent = NULL;
-			pss->auth_pending = NULL;
-
-			if (cwsi)
-				lws_set_timeout(cwsi,
-					PENDING_TIMEOUT_KILLED_BY_PROXY_CLIENT_CLOSE,
-					LWS_TO_KILL_ASYNC);
-		}
 
 		for (n = 0; n < 4; n++) {
 			if (pss->last_bps[n])
@@ -800,265 +769,10 @@ try_to_reuse:
 	return 0;
 }
 
-/*
- * Resolve auth_state from the accumulated .lws-login-status body and push it
- * to the browser.  Sets ->done so a late timeout/CLOSED can't double-resolve.
- * Detaches the pending struct from the pss.  The pending struct itself is
- * owned by the client wsi (it is the client wsi's userdata) and is freed when
- * the client wsi is destroyed -- NOT here -- so the caller may still touch ap
- * after this returns; ap->wsi_parent is cleared so a later close callback is a
- * no-op for the pss.
- */
-static void
-saiw_auth_pending_resolve(struct sai_auth_pending *ap, sai_auth_state_t state)
-{
-	struct pss *pss;
-
-	if (!ap || ap->done)
-		return;
-	ap->done = 1;
-
-	if (ap->wsi_parent) {
-		/*
-		 * wsi_parent's per-session data is the pss; recover it from
-		 * the wsi user_space.  pss->auth_pending == ap is the live
-		 * pointer check; if the pss was CLOSED it NULLed
-		 * auth_pending and wsi_parent.
-		 */
-		pss = (struct pss *)lws_wsi_user(ap->wsi_parent);
-		if (pss && pss->auth_pending == ap) {
-			pss->auth_state = state;
-			saiw_browser_queue_auth_state(pss);
-			pss->auth_pending = NULL;
-			lws_sul_cancel(&pss->sul_auth);
-		}
-	}
-
-	ap->wsi_parent = NULL;	/* pss side is settled; don't touch it again */
-}
-
-/*
- * Pull the small set of cooked fields we care about out of the body.  The body
- * is a flat object produced by lws-login's .lws-login-status handler, so
- * lws_json_simple_find() is sufficient and avoids a full JSON parser.
- */
-static sai_auth_state_t
-saiw_auth_state_from_body(const char *body, int len)
-{
-	const char *v;
-	size_t alen;
-
-	v = lws_json_simple_find(body, (size_t)len, "\"logged_in\":", &alen);
-	if (!v || alen != 1 || v[0] != '1')
-		return SAI_AUTH_STATE_NOT_LOGGED_IN;
-
-	v = lws_json_simple_find(body, (size_t)len, "\"is_admin\":", &alen);
-
-	return (v && alen == 1 && v[0] == '1') ?
-			SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN :
-			SAI_AUTH_STATE_LOGGED_IN_NO_GRANT;
-}
-
-/*
- * SUL timeout: if the fetch hasn't resolved in time, resolve it as no-grant
- * (closed) so the browser isn't left in PENDING forever, then close the
- * client wsi (whose CLOSED callback frees the pending struct).
- */
-static void
-saiw_auth_sul_cb(lws_sorted_usec_list_t *sul)
-{
-	struct pss *pss = lws_container_of(sul, struct pss, sul_auth);
-	struct sai_auth_pending *ap;
-	struct lws *cwsi;
-
-	if (!pss)
-		return;
-
-	ap = pss->auth_pending;
-	if (!ap)
-		return;
-
-	lwsl_wsi_err(pss->wsi, "auth-status fetch timed out");
-
-	cwsi = ap->wsi_client;	/* capture before resolve clears wsi_parent */
-	saiw_auth_pending_resolve(ap, SAI_AUTH_STATE_LOGGED_IN_NO_GRANT);
-
-	if (cwsi)	/* tearing down the client wsi frees ap via CLOSED */
-		lws_set_timeout(cwsi, PENDING_TIMEOUT_KILLED_BY_PROXY_CLIENT_CLOSE,
-				LWS_TO_KILL_ASYNC);
-}
-
-int
-saiw_auth_fetch_kick(struct vhd *vhd, struct pss *pss, struct lws *wsi)
-{
-	struct sai_auth_pending *ap;
-	struct lws_client_connect_info i;
-	int n;
-
-	ap = malloc(sizeof(*ap));
-	if (!ap)
-		return 1;
-	memset(ap, 0, sizeof(*ap));
-	ap->wsi_parent = wsi;
-
-	/*
-	 * Copy the browser's raw Cookie header verbatim; we forward it to
-	 * lws-login so IT can validate the session.  sai never inspects it.
-	 */
-	n = lws_hdr_copy(wsi, ap->cookie_hdr, sizeof(ap->cookie_hdr),
-			 WSI_TOKEN_HTTP_COOKIE);
-	if (n < 0)
-		ap->cookie_hdr[0] = '\0';
-
-	pss->auth_pending = ap;
-
-	lws_sul_schedule(vhd->context, 0, &pss->sul_auth, saiw_auth_sul_cb,
-			 5 * LWS_US_PER_SEC);
-
-	memset(&i, 0, sizeof(i));
-	i.context	= vhd->context;
-	/*
-	 * Bind the client wsi to sai's own vhost explicitly: the protocol
-	 * lookup (lws_vhost_name_to_protocol) runs against wsi->a.vhost, so we
-	 * must use a vhost whose protocol list contains sai_internal_http_client
-	 * (sai registers it on every vhost via pprotocols).  Without this lws
-	 * falls back to the "default" / first vhost, which may lack the protocol
-	 * and fall back to the dummy http protocol.
-	 */
-	i.vhost		= vhd->vhost;
-	i.address	= vhd->self_address;	/* "+"-prefixed unix path */
-	i.port		= 0;			/* ignored on the '+' path */
-	i.ssl_connection = 0;
-	i.path		= vhd->auth_status_url;
-	i.host		= "localhost";
-	i.origin	= i.host;
-	i.method	= "GET";
-	i.protocol	= "sai_internal_http_client";
-	i.userdata	= ap;			/* lws_wsi_user() on client */
-	i.pwsi		= &ap->wsi_client;
-
-	/*
-	 * lws_client_connect_via_info() returns the new client wsi on success
-	 * (non-NULL) or NULL on synchronous failure.
-	 */
-	if (lws_client_connect_via_info(&i))
-		return 0; /* connect started: ap now owned by the client wsi */
-
-	/* synchronous failure to even start: clean up ourselves */
-	lws_sul_cancel(&pss->sul_auth);
-	pss->auth_pending = NULL;
-	free(ap);
-
-	return 1;
-}
-
-/*
- * Internal HTTP client protocol: drives the auth-status GET.  Has no
- * per-session data of its own; its ->userdata is the struct sai_auth_pending
- * set up at connect time.
- */
-static int
-callback_sai_internal_http_client(struct lws *wsi,
-				  enum lws_callback_reasons reason,
-				  void *user, void *in, size_t len)
-{
-	struct sai_auth_pending *ap = (struct sai_auth_pending *)lws_wsi_user(wsi);
-
-	switch (reason) {
-
-	case LWS_CALLBACK_CLIENT_APPEND_HANDSHAKE_HEADER: {
-		unsigned char **p = (unsigned char **)in;
-		unsigned char *end = (*p) + len;
-
-		if (!ap)
-			break;
-
-		/* forward the browser's Cookie so lws-login can validate it */
-		if (ap->cookie_hdr[0] &&
-		    lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_COOKIE,
-				(unsigned char *)ap->cookie_hdr,
-				(int)strlen(ap->cookie_hdr), p, end))
-			return -1;
-		break;
-	}
-
-	case LWS_CALLBACK_RECEIVE_CLIENT_HTTP_READ: {
-		int avail, take;
-
-		if (!ap || ap->done)
-			break;
-
-		/* accumulate the (small) JSON body */
-		avail = (int)sizeof(ap->body) - 1 - ap->body_len;
-		take = avail < (int)len ? avail : (int)len;
-		if (take > 0) {
-			memcpy(ap->body + ap->body_len, in, (size_t)take);
-			ap->body_len += take;
-			ap->body[ap->body_len] = '\0';
-		}
-		break;
-	}
-
-	case LWS_CALLBACK_COMPLETED_CLIENT_HTTP:
-		if (ap && !ap->done) {
-			sai_auth_state_t st;
-
-			st = saiw_auth_state_from_body(ap->body, ap->body_len);
-			lwsl_wsi_notice(ap->wsi_parent,
-				"auth-status fetch completed: state=%d", (int)st);
-			saiw_auth_pending_resolve(ap, st);
-		}
-		/*
-		 * The transaction is done; close the client wsi.  This drives
-		 * CLOSED_CLIENT_HTTP below, which frees ap.
-		 */
-		return -1;
-
-	case LWS_CALLBACK_CLIENT_CONNECTION_ERROR:
-		lwsl_notice("%s: auth-status client connect failed\n", __func__);
-		/* fall through */
-	case LWS_CALLBACK_CLOSED_CLIENT_HTTP:
-		if (ap) {
-			if (!ap->done) {
-				lwsl_wsi_err(ap->wsi_parent,
-					     "auth-status fetch failed/closed");
-				saiw_auth_pending_resolve(ap,
-					SAI_AUTH_STATE_LOGGED_IN_NO_GRANT);
-			}
-			/*
-			 * ap is this wsi's userdata; the wsi is going away now,
-			 * so free it.  Nothing else references ap once it is
-			 * detached from the pss (resolve clears wsi_parent).
-			 */
-			free(ap);
-		}
-		break;
-
-	default:
-		break;
-	}
-
-	/*
-	 * Do NOT delegate to lws_callback_http_dummy(): that handler is for
-	 * server-side HTTP and proxied client wsis (it asserts the wsi has a
-	 * parent under LWS_WITH_HTTP_PROXY).  This is a standalone internal
-	 * HTTP client -- return 0 like lws-login's callback_lws_login_client.
-	 */
-	(void)user;
-	(void)wsi;
-	return 0;
-}
 
 const struct lws_protocols protocol_ws = {
 	.name = "com-warmcat-sai",
 	.callback = w_callback_ws,
 	.per_session_data_size = sizeof(struct pss),
-	.rx_buffer_size = 0,
-};
-
-const struct lws_protocols protocol_sai_internal_http_client = {
-	.name = "sai_internal_http_client",
-	.callback = callback_sai_internal_http_client,
-	.per_session_data_size = 0,
 	.rx_buffer_size = 0,
 };

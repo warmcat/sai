@@ -63,28 +63,28 @@
 			#
 			"database":		"/srv/sai/sai-master",
 
-			# sai takes its login state from the lws-login
-			# interceptor rather than validating any JWT itself.
-			# At WS establish it performs an internal GET of
-			# auth-status-url on self-address (its own listener),
-			# forwarding the browser's Cookie, so lws-login (which
-			# holds the JWK and grant name) can decide admin or
-			# not.  Both default to the example deployment below.
+			# sai-web does NO auth of its own: no JWK, no JWT
+			# validation, no grant logic.  It learns the login
+			# state from the x-lws-login-* headers the lws-login
+			# interceptor (running in the front-end lwsws
+			# process) injects and the reverse proxy forwards to
+			# us.  So sai-web's /sai mount in the front-end must
+			# be a proxy mount with lws-login wired as its
+			# interceptor, and that interceptor's pmo is the one
+			# place the grant name (eg lws-sai) lives:
 			#
-			# self-address: "+"-prefixed lws client address of
-			# sai's own listener; "+" selects a unix socket, the
-			# rest is the filesystem path.
+			# front-end (lwsws) vhost:
+			#   { "mountpoint": "/sai",
+			#     "origin": "http://+/var/run/sai:/sai",
+			#     "interceptor-path": "/lws-login-sai" },
+			#   { "mountpoint": "/lws-login-sai",
+			#     "origin": "callback://lws-login",
+			#     "protocol": "lws-login",
+			#     "pmo": [{ "service-name": "lws-sai" }] }
 			#
-			# "self-address":	"+/var/run/sai",
-			# "auth-status-url":	"/sai/.lws-login-status",
-			#
-			# For the fetch to reach lws-login, the /sai mount
-			# must have lws-login wired as its interceptor with a
-			# pmo service-name binding the grant name (eg lws-sai)
-			# -- that pmo is the single place where the grant name
-			# lives.  See protocol_lws_login.md for the mount
-			# wiring.  Without lws-login, the fetch 404s and sai
-			# treats the user as not having admin rights.
+			# sai-web then reads x-lws-login-admin:0/1 at WS
+			# establish.  Without the interceptor, sai-web sees no
+			# header and treats the user as not having admin rights.
 
 			# template HTML to use for this vhost.  You'd normally
 			# copy this to gitohashi-vhostname.html and modify it

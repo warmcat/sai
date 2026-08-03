@@ -224,24 +224,6 @@ saiw_ws_broadcast_browsers_REQUIRES_LWS_PRE(struct vhd *vhd, const void *buf,
 	} lws_end_foreach_dll(p);
 }
 
-/*
- * Push a com.warmcat.sai.auth_state message reflecting pss->auth_state.  Used
- * to notify the browser once the async login-status fetch resolves; the
- * browser re-evaluates admin UI on receipt (sai.js com.warmcat.sai.auth_state).
- */
-void
-saiw_browser_queue_auth_state(struct pss *pss)
-{
-	uint8_t buf[LWS_PRE + 128], *start = buf + LWS_PRE, *p = start,
-		*end = buf + sizeof(buf);
-
-	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
-		"{\"schema\":\"com.warmcat.sai.auth_state\",\"auth_state\":%d}",
-		(int)pss->auth_state);
-	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
-			lws_ptr_diff_size_t(p, start), LWS_WRITE_TEXT);
-}
-
 
 
 int

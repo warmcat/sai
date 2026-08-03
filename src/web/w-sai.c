@@ -57,8 +57,7 @@ static const char * const default_ss_policy =
 ;
 
 static const struct lws_protocols
-	*pprotocols[] = { &protocol_ws,
-			  &protocol_sai_internal_http_client, NULL };
+	*pprotocols[] = { &protocol_ws, NULL };
 
 static void sigint_handler(int sig)
 {
