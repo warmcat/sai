@@ -196,7 +196,7 @@ saiw_ws_browser_queue_REQUIRES_LWS_PRE(struct pss *pss, const void *buf,
 
 	*pi = (int)flags;
 
-	if (lws_buflist_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) < 0) {
+	if (lws_buflist2_append_segment(&pss->raw_tx, buf - sizeof(int), len + sizeof(int)) < 0) {
 		lwsl_wsi_err(pss->wsi, "unable to buflist_append"); /* still ask to drain */
 		r = 1;
 	}
@@ -1076,7 +1076,7 @@ saiw_broadcast_logs_batch(struct vhd *vhd, struct pss *pss)
 	if (!pss->subs_list.owner)
 		return 0;
 
-	if (lws_buflist_total_len(&pss->raw_tx) > 100 * 1024) {
+	if (lws_buflist2_total_len(&pss->raw_tx) > 100 * 1024) {
 		lws_sul_schedule(vhd->context, 0, &pss->sul_logcache,
 				 saiw_retry_logs, 250 * LWS_US_PER_MS);
 		return 0;

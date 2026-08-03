@@ -537,6 +537,13 @@ http_resp:
 
 		pss->wsi = wsi;
 		pss->vhd = vhd;
+		/*
+		 * Raise the tx buflist sanity limit well above lws's 2MiB
+		 * default: a scoped sidebar overview can carry a large number
+		 * of events before the connection drains.  32MiB is plenty for
+		 * the biggest event lists while still bounding memory per pss.
+		 */
+		pss->raw_tx.limit = 32 * 1024 * 1024;
 		pss->is_gitohashi = 1;
 		{
 			int r = 0;
@@ -667,7 +674,7 @@ http_resp:
 	case LWS_CALLBACK_CLOSED:
 
 		lwsl_wsi_info(wsi, "CLOSED browse conn");
-		lws_buflist_destroy_all_segments(&pss->raw_tx);
+		lws_buflist2_destroy_all_segments(&pss->raw_tx);
 		saiw_browser_state_changed(pss, 0);
 		lws_dll2_remove(&pss->subs_list);
 		lws_sul_cancel(&pss->sul_logcache);
@@ -718,30 +725,30 @@ http_resp:
 		break;
 
 	case LWS_CALLBACK_SERVER_WRITEABLE:
-		if (!vhd || !pss->raw_tx)
+		if (!vhd || !pss->raw_tx.total_len)
 			break;
 
 		{
 			char som, eom, rb[1200 + LWS_PRE];
 			uint8_t *prb = (uint8_t *)rb + LWS_PRE;
 			int used, final = 1;
-			size_t fsl = lws_buflist_next_segment_len(&pss->raw_tx, NULL);
+			size_t fsl = lws_buflist2_next_segment_len(&pss->raw_tx, NULL);
 
 			/*
 			 * Each segment has a header containing the flags.
 			 * We MUST only read it if we are at the start of the segment.
 			 * If we are mid-segment, we use the cached flags.
 			 */
-			if (lws_buflist_get_frag_start_or_NULL(&pss->raw_tx)) {
+			if (lws_buflist2_get_frag_start_or_NULL(&pss->raw_tx)) {
 				/* This is just a peek to see if we HAVE a segment */
-				int *pi = (int *)lws_buflist_get_frag_start_or_NULL(&pss->raw_tx);
+				int *pi = (int *)lws_buflist2_get_frag_start_or_NULL(&pss->raw_tx);
 				int flags = *pi;
-				
+
 				/*
 				 * fragment_use sets 'som' to true if we are at
 				 * the segment start.
 				 */
-				used = lws_buflist_fragment_use(&pss->raw_tx, prb, 1200, &som, &eom);
+				used = lws_buflist2_fragment_use(&pss->raw_tx, prb, 1200, &som, &eom);
 				if (!used)
 					return 0;
 
@@ -764,7 +771,7 @@ http_resp:
 			}
 		}
 
-		if (pss->raw_tx)
+		if (pss->raw_tx.total_len)
 			lws_callback_on_writable(pss->wsi);
 		break;
 

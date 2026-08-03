@@ -110,8 +110,14 @@ struct pss {
 
 	struct lws_spa		*spa;
 	struct lejp_ctx		ctx;
-	struct lws_buflist	*raw_tx;
-	struct lws_dll2		same; /* owner: vhd.browsers */
+	/*
+	 * Outgoing ws tx backlog for this browser connection.  Uses the
+	 * lws_buflist2 API so we can raise the per-owner sanity limit above
+	 * the 2MiB lws_buflist default (a scoped sidebar overview can carry
+	 * many events' worth of task data).
+	 */
+	struct lws_buflist2_owner	raw_tx;
+	struct lws_dll2			same; /* owner: vhd.browsers */
 
 	struct lws_dll2		subs_list;
 

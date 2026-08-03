@@ -1817,25 +1817,37 @@ div.ibuil.vm-builder {
 }
 
 .sidebar-pane .sb-col-logo .logo {
-	display: block;
+	display: flex;
+	flex-direction: row;
+	align-items: center;
+	gap: 6px;
 	margin: 0;
 	padding: 0;
 	width: auto;
 }
 
 .sidebar-pane .sb-col-logo img.logo {
-	width: 110px;
+	width: 70px;
 	height: auto;
 	display: block;
+	flex: 0 0 auto;
+}
+
+/* vertical stack of "Sai git" + "API rev N" to the right of the logo image */
+.sidebar-pane .sb-col-logo .logo-text {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: 1px;
 }
 
 /* override the global span.logo (Sai git / apirev) for the narrow column */
 .sidebar-pane .sb-col-logo span.logo {
 	width: auto;
 	max-width: 100%;
-	margin: 1px 0 0 0;
+	margin: 0;
 	padding: 0;
-	text-align: center;
+	text-align: left;
 	display: block;
 }
 
@@ -1875,6 +1887,7 @@ div.ibuil.vm-builder {
 .sb-row.selected {
 	background: #334155;
 	color: #ffffff;
+	font-weight: bold;
 }
 
 /* event rows in col 4 */

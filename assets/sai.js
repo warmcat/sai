@@ -1716,6 +1716,26 @@ function render_selected_event_tasks(o) {
 	var e = o.e;
 
 	/*
+	 * The tasks pane only makes sense once we have a context for it: either
+	 * a sidebar project + branch selection, or an explicit deep-link
+	 * (?event= / ?task=) that named a specific event/task.  Otherwise
+	 * (initial page load, nothing chosen) leave it empty rather than
+	 * showing tasks for an unrelated auto-selected event.
+	 */
+	var deep_link = false;
+	try {
+		var _p = new URLSearchParams(window.location.search);
+		deep_link = !!(_p.get('event') || _p.get('task'));
+	} catch (e2) {}
+
+	if (!sb_selected_project && !sb_selected_ref && !deep_link) {
+		var c = document.getElementById("sai_event_tasks");
+		if (c)
+			c.innerHTML = "<div class=\"sb-empty\">Select a project and branch</div>";
+		return;
+	}
+
+	/*
 	 * The header (title + admin restart-all / delete-event buttons) is
 	 * always shown for the selected event, even when no task list is
 	 * available yet (sidebar-scoped overview events arrive with t:[] and
