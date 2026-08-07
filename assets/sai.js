@@ -1729,12 +1729,33 @@ function sai_sb_update_url()
 			par.set("branch", sb_selected_ref);
 		else
 			par.delete("branch");
-		var qs = par.toString();
-		var path = window.location.pathname;
-		if (!path.endsWith('/') && !path.endsWith('index.html'))
-			path += '/';
-		window.history.replaceState({}, "", path + (qs ? ("?" + qs) : ""));
+		sai_update_history(par, true);
 	} catch (e) {}
+}
+
+/*
+ * Update the address bar with sai's shareable query params.  When sai is
+ * embedded as a guest on another app's page (gitohashi integration), the URL
+ * belongs to the host app -- we must not rewrite it with project=/branch=/
+ * event=/task=/run=, or bare visits to the host page get polluted by sai's
+ * sidebar auto-select cascade.
+ *
+ * \param par: a URLSearchParams holding the params to publish
+ * \param replace: true -> replaceState (keep history clean for selection
+ *        updates); false -> pushState (create a navigable entry for task/event
+ *        deep links)
+ */
+function sai_update_history(par, replace)
+{
+	if (gitohashi_integ)
+		return;
+
+	var qs = par.toString();
+	var path = window.location.pathname;
+	if (!path.endsWith('/') && !path.endsWith('index.html'))
+		path += '/';
+	window.history[replace ? "replaceState" : "pushState"](
+		{}, "", path + (qs ? ("?" + qs) : ""));
 }
 
 function render_event_decals() {
@@ -1906,13 +1927,8 @@ function selectEvent(uuid) {
 		par.delete("task");
 		par.delete("run");
 	}
-	var qs = par.toString();
-	var path = window.location.pathname;
-	if (!path.endsWith('/') && !path.endsWith('index.html')) {
-		path += '/';
-	}
-	window.history.pushState({}, "", path + (qs ? ("?" + qs) : ""));
-	
+	sai_update_history(par, false);
+
 	// Highlight the selected event in the sidebar (col 4)
 	var sbContainer = document.getElementById("sai_sb_events");
 	if (sbContainer) {
@@ -1961,11 +1977,7 @@ function selectTask(taskUuid, runVal) {
 	} else {
 		par.delete("run");
 	}
-	var path = window.location.pathname;
-	if (!path.endsWith('/') && !path.endsWith('index.html')) {
-		path += '/';
-	}
-	window.history.pushState({}, "", path + "?" + par.toString());
+	sai_update_history(par, false);
 
 	// Setup loading state and clear logs (without the loading text overlay)
 	var stickyEl = document.getElementById("sai_sticky");
@@ -3461,11 +3473,7 @@ function ws_open_sai()
 						/* update the URL without reloading so sharing works */
 						var par = new URLSearchParams(window.location.search);
 						par.set('run', jso.t.run);
-						var path = window.location.pathname;
-						if (!path.endsWith('/') && !path.endsWith('index.html')) {
-							path += '/';
-						}
-						window.history.replaceState({}, '', path + '?' + par.toString());
+						sai_update_history(par, true);
 					}
 					window.current_task_run = jso.t.run;
 					var ti_el = document.getElementById("taskinfo-" + jso.t.uuid);
@@ -4131,12 +4139,7 @@ window.addEventListener("load", function() {
 					par.delete("task");
 					par.delete("run");
 					par.delete("event");
-					var qs = par.toString();
-					var path = window.location.pathname;
-					if (!path.endsWith('/') && !path.endsWith('index.html')) {
-						path += '/';
-					}
-					window.history.pushState({}, "", path + (qs ? ("?" + qs) : ""));
+					sai_update_history(par, false);
 				}
 			}
 		}
