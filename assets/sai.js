@@ -1747,11 +1747,8 @@ function sai_sb_update_url()
  */
 function sai_update_history(par, replace)
 {
-	if (gitohashi_integ) {
-		document.title = "[GI=1 SUPPRESS] " + document.title;
+	if (gitohashi_integ)
 		return;
-	}
-	document.title = "[GI=0 APPLY] " + document.title;
 
 	var qs = par.toString();
 	var path = window.location.pathname;
@@ -2797,7 +2794,6 @@ function ws_open_sai()
 	q = window.location.href;
 	console.log(q);
 	qi = q.indexOf("/git/");
-	document.title = "[ws_open href=" + q + " qi=" + qi + " gi=" + gitohashi_integ + "]";
 	if (qi !== -1) {
 		/* it has the /git/... does it have the project? */
 		s += "/specific";
