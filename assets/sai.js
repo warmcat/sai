@@ -956,6 +956,13 @@ var loaded_events = [], selected_event_uuid = null, selected_task_uuid = null, t
  * sb_projects / sb_branches are the unique values advertised by the server.
  */
 var sb_projects = [], sb_branches = [];
+/*
+ * Latest non-deleted event state per ref for the selected project, as reported
+ * by the branchlist reply (ref -> state int).  Used to colour branch rows by
+ * the build result of their newest event.  Empty when no project is selected
+ * or when an older server omits branch_states.
+ */
+var sb_branch_states = {};
 var sb_selected_project = null, sb_selected_ref = null;
 
 /*
@@ -1578,6 +1585,52 @@ function render_sb_projects()
 	});
 }
 
+/*
+ * Map a latest-event state to the same comp_pass / comp_fail class family the
+ * event rows use, so a branch name is coloured by its newest build result.
+ * Returns "" for ongoing / waiting states so they keep the default styling.
+ */
+function sai_sb_branch_state_class(ref)
+{
+	if (!sb_branch_states)
+		return "";
+	var st = sb_branch_states[ref];
+	if (st === 3)
+		return " comp_pass";
+	if (st === 4 || st === 6)
+		return " comp_fail";
+	return "";
+}
+
+/*
+ * Live-update the selected branch's colour: the server only pushes scoped
+ * events for the current selection, so only sb_selected_ref can have moved.
+ * Recompute the newest matching event's state from loaded_events; if it differs
+ * from the recorded sb_branch_states entry, update it and re-render col 3.
+ */
+function sai_sb_branch_state_livecheck()
+{
+	if (!sb_selected_ref || !sb_branch_states ||
+	    !(sb_selected_ref in sb_branch_states) ||
+	    !loaded_events || !loaded_events.length)
+		return;
+	var ml = loaded_events.filter(function(o) {
+		return o && o.e && o.e.ref === sb_selected_ref &&
+			(!sb_selected_project ||
+			 o.e.repo_name === sb_selected_project);
+	});
+	if (!ml.length)
+		return;
+	ml.sort(function(a, b) {
+		return (b.e.created || 0) - (a.e.created || 0);
+	});
+	var nst = ml[0].e.state;
+	if (sb_branch_states[sb_selected_ref] !== nst) {
+		sb_branch_states[sb_selected_ref] = nst;
+		render_sb_branches();
+	}
+}
+
 function render_sb_branches()
 {
 	var c = document.getElementById("sai_sb_branches");
@@ -1589,8 +1642,10 @@ function render_sb_branches()
 	} else {
 		sb_branches.forEach(function(ref) {
 			var sel = (ref === sb_selected_ref) ? " selected" : "";
-			s += "<div class=\"sb-row" + sel + "\" data-ref=\"" +
-			     san(ref) + "\">" + san(sai_sb_short_ref(ref)) + "</div>";
+			var stClass = sai_sb_branch_state_class(ref);
+			s += "<div class=\"sb-row" + stClass + sel +
+			     "\" data-ref=\"" + san(ref) + "\">" +
+			     san(sai_sb_short_ref(ref)) + "</div>";
 		});
 	}
 	c.innerHTML = s;
@@ -1684,6 +1739,8 @@ function selectSbProject(name)
 		return;
 	sb_selected_project = name;
 	sb_selected_ref = null;
+	/* clear the per-ref state map until the new project's branchlist arrives */
+	sb_branch_states = {};
 	render_sb_projects();
 	/* refresh the branch list for this project; auto-selects newest branch */
 	sai_sb_request_branches(name);
@@ -3212,8 +3269,12 @@ function ws_open_sai()
 					 * Unique refs for the selected project,
 					 * newest-first.  Auto-select the most recent
 					 * branch so col 4 populates immediately.
+					 * branch_states (ref -> latest-event state) is
+					 * optional; older servers omit it.
 					 */
 					sb_branches = (jso.branches && Array.isArray(jso.branches)) ? jso.branches : [];
+					sb_branch_states = (jso.branch_states && typeof jso.branch_states === 'object')
+								? jso.branch_states : {};
 					if (!sb_selected_ref && sb_branches.length) {
 						selectSbBranch(sb_branches[0]);
 					} else {
@@ -3382,6 +3443,26 @@ function ws_open_sai()
 					sb_branches = Object.keys(_bset).sort(function(a, b) {
 						return _bset[b] - _bset[a];
 					});
+					/*
+					 * Derive the per-ref latest state client-side too,
+					 * using the newest event per ref, so the fallback
+					 * path colours branches identically to a real
+					 * branchlist reply.
+					 */
+					sb_branch_states = {};
+					sb_branches.forEach(function(ref) {
+						var newest = null;
+						loaded_events.forEach(function(o) {
+							if (!o || !o.e || o.e.ref !== ref ||
+							    o.e.repo_name !== sb_selected_project)
+								return;
+							if (!newest ||
+							    (o.e.created || 0) > (newest.e.created || 0))
+								newest = o;
+						});
+						if (newest)
+							sb_branch_states[ref] = newest.e.state;
+					});
 					if (!sb_selected_ref && sb_branches.length)
 						sb_selected_ref = sb_branches[0];
 					render_sb_branches();
@@ -3428,6 +3509,14 @@ function ws_open_sai()
 					}
 				}
 
+				/*
+				 * Keep the selected branch's colour live: the
+				 * overview is scoped to the selection, so only the
+				 * selected ref can have a newer event here; other
+				 * branches refresh on the next branchlist fetch.
+				 */
+				sai_sb_branch_state_livecheck();
+
 				aging();
 				break;
 
@@ -3457,6 +3546,12 @@ function ws_open_sai()
 							}
 						}
 					}
+					/*
+					 * A task state change can flip the event's
+					 * state; reflect it in the selected branch's
+					 * colour without a full branchlist round-trip.
+					 */
+					sai_sb_branch_state_livecheck();
 				}
 
 				if (document.getElementById("taskstate_" + jso.t.uuid)) {

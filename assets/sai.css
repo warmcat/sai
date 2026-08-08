@@ -1773,6 +1773,20 @@ div.ibuil.vm-builder {
 	overflow: hidden;
 }
 
+/*
+ * Builder list pane: a flex child of .right-pane.  Takes the remaining height
+ * beneath the power overview and scrolls independently when the builder list is
+ * taller than the viewport, so clipped builders stay reachable.  min-height:0
+ * is required so the flex item can shrink below its content size and actually
+ * scroll instead of forcing the pane to grow.
+ */
+#sai_builders {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+	scrollbar-width: thin;
+}
+
 .sidebar-pane {
 	flex: 0 0 auto;
 	height: 150px;
@@ -1888,6 +1902,26 @@ div.ibuil.vm-builder {
 	background: #334155;
 	color: #ffffff;
 	font-weight: bold;
+}
+
+/*
+ * Branch rows are coloured by the state of their newest event: green for a
+ * successful build, red for a failed one (states 3 / 4 / 6, matching the
+ * event-row semantics).  Ongoing / waiting states keep the default styling.
+ * Brighter hues are used on the dark selected-row background so the colour
+ * stays readable whether or not the branch is the current selection.
+ */
+.sb-row.comp_pass {
+	color: #1b8f3a;
+}
+.sb-row.comp_fail {
+	color: #c3261d;
+}
+.sb-row.selected.comp_pass {
+	color: #2ecc40;
+}
+.sb-row.selected.comp_fail {
+	color: #ff6b61;
 }
 
 /* event rows in col 4 */

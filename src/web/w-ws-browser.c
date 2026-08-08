@@ -847,45 +847,99 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		/*
 		 * Return the set of unique refs for the given project, in
 		 * most-recent-first order (the ref whose latest event is the
-		 * newest comes first).  Read-only.  project is bound, not
+		 * newest comes first).  A parallel "branch_states" object maps
+		 * each ref to the state of its latest non-deleted event, so the
+		 * browser can colour the branch list rows by build result.
+		 * Read-only.  project and the state filters are bound, not
 		 * interpolated.
+		 *
+		 * We run the grouped query once into an lwsac snapshot, then
+		 * emit both the "branches" array and the "branch_states" object
+		 * from that single consistent result.  The correlated subquery
+		 * resolves the state of the newest non-deleted event for the
+		 * group's ref within the same project.  Bind order follows
+		 * parameter appearance: project, SAIES_DELETED (subquery),
+		 * then SAIES_DELETED, project (outer).
 		 */
 		sai_browse_rx_branchlist_t *bl =
 				(sai_browse_rx_branchlist_t *)a.dest;
+		struct bl_row {
+			struct lws_dll2	list;
+			char		*ref;
+			int		state;
+		};
+		struct lwsac *ac = NULL;
+		lws_dll2_owner_t owner;
 		sqlite3_stmt *stmt = NULL;
 		uint8_t buf[LWS_PRE + 4096], *start = buf + LWS_PRE,
 			*p = start, *end = buf + sizeof(buf);
 		char esc[96], pesc[96];
 		int first_elem = 1, sent_any = 0, rc;
 
-		if (sqlite3_prepare_v2(vhd->pdb,
-				"SELECT ref, MAX(created) AS mc FROM events "
-				"WHERE state != ? AND repo_name = ? "
-				"GROUP BY ref ORDER BY mc DESC",
-				-1, &stmt, NULL) != SQLITE_OK) {
-			lwsl_notice("%s: branchlist prepare failed\n",
-					__func__);
-			goto soft_error;
-		}
-		sqlite3_bind_int(stmt, 1, SAIES_DELETED);
+		lws_dll2_owner_init(&owner);
+
 		/*
 		 * Belt-and-braces: also purify (the bound param already
 		 * prevents injection, but this keeps the echoed project
 		 * field safe to emit too).
 		 */
 		lws_sql_purify(pesc, bl->project, sizeof(pesc) - 1);
-		sqlite3_bind_text(stmt, 2, pesc, -1, SQLITE_STATIC);
+
+		if (sqlite3_prepare_v2(vhd->pdb,
+				"SELECT ref, "
+				"(SELECT e2.state FROM events e2 "
+				" WHERE e2.ref = events.ref "
+				" AND e2.repo_name = ? AND e2.state != ? "
+				" ORDER BY e2.created DESC LIMIT 1) AS ls "
+				"FROM events "
+				"WHERE state != ? AND repo_name = ? "
+				"GROUP BY ref ORDER BY MAX(created) DESC",
+				-1, &stmt, NULL) != SQLITE_OK) {
+			lwsl_notice("%s: branchlist prepare failed\n",
+					__func__);
+			goto soft_error;
+		}
+		sqlite3_bind_text(stmt, 1, pesc, -1, SQLITE_STATIC);
+		sqlite3_bind_int(stmt, 2, SAIES_DELETED);
+		sqlite3_bind_int(stmt, 3, SAIES_DELETED);
+		sqlite3_bind_text(stmt, 4, pesc, -1, SQLITE_STATIC);
+
+		while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+			struct bl_row *row;
+			const char *rn = (const char *)
+					sqlite3_column_text(stmt, 0);
+			size_t rn_len;
+			if (!rn)
+				continue;
+			rn_len = strlen(rn);
+			row = lwsac_use_zero(&ac, sizeof(*row), 0);
+			if (!row) {
+				sqlite3_finalize(stmt);
+				lwsac_free(&ac);
+				goto soft_error;
+			}
+			row->ref = lwsac_use(&ac, rn_len + 1, 0);
+			if (!row->ref) {
+				sqlite3_finalize(stmt);
+				lwsac_free(&ac);
+				goto soft_error;
+			}
+			memcpy(row->ref, rn, rn_len + 1);
+			row->state = sqlite3_column_int(stmt, 1);
+			lws_dll2_add_tail(&row->list, &owner);
+		}
+		sqlite3_finalize(stmt);
 
 		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
 				  "{\"schema\":\"com.warmcat.sai.branchlist\","
 				  "\"project\":\"%s\",\"branches\":[",
 				  lws_json_purify(esc, pesc,
 						  sizeof(esc) - 1, NULL));
-		while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-			const char *rn = (const char *)
-					sqlite3_column_text(stmt, 0);
-			if (!rn)
-				continue;
+		first_elem = 1;
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+					   owner.head) {
+			struct bl_row *row = lws_container_of(d,
+						struct bl_row, list);
 			if (lws_ptr_diff_size_t(end, p) < 96) {
 				saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss,
 					start, lws_ptr_diff_size_t(p, start),
@@ -897,13 +951,44 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			p += lws_snprintf((char *)p,
 				lws_ptr_diff_size_t(end, p), "%s\"%s\"",
 				first_elem ? "" : ",",
-				lws_json_purify(esc, rn, sizeof(esc) - 1, NULL));
+				lws_json_purify(esc, row->ref,
+						sizeof(esc) - 1, NULL));
 			first_elem = 0;
-		}
-		sqlite3_finalize(stmt);
+		} lws_end_foreach_dll_safe(d, d1);
+
+		/*
+		 * Parallel ref -> latest-state map.  Kept as a separate object
+		 * so the existing "branches" string array stays unchanged for
+		 * older clients that ignore the extra field.
+		 */
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+				  "],\"branch_states\":{");
+		first_elem = 1;
+		lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+					   owner.head) {
+			struct bl_row *row = lws_container_of(d,
+						struct bl_row, list);
+			if (lws_ptr_diff_size_t(end, p) < 96) {
+				saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss,
+					start, lws_ptr_diff_size_t(p, start),
+					lws_write_ws_flags(LWS_WRITE_TEXT,
+							   !sent_any, 0));
+				sent_any = 1;
+				p = start;
+			}
+			p += lws_snprintf((char *)p,
+				lws_ptr_diff_size_t(end, p), "%s\"%s\":%d",
+				first_elem ? "" : ",",
+				lws_json_purify(esc, row->ref,
+						sizeof(esc) - 1, NULL),
+				row->state);
+			first_elem = 0;
+		} lws_end_foreach_dll_safe(d, d1);
 
 		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
-				  "]}");
+				  "}}");
+		lwsac_free(&ac);
+
 		saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
 				lws_ptr_diff_size_t(p, start),
 				LWS_WRITE_TEXT);
