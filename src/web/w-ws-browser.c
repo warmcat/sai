@@ -876,7 +876,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		char esc[96], pesc[96];
 		int first_elem = 1, sent_any = 0, rc;
 
-		lws_dll2_owner_init(&owner);
+		lws_dll2_owner_clear(&owner);
 
 		/*
 		 * Belt-and-braces: also purify (the bound param already

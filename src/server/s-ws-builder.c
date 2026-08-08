@@ -917,7 +917,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 						     "UPDATE builders SET pcon = COALESCE((SELECT pcon_name FROM pcon_builders WHERE builder_name = '%s'), pcon) "
 						     "WHERE name = '%s' OR name LIKE '%s.%%'",
 						     esc_host, esc_name, esc_name);
-					lwsl_notice("%s: Syncing pcon for host '%s' (plat '%s'): %s\n", __func__, host, build->name, q);
+					// lwsl_notice("%s: Syncing pcon for host '%s' (plat '%s'): %s\n", __func__, host, build->name, q);
 					sai_sqlite3_statement(vhd->server.pdb, q, "sync builder pcon");
 				}
 
@@ -928,7 +928,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				live_sp = sais_builder_from_uuid(vhd, build->name);
 				if (live_sp) {
 					/* Already exists (reconnect), just update dynamic info */
-					lwsl_err("%s: found live builder for %s\n", __func__, build->name);
+					// lwsl_info("%s: found live builder for %s\n", __func__, build->name);
 					live_sp->wsi				= pss->wsi;
 					live_sp->cx				= lws_get_context(pss->wsi);
 					live_sp->vhd				= vhd;
