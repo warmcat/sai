@@ -1228,8 +1228,8 @@ function update_summary_and_progress(event_uuid) {
 
         summary_html += "<div class=\"progress-bar\">" +
             "<div class=\"progress-bar-success " + good_cls + "\"></div>" +
-            "<div class=\"progress-bar-pending " + pending_cls + "\"></div>" +
             "<div class=\"progress-bar-ongoing " + ongoing_cls + "\"></div>" +
+            "<div class=\"progress-bar-pending " + pending_cls + "\"></div>" +
             "<div class=\"progress-bar-failed float-right " + bad_cls + "\"></div>" +
             "</div>";
     }
@@ -1265,8 +1265,8 @@ function sai_sb_progress_bar_html(summary)
 
     return "<div class=\"progress-bar\">" +
 	"<div class=\"progress-bar-success w-" + gw + "\"></div>" +
-	"<div class=\"progress-bar-pending w-" + pw + "\"></div>" +
 	"<div class=\"progress-bar-ongoing w-" + ow + "\"></div>" +
+	"<div class=\"progress-bar-pending w-" + pw + "\"></div>" +
 	"<div class=\"progress-bar-failed float-right w-" + bw + "\"></div>" +
 	"</div>";
 }
