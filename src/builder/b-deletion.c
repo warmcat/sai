@@ -564,9 +564,13 @@ sul_cleanup_jobs_cb(lws_sorted_usec_list_t *sul)
 
 
 
+#if defined(LWS_WITH_STUB)
+static void sul_deletion_respawn_cb(lws_sorted_usec_list_t *sul);
+#endif
+
 static int
 callback_sai_deletion_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
-		    void *user, void *in, size_t len)
+			    void *user, void *in, size_t len)
 {
 	uint8_t buf[256];
 	int ilen;
@@ -574,7 +578,33 @@ callback_sai_deletion_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 	switch (reason) {
 
 	case LWS_CALLBACK_RAW_CLOSE_FILE:
+#if defined(LWS_WITH_STUB)
+		/*
+		 * The lws_stub parent_protocol_name contract requires us to
+		 * notify the spawn object its stdwsi went away, so it can
+		 * track remaining pipes and reap the child.  When the stub
+		 * manager is being torn down, builder.mgr_deletion is already
+		 * NULL and lws_spawn_piped_destroy() handles its own stdwsi.
+		 */
+		if (builder.mgr_deletion)
+			lws_spawn_stdwsi_closed(
+				lws_stub_get_lsp(builder.mgr_deletion), wsi);
+
+		/*
+		 * The stub child's stdio pipes going away means it died, for
+		 * whatever reason.  Unless we respawn it, nothing will ever
+		 * service deletion requests again until the service is
+		 * restarted.  Come back in a moment (away from the close
+		 * processing) and get a new one.
+		 */
+		if (!interrupted && !builder.sul_deletion_respawn.list.owner)
+			lws_sul_schedule(builder.context, 0,
+					 &builder.sul_deletion_respawn,
+					 sul_deletion_respawn_cb,
+					 10 * LWS_US_PER_SEC);
+#endif
 		break;
+
 
 	case LWS_CALLBACK_RAW_RX_FILE:
 #if defined(WIN32)
@@ -623,8 +653,8 @@ sai_deletion_connected_cb(struct lws_stub_manager *mgr)
 			 sul_cleanup_jobs_cb, 1);
 }
 
-int
-saib_deletion_init(const char *argv0)
+static int
+saib_deletion_spawn(void)
 {
 	struct lws_stub_config config;
 	char uds_path[256];
@@ -657,6 +687,48 @@ saib_deletion_init(const char *argv0)
 	}
 
 	return 0;
+}
+
+/*
+ * The deletion stub child died.  If we leave things as they are, every
+ * subsequent lws_stub_request() on the dead manager just queues JSON and
+ * retries connects to the orphaned UDS path forever; no job dirs will ever be
+ * removed again until the service is restarted.  So destroy the dead stub
+ * manager (dropping anything queued on it) and get a new one; the fresh
+ * child's connected cb also triggers an immediate cleanup pass.
+ */
+static void
+sul_deletion_respawn_cb(lws_sorted_usec_list_t *sul)
+{
+	struct sai_builder *b = lws_container_of(sul, struct sai_builder,
+						 sul_deletion_respawn);
+
+	if (interrupted)
+		return;
+
+	lwsl_notice("%s: deletion stub child died, respawning\n", __func__);
+
+	if (b->mgr_deletion)
+		lws_stub_destroy(&b->mgr_deletion);
+
+	/*
+	 * Closing the dead child's stdwsi during the destroy re-arms us from
+	 * the RAW_CLOSE_FILE handler, but we are already handling it
+	 */
+	lws_sul_cancel(&b->sul_deletion_respawn);
+
+	if (saib_deletion_spawn()) {
+		lwsl_err("%s: failed to respawn deletion stub, will retry\n",
+			 __func__);
+		lws_sul_schedule(b->context, 0, &b->sul_deletion_respawn,
+				 sul_deletion_respawn_cb, 30 * LWS_US_PER_SEC);
+	}
+}
+
+int
+saib_deletion_init(const char *argv0)
+{
+	return saib_deletion_spawn();
 }
 #else
 int
