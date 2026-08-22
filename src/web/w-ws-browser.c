@@ -1858,7 +1858,7 @@ saiw_browser_broadcast_queue_pcon_energy(struct vhd *vhd, struct pss *pss, sai_p
 	if (pss && !pss->wants_builder_info)
 		return 0;
 
-	if (!vhd || !energy)
+	if (!vhd || !energy || !pss)
 		return 0;
 
 	memset(&d, 0, sizeof(d));
@@ -2156,7 +2156,7 @@ saiw_browser_broadcast_queue_power_history(struct vhd *vhd, struct pss *pss)
 	if (pss && !pss->wants_builder_info)
 		return 0;
 
-	if (!vhd)
+	if (!vhd || !pss)
 		return 0;
 
 	memset(&d, 0, sizeof(d));

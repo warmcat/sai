@@ -134,27 +134,32 @@ child_lejp_cb(struct lejp_ctx *ctx, char reason)
 
 		lws_snprintf(full_path, sizeof(full_path), "%s/jobs/%s", conn->home_dir, ctx->buf);
 
-		if (!stat(full_path, &st)) {
-			memset(&di, 0, sizeof(di));
-			di.dirpath = full_path;
-			di.cb = sai_rm_rf_cb;
-			di.do_toplevel_cb = 1;
+		/*
+		 * Don't stat the path first: the sanitizing above is the
+		 * actual security gate, a stat-then-act is a TOCTOU race
+		 * (CID 505638), and lws_dir_via_info() returns 1 whether or
+		 * not the dir could be opened anyway.  So just attempt the
+		 * removal directly and report a missing job dir from the
+		 * rmdir() errno instead.
+		 */
+		memset(&di, 0, sizeof(di));
+		di.dirpath = full_path;
+		di.cb = sai_rm_rf_cb;
+		di.do_toplevel_cb = 1;
 
-			lwsl_notice("%s: performing rm -rf %s\n", __func__, full_path);
+		lwsl_notice("%s: performing rm -rf %s\n", __func__, full_path);
 
-			lws_dir_via_info(&di);
-			
-			/* lws_dir_via_info returns 1 on success. Errors are logged by sai_rm_rf_cb. */
+		/* Errors are logged by sai_rm_rf_cb. */
+		lws_dir_via_info(&di);
 #if defined(WIN32)
-			SetFileAttributesA(full_path, FILE_ATTRIBUTE_NORMAL);
+		SetFileAttributesA(full_path, FILE_ATTRIBUTE_NORMAL);
 #endif
-			rmdir(full_path);
+		if (rmdir(full_path) && errno == ENOENT)
+			lwsl_notice("%s: job dir %s not found (errno %d)\n",
+				    __func__, full_path, errno);
 
-			if (!stat(full_path, &st))
-				lwsl_notice("%s: top level dir %s still exists\n", __func__, full_path);
-		} else {
-			lwsl_notice("%s: job dir %s not found (errno %d)\n", __func__, full_path, errno);
-		}
+		if (!stat(full_path, &st))
+			lwsl_notice("%s: top level dir %s still exists\n", __func__, full_path);
 	}
 	return 0;
 }
