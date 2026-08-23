@@ -995,6 +995,22 @@ function sai_event_hash_display(hash) {
 	return "sai-" + hash.substring(0, 8);
 }
 
+/*
+ * If the event was notified with a repository weburl (the base URL of the
+ * repo's gitweb, eg gitohashi), render `text` as a link into it; otherwise
+ * return the plain sanitized text.  suffix is appended to the weburl:
+ *   ""                       -> the repo summary page
+ *   "/log?h=<ref>"           -> the log of that branch / tag
+ *   "/log?id=<commit hash>"  -> that commit
+ */
+function sai_weburl_link(e, suffix, text) {
+	if (!e || !e.weburl)
+		return san(text);
+
+	return "<a href=\"" + san(e.weburl + (suffix || "")) + "\">" +
+			san(text) + "</a>";
+}
+
 function get_appropriate_ws_url()
 {
 	var pcol;
@@ -1473,29 +1489,35 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		s +=
 		"<td><table class=\"nomar\">" +
 		"<tr><td class=\"nomar\" colspan=2>" +
-		"<span class=\"e1\">" + san(e.repo_name);
+		"<span class=\"e1\">" + sai_weburl_link(e, "", e.repo_name);
 		if (e.sec)
 			s += " <img class=\"bico\" src=\"/sai/locked.svg\">";
 		s += "</span></td></tr><tr><td class=\"nomar\" colspan=2><span class=\"e2\">";
 
 		if (e.ref.substr(0, 11) === "refs/heads/") {
 			s += "<img class=\"branch\">" +
-				san(e.ref.substr(11));
+				sai_weburl_link(e, "/log?h=" + encodeURIComponent(e.ref.substr(11)),
+						 e.ref.substr(11));
 		} else
 			if (e.ref.substr(0, 10) === "refs/tags/") {
 				s += "<img class=\"tag\">" +
-					san(e.ref.substr(10));
+					sai_weburl_link(e, "/log?h=" + encodeURIComponent(e.ref.substr(10)),
+							 e.ref.substr(10));
 			} else
 				s += san(e.ref);
 
 		s += "</span></td></tr><tr><td class=\"nomar e6\">" +
-		        san(sai_event_hash_display(e.hash)) +
+			sai_weburl_link(e, "/log?id=" + encodeURIComponent(e.hash),
+					sai_event_hash_display(e.hash)) +
 		     "</td><td class=\"e6 nomar\">" +
 		     agify(now_ut, e.created) + "</td></tr>";
 		 s += "</table>" +
 		     "</td>";
 	} else {
-		s +="<td><table><tr><td class=\"e6 nomar\">" + san(sai_event_hash_display(e.hash)) + " " + agify(now_ut, e.created) +
+		s +="<td><table><tr><td class=\"e6 nomar\">" +
+			sai_weburl_link(e, "/log?id=" + encodeURIComponent(e.hash),
+					sai_event_hash_display(e.hash)) + " " +
+			agify(now_ut, e.created) +
 		     "</td></tr><tr><td class=\"nomar e6\" id=\"sumbs-" + e.uuid + "\"></td></tr>" +
 		     "</table></td>";
 	}
@@ -1713,7 +1735,9 @@ function render_sb_events()
 			s += "<span class=\"sb-event-when\">" + san(sai_sb_fmt_when(e.created)) +
 			     " <span class='age-0' ut='" + e.created + "'>" +
 			     agify(now_ut, e.created) + "</span></span>";
-			s += "<span class=\"sb-event-tag\">" + san(sai_event_hash_display(e.hash)) + "</span>";
+			s += "<span class=\"sb-event-tag\">" +
+			     sai_weburl_link(e, "/log?id=" + encodeURIComponent(e.hash),
+					     sai_event_hash_display(e.hash)) + "</span>";
 			s += "<span class=\"sb-event-status\" id=\"sbsum-" + san(e.uuid) + "\"></span>";
 			/* progress bar slot (inline, takes remaining width), filled by sai_sb_render_event_summary() */
 			s += "<span class=\"sb-event-bar\" id=\"sbbar-" + san(e.uuid) + "\"></span>";
@@ -1722,7 +1746,10 @@ function render_sb_events()
 	}
 	c.innerHTML = s;
 	c.querySelectorAll(".sb-event-row").forEach(function(row) {
-		row.addEventListener("click", function() {
+		row.addEventListener("click", function(ev) {
+			/* embedded gitweb links navigate on their own */
+			if (ev.target && ev.target.closest && ev.target.closest("a"))
+				return;
 			selectEvent(row.getAttribute("data-uuid"));
 		});
 	});
@@ -1859,7 +1886,13 @@ function render_selected_event_tasks(o) {
 	if (e.state == 4 || e.state == 6) s += " comp_fail";
 	s += "\">";
 	var refName = e.ref.replace("refs/heads/", "").replace("refs/tags/", "");
-	s += "<span class=\"event-tasks-title\">" + san(e.repo_name) + " (" + san(refName) + ") - " + san(sai_event_hash_display(e.hash)) + "</span>";
+	s += "<span class=\"event-tasks-title\">" +
+	     sai_weburl_link(e, "", e.repo_name) +
+	     " (" + sai_weburl_link(e, "/log?h=" + encodeURIComponent(refName), refName) + ")" +
+	     " - " +
+	     sai_weburl_link(e, "/log?id=" + encodeURIComponent(e.hash),
+			     sai_event_hash_display(e.hash)) +
+	     "</span>";
 	/* admin-only restart-all / delete-event controls live here now */
 	if (!gitohashi_integ && auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
 		s += "<img class=\"rebuild\" alt=\"rebuild all\" src=\"/sai/rebuild.png\" " +

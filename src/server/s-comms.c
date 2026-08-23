@@ -215,6 +215,21 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 		}
 
+		/*
+		 * create_table() is "if not exists", so existing event tables
+		 * lack later columns like weburl... try to add them (fails
+		 * harmlessly if the column is already there)
+		 */
+		{
+			char *err = NULL;
+
+			sqlite3_exec(vhd->server.pdb,
+				     "ALTER TABLE events ADD COLUMN weburl varchar;",
+				     NULL, NULL, &err);
+			if (err)
+				sqlite3_free(err);
+		}
+
 		sai_sqlite3_statement(vhd->server.pdb, "CREATE UNIQUE INDEX IF NOT EXISTS idx_event_uuid ON events(uuid);", "create event index");
 
 		if (lws_struct_sq3_create_table(vhd->server.pdb,

@@ -403,6 +403,8 @@ typedef struct sai_event {
 	struct lws_dll2			list;
 	char				repo_name[65];
 	char				repo_fetchurl[96];
+	/* optional http(s) url for browsing the repo in a web ui */
+	char				repo_weburl[128];
 	char				ref[65];
 	char				hash[65];
 	char				uuid[65];

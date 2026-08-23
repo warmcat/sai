@@ -36,6 +36,7 @@ static const char * const paths[] = {
 	"action",
 	"repository.name",
 	"repository.fetchurl",
+	"repository.weburl",
 	"ref",
 	"hash",
 	"nonce",
@@ -49,6 +50,7 @@ enum enum_paths {
 	LEJPN_ACTION,
 	LEJPN_REPOSITORY_NAME,
 	LEJPN_REPOSITORY_FETCHURL,
+	LEJPN_REPOSITORY_WEBURL,
 	LEJPN_REF,
 	LEJPN_HASH,
 	LEJPN_NONCE,
@@ -877,6 +879,27 @@ sai_notification_lejp_cb(struct lejp_ctx *ctx, char reason)
 		}
 		lws_strncpy(sn->e.repo_fetchurl, ctx->buf,
 			    sizeof(sn->e.repo_fetchurl));
+		break;
+
+	case LEJPN_REPOSITORY_WEBURL:
+		/*
+		 * weburl is optional, and only used to build links to the
+		 * repo's web ui (eg, gitohashi) in the browser.  Since repo
+		 * data is attacker-influenced and this becomes an href, only
+		 * accept a clean http(s) URL... anything else is dropped and
+		 * the event stored without a weburl rather than rejecting the
+		 * whole notification over a UI nicety.
+		 */
+		sn->e.repo_weburl[0] = '\0';
+
+		if ((!strncasecmp(ctx->buf, "https://", 8) ||
+		     !strncasecmp(ctx->buf, "http://", 7)) &&
+		    !sai_str_has_shell_metachars(ctx->buf))
+			lws_strncpy(sn->e.repo_weburl, ctx->buf,
+				    sizeof(sn->e.repo_weburl));
+		else
+			lwsl_notice("%s: ignoring weburl '%s'\n",
+				    __func__, ctx->buf);
 		break;
 
 	case LEJPN_REF:
