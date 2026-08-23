@@ -369,7 +369,7 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 
 	if (saib_srv_queue_json_fragments_helper(ns->spm->ss,
 					lsm_schema_map_build_metric,
-					LWS_ARRAY_SIZE(lsm_schema_build_metric), &m))
+					LWS_ARRAY_SIZE(lsm_schema_map_build_metric), &m))
 		return;
 
 skip:
