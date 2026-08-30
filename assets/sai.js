@@ -1625,6 +1625,28 @@ function sai_sb_branch_state_class(ref)
 }
 
 /*
+ * The newest loaded event matching the current sidebar selection (project
+ * and, if set, branch), or null if we hold no event for it yet.
+ */
+function sai_sb_newest_matching_event()
+{
+	if (!loaded_events || !loaded_events.length)
+		return null;
+	var ml = loaded_events.filter(function(o) {
+		return o && o.e &&
+			(!sb_selected_project ||
+			 o.e.repo_name === sb_selected_project) &&
+			(!sb_selected_ref || o.e.ref === sb_selected_ref);
+	});
+	if (!ml.length)
+		return null;
+	ml.sort(function(a, b) {
+		return (b.e.created || 0) - (a.e.created || 0);
+	});
+	return ml[0];
+}
+
+/*
  * Live-update the selected branch's colour: the server only pushes scoped
  * events for the current selection, so only sb_selected_ref can have moved.
  * Recompute the newest matching event's state from loaded_events; if it differs
@@ -1633,22 +1655,13 @@ function sai_sb_branch_state_class(ref)
 function sai_sb_branch_state_livecheck()
 {
 	if (!sb_selected_ref || !sb_branch_states ||
-	    !(sb_selected_ref in sb_branch_states) ||
-	    !loaded_events || !loaded_events.length)
+	    !(sb_selected_ref in sb_branch_states))
 		return;
-	var ml = loaded_events.filter(function(o) {
-		return o && o.e && o.e.ref === sb_selected_ref &&
-			(!sb_selected_project ||
-			 o.e.repo_name === sb_selected_project);
-	});
-	if (!ml.length)
+	var newest = sai_sb_newest_matching_event();
+	if (!newest)
 		return;
-	ml.sort(function(a, b) {
-		return (b.e.created || 0) - (a.e.created || 0);
-	});
-	var nst = ml[0].e.state;
-	if (sb_branch_states[sb_selected_ref] !== nst) {
-		sb_branch_states[sb_selected_ref] = nst;
+	if (sb_branch_states[sb_selected_ref] !== newest.e.state) {
+		sb_branch_states[sb_selected_ref] = newest.e.state;
 		render_sb_branches();
 	}
 }
@@ -1771,6 +1784,8 @@ function selectSbProject(name)
 	render_sb_projects();
 	/* refresh the branch list for this project; auto-selects newest branch */
 	sai_sb_request_branches(name);
+	/* move the tasks pane off the old project's event */
+	sai_sb_follow_selection();
 	sai_sb_update_url();
 }
 
@@ -1780,20 +1795,55 @@ function selectSbBranch(ref)
 		return;
 	sb_selected_ref = ref;
 	render_sb_branches();
-	/* re-scope the event list + tasks pane to the new selection */
-	sai_sb_request_overview(0);
-	/* Clear any prior task selection that no longer applies */
-	if (selected_task_uuid) {
-		var ev = loaded_events.find(function(o) { return o.e.uuid === selected_event_uuid; });
-		var has = ev && ev.t && ev.t.some(function(t) { return t.uuid === selected_task_uuid; });
-		if (!has) {
-			selected_task_uuid = null;
-			window.current_task_run = null;
-		}
-	}
-	render_sb_events();
 	/* reflect the project + branch selection in the URL */
 	sai_sb_update_url();
+	/* re-scope the event list to the new selection */
+	sai_sb_request_overview(0);
+	/*
+	 * Move the tasks pane to the most recent event on the new branch (or
+	 * clear it until the scoped overview reply auto-selects it), so it
+	 * doesn't keep showing the previous branch's event
+	 */
+	sai_sb_follow_selection();
+	render_sb_events();
+}
+
+/*
+ * The sidebar selection moved to a project / branch we hold no events for:
+ * drop the stale event + task selection (and their URL params) so the tasks
+ * pane stops showing an event from the old selection.  The scoped overview
+ * reply auto-selects the newest matching event when it arrives.
+ */
+function sai_sb_clear_stale_selection()
+{
+	selected_event_uuid = null;
+	clear_task_view();
+	var c = document.getElementById("sai_event_tasks");
+	if (c)
+		c.innerHTML = "<div class=\"sb-empty\">No events</div>";
+	var par = new URLSearchParams(window.location.search);
+	par.delete("event");
+	par.delete("task");
+	par.delete("run");
+	sai_update_history(par, true);
+}
+
+/*
+ * Point the tasks pane at the most recent event matching the current sidebar
+ * selection, so it never keeps showing an event from a different project /
+ * branch.  If we hold no matching event yet, clear the stale selection until
+ * the scoped overview reply auto-selects the newest one.
+ */
+function sai_sb_follow_selection()
+{
+	var newest = sai_sb_newest_matching_event();
+	if (newest) {
+		if (newest.e.uuid !== selected_event_uuid)
+			selectEvent(newest.e.uuid);
+		return;
+	}
+	if (selected_event_uuid)
+		sai_sb_clear_stale_selection();
 }
 
 /*
@@ -1983,6 +2033,30 @@ function render_selected_event_tasks(o) {
 	}
 }
 
+/*
+ * Drop the selected task and reset the task log view, eg because the
+ * selected event changed to one that doesn't contain it.
+ */
+function clear_task_view()
+{
+	selected_task_uuid = null;
+	window.current_task_run = null;
+	var stickyEl = document.getElementById("sai_sticky");
+	var overviewEl = document.getElementById("sai_overview");
+	if (stickyEl) stickyEl.innerHTML = "";
+	if (overviewEl) overviewEl.innerHTML = "";
+
+	lines = times = logs = "";
+	lines_pending = times_pending = logs_pending = "";
+	segment_stack = [];
+	seg_counter = 0;
+	window.held_start_line = null;
+	logAnsiState = {};
+	tfirst = 0;
+	lli = 1;
+	last_log_timestamp = 0;
+}
+
 function selectEvent(uuid) {
 	selected_event_uuid = uuid;
 
@@ -1992,24 +2066,8 @@ function selectEvent(uuid) {
 	if (ev_obj && ev_obj.t && selected_task_uuid) {
 		hasTask = ev_obj.t.some(t => t.uuid === selected_task_uuid);
 	}
-	if (!hasTask) {
-		selected_task_uuid = null;
-		window.current_task_run = null;
-		var stickyEl = document.getElementById("sai_sticky");
-		var overviewEl = document.getElementById("sai_overview");
-		if (stickyEl) stickyEl.innerHTML = "";
-		if (overviewEl) overviewEl.innerHTML = "";
-		
-		lines = times = logs = "";
-		lines_pending = times_pending = logs_pending = "";
-		segment_stack = [];
-		seg_counter = 0;
-		window.held_start_line = null;
-		logAnsiState = {};
-		tfirst = 0;
-		lli = 1;
-		last_log_timestamp = 0;
-	}
+	if (!hasTask)
+		clear_task_view();
 
 	var par = new URLSearchParams(window.location.search);
 	par.set("event", uuid);
@@ -3414,7 +3472,17 @@ function ws_open_sai()
 							if (evUuid) selected_event_uuid = evUuid;
 						}
 						if (!selected_event_uuid) {
-							selected_event_uuid = loaded_events[loaded_events.length - 1].e.uuid;
+							/*
+							 * With a sidebar selection, auto-pick the
+							 * newest event matching it (eg after a branch
+							 * switch cleared the selection); without one,
+							 * take the newest event we hold.
+							 */
+							var _ne = sai_sb_newest_matching_event();
+							if (_ne)
+								selected_event_uuid = _ne.e.uuid;
+							else if (!sb_selected_project && !sb_selected_ref)
+								selected_event_uuid = loaded_events[loaded_events.length - 1].e.uuid;
 						}
 					}
 
