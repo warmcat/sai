@@ -613,13 +613,14 @@ callback_sai_deletion_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 	case LWS_CALLBACK_RAW_RX_FILE:
 #if defined(WIN32)
-	{
-		DWORD rb;
-		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1, &rb, NULL)) {
-			return -1;
-		}
-		ilen = (int)rb;
-	}
+		/* lws spawn reads the pipe itself on windows and delivers the
+		 * data in in / len; the wsi has no readable fd for us
+		 */
+		ilen = (int)len;
+		if (ilen > (int)sizeof(buf) - 1)
+			ilen = (int)sizeof(buf) - 1;
+		if (ilen > 0)
+			memcpy(buf, in, (size_t)ilen);
 #else
 		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1);
 		if (ilen < 1) {
