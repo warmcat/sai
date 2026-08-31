@@ -597,6 +597,62 @@ saiw_subs_task_state_change(struct vhd *vhd, const char *task_uuid)
 }
 
 
+/*
+ * A gitohashi-embedded browser had its ws scoped to the URL's repo + branch
+ * at connect time (/sai/browse/specific/<project>?h=<ref>).  For live task /
+ * event pushes, only send it state for events inside that scope: the embedded
+ * decal strip only shows the scoped project + branch, and pushing everything
+ * to every embedded viewer is the chatter "integ-harden" removed.  Non-gitohashi
+ * browsers use their own selection logic at the call site.
+ */
+static int
+saiw_pss_gitohashi_in_scope(struct pss *pss, const char *event_uuid)
+{
+	sqlite3_stmt *stmt = NULL;
+	char q[160], esc[65];
+	int match = 0;
+
+	if (!pss->specific_project[0])
+		return 1; /* task= deep link: no project scope */
+
+	/* server-generated, but purify for consistency with the query builders */
+	lws_sql_purify(esc, event_uuid, sizeof(esc) - 1);
+	lws_snprintf(q, sizeof(q),
+			"SELECT repo_name, ref, hash FROM events WHERE uuid='%s'",
+			esc);
+
+	if (sqlite3_prepare_v2(pss->vhd->pdb, q, -1, &stmt, NULL) != SQLITE_OK)
+		return 0;
+
+	if (sqlite3_step(stmt) == SQLITE_ROW) {
+		const char *repo = (const char *)sqlite3_column_text(stmt, 0);
+		const char *ref = (const char *)sqlite3_column_text(stmt, 1);
+		const char *hash = (const char *)sqlite3_column_text(stmt, 2);
+
+		if (repo && !strcmp(repo, pss->specific_project)) {
+			if (!pss->specific_ref[0]) {
+				match = 1;
+			} else {
+				/*
+				 * same matching as the per-event check in
+				 * saiw_browser_queue_overview(): the ref, the
+				 * hash (gitohashi ?id= pages), or the master /
+				 * main aliasing
+				 */
+				if ((ref && !strcmp(ref, pss->specific_ref)) ||
+				    (hash && !strcmp(hash, pss->specific_ref)))
+					match = 1;
+				if (!strcmp(pss->specific_ref, "refs/heads/master") &&
+				    ref && !strcmp(ref, "refs/heads/main"))
+					match = 1;
+			}
+		}
+	}
+	sqlite3_finalize(stmt);
+
+	return match;
+}
+
 int
 saiw_browsers_task_state_change(struct vhd *vhd, const char *task_uuid)
 {
@@ -607,9 +663,11 @@ saiw_browsers_task_state_change(struct vhd *vhd, const char *task_uuid)
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 		struct pss *pss = lws_container_of(p, struct pss, same);
 
-		if (!pss->is_gitohashi &&
-		    (!pss->selected_event_uuid[0] ||
-		     !strcmp(pss->selected_event_uuid, event_uuid)))
+		if (pss->is_gitohashi ?
+			    /* embedded: only events inside the URL scope */
+			    saiw_pss_gitohashi_in_scope(pss, event_uuid) :
+			    (!pss->selected_event_uuid[0] ||
+			     !strcmp(pss->selected_event_uuid, event_uuid)))
 			saiw_pss_schedule_taskinfo(pss, task_uuid, 0, -1);
 	} lws_end_foreach_dll(p);
 
@@ -623,7 +681,8 @@ saiw_event_state_change(struct vhd *vhd, const char *event_uuid)
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
 		struct pss *pss = lws_container_of(p, struct pss, same);
 
-		if (!pss->is_gitohashi)
+		if (!pss->is_gitohashi ||
+		    saiw_pss_gitohashi_in_scope(pss, event_uuid))
 			saiw_pss_schedule_eventinfo(pss, event_uuid);
 	} lws_end_foreach_dll(p);
 

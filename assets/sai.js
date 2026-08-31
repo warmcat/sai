@@ -1892,7 +1892,97 @@ function sai_update_history(par, replace)
 		{}, "", path + (qs ? ("?" + qs) : ""));
 }
 
+/*
+ * sai embedded in a gitohashi page (/git/<repo>[?h=<branch>]): the host page
+ * supplies a #sai_sticky container and the server scoped our ws to the URL's
+ * repo + branch at connect time (/sai/browse/specific/<project>?h=<ref>).
+ * There is no sidebar on those pages; render whatever the server pushes
+ * (already correctly scoped) into the sticky decal strip.
+ */
+function sai_gitohashi_sticky_popups()
+{
+	var icon = document.getElementById("gitohashi_sai_icon"),
+	    details = document.getElementById("gitohashi_sai_details");
+
+	if (!icon || !details)
+		return;
+
+	/* the elements are recreated by each render, so no handler stacking */
+
+	icon.addEventListener("mouseenter", function() {
+		icon.style.zIndex = 1999;
+		details.style.zIndex = 2000;
+		details.style.opacity = 1.0;
+	}, false);
+
+	details.addEventListener("mouseout", function(event) {
+		var e = event.toElement || event.relatedTarget;
+		while (e && e.parentNode && e.parentNode != window) {
+			if (e.parentNode == this || e == this) {
+				if (e.preventDefault)
+					e.preventDefault();
+				return false;
+			}
+			e = e.parentNode;
+		}
+		details.style.opacity = 0.0;
+		details.style.zIndex = -1;
+		icon.style.zIndex = 2001;
+	}, true);
+}
+
+function render_gitohashi_sticky()
+{
+	var el = document.getElementById("sai_sticky");
+	if (!el)
+		return;
+
+	var now_ut = Math.round((new Date().getTime() / 1000));
+
+	var events = (loaded_events || []).filter(function(o) {
+		return o && o.e && o.t;
+	});
+
+	/* newest first, like the standalone overview */
+	events.sort(function(a, b) {
+		return (b.e.created || 0) - (a.e.created || 0);
+	});
+
+	var s = "<table class=\"events-table\">";
+	events.forEach(function(o) {
+		s += sai_event_render(o, now_ut, 1);
+	});
+	s += "</table>";
+
+	el.innerHTML = s;
+
+	events.forEach(function(o) {
+		var esr_el = document.getElementById("esr-" + o.e.uuid);
+		if (esr_el)
+			esr_el.innerHTML =
+				sai_event_summary_render(o, now_ut, 1);
+
+		for (var q = 0; q < o.t.length; q++)
+			refresh_state(o.t[q]);
+
+		update_summary_and_progress(o.e.uuid);
+	});
+
+	sai_gitohashi_sticky_popups();
+
+	aging();
+}
+
 function render_event_decals() {
+	/*
+	 * Embedded as a guest on a gitohashi page: the decal strip in the
+	 * host page's #sai_sticky takes the place of the sidebar col 4.
+	 */
+	if (gitohashi_integ && document.getElementById("sai_sticky")) {
+		render_gitohashi_sticky();
+		return;
+	}
+
 	/*
 	 * The decal strip has been replaced by the merged 4-column sidebar
 	 * pane.  Existing call sites still invoke this; just refresh col 4.
@@ -2043,7 +2133,8 @@ function clear_task_view()
 	window.current_task_run = null;
 	var stickyEl = document.getElementById("sai_sticky");
 	var overviewEl = document.getElementById("sai_overview");
-	if (stickyEl) stickyEl.innerHTML = "";
+	/* on a gitohashi page the sticky is the overview strip, not a task view */
+	if (stickyEl && !gitohashi_integ) stickyEl.innerHTML = "";
 	if (overviewEl) overviewEl.innerHTML = "";
 
 	lines = times = logs = "";
@@ -2997,7 +3088,8 @@ function ws_open_sai()
 
 			let savedRightPaneFlex = localStorage.getItem('sai-right-pane-flex');
 			let initialVisible = 0;
-			if (savedRightPaneFlex && parseInt(savedRightPaneFlex.replace(/[^0-9-]/g, '')) > 0) {
+			if (!gitohashi_integ && savedRightPaneFlex &&
+			    parseInt(savedRightPaneFlex.replace(/[^0-9-]/g, '')) > 0) {
 				initialVisible = 1;
 			}
 			sai.send(JSON.stringify({ schema: "com.warmcat.sai.builder_visibility", visible: initialVisible }));
@@ -3053,6 +3145,21 @@ function ws_open_sai()
 				 // Populate the sidebar too
 				 sai_sb_request_projects();
 				 return;
+			}
+
+			if (gitohashi_integ) {
+				/*
+				 * Embedded in a gitohashi page: the server scoped
+				 * this ws to the URL's repo + branch at connect
+				 * time.  Just ask for the overview with no
+				 * client-side constraint, so we get the full
+				 * per-event task arrays; don't drive the sidebar
+				 * cascade here, its auto-selected project / branch
+				 * would re-scope the server to summary-only
+				 * overviews for the wrong selection.
+				 */
+				sai_sb_request_overview(current_overview_offset);
+				return;
 			}
 
 			/*
@@ -3593,12 +3700,16 @@ function ws_open_sai()
 					}
 				}
 				if (sb_newest_after && sb_newest_after !== sb_newest_before &&
-				    (sb_selected_project || sb_selected_ref)) {
+				    (sb_selected_project || sb_selected_ref) &&
+				    !gitohashi_integ) {
 					/*
 					 * Only auto-jump to a brand-new event when
 					 * we're in the sidebar-driven flow (a
 					 * selection exists); deep links keep their
-					 * explicitly-selected event.
+					 * explicitly-selected event.  Embedded
+					 * gitohashi pages have no event selection
+					 * at all, the sticky strip re-renders
+					 * wholesale instead.
 					 */
 					selectEvent(sb_newest_after);
 				} else {
