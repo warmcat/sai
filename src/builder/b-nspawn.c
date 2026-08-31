@@ -140,14 +140,14 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 	case LWS_CALLBACK_RAW_RX_FILE:
 #if defined(WIN32)
-	{
-		DWORD rb;
-		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1, &rb, NULL)) {
-			if (GetLastError() != 109 && GetLastError() != 232) lwsl_user("%s: read on stdwsi failed, err %lu\n", __func__, GetLastError());
-			return -1;
-		}
-		ilen = (int)rb;
-	}
+		/* lws spawn reads the pipe itself on windows and delivers the
+		 * data in in / len; the wsi has no readable fd for us
+		 */
+		ilen = (int)len;
+		if (ilen > (int)sizeof(buf) - 1)
+			ilen = (int)sizeof(buf) - 1;
+		if (ilen > 0)
+			memcpy(buf, in, (size_t)ilen);
 #else
 		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1);
 		if (ilen < 1) {
@@ -765,15 +765,14 @@ callback_sai_shell_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 	case LWS_CALLBACK_RAW_RX_FILE:
 #if defined(WIN32)
-	{
-		DWORD rb;
-		if (!ReadFile((HANDLE)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1, &rb, NULL)) {
-			lwsl_user("%s: read on shell stdwsi failed, err %lu\n", __func__, GetLastError());
-			return -1;
-		}
-		lwsl_user("%s: WIN32 RX_FILE read %lu bytes on shell fd %d\n", __func__, rb, lws_spawn_get_stdfd(wsi));
-		ilen = (int)rb;
-	}
+		/* lws spawn reads the pipe itself on windows and delivers the
+		 * data in in / len; the wsi has no readable fd for us
+		 */
+		ilen = (int)len;
+		if (ilen > (int)sizeof(buf) - 1)
+			ilen = (int)sizeof(buf) - 1;
+		if (ilen > 0)
+			memcpy(buf, in, (size_t)ilen);
 #else
 		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1);
 		if (ilen < 1)
