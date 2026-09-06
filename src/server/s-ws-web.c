@@ -467,10 +467,19 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	lws_struct_json_init_parse(&m->ctx, NULL, &a);
 	n = lejp_parse(&m->ctx, (uint8_t *)buf, (int)len);
 	if (n < 0 || !a.dest) {
+		/*
+		 * This link carries forwarded browser requests whose content
+		 * we do not control, so an undecodable message is skipped,
+		 * not fatal: tearing down the ss link here would take the
+		 * nailed-up control channel away from every connected
+		 * sai-web instance for the retry period.
+		 */
 		lwsl_hexdump_notice(buf, len);
 		lwsl_notice("%s: notification JSON decode failed '%s'\n",
 				__func__, lejp_error_to_string(n));
-		return LWSSSSRET_DISCONNECT_ME;
+		lwsac_free(&a.ac);
+
+		return 0;
 	}
 
 	// lwsl_notice("%s: schema idx %d\n", __func__, a.top_schema_index);

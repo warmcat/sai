@@ -1149,7 +1149,6 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		 */
 		break;
 
-	case SAIM_WS_BROWSER_RX_WATCHER_SERVICES:
 	case SAIM_WS_BROWSER_RX_OPENSHELL:
 	case SAIM_WS_BROWSER_RX_CLOSESHELL:
 	case SAIM_WS_BROWSER_RX_PTYDATA:
@@ -1163,6 +1162,17 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	 */
 	case SAIM_WS_BROWSER_RX_LOADREPORT:
 		lwsl_notice("%s: dropping loadreport from browser\n", __func__);
+		goto ok;
+
+	/*
+	 * Watcher services are a server config-file concern; the schema only
+	 * ever flows from us towards browsers.  A browser sending one is
+	 * meaningless: drop it locally rather than forward it, sai-server
+	 * does not accept this schema on the web link.
+	 */
+	case SAIM_WS_BROWSER_RX_WATCHER_SERVICES:
+		lwsl_notice("%s: dropping watcher_services from browser\n",
+				__func__);
 		goto ok;
 
 	default:
