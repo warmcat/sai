@@ -72,25 +72,6 @@ static const char * const well_known[] = {
 #define SAIW_BROWSER_MAX_CONNS 100
 
 int
-saiw_task_cancel(struct vhd *vhd, const char *task_uuid)
-{
-	sai_cancel_t *can = malloc(sizeof(*can));
-	
-	if (!can)
-		return 1;
-
-
-	memset(can, 0, sizeof(*can));
-
-	lws_strncpy(can->task_uuid, task_uuid, sizeof(can->task_uuid));
-
-	lws_dll2_add_tail(&can->list, &vhd->web_to_srv_owner);
-
-
-	return 0;
-}
-
-int
 sai_get_head_status(struct vhd *vhd, const char *projname)
 {
 	struct lwsac *ac = NULL;
