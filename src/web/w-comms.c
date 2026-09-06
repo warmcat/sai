@@ -33,6 +33,7 @@
 #include <time.h>
 #include <stdio.h>
 #include <fcntl.h>
+#include <sys/socket.h>
 
 #include "w-private.h"
 
@@ -144,6 +145,71 @@ saiw_close_artifact(struct pss *pss)
 				   &pss->pdb_artifact);
 		pss->pdb_artifact = NULL;
 	}
+}
+
+/*
+ * The admin grant comes from the x-lws-login-admin header the lws-login
+ * interceptor stamps in the front-end proxy.  Before honouring it, fail
+ * closed on the ways that header can be anything but the interceptor's
+ * verdict:
+ *
+ *  - more than one header of that name is ambiguous: the lws accessors
+ *    return the first match, and the interceptor's anti-spoof zap only
+ *    removes the first client-supplied copy, so a duplicate can survive
+ *    to us with the client's value first.  Treat it as a spoof.
+ *
+ *  - the connection must have reached us on the unix socket the front-end
+ *    proxy connects to (the documented deployment); SO_PEERCRED only
+ *    succeeds for AF_UNIX peers.  A client that reached a TCP listen
+ *    directly could otherwise simply send the header and self-grant.
+ *    Where SO_PEERCRED doesn't exist, this check isn't available and we
+ *    fall back to the duplicate check alone.
+ */
+static void
+saiw_count_admin_hdr_cb(const char *name, int nlen, void *opaque)
+{
+	int *count = (int *)opaque;
+
+	if (nlen == 18 && !strncmp(name, "x-lws-login-admin:", 18))
+		(*count)++;
+}
+
+static int
+saiw_admin_header_trusted(struct lws *wsi)
+{
+	int count = 0;
+
+	if (lws_hdr_custom_name_foreach(wsi, saiw_count_admin_hdr_cb,
+					&count) || count > 1) {
+		lwsl_wsi_notice(wsi, "%d x-lws-login-admin headers, "
+				 "ignoring them", count);
+
+		return 0;
+	}
+
+#if defined(SO_PEERCRED)
+	{
+		/*
+		 * We don't need the creds themselves, only whether the
+		 * peer is reachable this way: SO_PEERCRED only succeeds
+		 * for connected AF_UNIX sockets.  (struct ucred itself is
+		 * not portable to every libc's feature macro set.)
+		 */
+		unsigned char cred[64];
+		socklen_t cl = sizeof(cred);
+
+		if (lws_get_socket_fd(wsi) < 0 ||
+		    getsockopt(lws_get_socket_fd(wsi), SOL_SOCKET,
+			       SO_PEERCRED, cred, &cl)) {
+			lwsl_wsi_notice(wsi, "x-lws-login-admin ignored: peer "
+					 "is not on the unix socket");
+
+			return 0;
+		}
+	}
+#endif
+
+	return 1;
 }
 
 static int
@@ -626,16 +692,25 @@ http_resp:
 		 * headers (x-lws-login-admin: 0/1) which the proxy forwarded
 		 * to us.  Read the admin flag; everything else (the action gate
 		 * at w-ws-browser.c) keys off auth_state.  If the header is
-		 * absent (no interceptor configured) we fail closed: not admin.
+		 * absent (no interceptor configured) we fail closed: not admin,
+		 * and if it could be a client-supplied copy rather than the
+		 * interceptor's verdict, we ignore it the same way.
 		 */
 		{
 			char admin[8];
-			int a = lws_hdr_custom_copy(wsi, admin, sizeof(admin),
-						    "x-lws-login-admin:", 18);
+			int a = -1;
 
-			pss->auth_state = (a == 1 && admin[0] == '1') ?
-				SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN :
-				SAI_AUTH_STATE_LOGGED_IN_NO_GRANT;
+			pss->auth_state = SAI_AUTH_STATE_LOGGED_IN_NO_GRANT;
+
+			if (saiw_admin_header_trusted(wsi))
+				a = lws_hdr_custom_copy(wsi, admin,
+							sizeof(admin),
+							"x-lws-login-admin:", 18);
+
+			if (a == 1 && admin[0] == '1')
+				pss->auth_state =
+					SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN;
+
 			lwsl_wsi_notice(wsi, "ESTABLISHED WS: x-lws-login-admin=%c (auth_state=%d)",
 					a == 1 ? admin[0] : '-', (int)pss->auth_state);
 		}

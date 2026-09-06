@@ -85,6 +85,15 @@
 			# sai-web then reads x-lws-login-admin:0/1 at WS
 			# establish.  Without the interceptor, sai-web sees no
 			# header and treats the user as not having admin rights.
+			#
+			# sai-web also fails closed around the header itself:
+			# it is only honoured when exactly one copy is present
+			# (duplicates could be a client-supplied spoof winning
+			# first-match) and the connection arrived on this unix
+			# socket, ie it came through the front-end proxy and
+			# not from something reaching a listen directly.  If
+			# you expose sai-web on a TCP vhost, admin ops will
+			# silently stop working by design.
 
 			# template HTML to use for this vhost.  You'd normally
 			# copy this to gitohashi-vhostname.html and modify it
