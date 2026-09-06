@@ -1185,7 +1185,20 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		break;
 
 	case SAIM_WS_BROWSER_RX_OPENSHELL:
+		/*
+		 * This browser opened a shell; only it will be sent the
+		 * shell's ptydata.  The forward to sai-server happens with
+		 * the rest below.
+		 */
+		saiw_pss_shell_open(pss,
+			    ((sai_openshell_t *)a.dest)->task_uuid);
+		break;
+
 	case SAIM_WS_BROWSER_RX_CLOSESHELL:
+		saiw_pss_shell_close(pss,
+			    ((sai_closeshell_t *)a.dest)->task_uuid);
+		break;
+
 	case SAIM_WS_BROWSER_RX_PTYDATA:
 		break;
 
@@ -2226,6 +2239,65 @@ saiw_browser_state_changed(struct pss *pss, int established)
 	 * After any change, recalculate the total and inform the server
 	 */
 	saiw_update_viewer_count(pss->vhd);
+}
+
+/*
+ * Track which builder shells this browser opened itself (the rx side only
+ * lets admins send openshell/closeshell).  Shell ptydata coming back from
+ * the server is delivered only to connections on this list.
+ */
+void
+saiw_pss_shell_open(struct pss *pss, const char *task_uuid)
+{
+	unsigned int n;
+
+	if (!task_uuid[0])
+		return;
+
+	for (n = 0; n < pss->shell_count; n++)
+		if (!strcmp(pss->shell_task_uuid[n], task_uuid))
+			return;
+
+	if (pss->shell_count >= SAIW_MAX_SHELLS) {
+		lwsl_wsi_notice(pss->wsi,
+				"shell tracking full, ptydata for %s will "
+				"not be delivered here", task_uuid);
+		return;
+	}
+
+	lws_strncpy(pss->shell_task_uuid[pss->shell_count], task_uuid,
+		    sizeof(pss->shell_task_uuid[0]));
+	pss->shell_count++;
+}
+
+void
+saiw_pss_shell_close(struct pss *pss, const char *task_uuid)
+{
+	unsigned int n;
+
+	for (n = 0; n < pss->shell_count; n++) {
+		if (!strcmp(pss->shell_task_uuid[n], task_uuid)) {
+			memmove(&pss->shell_task_uuid[n],
+				&pss->shell_task_uuid[n + 1],
+				(pss->shell_count - n - 1) *
+					sizeof(pss->shell_task_uuid[0]));
+			pss->shell_count--;
+
+			return;
+		}
+	}
+}
+
+int
+saiw_pss_owns_shell(struct pss *pss, const char *task_uuid)
+{
+	unsigned int n;
+
+	for (n = 0; n < pss->shell_count; n++)
+		if (!strcmp(pss->shell_task_uuid[n], task_uuid))
+			return 1;
+
+	return 0;
 }
 
 
