@@ -147,29 +147,6 @@ enum {
 };
 
 static int
-sais_validate_id(const char *id, int reqlen)
-{
-	const char *idin = id;
-	int n = reqlen;
-
-	while (*id && n--) {
-		if (!((*id >= '0' && *id <= '9') ||
-		      (*id >= 'a' && *id <= 'z') ||
-		      (*id >= 'A' && *id <= 'Z')))
-			goto reject;
-		id++;
-	}
-
-	if (!n && !*id)
-		return 0;
-reject:
-
-	lwsl_notice("%s: Invalid ID (%d) '%s'\n", __func__, reqlen, idin);
-
-	return 1;
-}
-
-static int
 sais_validate_builder_name(const char *id)
 {
 	const char *idin = id;

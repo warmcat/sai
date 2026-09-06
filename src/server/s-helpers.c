@@ -37,6 +37,34 @@
 
 #include "s-private.h"
 
+/*
+ * Ids that came in from outside (browser or builder link) must be exactly
+ * the length of the server-minted id kind and purely alnum, before they are
+ * used in queries, db filenames or broadcasts.
+ */
+int
+sais_validate_id(const char *id, int reqlen)
+{
+	const char *idin = id;
+	int n = reqlen;
+
+	while (*id && n--) {
+		if (!((*id >= '0' && *id <= '9') ||
+		      (*id >= 'a' && *id <= 'z') ||
+		      (*id >= 'A' && *id <= 'Z')))
+			goto reject;
+		id++;
+	}
+
+	if (!n && !*id)
+		return 0;
+reject:
+
+	lwsl_notice("%s: Invalid ID (%d) '%s'\n", __func__, reqlen, idin);
+
+	return 1;
+}
+
 int
 sql3_get_integer_cb(void *user, int cols, char **values, char **name)
 {

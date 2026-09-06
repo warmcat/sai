@@ -284,6 +284,9 @@ int
 sai_sql3_get_uint64_cb(void *user, int cols, char **values, char **name);
 
 int
+sais_validate_id(const char *id, int reqlen);
+
+int
 saiw_ws_json_tx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
 
 int
