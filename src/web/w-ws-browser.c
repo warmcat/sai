@@ -29,7 +29,6 @@
 #include <libwebsockets.h>
 #include <string.h>
 #include <signal.h>
-#include <assert.h>
 #include <time.h>
 
 #include "w-private.h"
@@ -1156,9 +1155,26 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	case SAIM_WS_BROWSER_RX_PTYDATA:
 		break;
 
+	/*
+	 * Load reports flow builder -> server -> us -> browsers; a browser
+	 * sending one is meaningless.  Drop it locally rather than forward
+	 * it, sai-server does not accept this schema on the web link and
+	 * would tear the link down trying to decode it.
+	 */
+	case SAIM_WS_BROWSER_RX_LOADREPORT:
+		lwsl_notice("%s: dropping loadreport from browser\n", __func__);
+		goto ok;
+
 	default:
-		assert(0);
-		break;
+		/*
+		 * No schema in the map today reaches here.  If one is added
+		 * to the map without a case above, log and drop it rather
+		 * than assert (remote-crashable) or forward an unknown
+		 * schema on the server link.
+		 */
+		lwsl_notice("%s: unhandled schema index %d from browser, dropping\n",
+				__func__, a.top_schema_index);
+		goto ok;
 	}
 
 	sai_ss_queue_frag_on_buflist_REQUIRES_LWS_PRE(vhd->h_ss_websrv,
