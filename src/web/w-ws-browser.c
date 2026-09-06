@@ -1970,6 +1970,8 @@ saiw_dedup_and_queue(struct pss *pss, int idx, struct sai_dyn_buf *d)
 		changed = 0;
 	} else {
 		free(pss->last_bps[idx]);
+		pss->last_bps[idx] = NULL;
+		pss->last_bps_len[idx] = 0;
 		pss->last_bps[idx] = malloc(d->len - LWS_PRE);
 		if (pss->last_bps[idx]) {
 			memcpy(pss->last_bps[idx], d->buf + LWS_PRE, d->len - LWS_PRE);
