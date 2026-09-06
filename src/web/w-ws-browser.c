@@ -336,7 +336,7 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub, i
 	struct lwsac *query_ac = NULL, *runs_ac = NULL, *art_ac = NULL;
 	sai_task_t *one_task = NULL;
 	lws_struct_serialize_t *js;
-	char esc[256], filt[128];
+	char esc[256], filt[192];
 	lws_dll2_owner_t owner;
 	sqlite3 *pdb = NULL;
 	lws_dll2_owner_t o;
@@ -502,12 +502,15 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub, i
 				      pss->vhd->sqlite3_path_lhs, event_uuid,
 				      0, &pdb)) {
 
+		/* uuid is db-derived, purify keeps the literal safe anyway */
+		lws_sql_purify(esc, one_task->uuid, sizeof(esc));
+
 		if (run_idx >= 0)
 			lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s') and run=%d",
-			     one_task->uuid, run_idx);
+			     esc, run_idx);
 		else
 			lws_snprintf(filt, sizeof(filt), " and (task_uuid == '%s') and run=%d",
-			     one_task->uuid, one_task->run);
+			     esc, one_task->run);
 
 		if (lws_struct_sq3_deserialize(pdb, filt, NULL,
 					       lsm_schema_sq3_map_artifact,
@@ -1274,16 +1277,19 @@ saiw_broadcast_logs_batch(struct vhd *vhd, struct pss *pss)
 	//if (pss->log_cache_index == pss->log_cache_size)
 	{
 		sqlite3 *pdb = NULL;
-		char esc[256];
+		char esc[256], pesc[132];
 		int sr;
 
 		sai_task_uuid_to_event_uuid(event_uuid, pss->sub_task_uuid);
 
 		lwsac_free(&pss->logs_ac);
 
+		/* uuid is db-derived, purify keeps the literal safe anyway */
+		lws_sql_purify(pesc, pss->sub_task_uuid, sizeof(pesc));
+
 		lws_snprintf(esc, sizeof(esc),
 		     "and task_uuid='%s' and run=%d and timestamp > %llu",
-		     pss->sub_task_uuid, pss->sub_run,
+		     pesc, pss->sub_run,
 		     (unsigned long long)pss->sub_timestamp);
 
 		// lwsl_notice("%s: collecting logs %s\n", __func__, esc);
@@ -1538,7 +1544,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		 */
 		lws_sql_purify(esc, pss->specific_project, sizeof(esc) - 1);
 		lws_snprintf(filt, sizeof(filt),
-			 " and state != %d and repo_name=\"%s\"",
+			 " and state != %d and repo_name='%s'",
 			 SAIES_DELETED, esc);
 		n = -1;
 	} else {
@@ -1563,7 +1569,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 			lws_sql_purify(esc, pss->event_tasks_uuid,
 				       sizeof(esc) - 1);
 			lws_snprintf(filt + fl, sizeof(filt) - fl,
-				     " and uuid=\"%s\"", esc);
+				     " and uuid='%s'", esc);
 			n = -1;
 		}
 
@@ -1577,7 +1583,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 			lws_sql_purify(esc, pss->selected_project,
 				       sizeof(esc) - 1);
 			lws_snprintf(filt + fl, sizeof(filt) - fl,
-				     " and repo_name=\"%s\"", esc);
+					     " and repo_name='%s'", esc);
 			n = -100;
 		}
 
@@ -1586,7 +1592,7 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 			lws_sql_purify(esc, pss->selected_ref,
 				       sizeof(esc) - 1);
 			lws_snprintf(filt + fl, sizeof(filt) - fl,
-				     " and ref=\"%s\"", esc);
+					     " and ref='%s'", esc);
 			if (n == -6)
 				n = -100;
 		}
@@ -1667,10 +1673,12 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 		}
 
 		{
-			char wfilt[128];
+			char wfilt[128], wesc[70];
 			struct lwsac *ac_watchers = NULL;
 			lws_dll2_owner_clear(&e->watcher_owner);
-			lws_snprintf(wfilt, sizeof(wfilt), " and event_hash='%s'", e->uuid);
+			/* uuid is db-derived, purify keeps the literal safe anyway */
+			lws_sql_purify(wesc, e->uuid, sizeof(wesc));
+			lws_snprintf(wfilt, sizeof(wfilt), " and event_hash='%s'", wesc);
 			if (lws_struct_sq3_deserialize(vhd->pdb, wfilt, "created",
 						   lsm_schema_sq3_map_watcher, &e->watcher_owner, &ac_watchers, 0, 0) < 0)
 				lwsl_err("%s: watchers deserialize failed\n", __func__);
