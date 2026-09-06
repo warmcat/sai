@@ -2126,7 +2126,8 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 			  "{\"schema\":\"com.warmcat.sai.builders\","
 			  " \"alang\":\"%s\","
 			  " \"builders\":[",
-			  lws_sql_purify(esc, pss->alang, sizeof(esc) - 1));
+			  lws_json_purify(esc, pss->alang, sizeof(esc) - 1,
+					  NULL));
 	if (sai_dyn_buf_append(&d, buf, (size_t)n)) {
 		free(d.buf);
 		return 1;
