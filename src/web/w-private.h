@@ -115,6 +115,7 @@ struct pss {	struct vhd		*vhd;
 
 	lws_dll2_owner_t	logs_owner;
 	lws_sorted_usec_list_t	sul_logcache;
+	lws_sorted_usec_list_t	sul_overview;
 	lws_struct_args_t	a;
 
 	union {
@@ -157,6 +158,7 @@ struct pss {	struct vhd		*vhd;
 	unsigned int		bulk_binary_data:1;
 	unsigned int		toggle_favour_sch:1;
 	unsigned int		resolved_task_offset:1;
+	unsigned int		tx_shed:1;
 	uint8_t			wants_builder_info;
 	sai_auth_state_t	auth_state;
 };

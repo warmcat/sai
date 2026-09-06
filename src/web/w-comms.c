@@ -62,6 +62,15 @@ static const char * const well_known[] = {
 	"/login"
 };
 
+/*
+ * Cap on simultaneously-connected browser wss.  Each connected browser can
+ * hold a queued tx backlog of up to SAIW_BROWSER_TX_HWM bytes (w-ws-browser.c)
+ * while it drains, so the count has to be bounded for worst-case memory to
+ * stay bounded too.  Browsers shed at the cap simply reconnect when a slot
+ * frees.
+ */
+#define SAIW_BROWSER_MAX_CONNS 100
+
 int
 saiw_task_cancel(struct vhd *vhd, const char *task_uuid)
 {
@@ -479,7 +488,7 @@ http_resp:
 	/*
 	 * ws connections from builders and browsers
 	 */
-	       case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
+		       case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
 	               n = lws_hdr_copy(wsi, (char *)buf, sizeof(buf) - 1,
 	                                WSI_TOKEN_GET_URI);
 
@@ -495,6 +504,19 @@ http_resp:
 	                                       "/builder", 8)) {
 			       lwsl_wsi_err(wsi, "Terminating unexpected sai-web conn to /builder");
 	                       return 1; /* Reject builder connections */
+		       }
+
+		       /*
+			* Cap concurrent browser connections: the overview is
+			* public by design, so anyone can hold wss open, and
+			* each holds a bounded tx backlog while draining.  At
+			* the cap, shed new connections (they retry).
+			*/
+		       if (vhd && vhd->browsers.count >= SAIW_BROWSER_MAX_CONNS) {
+			       lwsl_wsi_notice(wsi,
+				       "Shedding browser conn: at %u conns cap",
+				       (unsigned int)vhd->browsers.count);
+			       return 1;
 		       }
 
 		       /*
@@ -720,6 +742,7 @@ http_resp:
 		saiw_browser_state_changed(pss, 0);
 		lws_dll2_remove(&pss->subs_list);
 		lws_sul_cancel(&pss->sul_logcache);
+		lws_sul_cancel(&pss->sul_overview);
 
 		for (n = 0; n < 4; n++) {
 			if (pss->last_bps[n])

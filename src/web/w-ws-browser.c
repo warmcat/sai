@@ -187,11 +187,45 @@ enum sai_overview_state {
 	SOS_TASKS,
 };
 
+/*
+ * Tx backpressure thresholds for browser connections.
+ *
+ * DEFER: producers that can retry (overview / log batches) hold off while
+ *        the connection is this backed-up, and retry from a sul once it has
+ *        drained below; matches the threshold the log path already used.
+ *
+ * HWM:   if the backlog is still above this, the peer is simply not
+ *        consuming (zero TCP window).  It is set above the largest legit
+ *        single composed message (an unscoped overview on a populated db
+ *        can be a few MB), so reaching it means repeated messages have
+ *        piled up undrained; we shed the connection instead of letting it
+ *        pin memory.  The raw_tx sanity limit (32MiB) remains the hard
+ *        ceiling behind this.
+ */
+#define SAIW_BROWSER_TX_DEFER	(100 * 1024)
+#define SAIW_BROWSER_TX_HWM	(8 * 1024 * 1024)
+
 int
 saiw_ws_browser_queue_REQUIRES_LWS_PRE(struct pss *pss, const void *buf,
 				       size_t len, enum lws_write_protocol flags)
 {
 	int *pi = (int *)((const char *)buf - sizeof(int)), r = 0;
+
+	if (lws_buflist2_total_len(&pss->raw_tx) > SAIW_BROWSER_TX_HWM) {
+		/*
+		 * The browser stopped reading and everything queued for it is
+		 * still sitting here.  Stop appending and have the connection
+		 * closed rather than keep allocating for it.
+		 */
+		if (!pss->tx_shed) {
+			pss->tx_shed = 1;
+			lwsl_wsi_notice(pss->wsi,
+					"tx backlog over HWM, shedding conn");
+			lws_wsi_close(pss->wsi, LWS_TO_KILL_ASYNC);
+		}
+
+		return 1;
+	}
 
 	*pi = (int)flags;
 
@@ -1209,6 +1243,14 @@ saiw_retry_logs(lws_sorted_usec_list_t *sul)
 	saiw_broadcast_logs_batch(pss->vhd, pss);
 }
 
+static void
+saiw_retry_overview(lws_sorted_usec_list_t *sul)
+{
+	struct pss *pss = lws_container_of(sul, struct pss, sul_overview);
+
+	saiw_browser_queue_overview(pss->vhd, pss);
+}
+
 int
 saiw_broadcast_logs_batch(struct vhd *vhd, struct pss *pss)
 {
@@ -1217,7 +1259,7 @@ saiw_broadcast_logs_batch(struct vhd *vhd, struct pss *pss)
 	if (!pss->subs_list.owner)
 		return 0;
 
-	if (lws_buflist2_total_len(&pss->raw_tx) > 100 * 1024) {
+	if (lws_buflist2_total_len(&pss->raw_tx) > SAIW_BROWSER_TX_DEFER) {
 		lws_sul_schedule(vhd->context, 0, &pss->sul_logcache,
 				 saiw_retry_logs, 250 * LWS_US_PER_MS);
 		return 0;
@@ -1442,6 +1484,20 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 	sai_task_t *t;
 	int n;
 	size_t w;
+
+	if (lws_buflist2_total_len(&pss->raw_tx) > SAIW_BROWSER_TX_DEFER) {
+		/*
+		 * Our own tx towards this browser is backed-up (he is not
+		 * draining, or a previous overview is still in flight).  The
+		 * overview can be megabytes on a populated db, so composing
+		 * another one now would just pile it onto the backlog; come
+		 * back from a timer when it has drained.
+		 */
+		lws_sul_schedule(vhd->context, 0, &pss->sul_overview,
+				 saiw_retry_overview, 250 * LWS_US_PER_MS);
+
+		return 0;
+	}
 
 	filt[0] = '\0';
 	esc[0] = '\0';
