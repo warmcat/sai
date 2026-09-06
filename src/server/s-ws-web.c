@@ -537,7 +537,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		if (r)
 			lwsl_ss_err(m->ss, "eventreset failed");
 
-		lwsac_free(&a.ac);
 		break;
 
 	case SAIS_WS_WEBSRV_RX_PLATRESET: {
@@ -549,7 +548,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		r = sais_plat_reset(m->vhd, pr->event_uuid, pr->platform);
 		if (r)
 			lwsl_ss_err(m->ss, "platreset failed");
-		lwsac_free(&a.ac);
 		break;
 	}
 	case SAIS_WS_WEBSRV_RX_PCON_CONTROL:
@@ -579,7 +577,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		if (!count)
 			lwsl_warn("%s: No sai-power connections found to forward control to!\n", __func__);
 
-		lwsac_free(&a.ac);
 		break;
 	}
 
@@ -593,7 +590,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		r = sais_event_delete(m->vhd, ei->event_hash);
 		if (r)
 			lwsl_ss_err(m->ss, "event delete failed");
-		lwsac_free(&a.ac);
 		break;
 
 	case SAIS_WS_WEBSRV_RX_TASKCANCEL:
@@ -653,7 +649,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			if (!sp) {
 				lwsl_info("%s: unknown builder %s for rebuild\n",
 					    __func__, reb->builder_name);
-				lwsac_free(&a.ac);
 				break;
 			}
 
@@ -697,7 +692,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			}
 		} lws_end_foreach_dll(p);
 
-		lwsac_free(&a.ac);
 		break;
 	}
 	case SAIS_WS_WEBSRV_RX_OPENSHELL:
@@ -715,7 +709,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		if (sais_validate_builder_name(os->builder_name)) {
 			lwsl_notice("%s: OPENSHELL bad builder name '%s'\n",
 				    __func__, os->builder_name);
-			lwsac_free(&a.ac);
 			break;
 		}
 
@@ -752,7 +745,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		sais_platforms_with_tasks_pending(m->vhd);
 
-		lwsac_free(&a.ac);
 		break;
 	}
 
@@ -762,7 +754,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		if (sais_validate_id(cs->task_uuid, SAI_TASKID_LEN)) {
 			lwsl_notice("%s: CLOSESHELL bad task_uuid\n", __func__);
-			lwsac_free(&a.ac);
 			break;
 		}
 
@@ -785,7 +776,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		sais_task_cancel(m->vhd, cs->task_uuid, 0, 0);
 		sais_platforms_with_tasks_pending(m->vhd);
 
-		lwsac_free(&a.ac);
 		break;
 	}
 
@@ -802,7 +792,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		    sais_validate_builder_name(pd->builder_name)) {
 			lwsl_notice("%s: PTYDATA bad task_uuid/builder\n",
 				    __func__);
-			lwsac_free(&a.ac);
 			break;
 		}
 
@@ -828,7 +817,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				}
 			} lws_end_foreach_dll(d);
 
-			lwsac_free(&a.ac);
 			break;
 		}
 
@@ -855,7 +843,6 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			}
 		} lws_end_foreach_dll(p);
 
-		lwsac_free(&a.ac);
 		break;
 	}
 
@@ -882,15 +869,18 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		/* Force broadcast of updated builders list */
 		sais_list_builders(m->vhd);
 
-		lwsac_free(&a.ac);
 		break;
 	}
 	}
+
+	lwsac_free(&a.ac);
 
 	return 0;
 
 soft_error:
 	lwsl_warn("%s: soft error\n", __func__);
+
+	lwsac_free(&a.ac);
 
 	return 0;
 }
