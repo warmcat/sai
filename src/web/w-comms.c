@@ -745,8 +745,11 @@ http_resp:
 		lws_sul_cancel(&pss->sul_overview);
 
 		for (n = 0; n < 4; n++) {
-			if (pss->last_bps[n])
+			if (pss->last_bps[n]) {
 				free(pss->last_bps[n]);
+				pss->last_bps[n] = NULL;
+				pss->last_bps_len[n] = 0;
+			}
 		}
 
 		lwsac_free(&pss->logs_ac);
