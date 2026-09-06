@@ -163,7 +163,7 @@ sais_websrv_broadcast_buflist(struct lws_ss_handle *hsrv, struct lws_buflist **b
 void
 sais_taskchange(struct lws_ss_handle *hsrv, const char *task_uuid, int state)
 {
-	char tc[LWS_PRE + 256], *start = tc + LWS_PRE;
+	char tc[LWS_PRE + 256], *start = tc + LWS_PRE, esc[256];
 	lws_wsmsg_info_t info;
 	int n;
 
@@ -172,7 +172,8 @@ sais_taskchange(struct lws_ss_handle *hsrv, const char *task_uuid, int state)
 	n = lws_snprintf(start, sizeof(tc) - LWS_PRE,
 			 "{\"schema\":\"sai-taskchange\", "
 			 "\"event_hash\":\"%s\", \"state\":%d}",
-			 task_uuid, state);
+			 lws_json_purify(esc, task_uuid, sizeof(esc) - 1, NULL),
+			 state);
 
 	memset(&info, 0, sizeof(info));
 	info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;
@@ -190,7 +191,7 @@ sais_taskchange(struct lws_ss_handle *hsrv, const char *task_uuid, int state)
 void
 sais_eventchange(struct lws_ss_handle *hsrv, const char *event_uuid, int state)
 {
-	char tc[LWS_PRE + 256], *start = tc + LWS_PRE;
+	char tc[LWS_PRE + 256], *start = tc + LWS_PRE, esc[256];
 	lws_wsmsg_info_t info;
 	int n;
 
@@ -199,7 +200,8 @@ sais_eventchange(struct lws_ss_handle *hsrv, const char *event_uuid, int state)
 	n = lws_snprintf(start, sizeof(tc) - LWS_PRE,
 			 "{\"schema\":\"sai-eventchange\", "
 			 "\"event_hash\":\"%s\", \"state\":%d}",
-			 event_uuid, state);
+			 lws_json_purify(esc, event_uuid, sizeof(esc) - 1, NULL),
+			 state);
 
 	memset(&info, 0, sizeof(info));
 	info.private_source_idx		= SAI_WEBSRV_PB__GENERATED;

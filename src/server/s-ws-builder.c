@@ -1178,6 +1178,23 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 
 				ap = (sai_artifact_t *)pss->a.dest;
 
+				/*
+				 * The task_uuid from the builder decides which
+				 * event db we open and reaches queries and
+				 * broadcasts below, so it has to be a real
+				 * server-minted task id, not something the
+				 * builder cooked up.
+				 */
+				if (sais_validate_id(ap->task_uuid,
+						     SAI_TASKID_LEN)) {
+					lwsl_wsi_err(pss->wsi,
+						"artifact upload with invalid "
+						"task_uuid");
+					lwsac_free(&pss->a.ac);
+
+					return -1;
+				}
+
 				sai_task_uuid_to_event_uuid(event_uuid, ap->task_uuid);
 
 				/*
@@ -1201,7 +1218,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				 */
 
 				lws_sql_purify(esc, ap->task_uuid, sizeof(esc));
-				lws_snprintf(s, sizeof(s)," and uuid == \"%s\"", esc);
+				lws_snprintf(s, sizeof(s)," and uuid == '%s'", esc);
 				n = lws_struct_sq3_deserialize(pss->pdb_artifact, s,
 							       "run desc", lsm_schema_sq3_map_task,
 							       &o, &ac, 0, 1);
@@ -1341,7 +1358,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				ap = (sai_artifact_t *)pss->a.dest;
 
 				lws_sql_purify(esc, ap->task_uuid, sizeof(esc));
-				lws_snprintf(s, sizeof(s)," select state from tasks where uuid == \"%s\" order by run desc limit 1", esc);
+				lws_snprintf(s, sizeof(s)," select state from tasks where uuid == '%s' order by run desc limit 1", esc);
 				if (sqlite3_exec((sqlite3 *)pss->pdb_artifact, s,
 						 sql3_get_integer_cb, &state, NULL) != SQLITE_OK) {
 					lwsl_err("%s: %s: %s: fail\n", __func__, s,
