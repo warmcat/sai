@@ -132,6 +132,30 @@ saiw_event_db_close_all_now(struct vhd *vhd)
 	return 0;
 }
 
+/*
+ * Release any artifact-download state on pss.  saiw_get_blob() opened a
+ * read-only blob on the event db and took a refcount on the cached db handle;
+ * the open blob also pins a read transaction on that db (blocking WAL
+ * checkpointing while it exists).  Once the artifact has gone out -- or the
+ * client went away mid-stream, or the transaction is being unbound from us on
+ * a keepalive connection that is moving on to a fresh transaction with a
+ * fresh pss -- the blob and the db refcount must be released here.
+ */
+static void
+saiw_close_artifact(struct pss *pss)
+{
+	if (pss->blob_artifact) {
+		sqlite3_blob_close(pss->blob_artifact);
+		pss->blob_artifact = NULL;
+	}
+
+	if (pss->pdb_artifact) {
+		sai_event_db_close(&pss->vhd->sqlite3_cache,
+				   &pss->pdb_artifact);
+		pss->pdb_artifact = NULL;
+	}
+}
+
 static int
 w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	    void *in, size_t len)
@@ -397,7 +421,22 @@ http_resp:
 
 		if (pss->artifact_offset != pss->artifact_length)
 			lws_callback_on_writable(wsi);
+		else
+			/* the last part went out, we're done with the blob */
+			saiw_close_artifact(pss);
 
+		break;
+
+	case LWS_CALLBACK_CLOSED_HTTP:
+		/* the http conn went away, eg, mid-artifact-download */
+
+		saiw_close_artifact(pss);
+		break;
+
+	case LWS_CALLBACK_HTTP_DROP_PROTOCOL:
+		/* the transaction is unbinding from us, drop artifact state */
+
+		saiw_close_artifact(pss);
 		break;
 
 	/*
