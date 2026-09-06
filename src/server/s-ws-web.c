@@ -450,6 +450,7 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
 	sai_browse_rx_evinfo_t *ei;
+	sai_cancel_t *can;
 	lws_struct_args_t a;
 	sai_db_result_t r;
 	int n;
@@ -619,11 +620,11 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		break;
 
 	case SAIS_WS_WEBSRV_RX_TASKCANCEL:
-		ei = (sai_browse_rx_evinfo_t *)a.dest;
-		if (sais_validate_id(ei->event_hash, SAI_TASKID_LEN))
+		can = (sai_cancel_t *)a.dest;
+		if (sais_validate_id(can->task_uuid, SAI_TASKID_LEN))
 			goto soft_error;
 
-		sais_task_cancel(m->vhd, ei->event_hash, 0, 0);
+		sais_task_cancel(m->vhd, can->task_uuid, 0, 0);
 
 		break;
 

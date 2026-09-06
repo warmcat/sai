@@ -176,7 +176,6 @@ struct vhd {
 	struct lws_dll2_owner		pcons_owner;
 	struct lwsac			*pcons;
 
-	lws_dll2_owner_t		web_to_srv_owner;
 	lws_dll2_owner_t		subs_owner;
 	sqlite3				*pdb;
 	
@@ -251,9 +250,6 @@ saiw_subs_task_state_change(struct vhd *vhd, const char *task_uuid);
 
 void
 saiw_central_cb(lws_sorted_usec_list_t *sul);
-
-int
-saiw_task_cancel(struct vhd *vhd, const char *task_uuid);
 
 int
 saiw_get_blob(struct vhd *vhd, const char *url, sqlite3 **pdb,

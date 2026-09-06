@@ -1164,9 +1164,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		lwsl_notice("%s: received request to cancel task %s\n",
 			    __func__, can->task_uuid);
-
-		saiw_task_cancel(vhd, can->task_uuid);
-		goto ok;
+		break; /* forward it to sai-server with the rest */
 
 	case SAIM_WS_BROWSER_RX_REBUILD:
 		/*
