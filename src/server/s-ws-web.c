@@ -714,7 +714,18 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		lwsl_notice("%s: OPENSHELL received from web for %s, passing to builder\n", __func__, os->builder_name);
 
-		if (!os->task_uuid[0])
+		/*
+		 * The shell id must be a shell-shaped id if given, so the
+		 * session we create can always be addressed (and closed) by
+		 * the ptydata/closeshell validation below.
+		 */
+		if (os->task_uuid[0]) {
+			if (sais_validate_id(os->task_uuid, SAI_SHELLID_LEN)) {
+				lwsl_notice("%s: OPENSHELL bad shell id\n",
+					    __func__);
+				break;
+			}
+		} else
 			sai_uuid16_create(m->vhd->context, os->task_uuid);
 
 		/* Add it to in-memory shell sessions list */
@@ -752,8 +763,8 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	{
 		sai_closeshell_t *cs = (sai_closeshell_t *)a.dest;
 
-		if (sais_validate_id(cs->task_uuid, SAI_TASKID_LEN)) {
-			lwsl_notice("%s: CLOSESHELL bad task_uuid\n", __func__);
+		if (sais_validate_id(cs->task_uuid, SAI_SHELLID_LEN)) {
+			lwsl_notice("%s: CLOSESHELL bad shell id\n", __func__);
 			break;
 		}
 
@@ -788,9 +799,9 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		 * Validate ids (not pd->data, which is opaque pty payload that
 		 * must pass through to the builder's shell).
 		 */
-		if (sais_validate_id(pd->task_uuid, SAI_TASKID_LEN) ||
+		if (sais_validate_id(pd->task_uuid, SAI_SHELLID_LEN) ||
 		    sais_validate_builder_name(pd->builder_name)) {
-			lwsl_notice("%s: PTYDATA bad task_uuid/builder\n",
+			lwsl_notice("%s: PTYDATA bad shell id/builder\n",
 				    __func__);
 			break;
 		}

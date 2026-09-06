@@ -26,6 +26,14 @@
 #define SAI_EVENTID_LEN 32
 #define SAI_TASKID_LEN 64
 
+/*
+ * Ad-hoc interactive shell session ids (com.warmcat.sai.openshell et al):
+ * the browser mints one when opening the shell and reuses it in ptydata /
+ * closeshell; the server mints the same kind when the browser supplied
+ * none.  Same shape as an event id: 32 hex chars.
+ */
+#define SAI_SHELLID_LEN 32
+
 struct sai_plat;
 
 /* lws_wsmsg_ array for different sources */

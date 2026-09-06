@@ -2574,7 +2574,9 @@ function createBuilderDiv(plat) {
 		menuItems.push({
 			label: "<span class='builder-shell-btn'>Open Shell</span>",
 			callback: () => {
-				const task_uuid = Array.from(crypto.getRandomValues(new Uint8Array(8)))
+				/* 16 random bytes -> 32 hex chars: the shell id shape
+				 * the server validates (SAI_SHELLID_LEN) */
+				const task_uuid = Array.from(crypto.getRandomValues(new Uint8Array(16)))
 					.map(b => b.toString(16).padStart(2, '0')).join('');
 
 				const msg = {
