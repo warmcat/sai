@@ -85,6 +85,67 @@ enum {
  * This may come in chunks and is statefully parsed
  * so it's not directly sensitive to size or fragmentation
  */
+
+/*
+ * Reassemble ptydata rx until the message completes: the members saying
+ * which browser owns the shell are only trusted once the whole message has
+ * parsed, and the shell output must not be queued to anyone else in the
+ * meantime.  sai-server sends these in one piece (its own serialization
+ * buffer is 2KiB), so this is normally a single append.  The cap just
+ * bounds what a broken or hostile peer can make us hold.
+ */
+#define SAIW_PTY_ACCUM_MAX (64 * 1024)
+
+static void
+saiw_pty_accum_reset(saiw_websrv_t *m)
+{
+	free(m->pty_accum);
+	m->pty_accum	= NULL;
+	m->pty_accum_len = 0;
+	m->pty_dropped	 = 0;
+}
+
+static void
+saiw_pty_accum_drop(saiw_websrv_t *m)
+{
+	free(m->pty_accum);
+	m->pty_accum	= NULL;
+	m->pty_accum_len = 0;
+	m->pty_dropped	 = 1;
+}
+
+static int
+saiw_pty_accum(saiw_websrv_t *m, const uint8_t *frag, size_t len)
+{
+	uint8_t *na;
+
+	if (m->pty_dropped)
+		return 0;
+
+	if (m->pty_accum_len + len > SAIW_PTY_ACCUM_MAX) {
+		lwsl_notice("%s: ptydata reassembly over size, dropping msg\n",
+			    __func__);
+		saiw_pty_accum_drop(m);
+
+		return 0;
+	}
+
+	na = realloc(m->pty_accum, LWS_PRE + m->pty_accum_len + len);
+	if (!na) {
+		lwsl_notice("%s: ptydata reassembly oom, dropping msg\n",
+			    __func__);
+		saiw_pty_accum_drop(m);
+
+		return 0;
+	}
+
+	m->pty_accum = na;
+	memcpy(m->pty_accum + LWS_PRE + m->pty_accum_len, frag, len);
+	m->pty_accum_len += len;
+
+	return 0;
+}
+
 static int
 saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
@@ -100,6 +161,7 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	if (is_start) {
 		/* First frag of a new message. Clear old parse results and init */
 		lwsac_free(&m->a.ac);
+		saiw_pty_accum_reset(m);
 		memset(&m->a, 0, sizeof(m->a));
 		m->a.map_st[0]		= lsm_schema_json_map;
 		m->a.map_entries_st[0]	= LWS_ARRAY_SIZE(lsm_schema_json_map);
@@ -129,7 +191,6 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			 */
 			switch (m->a.top_schema_index) {
 			case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
-			case SAIS_WS_WEBSRV_RX_PTYDATA:
 			{
 				uint8_t *tmp = malloc(LWS_PRE + rem);
 				if (tmp) {
@@ -142,6 +203,14 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 				}
 				break;
 			}
+			case SAIS_WS_WEBSRV_RX_PTYDATA:
+				/*
+				 * Hold the fragment until the message
+				 * completes; it goes out only to the
+				 * shell's owner once we know who that is
+				 */
+				saiw_pty_accum(m, p, rem);
+				break;
 			case SAIS_WS_WEBSRV_RX_LOADREPORT:
 			{
 				uint8_t *tmp = malloc(LWS_PRE + rem);
@@ -174,7 +243,6 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		case SAIS_WS_WEBSRV_RX_TASKCHANGE:
 		case SAIS_WS_WEBSRV_RX_EVENTCHANGE:
 		case SAIS_WS_WEBSRV_RX_TASKACTIVITY:
-		case SAIS_WS_WEBSRV_RX_PTYDATA:
 		{
 			uint8_t *tmp = malloc(LWS_PRE + consumed);
 			if (tmp) {
@@ -185,6 +253,42 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 							   1)); /* Force EOM */
 				free(tmp);
 			}
+			break;
+		}
+		case SAIS_WS_WEBSRV_RX_PTYDATA:
+		{
+			/*
+			 * Shell output is private to the admin session that
+			 * opened the shell: queue it only to browsers that
+			 * sent openshell for this task_uuid.  Reassemble the
+			 * whole message first so we know the parsed members
+			 * are complete and honest.
+			 */
+			sai_ptydata_t *pd = (sai_ptydata_t *)m->a.dest;
+
+			saiw_pty_accum(m, p, consumed);
+
+			if (m->pty_accum && pd && pd->task_uuid[0]) {
+				lws_start_foreach_dll(struct lws_dll2 *, pt,
+						      vhd->browsers.head) {
+					struct pss *pss = lws_container_of(
+							pt, struct pss, same);
+
+					if (saiw_pss_owns_shell(pss,
+							        pd->task_uuid))
+						saiw_ws_browser_queue_REQUIRES_LWS_PRE(
+							pss,
+							m->pty_accum + LWS_PRE,
+							m->pty_accum_len,
+							lws_write_ws_flags(
+								LWS_WRITE_TEXT,
+								1, 1));
+				} lws_end_foreach_dll(pt);
+			} else
+				lwsl_notice("%s: ptydata for unowned shell,"
+					    " not forwarded\n", __func__);
+
+			saiw_pty_accum_reset(m);
 			break;
 		}
 		case SAIS_WS_WEBSRV_RX_LOADREPORT:
@@ -363,6 +467,7 @@ saiw_lp_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 	switch (state) {
 	case LWSSSCS_DESTROYING:
+		saiw_pty_accum_reset(m);
 		break;
 
 	case LWSSSCS_CONNECTED:

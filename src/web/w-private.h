@@ -25,6 +25,14 @@
 
 #define SAIW_API_VERSION 4
 
+/*
+ * How many builder shells one browser connection may have open and so have
+ * tracked for ptydata delivery.  Further openshell forwards still work (it
+ * is the server that opens the shell), but ptydata for shells past this
+ * many is not delivered back to this connection.
+ */
+#define SAIW_MAX_SHELLS 8
+
 struct sai_plat;
 
 typedef struct sai_platm {
@@ -109,6 +117,14 @@ struct pss {	struct vhd		*vhd;
 	 */
 	char			selected_project[65];
 	char			selected_ref[65];
+
+	/*
+	 * task_uuids of the builder shells this browser itself opened with
+	 * com.warmcat.sai.openshell; shell ptydata from the server is only
+	 * queued to connections that own the shell.
+	 */
+	char			shell_task_uuid[SAIW_MAX_SHELLS][65];
+	unsigned int		shell_count;
 
 	sqlite3			*pdb_artifact;
 	sqlite3_blob		*blob_artifact;
@@ -195,12 +211,24 @@ struct vhd {
 };
 
 typedef struct saiw_websrv {
-	struct lws_ss_handle		*ss;
-	void				*opaque_data;
+	struct lws_ss_handle	*ss;
+	void			*opaque_data;
 
-	lws_struct_args_t		a;
-	struct lejp_ctx			ctx;
-	struct lws_buflist		*wbltx;
+	lws_struct_args_t	a;
+	struct lejp_ctx		ctx;
+	struct lws_buflist	*wbltx;
+
+	/*
+	 * ptydata rx reassembly (see w-ws-server.c): fragments are buffered
+	 * until the message completes, because only the parsed members say
+	 * which browser owns the shell, and shell output must not be sent to
+	 * anyone else meanwhile.  pty_dropped marks a message whose
+	 * reassembly was abandoned (oversize / oom): nothing is forwarded
+	 * for it.
+	 */
+	uint8_t			*pty_accum; /* content at + LWS_PRE */
+	size_t			pty_accum_len;
+	unsigned int		pty_dropped:1;
 } saiw_websrv_t;
 
 
@@ -269,6 +297,15 @@ saiw_ws_browser_queue_REQUIRES_LWS_PRE(struct pss *pss, const void *buf,
 
 void
 saiw_browser_state_changed(struct pss *pss, int established);
+
+void
+saiw_pss_shell_open(struct pss *pss, const char *task_uuid);
+
+void
+saiw_pss_shell_close(struct pss *pss, const char *task_uuid);
+
+int
+saiw_pss_owns_shell(struct pss *pss, const char *task_uuid);
 
 void
 saiw_update_viewer_count(struct vhd *vhd);
