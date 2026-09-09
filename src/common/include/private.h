@@ -1010,3 +1010,13 @@ sai_event_db_delete_database(const char *sqlite3_path_lhs, const char *event_uui
 int
 sai_sqlite3_statement(struct sqlite3 *pdb, const char *cmd, const char *desc);
 
+/*
+ * c-conf.c: create the context and vhosts from an lwsws-style config dir.
+ * info must be zeroed and passed through lws_cmdline_option_handle_builtin()
+ * by the caller first.
+ */
+struct lws_context *
+sai_lws_context_from_json(const char *config_dir,
+			  struct lws_context_creation_info *info,
+			  const struct lws_protocols **pprotocols,
+			  const char *jpol);
