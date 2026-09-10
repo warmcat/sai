@@ -88,6 +88,11 @@ struct pss {	struct vhd		*vhd;
 	 * many events' worth of task data).
 	 */
 	struct lws_buflist2_owner	raw_tx;
+	/*
+	 * Reassembly of a fragmented browser -> sai-web message (eg, a
+	 * taskclone carrying an edited build script), see LWS_CALLBACK_RECEIVE
+	 */
+	struct lws_buflist		*rx_reasm;
 	struct lws_dll2			same; /* owner: vhd.browsers */
 
 	struct lws_dll2		subs_list;
