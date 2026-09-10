@@ -103,6 +103,61 @@ saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 	return saib_srv_queue_tx(ns->spm->ss, lj + LWS_PRE, (size_t)n, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
 }
 
+/*
+ * One piece of the child's stdout / stderr: at most sizeof(buf) - 1 bytes
+ * of what the callback below has, so that the base64 log chunk it becomes
+ * still fits saib_log_chunk_create()'s buffer.
+ */
+static int
+saib_stdwsi_rx_piece(struct lws *wsi, struct saib_opaque_spawn *op,
+		     uint8_t *buf, size_t len)
+{
+	buf[len] = '\0';
+
+	if (!op || !op->ns || !op->ns->spm) {
+		lwsl_notice("%s: (%d) [orphaned] %s\n", __func__,
+		       (int)lws_spawn_get_stdfd(wsi), (const char *)buf);
+		return 0;
+	}
+
+	{
+		int ch = lws_spawn_get_stdfd(wsi);
+		if (ch == 0)
+			ch = 1;
+			
+		if (ch < 3)
+			op->ns->stdwsi[ch] = wsi;
+
+		if (saib_log_chunk_create(op->ns, buf, len, ch)) {
+			lwsl_user("%s: saib_log_chunk_create failed (ch %d, len %d)\n", __func__, ch, (int)len);
+			return -1;
+		}
+
+		if (lws_buflist2_total_len(&op->ns->spm->bl_to_srv) > (LWS_BUFLIST_OOM_LIMIT - (256 * 1024))) {
+			/* buflist is getting full, backpressure ALL active stdwsi for this connection */
+			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, builder.sai_plat_owner.head) {
+				sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);
+				lws_start_foreach_dll_safe(struct lws_dll2 *, d2, d3, sp->nspawn_owner.head) {
+					struct sai_nspawn *ns = lws_container_of(d2, struct sai_nspawn, list);
+					if (ns->spm == op->ns->spm) {
+						for (int i = 0; i < 3; i++) {
+							if (!ns->stdwsi_paused[i] && ns->stdwsi[i]) {
+								ns->stdwsi_paused[i] = 1;
+								lws_rx_flow_control(ns->stdwsi[i], 0); /* 0 disables RX */
+								lwsl_notice("%s: Backpressure applied to ch %d (tot %zu)\n",
+									__func__, i, lws_buflist2_total_len(&op->ns->spm->bl_to_srv));
+							}
+						}
+					}
+				} lws_end_foreach_dll_safe(d2, d3);
+			} lws_end_foreach_dll_safe(d, d1);
+		}
+	}
+
+
+	return lws_ss_request_tx(op->ns->spm->ss) ? -1 : 0;
+}
+
 static int
 callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 		    void *user, void *in, size_t len)
@@ -140,66 +195,34 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 	case LWS_CALLBACK_RAW_RX_FILE:
 #if defined(WIN32)
-		/* lws spawn reads the pipe itself on windows and delivers the
-		 * data in in / len; the wsi has no readable fd for us
+		/*
+		 * lws spawn reads the pipe itself on windows, up to 4KB at a
+		 * time, and delivers the data in in / len; the wsi has no
+		 * readable fd for us.  Walk the whole delivery in the same
+		 * sized pieces the read() below produces: keeping only the
+		 * first piece used to lose the rest of every larger read.
 		 */
-		ilen = (int)len;
-		if (ilen > (int)sizeof(buf) - 1)
-			ilen = (int)sizeof(buf) - 1;
-		if (ilen > 0)
+		while (len) {
+			ilen = (int)len;
+			if (ilen > (int)sizeof(buf) - 1)
+				ilen = (int)sizeof(buf) - 1;
 			memcpy(buf, in, (size_t)ilen);
+			in = (uint8_t *)in + ilen;
+			len -= (size_t)ilen;
+
+			if (saib_stdwsi_rx_piece(wsi, op, buf, (size_t)ilen))
+				return -1;
+		}
+		break;
 #else
 		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1);
 		if (ilen < 1) {
 			lwsl_debug("%s: read on stdwsi failed\n", __func__);
 			return -1;
 		}
+
+		return saib_stdwsi_rx_piece(wsi, op, buf, (size_t)ilen);
 #endif
-
-		len = (unsigned int)ilen;
-		buf[len] = '\0';
-
-		if (!op || !op->ns || !op->ns->spm) {
-			lwsl_notice("%s: (%d) [orphaned] %s\n", __func__,
-			       (int)lws_spawn_get_stdfd(wsi), (const char *)buf);
-			return 0;
-		}
-
-		{
-			int ch = lws_spawn_get_stdfd(wsi);
-			if (ch == 0)
-				ch = 1;
-				
-			if (ch < 3)
-				op->ns->stdwsi[ch] = wsi;
-
-			if (saib_log_chunk_create(op->ns, buf, len, ch)) {
-				lwsl_user("%s: saib_log_chunk_create failed (ch %d, len %d)\n", __func__, ch, (int)len);
-				return -1;
-			}
-
-			if (lws_buflist2_total_len(&op->ns->spm->bl_to_srv) > (LWS_BUFLIST_OOM_LIMIT - (256 * 1024))) {
-				/* buflist is getting full, backpressure ALL active stdwsi for this connection */
-				lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, builder.sai_plat_owner.head) {
-					sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);
-					lws_start_foreach_dll_safe(struct lws_dll2 *, d2, d3, sp->nspawn_owner.head) {
-						struct sai_nspawn *ns = lws_container_of(d2, struct sai_nspawn, list);
-						if (ns->spm == op->ns->spm) {
-							for (int i = 0; i < 3; i++) {
-								if (!ns->stdwsi_paused[i] && ns->stdwsi[i]) {
-									ns->stdwsi_paused[i] = 1;
-									lws_rx_flow_control(ns->stdwsi[i], 0); /* 0 disables RX */
-									lwsl_notice("%s: Backpressure applied to ch %d (tot %zu)\n",
-										__func__, i, lws_buflist2_total_len(&op->ns->spm->bl_to_srv));
-								}
-							}
-						}
-					} lws_end_foreach_dll_safe(d2, d3);
-				} lws_end_foreach_dll_safe(d, d1);
-			}
-		}
-
-		return lws_ss_request_tx(op->ns->spm->ss) ? -1 : 0;
 
 	default:
 		break;
