@@ -141,6 +141,7 @@ const lws_struct_map_t lsm_event[] = {
 	LSM_UNSIGNED	(sai_event_t, state,		"state"),
 	LSM_UNSIGNED	(sai_event_t, last_updated,	"last_updated"),
 	LSM_UNSIGNED	(sai_event_t, sec,		"sec"),
+	LSM_UNSIGNED	(sai_event_t, adhoc,		"adhoc"),
 	LSM_JO_LIST	(sai_event_t, watcher_owner, sai_watcher_t, list,
 			 NULL, lsm_watcher,		"watchers"),
 };
@@ -225,6 +226,19 @@ const lws_struct_map_t lsm_task_cancel[] = {
 	LSM_CARRAY	(sai_cancel_t, task_uuid,	 "task_uuid"),
 	LSM_UNSIGNED	(sai_cancel_t, erase,		 "erase"),
 	LSM_UNSIGNED	(sai_cancel_t, killed,		 "killed"),
+};
+
+/* browser -> sai-web -> server: ad-hoc build seeded from an existing task */
+
+const lws_struct_map_t lsm_taskclone[] = {
+	LSM_CARRAY	(sai_browse_rx_taskclone_t, seed_uuid,	"seed_uuid"),
+	LSM_CARRAY	(sai_browse_rx_taskclone_t, ref,	"ref"),
+	LSM_CARRAY	(sai_browse_rx_taskclone_t, build,	"build"),
+};
+
+const lws_struct_map_t lsm_schema_taskclone[] = {
+	LSM_SCHEMA	(sai_browse_rx_taskclone_t, NULL, lsm_taskclone,
+						     "com.warmcat.sai.taskclone")
 };
 
 const lws_struct_map_t lsm_openshell[] = {

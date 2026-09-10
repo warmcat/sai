@@ -121,7 +121,9 @@ static const lws_struct_map_t lsm_schema_json_map[] = {
 	LSM_SCHEMA	(sai_closeshell_t, NULL, lsm_closeshell,
 					      "com.warmcat.sai.closeshell"),
 	LSM_SCHEMA	(sai_ptydata_t, NULL, lsm_ptydata,
-					      "com.warmcat.sai.ptydata")
+					      "com.warmcat.sai.ptydata"),
+	LSM_SCHEMA	(sai_browse_rx_taskclone_t, NULL, lsm_taskclone,
+					      "com.warmcat.sai.taskclone"),
 };
 
 enum {
@@ -144,7 +146,14 @@ enum {
 	SAIS_WS_WEBSRV_RX_OPENSHELL,
 	SAIS_WS_WEBSRV_RX_CLOSESHELL,
 	SAIS_WS_WEBSRV_RX_PTYDATA,
+	SAIS_WS_WEBSRV_RX_TASKCLONE,
 };
+
+/*
+ * Cap on a reassembled web -> server message.  The largest legitimate one is
+ * a taskclone: a 4KiB build script JSON-escaped, plus the small fixed fields.
+ */
+#define SAIS_WEBSRV_RX_REASM_MAX	32768
 
 static int
 sais_validate_builder_name(const char *id)
@@ -423,9 +432,9 @@ sum_viewers_cb(struct lws_ss_handle *h, void *arg)
 
 
 static lws_ss_state_return_t
-websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
+websrvss_ws_rx_msg(websrvss_srv_t *m, const uint8_t *buf, size_t len,
+		   int flags)
 {
-	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
 	sai_browse_rx_evinfo_t *ei;
 	sai_cancel_t *can;
 	lws_struct_args_t a;
@@ -694,6 +703,22 @@ websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 		break;
 	}
+	case SAIS_WS_WEBSRV_RX_TASKCLONE:
+	{
+		sai_browse_rx_taskclone_t *tc =
+				(sai_browse_rx_taskclone_t *)a.dest;
+
+		/*
+		 * sai-web only forwards this from admin-authenticated
+		 * browsers; validation of the fields is done in the helper
+		 */
+		lwsl_ss_notice(m->ss, "SAIS_WS_WEBSRV_RX_TASKCLONE: seed %s, "
+				      "ref %s", tc->seed_uuid, tc->ref);
+		if (sais_event_clone_task(m->vhd, tc) != SAI_DB_RESULT_OK)
+			lwsl_ss_err(m->ss, "taskclone failed");
+		break;
+	}
+
 	case SAIS_WS_WEBSRV_RX_OPENSHELL:
 	{
 		sai_openshell_t *os = (sai_openshell_t *)a.dest;
@@ -896,6 +921,64 @@ soft_error:
 	return 0;
 }
 
+/*
+ * Messages from sai-web are normally small enough to arrive whole, but a
+ * taskclone carries an edited build script and can span several fragments.
+ * websrvss_ws_rx_msg() parses one-shot, so reassemble anything that isn't
+ * a complete message before handing it over.
+ */
+static lws_ss_state_return_t
+websrvss_ws_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
+{
+	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
+	lws_ss_state_return_t r;
+	uint8_t *reasm;
+	size_t rl;
+
+	if ((flags & LWSSS_FLAG_SOM) && (flags & LWSSS_FLAG_EOM) &&
+	    !m->rx_reasm)
+		return websrvss_ws_rx_msg(m, buf, len, flags);
+
+	if (flags & LWSSS_FLAG_SOM)
+		/* a new message while holding fragments: discard the old */
+		lws_buflist_destroy_all_segments(&m->rx_reasm);
+
+	if (lws_buflist_total_len(&m->rx_reasm) + len >
+	    SAIS_WEBSRV_RX_REASM_MAX) {
+		lwsl_ss_warn(m->ss, "rx reassembly over size, dropping");
+		lws_buflist_destroy_all_segments(&m->rx_reasm);
+
+		return LWSSSSRET_OK;
+	}
+
+	if (len && lws_buflist_append_segment(&m->rx_reasm, buf, len) < 0) {
+		lwsl_ss_warn(m->ss, "rx reassembly oom, dropping");
+		lws_buflist_destroy_all_segments(&m->rx_reasm);
+
+		return LWSSSSRET_OK;
+	}
+
+	if (!(flags & LWSSS_FLAG_EOM))
+		return LWSSSSRET_OK;
+
+	rl = lws_buflist_total_len(&m->rx_reasm);
+	reasm = malloc(rl);
+	if (!reasm) {
+		lws_buflist_destroy_all_segments(&m->rx_reasm);
+
+		return LWSSSSRET_OK;
+	}
+
+	lws_buflist_linear_use(&m->rx_reasm, reasm, rl);
+	lws_buflist_destroy_all_segments(&m->rx_reasm);
+
+	r = websrvss_ws_rx_msg(m, reasm, rl,
+			       LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+	free(reasm);
+
+	return r;
+}
+
 static lws_ss_state_return_t
 websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	       size_t *len, int *flags)
@@ -921,6 +1004,7 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 		unsigned int total_viewers = 0;
 
 		lws_buflist_destroy_all_segments(&m->bl_srv_to_web);
+		lws_buflist_destroy_all_segments(&m->rx_reasm);
 		lws_wsmsg_destroy(m->private_heads, LWS_ARRAY_SIZE(m->private_heads));
 
 		m->viewers = 0;
