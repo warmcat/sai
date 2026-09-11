@@ -24,6 +24,7 @@
 #include <signal.h>
 #include <limits.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include <sys/types.h>
 
@@ -151,22 +152,443 @@ LWS_SS_INFO("sai_power_client", saib_power_client_t)
 };
 
 
+/*
+ * Auto power management
+ *
+ * Everything that can ask the machine to suspend, shut down or exit, and
+ * everything that tells the servers we are going away, is driven from one
+ * state machine.  Commands to the suspender helper and requests to sai-power
+ * are only ever issued on a state transition, so they cannot be repeated or
+ * interleaved with their counter-commands, and nothing in here ever blocks
+ * the event loop waiting for the power change to happen.
+ *
+ *   ACTIVE ------(idle)------> IDLE ---(grace expired)---+
+ *     ^  ^                       ^                       |
+ *     |  |                   HOLDOFF <---(failed)---+    |
+ *     |  |                                          |    v
+ *     |  +--(busy)-- SUSPEND_WAIT --(flushed)--> SUSPENDING --(resumed)--> IDLE
+ *     |                                             |
+ *     +--(one-shot)--- OFF_REQ --(ACK)--> OFF_WAIT -+  (NAK / no reply -> HOLDOFF)
+ *
+ * Once a suspend byte has been written or sai-power has been asked to cut
+ * the power we are committed: platforms are flagged powering_down, offered
+ * tasks are rejected BUSY, and a busy event can no longer abort.  If the
+ * power change does not happen by its deadline we clear the flags, tell the
+ * servers we are back, and hold off before trying again.
+ */
+
+static const char * const pwr_state_names[] = {
+	"ACTIVE", "IDLE", "HOLDOFF", "SUSPEND_WAIT", "SUSPENDING",
+	"OFF_REQ", "OFF_WAIT"
+};
+
+static const char * const pwr_ev_names[] = {
+	"BUSY", "IDLE", "TIMER", "POWER_ACK", "POWER_NAK"
+};
+
+static void
+sul_power_cb(lws_sorted_usec_list_t *sul);
+
+/*
+ * What, if anything, can we actually do about being idle on this platform
+ * with this configuration?
+ */
+
+enum {
+	SAIB_PWR_CAN_SUSPEND	= (1 << 0), /* suspender helper, suspend type */
+	SAIB_PWR_CAN_OFF	= (1 << 1), /* sai-power + suspender to halt */
+	SAIB_PWR_CAN_EXIT	= (1 << 2), /* one-shot: just exit the process */
+};
+
+static int
+saib_power_capable(void)
+{
+	int caps = 0;
+
+#if defined(__APPLE__)
+	/*
+	 * macOS sleeps by itself once the wakelock is released at the end of
+	 * the last task, see saib_wakelock(): nothing for us to action here
+	 */
+	return 0;
+#endif
+
+	if (builder.one_shot_active)
+		caps |= SAIB_PWR_CAN_EXIT;
+
+	if (!suspender_exists)
+		return caps;
+
+	if (builder.power_off_type && !strcmp(builder.power_off_type, "suspend"))
+		caps |= SAIB_PWR_CAN_SUSPEND;
+	else if (builder.url_sai_power)
+		caps |= SAIB_PWR_CAN_OFF;
+
+	return caps;
+}
+
+/*
+ * Tell every server we talk to whether our platforms are on their way down.
+ * While powering_down is set, saib_can_accept_task() rejects offers BUSY;
+ * re-sending the platforms with it cleared is also what lets the server
+ * clear the BUSY marking and offer us work again.
+ */
+
+static void
+saib_power_notify_servers(int down)
+{
+	lws_start_foreach_dll(struct lws_dll2 *, d, builder.sai_plat_owner.head) {
+		sai_plat_t *p = lws_container_of(d, sai_plat_t, sai_plat_list);
+
+		p->powering_down = down;
+	} lws_end_foreach_dll(d);
+
+	lws_start_foreach_dll(struct lws_dll2 *, d,
+			      builder.sai_plat_server_owner.head) {
+		struct sai_plat_server *spm = lws_container_of(d,
+					struct sai_plat_server, list);
+
+		if (saib_srv_queue_json_fragments_helper(spm->ss,
+					lsm_schema_map_plat,
+					LWS_ARRAY_SIZE(lsm_schema_map_plat),
+					&builder.sai_plat_owner))
+			lwsl_warn("%s: unable to queue plats for %s\n",
+				  __func__, spm->name ? spm->name : "?");
+	} lws_end_foreach_dll(d);
+}
+
+/*
+ * Hand a command byte to the suspender helper process, which has the
+ * privileges to action it.  0 = shutdown, 1 = suspend, 3 = rebuild.
+ */
+
+static int
+saib_power_command(uint8_t cmd)
+{
+	int fd;
+
+	if (!suspender_exists) {
+		lwsl_err("%s: no suspender helper on this platform\n", __func__);
+		return -1;
+	}
+
+	fd = saib_suspender_get_pipe();
+	if (fd < 0 || write(fd, &cmd, 1) != 1) {
+		lwsl_err("%s: unable to send command %d to suspender\n",
+			 __func__, cmd);
+		return -1;
+	}
+
+	builder.power_action_time	= time(NULL);
+	builder.power_action_us		= lws_now_usecs();
+
+	return 0;
+}
+
+/*
+ * Did the machine actually go away since saib_power_command()?  The lws
+ * monotonic clock does not advance while suspended but wall time does, so a
+ * large difference between the two elapsed times means we went down and came
+ * back.
+ */
+
+static int
+saib_power_resumed(void)
+{
+	long long wall = (long long)(time(NULL) - builder.power_action_time),
+		  mono = (long long)((lws_now_usecs() - builder.power_action_us) /
+				     LWS_US_PER_SEC);
+
+	return wall > mono + 20;
+}
+
+static void
+saib_power_set_state(enum saib_power_state s, lws_usec_t timeout_us)
+{
+	lwsl_notice("%s: power state %s -> %s%s\n", __func__,
+		    pwr_state_names[builder.power_state], pwr_state_names[s],
+		    timeout_us ? " (timer armed)" : "");
+
+	builder.power_state = s;
+
+	lws_sul_cancel(&builder.sul_power);
+	if (timeout_us)
+		lws_sul_schedule(builder.context, 0, &builder.sul_power,
+				 sul_power_cb, timeout_us);
+}
+
+static void
+saib_power_exit(const char *why)
+{
+	lwsl_notice("%s: one-shot: %s, exiting builder cleanly\n", __func__, why);
+	lws_sul_cancel(&builder.sul_power);
+	builder.power_state = SAIB_PWR_ACTIVE;
+	interrupted = 1;
+	lws_cancel_service(builder.context);
+}
+
+/*
+ * A power action did not happen.  Withdraw the powering_down claim, and hold
+ * off for a while before we consider going idle again, so a broken setup
+ * does not spin.
+ */
+
+static void
+saib_power_failed(const char *why)
+{
+	builder.power_fail_count++;
+	lwsl_err("%s: %s (failure %d)\n", __func__, why,
+		 builder.power_fail_count);
+
+	if (builder.one_shot_active) {
+		saib_power_exit(why);
+		return;
+	}
+
+	saib_power_notify_servers(0);
+	saib_power_set_state(SAIB_PWR_HOLDOFF, SAI_POWER_RETRY_HOLDOFF_US);
+}
+
+/*
+ * Grace time is up and nothing came along: start whatever we are able to do
+ */
+
+static void
+saib_power_start_action(void)
+{
+	int caps = saib_power_capable();
+	lws_ss_state_return_t r;
+
+	if (caps & SAIB_PWR_CAN_SUSPEND) {
+		lwsl_notice("%s: idle grace expired, preparing to suspend\n",
+			    __func__);
+		saib_power_notify_servers(1);
+		saib_power_set_state(SAIB_PWR_SUSPEND_WAIT,
+				     SAI_POWER_NOTIFY_FLUSH_US);
+		return;
+	}
+
+	if (!(caps & SAIB_PWR_CAN_OFF) && !builder.url_sai_power) {
+		if (caps & SAIB_PWR_CAN_EXIT) {
+			saib_power_exit("idle and no sai-power");
+			return;
+		}
+
+		/* shouldn't get here: the grace timer is only armed if capable */
+		saib_power_set_state(SAIB_PWR_ACTIVE, 0);
+		return;
+	}
+
+	/*
+	 * Ask sai-power to cut our power after its holdoff; if it agrees we
+	 * shut down cleanly in the meantime.  One-shot VMs go the same way,
+	 * the virt host terminates them.
+	 */
+
+	lws_snprintf(builder.path_power_off, sizeof(builder.path_power_off),
+		     "%s/auto-power-off/%s", builder.url_sai_power,
+		     builder.host ? builder.host : "unknown");
+
+	lwsl_notice("%s: idle grace expired, asking sai-power to power us off: %s\n",
+		    __func__, builder.path_power_off);
+
+	saib_power_notify_servers(1);
+	saib_power_set_state(SAIB_PWR_OFF_REQ, SAI_POWER_OFF_REPLY_US);
+
+	r = lws_ss_set_metadata(builder.ss_power_off, "url",
+				builder.path_power_off,
+				strlen(builder.path_power_off));
+	if (r)
+		lwsl_err("%s: set_metadata said %d\n", __func__, (int)r);
+
+	r = lws_ss_client_connect(builder.ss_power_off);
+	if (r)
+		lwsl_ss_err(builder.ss_power_off,
+			    "Unable to connect ss_power_off (%d)", (int)r);
+
+	lws_ss_start_timeout(builder.ss_power_off, 3000); /* 3 sec */
+
+	if (lws_ss_request_tx(builder.ss_power_off))
+		lwsl_ss_warn(builder.ss_power_off, "Unable to request tx");
+}
+
+void
+saib_power_event(enum saib_power_event ev)
+{
+	enum saib_power_state s = builder.power_state;
+
+	lwsl_info("%s: state %s, event %s\n", __func__, pwr_state_names[s],
+		  pwr_ev_names[ev]);
+
+	switch (s) {
+	case SAIB_PWR_ACTIVE:
+		if (ev != SAIB_PWR_EV_IDLE)
+			break;
+
+		if (!saib_power_capable()) {
+#if !defined(__APPLE__)
+			if (!builder.power_unavailable_logged &&
+			    (builder.url_sai_power || builder.power_off_type)) {
+				builder.power_unavailable_logged = 1;
+				lwsl_warn("%s: idle, but no way to suspend or "
+					  "power off on this platform: auto "
+					  "power management disabled\n",
+					  __func__);
+			}
+#endif
+			break;
+		}
+
+		lwsl_notice("%s: %s: no stay and no tasks: starting %ds idle "
+			    "grace time\n", __func__,
+			    builder.host ? builder.host : "unknown",
+			    (int)(SAI_IDLE_GRACE_US / LWS_US_PER_SEC));
+		saib_power_set_state(SAIB_PWR_IDLE, SAI_IDLE_GRACE_US);
+		break;
+
+	case SAIB_PWR_IDLE:
+		if (ev == SAIB_PWR_EV_BUSY) {
+			lwsl_notice("%s: busy: cancelling idle grace time\n",
+				    __func__);
+			saib_power_set_state(SAIB_PWR_ACTIVE, 0);
+			break;
+		}
+		if (ev == SAIB_PWR_EV_TIMER)
+			saib_power_start_action();
+		break;
+
+	case SAIB_PWR_HOLDOFF:
+		if (ev == SAIB_PWR_EV_BUSY) {
+			saib_power_set_state(SAIB_PWR_ACTIVE, 0);
+			break;
+		}
+		if (ev == SAIB_PWR_EV_TIMER)
+			/* holdoff over, reassess from scratch */
+			saib_power_set_state(SAIB_PWR_IDLE, SAI_IDLE_GRACE_US);
+		break;
+
+	case SAIB_PWR_SUSPEND_WAIT:
+		if (ev == SAIB_PWR_EV_BUSY) {
+			/* nothing irreversible done yet: abort */
+			lwsl_notice("%s: busy: aborting suspend\n", __func__);
+			saib_power_notify_servers(0);
+			saib_power_set_state(SAIB_PWR_ACTIVE, 0);
+			break;
+		}
+		if (ev != SAIB_PWR_EV_TIMER)
+			break;
+
+		lwsl_notice("%s: actioning suspend\n", __func__);
+		if (saib_power_command(1)) {
+			saib_power_failed("unable to request suspend");
+			break;
+		}
+		saib_power_set_state(SAIB_PWR_SUSPENDING,
+				     SAI_POWER_SUSPEND_DEADLINE_US);
+		break;
+
+	case SAIB_PWR_SUSPENDING:
+		if (ev != SAIB_PWR_EV_TIMER && ev != SAIB_PWR_EV_BUSY)
+			break;
+
+		if (!saib_power_resumed()) {
+			if (ev == SAIB_PWR_EV_TIMER)
+				saib_power_failed("suspend didn't happen");
+			else
+				lwsl_warn("%s: busy while suspending, "
+					  "too late to abort\n", __func__);
+			break;
+		}
+
+		lwsl_notice("%s: resumed after suspend\n", __func__);
+		builder.power_fail_count = 0;
+		saib_power_notify_servers(0);
+		saib_power_set_state(ev == SAIB_PWR_EV_BUSY ? SAIB_PWR_ACTIVE :
+				     SAIB_PWR_IDLE,
+				     ev == SAIB_PWR_EV_BUSY ? 0 : SAI_IDLE_GRACE_US);
+		break;
+
+	case SAIB_PWR_OFF_REQ:
+		switch (ev) {
+		case SAIB_PWR_EV_POWER_ACK:
+			lwsl_notice("%s: sai-power scheduled our power-off: "
+				    "shutting down\n", __func__);
+			if (!suspender_exists && builder.one_shot_active) {
+				/* the virt host will terminate us */
+				saib_power_set_state(SAIB_PWR_OFF_WAIT,
+						     SAI_POWER_OFF_DEADLINE_US);
+				break;
+			}
+			if (saib_power_command(0)) {
+				saib_power_failed("unable to request shutdown");
+				break;
+			}
+			saib_power_set_state(SAIB_PWR_OFF_WAIT,
+					     SAI_POWER_OFF_DEADLINE_US);
+			break;
+		case SAIB_PWR_EV_POWER_NAK:
+			lwsl_notice("%s: sai-power declined to power us off\n",
+				    __func__);
+			saib_power_notify_servers(0);
+			saib_power_set_state(SAIB_PWR_HOLDOFF,
+					     SAI_POWER_RETRY_HOLDOFF_US);
+			break;
+		case SAIB_PWR_EV_TIMER:
+			saib_power_failed("no reply from sai-power");
+			break;
+		case SAIB_PWR_EV_BUSY:
+			lwsl_warn("%s: busy while power-off requested, "
+				  "too late to abort\n", __func__);
+			break;
+		default:
+			break;
+		}
+		break;
+
+	case SAIB_PWR_OFF_WAIT:
+		if (ev == SAIB_PWR_EV_TIMER)
+			saib_power_failed("shutdown didn't happen");
+		else if (ev == SAIB_PWR_EV_BUSY)
+			lwsl_warn("%s: busy while shutting down, "
+				  "too late to abort\n", __func__);
+		break;
+	}
+}
+
+static void
+sul_power_cb(lws_sorted_usec_list_t *sul)
+{
+	saib_power_event(SAIB_PWR_EV_TIMER);
+}
+
+/*
+ * Process exit: nothing should fire after this
+ */
+
+void
+saib_power_shutdown(void)
+{
+	lws_sul_cancel(&builder.sul_power);
+	lws_sul_cancel(&builder.sul_stay);
+}
+
+/*
+ * Something changed: look at what is going on and feed the state machine
+ * with whether we are busy or idle.  Safe to call as often as you like.
+ */
+
 int
-saib_reassess_idle_situation()
+saib_reassess_idle_situation(void)
 {
 	char in_use = 0;
 
-	lwsl_notice("%s: Assessing idle situation for %s (stay=%d)\n", __func__, builder.host ? builder.host : "unknown", builder.stay);
-
 	if (builder.stay) {
 		/*
-		 * We need to deal with finding we have been manually powered-on.
-		 * Just cancel any pending grace period
+		 * We have been manually powered-on: never auto-power-off
 		 */
-		lws_sul_cancel(&builder.sul_idle);
-
-		lwsl_warn("%s: %s: stay applied: cancelled idle grace time\n",
-					__func__, builder.host ? builder.host : "unknown");
+		lwsl_notice("%s: %s: stay applied\n", __func__,
+			    builder.host ? builder.host : "unknown");
+		saib_power_event(SAIB_PWR_EV_BUSY);
 
 		return 0;
 	}
@@ -174,63 +596,28 @@ saib_reassess_idle_situation()
 	/*
 	 * If any plat on this builder has tasks, just leave it
 	 */
-	lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
-				builder.sai_plat_owner.head) {
+	lws_start_foreach_dll(struct lws_dll2 *, mp, builder.sai_plat_owner.head) {
 		struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
-				sai_plat_list);
+						       sai_plat_list);
 
-		lwsl_notice("%s: Checking plat %s (has %d nspawns)\n", __func__, sp->name, sp->nspawn_owner.count);
+		lws_start_foreach_dll(struct lws_dll2 *, d, sp->nspawn_owner.head) {
+			struct sai_nspawn *xns = lws_container_of(d,
+						struct sai_nspawn, list);
 
-		if (sp->nspawn_owner.head) {
-			lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
-						   sp->nspawn_owner.head) {
-				struct sai_nspawn *xns = lws_container_of(d,
-							struct sai_nspawn, list);
-
-				if (xns->task) {
-					lwsl_info("%s: ongoing task: %s\n", __func__,
-								xns->task->uuid);
-					lwsl_notice("%s: Plat %s is busy with task %s\n", __func__, sp->name, xns->task->uuid);
-				} else {
-					lwsl_notice("%s: Plat %s is busy with an nspawn (no task uuid)\n", __func__, sp->name);
-				}
-
-			} lws_end_foreach_dll_safe(d, d1);
-
-			lws_sul_cancel(&builder.sul_idle);
+			lwsl_notice("%s: plat %s is busy with %s\n", __func__,
+				    sp->name, xns->task ? xns->task->uuid :
+						"an nspawn (no task uuid)");
 			in_use = 1;
-		}
-
-	} lws_end_foreach_dll_safe(mp, mp1);
+		} lws_end_foreach_dll(d);
+	} lws_end_foreach_dll(mp);
 
 	if (builder.shell_owner.head) {
-		lwsl_notice("%s: Builder has %d active shell sessions\n", __func__, builder.shell_owner.count);
-		lws_sul_cancel(&builder.sul_idle);
+		lwsl_notice("%s: builder has %d active shell sessions\n",
+			    __func__, builder.shell_owner.count);
 		in_use = 1;
 	}
 
-	if (in_use) {
-		lwsl_warn("%s: cancelling idle grace time as ongoing task steps or shells\n", __func__);
-
-		return 0;
-	}
-
-	/*
-	* if no ongoing tasks, and we want to go OFF, then start
-	* the idle grace timer.  This will get cancelled if
-	* we start a task during the grace time, otherwise it will
-	* expire and do the power-off or suspend
-	*/
-
-	if (lws_dll2_is_detached(&builder.sul_idle.list)) {
-		int grace_secs = builder.one_shot_active ? 2 : (builder.event_affinity_active ? 15 : (int)(SAI_IDLE_GRACE_US / LWS_US_PER_SEC));
-		lwsl_notice("%s: %s: NO STAY and NO TASKS: starting %d sec idle grace time before auto-power-off\n",
-			__func__, builder.host ? builder.host : "unknown", grace_secs);
-		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
-				 sul_idle_cb, grace_secs * LWS_US_PER_SEC);
-	} else {
-		lwsl_notice("%s: %s: Idle grace time is ALREADY running\n", __func__, builder.host ? builder.host : "unknown");
-	}
+	saib_power_event(in_use ? SAIB_PWR_EV_BUSY : SAIB_PWR_EV_IDLE);
 
 	return 0;
 }
@@ -330,6 +717,7 @@ saib_stay_init(void)
 }
 
 
+
 /*
  * This is used to fire http request to sai-power for power-down
  */
@@ -354,215 +742,48 @@ saib_power_link_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 static lws_ss_state_return_t
 saib_power_link_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
-#if !defined(WIN32)
-	int fd = saib_suspender_get_pipe();
-	uint8_t te = 0;
-	ssize_t n;
-
 	if (len < 4 || !(flags & LWSSS_FLAG_SOM))
 		return 0;
 
 	if (memcmp(buf, "ACK:", 4)) {
 		lwsl_warn("%s: sai-power didn't start power-off: %.*s\n",
-				__func__, (int)len, (const char *)buf);
-		lws_sul_cancel(&builder.sul_do_shutdown);
+			  __func__, (int)len, (const char *)buf);
+		saib_power_event(SAIB_PWR_EV_POWER_NAK);
+
 		return LWSSSSRET_OK;
 	}
 
-	if (!suspender_exists)
-		return LWSSSSRET_OK;
+	lwsl_notice("%s: sai-power: %.*s\n", __func__, (int)len,
+		    (const char *)buf);
+	saib_power_event(SAIB_PWR_EV_POWER_ACK);
 
-	lwsl_notice("%s: sai-power scheduling power-off: doing shutdown...\n", __func__);
+	return LWSSSSRET_OK;
+}
 
-	/*
-	 * In the grace time for actioning the power-off, we should shutdown
-	 * cleanly
-	 */
+static lws_ss_state_return_t
+saib_power_link_state(void *userobj, void *sh, lws_ss_constate_t state,
+		      lws_ss_tx_ordinal_t ack)
+{
+	switch (state) {
+	case LWSSSCS_ALL_RETRIES_FAILED:
+	case LWSSSCS_TIMEOUT:
+		/* the state machine only cares if it is waiting for a reply */
+		lwsl_warn("%s: %s: sai-power unreachable\n", __func__,
+			  lws_ss_state_name(state));
+		saib_power_event(SAIB_PWR_EV_POWER_NAK);
+		break;
+	default:
+		break;
+	}
 
-	n = write(fd, &te, 1);
-	if (n != 1)
-		lwsl_err("%s: unable to request shutdown\n", __func__);
-#endif
 	return LWSSSSRET_OK;
 }
 
 LWS_SS_INFO("sai_power", saib_power_link_t)
 	.rx				= saib_power_link_rx,
 	.tx				= saib_power_link_tx,
+	.state				= saib_power_link_state,
 };
-
-
-static void
-sul_do_suspend_cb(lws_sorted_usec_list_t *sul)
-{
-#if !defined(WIN32)
-	int fd = saib_suspender_get_pipe();
-	uint8_t te = 1;
-	ssize_t n;
-
-	lwsl_notice("%s: actioning suspend...\n", __func__);
-
-	if (fd >= 0) {
-		n = write(fd, &te, 1);
-		if (n == 1) {
-#if defined(WIN32)
-		Sleep(2000);
-#else
-		sleep(2);
-#endif
-		/*
-		 * There were 0 tasks ongoing for us to suspend, start off
-		 * with the same assumption and set the idle grace time
-		 */
-		lws_sul_schedule(builder.context, 0, &builder.sul_idle,
-				 sul_idle_cb, SAI_IDLE_GRACE_US);
-		lwsl_notice("%s: resuming after suspend\n", __func__);
-		} else
-			lwsl_err("%s: failed to request suspend\n", __func__);
-	} else {
-		lwsl_err("%s: no suspender pipe\n", __func__);
-		if (builder.one_shot_active) {
-			lwsl_notice("%s: one-shot active and no suspender pipe, exiting cleanly\n", __func__);
-			interrupted = 1;
-			lws_cancel_service(builder.context);
-		}
-	}
-#endif
-}
-
-void
-sul_shutdown_cb(lws_sorted_usec_list_t *sul)
-{
-	int fd = saib_suspender_get_pipe();
-	uint8_t te = 0;
-	ssize_t n;
-
-	lwsl_warn("%s: device shutting down\n", __func__);
-
-	if (fd >= 0)
-		n = write(fd, &te, 1);
-	else
-		n = -1;
-
-	if (n != 1)
-		lwsl_err("%s: shutdown request failed\n", __func__);
-
-#if defined(WIN32)
-	Sleep(40000);
-#else
-	sleep(40);
-#endif
-
-	lwsl_err("%s: shutdown didn't happen\n", __func__);
-}
-
-/*
- * The grace time is up, ask for the suspend
- */
-
-void
-sul_idle_cb(lws_sorted_usec_list_t *sul)
-{
-#if defined(__APPLE__)
-	return;
-#endif
-
-	lws_ss_state_return_t r;
-
-#if !defined(WIN32)
-	if (builder.stay) {
-		lwsl_err("====== SUL_IDLE_CB returning due to builder.stay ======\n");
-		return;
-	}
-
-	lwsl_notice("%s: idle period ended...\n", __func__);
-
-	if (!builder.one_shot_active && builder.power_off_type &&
-	    !strcmp(builder.power_off_type, "suspend")) {
-
-		lwsl_notice("%s: starting suspend...\n", __func__);
-
-		/*
-		 * Let everybody know we are trying to power down
-		 */
-		lws_start_foreach_dll(struct lws_dll2 *, d,
-				      builder.sai_plat_owner.head) {
-			sai_plat_t *p = lws_container_of(d, sai_plat_t,
-							 sai_plat_list);
-			p->powering_down = 1;
-		} lws_end_foreach_dll(d);
-
-		lws_start_foreach_dll(struct lws_dll2 *, d,
-				      builder.sai_plat_server_owner.head) {
-			struct sai_plat_server *spm = lws_container_of(d,
-						struct sai_plat_server, list);
-
-			if (saib_srv_queue_json_fragments_helper(spm->ss,
-					lsm_schema_map_plat,
-					LWS_ARRAY_SIZE(lsm_schema_map_plat),
-					&builder.sai_plat_owner))
-				return;
-
-		} lws_end_foreach_dll(d);
-
-		/*
-		 * give the event loop a moment to send the notifications out
-		 * before we do the blocking suspend part
-		 */
-		lws_sul_schedule(builder.context, 0, &builder.sul_do_suspend,
-				 sul_do_suspend_cb, 2 * LWS_US_PER_SEC);
-
-		return;
-	}
-#endif
-
-
-	lwsl_notice("%s: Idle grace period expired, initiating auto-power-off sequence\n", __func__);
-
-	if (!builder.url_sai_power) {
-		lwsl_warn("%s: no builder.url_sai_power set, cannot auto-power-off\n", __func__);
-		if (builder.one_shot_active) {
-			lwsl_notice("%s: one_shot_active (-O) is set and no url_sai_power. Exiting builder to allow VM to cleanly terminate.\n", __func__);
-			interrupted = 1;
-			lws_cancel_service(builder.context);
-		}
-		return;
-	}
-
-	/*
-	 * We're planning to get ourselves turned off after we have shutdown
-	 * cleanly.
-	 *
-	 * Send the request to sai-power to turn us off after 35s and then
-	 * request our suspender process to shutdown the device.
-	 */
-
-	snprintf(builder.path_power_off, sizeof(builder.path_power_off) - 1, "%s/auto-power-off/%s",
-		 builder.url_sai_power ? builder.url_sai_power : "", builder.host ? builder.host : "unknown");
-
-	lwsl_notice("%s: requesting sai-power (or virt) to terminate us: %s\n", __func__, builder.path_power_off);
-
-	r = lws_ss_set_metadata(builder.ss_power_off, "url", builder.path_power_off, strlen(builder.path_power_off));
-	if (r)
-		lwsl_err("%s: set_metadata said %d\n", __func__, (int)r);
-
-	r = lws_ss_client_connect(builder.ss_power_off);
-	if (r)
-		lwsl_ss_err(builder.ss_power_off, "Unable to connect ss_power_off (%d)", (int)r);
-
-	lws_ss_start_timeout(builder.ss_power_off, 3000); /* 3 sec */
-
-	if (lws_ss_request_tx(builder.ss_power_off))
-		lwsl_ss_warn(builder.ss_power_off, "Unable to request tx");
-
-	/* allow time for the sai-power transaction to happen */
-
-	lws_sul_schedule(builder.context, 0, &builder.sul_do_shutdown,
-			sul_shutdown_cb, 2 * LWS_US_PER_SEC);
-
-	/* let event loop continue for a couple of seconds, then shutdown */
-}
-
 int
 saib_power_init(void)
 {
@@ -573,8 +794,11 @@ saib_power_init(void)
 	lwsl_notice("====== ENTERED SAIB_POWER_INIT ======\n");
 
 	if (!builder.url_sai_power) {
-		lwsl_err("====== *** missing URL for url_sai_power ======\n");
-		return 1;
+		lwsl_notice("%s: no url_sai_power: sai-power integration disabled\n",
+			    __func__);
+		/* we may still be configured to suspend when idle */
+		saib_reassess_idle_situation();
+		return 0;
 	}
 
 	lwsl_notice("====== URL_SAI_POWER IS: %s ======\n", builder.url_sai_power);

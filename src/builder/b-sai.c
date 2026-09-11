@@ -991,7 +991,7 @@ saib_app_run(int argc, const char **argv)
 
 	saib_config_destroy(&builder);
 
-	lws_sul_cancel(&builder.sul_idle);
+	saib_power_shutdown();
 
 	lws_context_destroy(builder.context);
 
