@@ -948,6 +948,16 @@ saib_app_run(int argc, const char **argv)
 
 	suspender_destroy();
 
+#if defined(LWS_WITH_STUB)
+	/*
+	 * Take the deletion stub down ourselves, before lws_context_destroy()
+	 * does it from the vhost: that way builder.mgr_deletion is cleared
+	 * rather than left pointing at a manager lws has freed.
+	 */
+	if (builder.mgr_deletion)
+		lws_stub_destroy(&builder.mgr_deletion);
+#endif
+
 
 	/* destroy the unique servers */
 
