@@ -415,7 +415,16 @@ typedef struct sai_event {
 	sai_event_state_t		state;
 	int				uid;
 	int				sec;
- 
+	/*
+	 * Nonzero for an ad-hoc event: a single-task event seeded from an
+	 * existing task by an admin in the web UI, rather than created by
+	 * a hook notification.  Ad-hoc events are excluded from the
+	 * notification dedupe on hash, from the project head status badge and
+	 * from anything else that treats "newest event" as "state of the
+	 * branch".
+	 */
+	int				adhoc;
+
 	lws_dll2_owner_t		watcher_owner; /* sai_watcher_t */
 } sai_event_t;
 
@@ -710,6 +719,23 @@ typedef struct sai_browse_rx_branchlist {
 	char				project[65];
 } sai_browse_rx_branchlist_t;
 
+/*
+ * Browser -> sai-web -> sai-server: admin asks for a new ad-hoc event with a
+ * single task, seeded from an existing task (build dimension, platform, repo
+ * and so on are inherited from the seed), but building the head of "ref" as
+ * last pushed to the server, and with a possibly-edited build script.
+ *
+ * The browser never supplies the repo or its fetch url; those are taken from
+ * the seed task's event on the server side.  The ref is resolved to a hash on
+ * the server from the pushes table, so the browser cannot name an arbitrary
+ * hash either.
+ */
+typedef struct sai_browse_rx_taskclone {
+	char				seed_uuid[65];
+	char				ref[65];
+	char				build[4096];
+} sai_browse_rx_taskclone_t;
+
 /* sai-power -> sai-server, tells it that a platform is being powered up */
 typedef struct sai_power_state {
 	lws_dll2_t			list; /* for parser */
@@ -878,7 +904,7 @@ extern const lws_struct_map_t
 	lsm_schema_sq3_map_artifact[1],
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
-	lsm_event[13],
+	lsm_event[14],
 	lsm_task[32],
 	lsm_log[8],
 	lsm_artifact[9],
@@ -919,6 +945,8 @@ extern const lws_struct_map_t
 	lsm_schema_pcon_energy[1],
 	lsm_pcon_control[2],
 	lsm_schema_pcon_control[1],
+	lsm_taskclone[3],
+	lsm_schema_taskclone[1],
 	lsm_watcher_rule[6],
 	lsm_watcher_ui_rule[4],
 	lsm_watcher_service[6],

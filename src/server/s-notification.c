@@ -299,7 +299,6 @@ sai_saifile_lejp_cb(struct lejp_ctx *ctx, char reason)
 	if (reason == LEJPCB_OBJECT_END &&
 	    ctx->path_match - 1 == LEJPNSAIF_CONFIGURATIONS_NAME &&
 	    sn->t.taskname[0]) {
-		lws_dll2_owner_t owner;
 		char *err;
 
 		/*
@@ -525,28 +524,12 @@ next_plat: ;
 			}
 
 			if (match) {
-				const char *p;
-				int c;
-
 				/*
 				 * For this platform, we want to create a task
 				 * associated with this event.  Tasks and logs
 				 * associated with an event go in an event-
 				 * specific database file for scalability.
 				 */
-
-				c = 2; /* git mirror and checkout */
-				if (pl->build[0]) {
-					c++;
-					p = pl->build;
-					while (*p)
-						if (*p++ == '\n')
-							c++;
-					if (pl->build[strlen(pl->build) - 1] == '\n')
-						c--;
-				}
-
-				pss->sn.t.build_step_count = c;
 
 				lws_strexp_init(&sx, sn, exp_cmake, sn->t.build,
 						sizeof(sn->t.build));
@@ -565,60 +548,24 @@ next_plat: ;
 					return -1;
 				}
 
-
-				/*
-				 * Prepare a struct of the task object...
-				 * task uuid is the event uuid and another
-				 * random 32 chars, so you can always recover
-				 * the related event uuid from the task uuid
-				 */
-
-				memcpy(pss->sn.t.uuid, pss->sn.e.uuid, 32);
-				sai_uuid16_create(lws_get_context(pss->wsi),
-						  pss->sn.t.uuid + 32);
-				strcpy(pss->sn.t.event_uuid, pss->sn.e.uuid);
-				pss->sn.t.uid = pss->sn.event_task_index++;
-
-				/*
-				 * This is basically a secret that anything
-				 * trying to upload an artifact for the task
-				 * must provide to authenticate.
-				 */
-				sai_uuid16_create(lws_get_context(pss->wsi),
-						  pss->sn.t.art_up_nonce);
-				/*
-				 * An unrelated secret that anything
-				 * trying to download an artifact for the task
-				 * must provide to identify it.
-				 */
-				sai_uuid16_create(lws_get_context(pss->wsi),
-						  pss->sn.t.art_down_nonce);
-
-				pss->sn.t.git_repo_url =
-						pss->sn.e.repo_fetchurl;
-				pss->sn.e.last_updated =
-					(unsigned long long)lws_now_secs();
-				pss->sn.e.state = SAIES_WAITING;
 				lws_strncpy(pss->sn.t.platform, pl->name,
 					    sizeof(pss->sn.t.platform));
 
-				// pss->sn.t.server_name	= ;
-				pss->sn.t.repo_name	= pss->sn.e.repo_name;
-				pss->sn.t.git_ref	= sn->e.ref;
-				pss->sn.t.git_hash	= sn->e.hash;
-				pss->sn.t.parallel	= 2;
-
-				lws_dll2_clear(&pss->sn.t.list);
-				lws_dll2_owner_clear(&owner);
-				lws_dll2_add_head(&pss->sn.t.list, &owner);
-
 				/*
-				 * Create the task in event-specific database
+				 * Mint the uuids / nonces and create the task
+				 * in the event-specific database
 				 */
-
-				lws_struct_sq3_serialize(pdb,
-							 lsm_schema_sq3_map_task,
-							 &owner, (uint32_t)pss->sn.t.uid);
+				if (sais_task_insert(lws_get_context(pss->wsi),
+						     pdb, &pss->sn.e, &pss->sn.t,
+						     pss->sn.event_task_index++) < 0) {
+					lwsl_err("%s: task insert failed\n",
+						 __func__);
+					sqlite3_exec(pdb, "END TRANSACTION", NULL, NULL, &err);
+					if (err)
+						sqlite3_free(err);
+					sai_event_db_close(&pss->vhd->sqlite3_cache, &pdb);
+					return -1;
+				}
 			}
 
 		} lws_end_foreach_dll(p);
@@ -1043,11 +990,35 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		lwsl_notice("%s: hmac OK\n", __func__);
 
 		/*
+		 * Remember the (repo, ref) -> hash we were just told about,
+		 * for every authenticated notification and before deciding
+		 * whether it gets CI'd: ad-hoc builds resolve "the head of
+		 * this branch" from here.
+		 */
+		if (sais_push_record(pss->vhd, pss->sn.e.repo_name,
+				     pss->sn.e.ref, pss->sn.e.hash))
+			lwsl_warn("%s: unable to record push\n", __func__);
+
+		/*
+		 * Branches whose name begins with "_" are scratch branches:
+		 * the push is recorded above so an ad-hoc build can target
+		 * it, but we don't schedule the whole .sai.json against it.
+		 */
+		if (!strncmp(pss->sn.e.ref, "refs/heads/_", 12)) {
+			lwsl_notice("%s: scratch ref %s recorded, not scheduled\n",
+				    __func__, pss->sn.e.ref);
+			goto saifile_done;
+		}
+
+		/*
 		 * We have the notification metadata JSON parsed into pss->sn.e,
 		 * eg, pss->sn->e.hash ... since it's common to, eg, push a tree
 		 * in a branch and then later tag the same commit, we don't want
 		 * to pointlessly repeat CI for the same tree multiple times,
 		 * and need to basically dedupe.
+		 *
+		 * Ad-hoc events are excluded: they are single-task scratch
+		 * builds of a hash that may well be pushed for real later.
 		 */
 
 		{
@@ -1057,7 +1028,8 @@ sai_notification_file_upload_cb(void *data, const char *name,
 			lws_sql_purify(esc_hash, pss->sn.e.hash, sizeof(esc_hash));
 
 			lws_snprintf(qu, sizeof(qu), "select rowid from events "
-						     "where hash='%s'",
+						     "where hash='%s' and "
+						     "ifnull(adhoc,0)=0",
 						     esc_hash);
 
 			if (sqlite3_exec(pss->vhd->server.pdb, qu,
@@ -1068,7 +1040,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 					    "tree hash event exists\n",
 					    __func__);
 
-				return 0;
+				goto saifile_done;
 			}
 		}
 
@@ -1162,6 +1134,13 @@ sai_notification_file_upload_cb(void *data, const char *name,
 
 		lws_sul_schedule(pss->vhd->context, 0, &pss->vhd->sul_central,
 				 sais_central_cb, 1 * LWS_US_PER_SEC);
+
+		return 0;
+
+saifile_done:
+		/* notification accepted but nothing to schedule */
+		free(pss->sn.saifile);
+		pss->sn.saifile = NULL;
 
 		return 0;
 

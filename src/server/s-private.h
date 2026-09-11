@@ -87,6 +87,11 @@ typedef struct websrvss_srv {
 
 	struct lejp_ctx			ctx;
 	struct lws_buflist		*bl_srv_to_web;
+	/*
+	 * Reassembly of fragmented web -> server messages (eg, a taskclone
+	 * carrying an edited build script), see websrvss_ws_rx()
+	 */
+	struct lws_buflist		*rx_reasm;
 	unsigned int			viewers;
 
 	struct lws_buflist		*private_heads[SAI_WEBSRV_PB__COUNT];
@@ -419,6 +424,24 @@ sais_event_delete(struct vhd *vhd, const char *event_uuid);
 
 sai_db_result_t
 sais_event_reset(struct vhd *vhd, const char *event_uuid);
+
+sai_db_result_t
+sais_event_clone_task(struct vhd *vhd, const sai_browse_rx_taskclone_t *tc);
+
+int
+sais_push_record(struct vhd *vhd, const char *repo_name, const char *ref,
+		 const char *hash);
+
+int
+sais_push_lookup(struct vhd *vhd, const char *repo_name, const char *ref,
+		 char *hash, size_t hash_len);
+
+int
+sais_task_build_step_count(const char *build);
+
+int
+sais_task_insert(struct lws_context *cx, sqlite3 *pdb, sai_event_t *e,
+		 sai_task_t *t, int uid);
 
 int
 sai_detach_builder(struct lws_dll2 *d, void *user);

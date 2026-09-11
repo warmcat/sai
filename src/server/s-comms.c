@@ -228,9 +228,31 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				     NULL, NULL, &err);
 			if (err)
 				sqlite3_free(err);
+
+			err = NULL;
+			sqlite3_exec(vhd->server.pdb,
+				     "ALTER TABLE events ADD COLUMN adhoc integer;",
+				     NULL, NULL, &err);
+			if (err)
+				sqlite3_free(err);
 		}
 
 		sai_sqlite3_statement(vhd->server.pdb, "CREATE UNIQUE INDEX IF NOT EXISTS idx_event_uuid ON events(uuid);", "create event index");
+
+		/*
+		 * The hash most recently pushed for each (repo, ref) we were
+		 * notified about, including scratch "_" refs we don't CI.
+		 * Ad-hoc builds resolve their target branch to a hash here.
+		 */
+		if (sai_sqlite3_statement(vhd->server.pdb,
+			"CREATE TABLE IF NOT EXISTS pushes ("
+			" repo_name varchar(64), ref varchar(64),"
+			" hash varchar(64), created integer,"
+			" PRIMARY KEY (repo_name, ref));",
+			"create pushes table")) {
+			lwsl_err("%s: unable to create pushes table\n", __func__);
+			return -1;
+		}
 
 		if (lws_struct_sq3_create_table(vhd->server.pdb,
 						lsm_schema_sq3_map_plat)) {

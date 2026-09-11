@@ -27,6 +27,83 @@
 
 #include "s-private.h"
 
+/*
+ * Count the build steps the builder will split "build" into: one per line,
+ * plus the git mirror and checkout steps that precede them.
+ */
+int
+sais_task_build_step_count(const char *build)
+{
+	const char *p = build;
+	int c = 2; /* git mirror and checkout */
+
+	if (!build || !build[0])
+		return c;
+
+	c++;
+	while (*p)
+		if (*p++ == '\n')
+			c++;
+	if (build[strlen(build) - 1] == '\n')
+		c--;
+
+	return c;
+}
+
+/*
+ * Finish and insert a task as a new row in an event's database.
+ *
+ * The caller has already set the per-configuration strings (platform,
+ * taskname, build, packages, artifacts...); this fills in everything that is
+ * derived from the event or must be freshly minted per task: uuids, artifact
+ * nonces, uid, the repo / ref / hash pointers used in the offer, and the step
+ * count.  Shared by the hook notification path (one task per platform per
+ * configuration) and the ad-hoc clone path (one task).
+ */
+int
+sais_task_insert(struct lws_context *cx, sqlite3 *pdb, sai_event_t *e,
+		 sai_task_t *t, int uid)
+{
+	lws_dll2_owner_t owner;
+
+	/*
+	 * task uuid is the event uuid and another random 32 chars, so you
+	 * can always recover the related event uuid from the task uuid
+	 */
+	memcpy(t->uuid, e->uuid, 32);
+	sai_uuid16_create(cx, t->uuid + 32);
+	lws_strncpy(t->event_uuid, e->uuid, sizeof(t->event_uuid));
+	t->uid = uid;
+
+	/*
+	 * This is basically a secret that anything trying to upload an
+	 * artifact for the task must provide to authenticate.
+	 */
+	sai_uuid16_create(cx, t->art_up_nonce);
+	/*
+	 * An unrelated secret that anything trying to download an artifact
+	 * for the task must provide to identify it.
+	 */
+	sai_uuid16_create(cx, t->art_down_nonce);
+
+	t->git_repo_url		= e->repo_fetchurl;
+	t->repo_name		= e->repo_name;
+	t->git_ref		= e->ref;
+	t->git_hash		= e->hash;
+	t->build_step_count	= sais_task_build_step_count(t->build);
+	t->parallel		= 2;
+
+	e->last_updated = (unsigned long long)lws_now_secs();
+	e->state = SAIES_WAITING;
+
+	lws_dll2_clear(&t->list);
+	lws_dll2_owner_clear(&owner);
+	lws_dll2_add_head(&t->list, &owner);
+
+	return lws_struct_sq3_serialize(pdb, lsm_schema_sq3_map_task, &owner,
+					(uint32_t)uid);
+}
+
 void
 sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task)
 {
