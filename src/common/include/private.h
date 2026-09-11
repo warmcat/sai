@@ -266,6 +266,7 @@ struct sai_nspawn {
 	sai_task_t			*task;
 
 	unsigned int			log_count;
+	lws_usec_t			last_log_us; /* last chunk timestamp issued */
 	unsigned int			killed_for_spew:1;
 
 	struct lws			*stdwsi[3];
