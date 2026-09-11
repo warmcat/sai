@@ -43,6 +43,7 @@ int
 saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 {
 	char lj[2600 + LWS_PRE];
+	lws_usec_t us;
 	int n = 0;
 
 	if (!ns || !ns->spm)
@@ -67,11 +68,23 @@ saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 			return 0;
 		}
 	}
+	/*
+	 * The web pages a task's logs 50 rows at a time with a strictly
+	 * greater-than timestamp cursor, so chunks sharing the timestamp of
+	 * the last row on a page are never delivered.  On Windows the clock
+	 * ticks at a millisecond or coarser, so a burst of chunks readily
+	 * shares one: issue strictly increasing timestamps per nspawn.
+	 */
+	us = lws_now_usecs();
+	if (us <= ns->last_log_us)
+		us = ns->last_log_us + 1;
+	ns->last_log_us = us;
+
 	n = lws_snprintf(lj + LWS_PRE, sizeof(lj) - LWS_PRE,
 		"{\"schema\":\"com-warmcat-sai-logs\","
 		 "\"task_uuid\":\"%s\", \"timestamp\": %llu,"
 		 "\"channel\": %d, \"len\": %d, ",
-		 ns->task->uuid, (unsigned long long)lws_now_usecs(),
+		 ns->task->uuid, (unsigned long long)us,
 		 channel, (int)len);
 
 	if (ns->retcode_set) {
