@@ -72,6 +72,12 @@ static const char * const well_known[] = {
  */
 #define SAIW_BROWSER_MAX_CONNS 100
 
+/*
+ * Cap on a reassembled browser -> sai-web message.  The largest legitimate
+ * one is a taskclone: a 4KiB build script JSON-escaped, plus small fields.
+ */
+#define SAIW_BROWSER_RX_REASM_MAX 32768
+
 int
 sai_get_head_status(struct vhd *vhd, const char *projname)
 {
@@ -80,8 +86,12 @@ sai_get_head_status(struct vhd *vhd, const char *projname)
 	sai_event_t *e;
 	int state;
 
-	if (lws_struct_sq3_deserialize(vhd->pdb, NULL, "created ",
-				       lsm_schema_sq3_map_event,
+	/*
+	 * Ad-hoc events are scratch builds seeded by an admin; they don't
+	 * say anything about the state of the branch, so skip them
+	 */
+	if (lws_struct_sq3_deserialize(vhd->pdb, " and ifnull(adhoc,0)=0",
+				       "created ", lsm_schema_sq3_map_event,
 				       &o, &ac, 0, -1))
 		return -1;
 
@@ -285,6 +295,13 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 			sqlite3_exec(vhd->pdb,
 				     "ALTER TABLE events ADD COLUMN weburl varchar;",
+				     NULL, NULL, &err);
+			if (err)
+				sqlite3_free(err);
+
+			err = NULL;
+			sqlite3_exec(vhd->pdb,
+				     "ALTER TABLE events ADD COLUMN adhoc integer;",
 				     NULL, NULL, &err);
 			if (err)
 				sqlite3_free(err);
@@ -795,6 +812,7 @@ http_resp:
 
 		lwsl_wsi_info(wsi, "CLOSED browse conn");
 		lws_buflist2_destroy_all_segments(&pss->raw_tx);
+		lws_buflist_destroy_all_segments(&pss->rx_reasm);
 		saiw_browser_state_changed(pss, 0);
 		lws_dll2_remove(&pss->subs_list);
 		lws_sul_cancel(&pss->sul_logcache);
@@ -818,13 +836,69 @@ http_resp:
 
 		// lwsl_user("SWT_BROWSE RX: %d\n", (int)len);
 		/*
-		 * Browser UI sent us something on websockets
+		 * Browser UI sent us something on websockets.
+		 *
+		 * saiw_ws_json_rx_browser() parses one-shot and forwards to
+		 * sai-server as a unit, so a message that arrives in several
+		 * fragments (eg, a taskclone with an edited build script) is
+		 * reassembled here first.  The reassembly buffer keeps LWS_PRE
+		 * headroom because the forwarding path needs it.
 		 */
-		if (saiw_ws_json_rx_browser(vhd, pss, in, len, (lws_is_first_fragment(wsi) ? LWSSS_FLAG_SOM : 0) |
-							       (lws_is_final_fragment(wsi) ? LWSSS_FLAG_EOM : 0))) {
-			lwsl_wsi_err(wsi, "Closing because saiw_ws_json_rx_browser returned it");
+		if (lws_is_first_fragment(wsi) && lws_is_final_fragment(wsi) &&
+		    !pss->rx_reasm) {
+			if (saiw_ws_json_rx_browser(vhd, pss, in, len,
+						    LWSSS_FLAG_SOM |
+						    LWSSS_FLAG_EOM)) {
+				lwsl_wsi_err(wsi, "Closing because saiw_ws_json_rx_browser returned it");
 
-			return -1;
+				return -1;
+			}
+			break;
+		}
+
+		if (lws_is_first_fragment(wsi))
+			/* new message while holding fragments: drop the old */
+			lws_buflist_destroy_all_segments(&pss->rx_reasm);
+
+		if (lws_buflist_total_len(&pss->rx_reasm) + len >
+		    SAIW_BROWSER_RX_REASM_MAX) {
+			lwsl_wsi_notice(wsi, "rx reassembly over size, dropping");
+			lws_buflist_destroy_all_segments(&pss->rx_reasm);
+			break;
+		}
+
+		if (len && lws_buflist_append_segment(&pss->rx_reasm, in,
+						      len) < 0) {
+			lwsl_wsi_notice(wsi, "rx reassembly oom, dropping");
+			lws_buflist_destroy_all_segments(&pss->rx_reasm);
+			break;
+		}
+
+		if (!lws_is_final_fragment(wsi))
+			break;
+
+		{
+			size_t rl = lws_buflist_total_len(&pss->rx_reasm);
+			uint8_t *reasm = malloc(LWS_PRE + rl);
+
+			if (!reasm) {
+				lws_buflist_destroy_all_segments(&pss->rx_reasm);
+				break;
+			}
+
+			lws_buflist_linear_use(&pss->rx_reasm, reasm + LWS_PRE,
+					       rl);
+			lws_buflist_destroy_all_segments(&pss->rx_reasm);
+
+			n = saiw_ws_json_rx_browser(vhd, pss, reasm + LWS_PRE,
+						    rl, LWSSS_FLAG_SOM |
+							LWSSS_FLAG_EOM);
+			free(reasm);
+			if (n) {
+				lwsl_wsi_err(wsi, "Closing because saiw_ws_json_rx_browser returned it");
+
+				return -1;
+			}
 		}
 
 		break;

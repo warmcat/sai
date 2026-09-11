@@ -131,6 +131,14 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 					      "com.warmcat.sai.projlist"),
 	LSM_SCHEMA	(sai_browse_rx_branchlist_t, NULL, lsm_browser_branchlist,
 					      "com.warmcat.sai.branchlist"),
+	/*
+	 * Ad-hoc builds (admin only): cloneinfo is answered locally with what
+	 * the dialog needs to prefill, taskclone is forwarded to sai-server
+	 */
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_browser_taskreset,
+			/* shares struct */   "com.warmcat.sai.cloneinfo"),
+	LSM_SCHEMA	(sai_browse_rx_taskclone_t, NULL, lsm_taskclone,
+					      "com.warmcat.sai.taskclone"),
 };
 
 enum {
@@ -155,7 +163,152 @@ enum {
 	SAIM_WS_BROWSER_RX_BUILDER_VISIBILITY,
 	SAIM_WS_BROWSER_RX_PROJLIST,
 	SAIM_WS_BROWSER_RX_BRANCHLIST,
+	SAIM_WS_BROWSER_RX_CLONEINFO,
+	SAIM_WS_BROWSER_RX_TASKCLONE,
 };
+
+/* nonzero if s is exactly len hex chars, as task / event uuids are */
+static int
+saiw_id_ok(const char *s, size_t len)
+{
+	return strlen(s) == len && sai_is_git_hash(s);
+}
+
+/*
+ * Answer com.warmcat.sai.cloneinfo: everything the ad-hoc build dialog needs
+ * to prefill from the seed task, plus the project's scratch ("_"-prefixed)
+ * branches as most recently pushed, newest first, so the dialog can default
+ * to the latest one.
+ *
+ * Everything here comes from the databases sai-server maintains, which we
+ * read directly, so no round trip to the server is needed.
+ */
+static int
+saiw_browser_send_cloneinfo(struct vhd *vhd, struct pss *pss,
+			    const char *seed_uuid)
+{
+	struct lwsac *ac_t = NULL, *ac_e = NULL;
+	char event_uuid[33], esc[96], filt[160], *ebuf = NULL, *p, *end;
+	lws_dll2_owner_t o_t, o_e;
+	sqlite3_stmt *stmt = NULL;
+	uint8_t *rbuf = NULL;
+	sqlite3 *pdb = NULL;
+	int ret = 1, first = 1, n;
+	sai_event_t *e;
+	sai_task_t *t;
+
+	sai_task_uuid_to_event_uuid(event_uuid, seed_uuid);
+
+	/* the seed task's event, for the repo name and its current ref */
+
+	lws_sql_purify(esc, event_uuid, sizeof(esc));
+	lws_snprintf(filt, sizeof(filt), " and uuid='%s'", esc);
+	n = lws_struct_sq3_deserialize(vhd->pdb, filt, NULL,
+				       lsm_schema_sq3_map_event, &o_e, &ac_e,
+				       0, 1);
+	if (n < 0 || !o_e.head) {
+		lwsl_notice("%s: no event %s\n", __func__, event_uuid);
+		goto bail;
+	}
+	e = lws_container_of(o_e.head, sai_event_t, list);
+
+	/* the seed task itself, latest run */
+
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+				     vhd->sqlite3_path_lhs, event_uuid, 0,
+				     &pdb)) {
+		lwsl_notice("%s: no event db %s\n", __func__, event_uuid);
+		goto bail;
+	}
+
+	lws_sql_purify(esc, seed_uuid, sizeof(esc));
+	lws_snprintf(filt, sizeof(filt), " and uuid='%s'", esc);
+	n = lws_struct_sq3_deserialize(pdb, filt, "run desc",
+				       lsm_schema_sq3_map_task, &o_t, &ac_t,
+				       0, 1);
+	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+	if (n < 0 || !o_t.head) {
+		lwsl_notice("%s: no task %s\n", __func__, seed_uuid);
+		goto bail;
+	}
+	t = lws_container_of(o_t.head, sai_task_t, list);
+
+	/*
+	 * The build script is up to 4KiB and JSON escaping can grow each
+	 * byte to 6, so both the escape buffer and the reply are heap
+	 */
+	ebuf = malloc((sizeof(t->build) * 6) + 8);
+	rbuf = malloc(LWS_PRE + 32768);
+	if (!ebuf || !rbuf)
+		goto bail;
+	p = (char *)rbuf + LWS_PRE;
+	end = p + 32768;
+
+	p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+			  "{\"schema\":\"com.warmcat.sai.cloneinfo\","
+			  "\"seed_uuid\":\"%s\",",
+			  lws_json_purify(esc, seed_uuid, sizeof(esc) - 1, NULL));
+	p += lws_snprintf(p, lws_ptr_diff_size_t(end, p), "\"repo_name\":\"%s\",",
+			  lws_json_purify(esc, e->repo_name, sizeof(esc) - 1, NULL));
+	p += lws_snprintf(p, lws_ptr_diff_size_t(end, p), "\"ref\":\"%s\",",
+			  lws_json_purify(esc, e->ref, sizeof(esc) - 1, NULL));
+	p += lws_snprintf(p, lws_ptr_diff_size_t(end, p), "\"taskname\":\"%s\",",
+			  lws_json_purify(esc, t->taskname, sizeof(esc) - 1, NULL));
+	p += lws_snprintf(p, lws_ptr_diff_size_t(end, p), "\"platform\":\"%s\",",
+			  lws_json_purify(esc, t->platform, sizeof(esc) - 1, NULL));
+	p += lws_snprintf(p, lws_ptr_diff_size_t(end, p), "\"build\":\"%s\",",
+			  lws_json_purify(ebuf, t->build,
+					  (int)(sizeof(t->build) * 6) + 7, NULL));
+
+	/*
+	 * Scratch branches pushed for this project, newest first.  The
+	 * pushes table is created by sai-server; if it isn't there yet the
+	 * prepare fails and the list is simply empty.
+	 */
+	p += lws_snprintf(p, lws_ptr_diff_size_t(end, p), "\"refs\":[");
+
+	if (sqlite3_prepare_v2(vhd->pdb,
+			"SELECT ref, hash FROM pushes WHERE repo_name = ? "
+			"AND ref LIKE 'refs/heads/\\_%' ESCAPE '\\' "
+			"ORDER BY created DESC LIMIT 20",
+			-1, &stmt, NULL) == SQLITE_OK) {
+		sqlite3_bind_text(stmt, 1, e->repo_name, -1, SQLITE_STATIC);
+
+		while (sqlite3_step(stmt) == SQLITE_ROW &&
+		       lws_ptr_diff_size_t(end, p) > 256) {
+			const char *rn = (const char *)sqlite3_column_text(stmt, 0),
+				   *h = (const char *)sqlite3_column_text(stmt, 1);
+
+			if (!rn || !h)
+				continue;
+
+			p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+					  "%s{\"ref\":\"%s\",", first ? "" : ",",
+					  lws_json_purify(esc, rn, sizeof(esc) - 1, NULL));
+			p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+					  "\"hash\":\"%s\"}",
+					  lws_json_purify(esc, h, sizeof(esc) - 1, NULL));
+			first = 0;
+		}
+		sqlite3_finalize(stmt);
+	} else
+		lwsl_info("%s: no pushes table\n", __func__);
+
+	p += lws_snprintf(p, lws_ptr_diff_size_t(end, p), "]}");
+
+	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, rbuf + LWS_PRE,
+			lws_ptr_diff_size_t(p, (char *)rbuf + LWS_PRE),
+			LWS_WRITE_TEXT);
+	ret = 0;
+
+bail:
+	free(rbuf);
+	free(ebuf);
+	lwsac_free(&ac_t);
+	lwsac_free(&ac_e);
+
+	return ret;
+}
 
 
 /*
@@ -783,7 +936,9 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_BUILDERDELETE ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_OPENSHELL ||
 	    a.top_schema_index == SAIM_WS_BROWSER_RX_CLOSESHELL ||
-	    a.top_schema_index == SAIM_WS_BROWSER_RX_PTYDATA)) {
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_PTYDATA ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_CLONEINFO ||
+	    a.top_schema_index == SAIM_WS_BROWSER_RX_TASKCLONE)) {
 		uint8_t unauth_buf[LWS_PRE + 128];
 		int n1 = lws_snprintf((char *)unauth_buf + LWS_PRE, sizeof(unauth_buf) - LWS_PRE,
 				     "{\"schema\":\"com.warmcat.sai.unauthorized\"}");
@@ -1088,6 +1243,46 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 				lws_ptr_diff_size_t(p, start),
 				LWS_WRITE_TEXT);
 		goto ok;
+	}
+
+	case SAIM_WS_BROWSER_RX_CLONEINFO:
+		/*
+		 * Admin wants to seed an ad-hoc build from this task; answer
+		 * locally with what the dialog needs, nothing goes to the
+		 * server until he submits the taskclone
+		 */
+		ei = (sai_browse_rx_evinfo_t *)a.dest;
+		if (!saiw_id_ok(ei->event_hash, 64)) {
+			lwsl_notice("%s: bad cloneinfo uuid\n", __func__);
+			goto soft_error;
+		}
+		saiw_browser_send_cloneinfo(vhd, pss, ei->event_hash);
+		goto ok;
+
+	case SAIM_WS_BROWSER_RX_TASKCLONE:
+	{
+		sai_browse_rx_taskclone_t *tc =
+				(sai_browse_rx_taskclone_t *)a.dest;
+
+		/*
+		 * Sanity-check before forwarding; sai-server validates again
+		 * and resolves the ref to a hash itself.  A string that fills
+		 * its array exactly was truncated by lws_struct on the way in
+		 * and can't be what the user meant.
+		 */
+		if (!saiw_id_ok(tc->seed_uuid, 64) ||
+		    strncmp(tc->ref, "refs/", 5) || !sai_is_safe_ref(tc->ref) ||
+		    strlen(tc->ref) >= sizeof(tc->ref) - 1 ||
+		    !tc->build[0] ||
+		    strlen(tc->build) >= sizeof(tc->build) - 1) {
+			lwsl_notice("%s: dropping malformed taskclone\n",
+				    __func__);
+			goto soft_error;
+		}
+
+		lwsl_notice("%s: forwarding taskclone: seed %s, ref %s\n",
+			    __func__, tc->seed_uuid, tc->ref);
+		break; /* forward it to sai-server with the rest */
 	}
 
 	case SAIM_WS_BROWSER_RX_TASKREMOVEALLTRIES:
