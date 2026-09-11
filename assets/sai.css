@@ -1018,6 +1018,174 @@ body.overlay-active {
     overflow: hidden;
 }
 
+/*
+ * Ad-hoc events: single-task events an admin seeded from an existing task.
+ * Marked with a dashed border wherever the event appears so they read as
+ * scratch builds rather than the state of the branch.
+ */
+.sb-event-row.adhoc {
+	border: 1px dashed #7c3aed;
+}
+
+.sb-event-row.adhoc.selected {
+	border: 2px dashed #7c3aed;
+}
+
+.event-tasks-header.adhoc {
+	border: 1px dashed #7c3aed;
+	border-radius: 4px;
+}
+
+table.comp.adhoc {
+	border: 1px dashed #7c3aed;
+}
+
+.adhoc-tag {
+	display: inline-block;
+	font-size: 7pt;
+	font-weight: normal;
+	color: #7c3aed;
+	border: 1px dashed #7c3aed;
+	border-radius: 3px;
+	padding: 0 4px;
+	margin-left: 4px;
+	vertical-align: middle;
+}
+
+/* modal dialog, used by the ad-hoc build dialog */
+
+.sai-modal-overlay {
+	position: fixed;
+	top: 0;
+	left: 0;
+	width: 100%;
+	height: 100%;
+	background-color: rgba(0, 0, 0, 0.4);
+	z-index: 4000;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.sai-modal {
+	background: #ffffff;
+	border: 1px solid #94a3b8;
+	border-radius: 6px;
+	box-shadow: 0 6px 24px rgba(0, 0, 0, 0.3);
+	padding: 12px 16px;
+	width: 90%;
+	max-width: 760px;
+	max-height: 90%;
+	overflow: auto;
+	font-size: 9pt;
+	color: #1e293b;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.sai-modal-title {
+	font-size: 11pt;
+	font-weight: bold;
+}
+
+.sai-modal-sub {
+	font-size: 8pt;
+	color: #64748b;
+}
+
+/* the global label rule floats labels into a narrow column; undo that here */
+.sai-modal-label {
+	float: none;
+	display: block;
+	width: auto;
+	margin: 6px 0 0 0;
+	font-size: 8.5pt;
+	color: #334155;
+}
+
+.sai-modal-row {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.sai-modal-input {
+	font-family: monospace;
+	font-size: 9pt;
+	padding: 3px 5px;
+	border: 1px solid #cbd5e1;
+	border-radius: 3px;
+}
+
+.sai-modal-hash {
+	font-family: monospace;
+	font-size: 7.5pt;
+	color: #64748b;
+	min-height: 1.2em;
+}
+
+.sai-modal-textarea {
+	font-family: monospace;
+	font-size: 8.5pt;
+	width: 100%;
+	box-sizing: border-box;
+	min-height: 220px;
+	resize: vertical;
+	border: 1px solid #cbd5e1;
+	border-radius: 3px;
+	padding: 4px;
+	white-space: pre;
+	overflow-wrap: normal;
+	overflow-x: auto;
+}
+
+.sai-modal-note {
+	font-size: 7.5pt;
+	color: #64748b;
+	text-align: right;
+}
+
+.sai-modal-note.over {
+	color: #df3030;
+}
+
+.sai-modal-error {
+	font-size: 8pt;
+	color: #df3030;
+	min-height: 1.2em;
+}
+
+.sai-modal-buttons {
+	display: flex;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 4px;
+}
+
+.sai-modal-button {
+	font-size: 9pt;
+	padding: 4px 12px;
+	border: 1px solid #94a3b8;
+	border-radius: 3px;
+	background: #f1f5f9;
+	cursor: pointer;
+}
+
+.sai-modal-button:hover {
+	background: #e2e8f0;
+}
+
+.sai-modal-button.primary {
+	background: #7c3aed;
+	border-color: #6d28d9;
+	color: #ffffff;
+}
+
+.sai-modal-button.primary:hover {
+	background: #6d28d9;
+}
+
 .spreadsheet {
   margin-top: 2px;
   font-size: 7pt;

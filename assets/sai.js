@@ -1461,6 +1461,8 @@ function sai_event_summary_render(o, now_ut, reset_all_icon)
 		s += " comp_pass";
 	if (e.state == 4 || e.state == 6)
 		s += " comp_fail";
+	if (e.adhoc)
+		s += " adhoc";
 
 	s += "\"><tr><td class=\"jumble\"><a href=\"/sai/?event=" + san(e.uuid) +
 		"\"><img src=\"/sai/sai-event.svg\"";
@@ -1742,6 +1744,8 @@ function render_sb_events()
 			if (e.state == 3) stateClass = " comp_pass";
 			if (e.state == 4 || e.state == 6) stateClass = " comp_fail";
 			var sel = (e.uuid === selected_event_uuid) ? " selected" : "";
+			if (e.adhoc)
+				stateClass += " adhoc";
 			s += "<div class=\"sb-event-row" + stateClass + sel +
 			     "\" data-uuid=\"" + san(e.uuid) + "\">";
 			/* single line: when + tag + status + progress bar */
@@ -2024,6 +2028,7 @@ function render_selected_event_tasks(o) {
 	s += "<div class=\"event-tasks-header";
 	if (e.state == 3) s += " comp_pass";
 	if (e.state == 4 || e.state == 6) s += " comp_fail";
+	if (e.adhoc) s += " adhoc";
 	s += "\">";
 	var refName = e.ref.replace("refs/heads/", "").replace("refs/tags/", "");
 	s += "<span class=\"event-tasks-title\">" +
@@ -2032,6 +2037,7 @@ function render_selected_event_tasks(o) {
 	     " - " +
 	     sai_weburl_link(e, "/log?id=" + encodeURIComponent(e.hash),
 			     sai_event_hash_display(e.hash)) +
+	     (e.adhoc ? " <span class=\"adhoc-tag\">ad-hoc</span>" : "") +
 	     "</span>";
 	/* admin-only restart-all / delete-event controls live here now */
 	if (!gitohashi_integ && auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
@@ -2422,6 +2428,224 @@ function refresh_state(t)
 }
 
 
+
+/*
+ * Ad-hoc build dialog
+ *
+ * Opened from the cloneinfo reply to the task context menu entry.  Lets the
+ * admin pick which branch's head to build (defaulting to the most recently
+ * pushed scratch "_" branch) and edit the build steps, then submits a
+ * taskclone which sai-server turns into a new single-task event.
+ *
+ * The strict CSP forbids inline styles and scripts, so everything is built
+ * with DOM calls and styled by classes in sai.css.
+ */
+
+/* keep under the 4096-byte array on the server side, with margin for UTF-8 */
+const SAI_ADHOC_BUILD_MAXLEN = 4000;
+
+var sai_adhoc_dialog = null;
+
+function sai_adhoc_dialog_close()
+{
+	if (!sai_adhoc_dialog)
+		return;
+
+	document.removeEventListener("keydown", sai_adhoc_dialog.onkey, true);
+	if (document.body.contains(sai_adhoc_dialog.overlay))
+		document.body.removeChild(sai_adhoc_dialog.overlay);
+	sai_adhoc_dialog = null;
+}
+
+function sai_adhoc_el(tag, cls, text)
+{
+	var el = document.createElement(tag);
+
+	if (cls)
+		el.className = cls;
+	if (typeof text !== "undefined")
+		el.textContent = text;
+
+	return el;
+}
+
+/* "refs/heads/x" -> "x", tags and other refs left alone but shortened */
+function sai_adhoc_ref_short(ref)
+{
+	if (ref.startsWith("refs/heads/"))
+		return ref.substring(11);
+
+	return ref;
+}
+
+/* accept "x" or "heads/x" as shorthand for "refs/heads/x" */
+function sai_adhoc_ref_full(ref)
+{
+	ref = ref.trim();
+	if (!ref.length)
+		return "";
+	if (ref.startsWith("refs/"))
+		return ref;
+	if (ref.startsWith("heads/") || ref.startsWith("tags/"))
+		return "refs/" + ref;
+
+	return "refs/heads/" + ref;
+}
+
+function sai_adhoc_dialog_open(info)
+{
+	sai_adhoc_dialog_close();
+
+	var refs = info.refs || [];
+	var overlay = sai_adhoc_el("div", "sai-modal-overlay");
+	var dlg = sai_adhoc_el("div", "sai-modal");
+	var listid = "sai-adhoc-refs";
+
+	dlg.appendChild(sai_adhoc_el("div", "sai-modal-title",
+				     "Ad-hoc build: " + info.taskname + " on " +
+				     info.platform));
+	dlg.appendChild(sai_adhoc_el("div", "sai-modal-sub",
+				     info.repo_name + ", seeded from " +
+				     sai_adhoc_ref_short(info.ref) + " task " +
+				     info.seed_uuid.substring(32, 40)));
+
+	/* branch to build the head of */
+
+	var lab = sai_adhoc_el("label", "sai-modal-label", "Build head of branch");
+	lab.htmlFor = "sai-adhoc-ref";
+	dlg.appendChild(lab);
+
+	var refrow = sai_adhoc_el("div", "sai-modal-row");
+	var refin = sai_adhoc_el("input", "sai-modal-input");
+	refin.type = "text";
+	refin.id = "sai-adhoc-ref";
+	refin.setAttribute("list", listid);
+	refin.setAttribute("autocomplete", "off");
+	refin.spellcheck = false;
+	refin.placeholder = "refs/heads/_scratch";
+
+	var dl = document.createElement("datalist");
+	dl.id = listid;
+	refs.forEach(function(r) {
+		var opt = document.createElement("option");
+		opt.value = r.ref;
+		opt.label = sai_adhoc_ref_short(r.ref) + "  " +
+			    r.hash.substring(0, 8);
+		dl.appendChild(opt);
+	});
+	refrow.appendChild(refin);
+	refrow.appendChild(dl);
+
+	var hashnote = sai_adhoc_el("div", "sai-modal-hash", "");
+	refrow.appendChild(hashnote);
+	dlg.appendChild(refrow);
+
+	/* the server resolves the ref itself; this is just a preview */
+	var update_hash = function() {
+		var full = sai_adhoc_ref_full(refin.value);
+		var m = refs.find(function(r) { return r.ref === full; });
+
+		if (m)
+			hashnote.textContent = "last pushed: " + m.hash;
+		else if (full === info.ref)
+			hashnote.textContent = "same branch as the seed task";
+		else
+			hashnote.textContent = "not a scratch branch: sai-server " +
+					       "uses the newest hash it was " +
+					       "notified of for this branch";
+	};
+	refin.addEventListener("input", update_hash);
+
+	/*
+	 * Default to the most recently pushed scratch branch, else the seed's
+	 * own branch
+	 */
+	refin.value = refs.length ? refs[0].ref : info.ref;
+	update_hash();
+
+	/* build steps */
+
+	lab = sai_adhoc_el("label", "sai-modal-label", "Build steps (one per line)");
+	lab.htmlFor = "sai-adhoc-build";
+	dlg.appendChild(lab);
+
+	var ta = sai_adhoc_el("textarea", "sai-modal-textarea");
+	ta.id = "sai-adhoc-build";
+	ta.spellcheck = false;
+	ta.maxLength = SAI_ADHOC_BUILD_MAXLEN;
+	ta.value = info.build || "";
+	dlg.appendChild(ta);
+
+	var counter = sai_adhoc_el("div", "sai-modal-note", "");
+	var update_counter = function() {
+		var n = new TextEncoder().encode(ta.value).length;
+
+		counter.textContent = n + " / " + SAI_ADHOC_BUILD_MAXLEN + " bytes";
+		counter.classList.toggle("over", n > SAI_ADHOC_BUILD_MAXLEN);
+	};
+	ta.addEventListener("input", update_counter);
+	update_counter();
+	dlg.appendChild(counter);
+
+	var errline = sai_adhoc_el("div", "sai-modal-error", "");
+	dlg.appendChild(errline);
+
+	/* buttons */
+
+	var btns = sai_adhoc_el("div", "sai-modal-buttons");
+	var cancel = sai_adhoc_el("button", "sai-modal-button", "Cancel");
+	cancel.type = "button";
+	cancel.addEventListener("click", sai_adhoc_dialog_close);
+	var go = sai_adhoc_el("button", "sai-modal-button primary", "Schedule");
+	go.type = "button";
+	go.addEventListener("click", function() {
+		var ref = sai_adhoc_ref_full(refin.value);
+		var build = ta.value;
+
+		if (!ref.length || !/^refs\/[A-Za-z0-9_.\/-]+$/.test(ref) ||
+		    ref.indexOf("..") !== -1) {
+			errline.textContent = "Branch must be a plain ref name like refs/heads/_scratch";
+			return;
+		}
+		if (!build.trim().length) {
+			errline.textContent = "Build steps can't be empty";
+			return;
+		}
+		if (new TextEncoder().encode(build).length > SAI_ADHOC_BUILD_MAXLEN) {
+			errline.textContent = "Build steps too long";
+			return;
+		}
+
+		sai.send(JSON.stringify({
+			schema: "com.warmcat.sai.taskclone",
+			seed_uuid: info.seed_uuid,
+			ref: ref,
+			build: build
+		}));
+		sai_adhoc_dialog_close();
+	});
+	btns.appendChild(cancel);
+	btns.appendChild(go);
+	dlg.appendChild(btns);
+
+	overlay.appendChild(dlg);
+	overlay.addEventListener("click", function(ev) {
+		if (ev.target === overlay)
+			sai_adhoc_dialog_close();
+	});
+
+	var onkey = function(ev) {
+		if (ev.key === "Escape") {
+			ev.preventDefault();
+			sai_adhoc_dialog_close();
+		}
+	};
+	document.addEventListener("keydown", onkey, true);
+
+	sai_adhoc_dialog = { overlay: overlay, onkey: onkey };
+	document.body.appendChild(overlay);
+	refin.focus();
+}
 
 function createContextMenu(event, menuItems) {
     event.preventDefault();
@@ -4003,6 +4227,10 @@ function ws_open_sai()
 						console.log("no spreadsheetContainer");
 				break;
 
+			case "com.warmcat.sai.cloneinfo":
+				sai_adhoc_dialog_open(jso);
+				break;
+
 			case "com.warmcat.sai.unauthorized":
 				location.reload();
 				break;
@@ -4581,6 +4809,20 @@ window.addEventListener("load", function() {
 					callback: () => {
 						sai.send(JSON.stringify({
 							schema: "com.warmcat.sai.taskreset",
+							uuid: taskUuid
+						}));
+					}
+				},
+				{
+					/*
+					 * Seed a new single-task event from this
+					 * one; sai-web answers with cloneinfo and
+					 * we open the dialog from that
+					 */
+					label: "Ad-hoc build from this task…",
+					callback: () => {
+						sai.send(JSON.stringify({
+							schema: "com.warmcat.sai.cloneinfo",
 							uuid: taskUuid
 						}));
 					}
