@@ -35,7 +35,7 @@ if (VIRT_LIB_PATH)
 			find_library(CAP_LIB_PATH NAMES "cap")
 		endif()
 
-		target_link_libraries(${SUB} websockets ${SAI_LWS_LIB_PATH} ${VIRT_LIB_PATH})
+		target_link_libraries(${SUB} websockets ${SAI_LWS_LIB_PATH} ${VIRT_LIB_PATH} ${LIBWEBSOCKETS_DEP_LIBS})
 		
 		message("LWS_OPENSSL_LIBRARIES ${SUB} '${LWS_OPENSSL_LIBRARIES}'")
 		if (LWS_OPENSSL_LIBRARIES)

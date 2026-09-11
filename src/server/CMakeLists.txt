@@ -71,7 +71,7 @@ add_dependencies(${SUB} sai_git_hash)
 		find_library(CAP_LIB_PATH NAMES "cap")
 	endif()
 
-	target_link_libraries(${SUB} ${SAI_LWS_LIB_PATH})
+	target_link_libraries(${SUB} ${SAI_LWS_LIB_PATH} ${LIBWEBSOCKETS_DEP_LIBS})
 	
 	if (LWS_OPENSSL_LIBRARIES)
 		target_link_libraries(${SUB} ${LWS_OPENSSL_LIBRARIES})
