@@ -194,6 +194,12 @@ saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
 		}
 	}
 
+	if (sp->powering_down) {
+		lwsl_notice("%s: reject task %s: powering down\n", __func__,
+			    task->uuid);
+		return 1;
+	}
+
 	if (builder.event_affinity_active) {
 		if (!builder.event_affinity[0]) {
 			lws_strncpy(builder.event_affinity, task->event_uuid,
@@ -404,11 +410,11 @@ saib_task_destroy(struct sai_nspawn *ns)
 					 sul_release_wakelock_cb,
 					 30 * LWS_US_PER_SEC);
 			}
-#else
-			lws_sul_schedule(builder.context, 0,
-					 &builder.sul_idle, sul_idle_cb,
-					SAI_IDLE_GRACE_US);
 #endif
+			/*
+			 * the reassess at the end of the destroy starts the
+			 * idle grace time
+			 */
 		}
 	}
 
@@ -1114,10 +1120,6 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 		lwsl_err("%s: saib_spawn_script failed\n", __func__);
 		goto bail;
 	}
-
-	/* we're busy, we're not in the mood for suspending */
-
-	lws_sul_cancel(&ns->builder->sul_idle);
 
 	/*
 	 * We accepted the task

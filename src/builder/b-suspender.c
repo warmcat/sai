@@ -216,13 +216,9 @@ saib_suspender_fork(const char *path)
 	suspender_exists	= 1;
 
 	/*
-	 * We start off idle, with no tasks on any platform and doing
-	 * the grace time before suspend.  If tasks appear, the grace
-	 * time will get cancelled.
+	 * saib_power_init() assesses the idle situation once everything is
+	 * up: we start off idle and the grace time runs from there
 	 */
-
-	lws_sul_schedule(builder.context, 0, &builder.sul_idle,
-			 sul_idle_cb, SAI_IDLE_GRACE_US);
 
 	lwsl_err("%s: done\n", __func__);
 

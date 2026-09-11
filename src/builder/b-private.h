@@ -77,7 +77,19 @@ struct saib_opaque_spawn {
 };
 
 #define SAI_LOAD_REPORT_US			(1 * LWS_US_PER_SEC)
-#define SAI_IDLE_GRACE_US			(builder.one_shot_active ? (10 * LWS_US_PER_SEC) : (30 * LWS_US_PER_SEC))
+#define SAI_IDLE_GRACE_US			(builder.one_shot_active ? (10 * LWS_US_PER_SEC) : \
+						 builder.event_affinity_active ? (15 * LWS_US_PER_SEC) : \
+						 (30 * LWS_US_PER_SEC))
+/* let the powering_down plats reach the servers before we act */
+#define SAI_POWER_NOTIFY_FLUSH_US		(2 * LWS_US_PER_SEC)
+/* suspend byte written: if we are still awake after this, it failed */
+#define SAI_POWER_SUSPEND_DEADLINE_US		(15 * LWS_US_PER_SEC)
+/* how long to wait for sai-power to ACK / NAK an auto-power-off */
+#define SAI_POWER_OFF_REPLY_US			(10 * LWS_US_PER_SEC)
+/* sai-power ACKed and we asked for shutdown: sai-power's own holdoff is 50s */
+#define SAI_POWER_OFF_DEADLINE_US		(90 * LWS_US_PER_SEC)
+/* after a failed power action, before we consider going idle again */
+#define SAI_POWER_RETRY_HOLDOFF_US		(5 * 60 * LWS_US_PER_SEC)
 #define SAI_STAY_POLL_US			(20 * LWS_US_PER_SEC)
 #define SAI_CLEANUP_JOBS_INTERVAL_US		(60ULL * 60ULL * LWS_US_PER_SEC)
 #define SAI_CLEANUP_JOB_DIR_MIN_AGE_SECS	(24ull * 3600u)
@@ -92,6 +104,28 @@ enum nsstate {
 	NSSTATE_DONE,
 	NSSTATE_UPLOADING_ARTIFACTS,
 	NSSTATE_FAILED,
+};
+
+/*
+ * Auto power management, see saib_power_event() in b-power.c
+ */
+
+enum saib_power_state {
+	SAIB_PWR_ACTIVE,	/* tasks, shells or stay: nothing pending */
+	SAIB_PWR_IDLE,		/* nothing running, idle grace timer running */
+	SAIB_PWR_HOLDOFF,	/* a power action failed, waiting before retry */
+	SAIB_PWR_SUSPEND_WAIT,	/* servers told we're going, flushing before suspend */
+	SAIB_PWR_SUSPENDING,	/* suspend requested, waiting for it to happen */
+	SAIB_PWR_OFF_REQ,	/* asked sai-power to power us off, awaiting reply */
+	SAIB_PWR_OFF_WAIT,	/* sai-power agreed, shutdown requested, waiting */
+};
+
+enum saib_power_event {
+	SAIB_PWR_EV_BUSY,	/* a task or shell started, or stay asserted */
+	SAIB_PWR_EV_IDLE,	/* nothing running and no stay */
+	SAIB_PWR_EV_TIMER,	/* the current state's deadline expired */
+	SAIB_PWR_EV_POWER_ACK,	/* sai-power scheduled our power-off */
+	SAIB_PWR_EV_POWER_NAK,	/* sai-power declined or is unreachable */
 };
 
 /*
@@ -125,9 +159,7 @@ struct sai_builder {
 	struct lws_context	*context;
 	struct lws_vhost	*vhost;
 
-	lws_sorted_usec_list_t	sul_idle;
-	lws_sorted_usec_list_t	sul_do_suspend;
-	lws_sorted_usec_list_t	sul_do_shutdown;
+	lws_sorted_usec_list_t	sul_power; /* current power state's deadline */
 	lws_sorted_usec_list_t	sul_stay;
 	lws_sorted_usec_list_t	sul_cleanup_jobs;
 	lws_sorted_usec_list_t	sul_deletion_respawn;
@@ -172,6 +204,12 @@ struct sai_builder {
 	ULARGE_INTEGER		last_sys_user;
 #endif
 	char			stay;
+
+	enum saib_power_state	power_state;
+	time_t			power_action_time; /* wall clock at last command */
+	lws_usec_t		power_action_us; /* monotonic at last command */
+	int			power_fail_count;
+	char			power_unavailable_logged;
 
 	char			event_affinity[65];
 	char			event_affinity_active;
@@ -343,6 +381,10 @@ int
 saib_deletion_free_kib(unsigned int needed_kib);
 int
 saib_reassess_idle_situation(void);
+void
+saib_power_event(enum saib_power_event ev);
+void
+saib_power_shutdown(void);
 
 extern int interrupted;
 

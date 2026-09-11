@@ -973,9 +973,6 @@ saicom_lp_ss_from_env(struct lws_context *context, const char *env_name);
 int
 saicom_lp_callback_on_drain(saicom_drain_cb cb, void *opaque);
 
-void
-sul_idle_cb(lws_sorted_usec_list_t *sul);
-
 int
 sai_uuid16_create(struct lws_context *context, char *dest33);
 
