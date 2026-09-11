@@ -80,7 +80,7 @@ add_dependencies(${SUB} sai_git_hash)
 	endif()
 
 	if (MSVC OR WIN32)
-		target_link_libraries(${SUB} ws2_32.lib userenv.lib psapi.lib iphlpapi.lib advapi32.lib)
+		target_link_libraries(${SUB} ws2_32.lib userenv.lib psapi.lib iphlpapi.lib advapi32.lib dbghelp.lib)
 	endif()
 
 	if (MSVC OR WIN32)
