@@ -581,12 +581,14 @@ saib_spawn_script(struct sai_nspawn *ns)
 		"/bin/ps",
 		NULL
 	};
+#if !defined(WIN32)
 	const char *env[] = {
 		"PATH=/usr/local/bin:/usr/bin:/bin",
 		"LANG=en_US.UTF-8",
 		"TERM=xterm-256color",
 		NULL
 	};
+#endif
 	char one_step[4096];
 	char st[2048];
 	int fd, n;
@@ -686,7 +688,18 @@ saib_spawn_script(struct sai_nspawn *ns)
 
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
+#if !defined(WIN32)
 	info.env_array		= (const char **)env;
+#else
+	/*
+	 * Since lws C-328 (f92e831dd) the Windows spawn honours env_array as
+	 * the child's entire environment, as execve does; before it was
+	 * ignored and the child inherited ours.  The sanitizing set above is
+	 * a unix PATH with no SystemRoot or Visual Studio variables, so a
+	 * child given it cannot even find nmake or cl.  Inherit instead.
+	 */
+	info.env_array		= NULL;
+#endif
 	info.exec_array		= cmd;
 	info.protocol_name	= "sai-stdxxx";
 	info.max_log_lines	= 10000;
@@ -866,12 +879,14 @@ saib_shell_spawn(struct sai_plat_server *spm, const char *task_uuid)
 	struct lws_spawn_piped_info info;
 	struct sai_shell *sh;
 	const char *cmd[] = { "/bin/bash", "-i", NULL };
+#if !defined(WIN32)
 	const char *env[] = {
 		"PATH=/usr/local/bin:/usr/bin:/bin",
 		"LANG=en_US.UTF-8",
 		"TERM=xterm-256color",
 		NULL
 	};
+#endif
 
 	sh = malloc(sizeof(*sh));
 	if (!sh)
@@ -883,7 +898,18 @@ saib_shell_spawn(struct sai_plat_server *spm, const char *task_uuid)
 
 	memset(&info, 0, sizeof(info));
 	info.vh			= builder.vhost;
+#if !defined(WIN32)
 	info.env_array		= (const char **)env;
+#else
+	/*
+	 * Since lws C-328 (f92e831dd) the Windows spawn honours env_array as
+	 * the child's entire environment, as execve does; before it was
+	 * ignored and the child inherited ours.  The sanitizing set above is
+	 * a unix PATH with no SystemRoot or Visual Studio variables, so a
+	 * child given it cannot even find nmake or cl.  Inherit instead.
+	 */
+	info.env_array		= NULL;
+#endif
 	info.exec_array		= cmd;
 	info.protocol_name	= "sai-saishell";
 	info.max_log_lines	= 10000;
