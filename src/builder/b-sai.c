@@ -56,6 +56,7 @@
 #include <Shlobj.h>
 #include <processthreadsapi.h>
 #include <handleapi.h>
+#include <dbghelp.h>
 
 
 #if !defined(PATH_MAX)
@@ -539,6 +540,64 @@ crash_handler(int signum)
 #endif
 
 #if defined(WIN32)
+/*
+ * The Debug CRT's abort() (an assert(), or a direct abort()) exits with
+ * code 3 and nothing else when there is no console: a service has no
+ * stderr, its message boxes are invisible in session 0, and if the
+ * debugger attached after startup the CRT report-fault is already off.
+ * abort() raises SIGABRT first, so log a symbolised backtrace from here,
+ * and hand a debugger the stop it was never given.
+ */
+static void
+win_crash_handler(int signum)
+{
+	char symbuf[sizeof(SYMBOL_INFO) + 256];
+	SYMBOL_INFO *sym = (SYMBOL_INFO *)symbuf;
+	HANDLE proc = GetCurrentProcess();
+	IMAGEHLP_LINE64 line;
+	DWORD64 disp64 = 0;
+	void *frames[32];
+	DWORD disp = 0;
+	USHORT n, i;
+
+	lwsl_err("FATAL: caught signal %d, producing backtrace:\n", signum);
+
+	SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME |
+		      SYMOPT_DEFERRED_LOADS);
+	SymInitialize(proc, NULL, TRUE);
+
+	n = CaptureStackBackTrace(0, (DWORD)LWS_ARRAY_SIZE(frames), frames,
+				  NULL);
+	for (i = 0; i < n; i++) {
+		DWORD64 a = (DWORD64)(uintptr_t)frames[i];
+
+		memset(symbuf, 0, sizeof(symbuf));
+		sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+		sym->MaxNameLen = 255;
+		memset(&line, 0, sizeof(line));
+		line.SizeOfStruct = sizeof(line);
+
+		if (!SymFromAddr(proc, a, &disp64, sym)) {
+			lwsl_err("  #%u 0x%llx\n", i, (unsigned long long)a);
+			continue;
+		}
+		if (SymGetLineFromAddr64(proc, a, &disp, &line))
+			lwsl_err("  #%u %s+0x%llx (%s:%lu)\n", i, sym->Name,
+				 (unsigned long long)disp64, line.FileName,
+				 line.LineNumber);
+		else
+			lwsl_err("  #%u %s+0x%llx\n", i, sym->Name,
+				 (unsigned long long)disp64);
+	}
+
+	if (IsDebuggerPresent())
+		__debugbreak();
+
+	/* let the default disposition finish the job, exit code 3 for abort */
+	signal(signum, SIG_DFL);
+	raise(signum);
+}
+
 static int log_fd = -1;
 
 static void
@@ -631,6 +690,12 @@ saib_app_run(int argc, const char **argv)
 		signal(SIGBUS, crash_handler);
 		signal(SIGILL, crash_handler);
 		signal(SIGFPE, crash_handler);
+#endif
+#if defined(WIN32)
+		signal(SIGABRT, win_crash_handler);
+		signal(SIGSEGV, win_crash_handler);
+		signal(SIGILL, win_crash_handler);
+		signal(SIGFPE, win_crash_handler);
 #endif
 
 		lws_set_log_level(logs, NULL);
