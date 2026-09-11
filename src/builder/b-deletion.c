@@ -613,24 +613,31 @@ callback_sai_deletion_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 
 	case LWS_CALLBACK_RAW_RX_FILE:
 #if defined(WIN32)
-		/* lws spawn reads the pipe itself on windows and delivers the
-		 * data in in / len; the wsi has no readable fd for us
+		/*
+		 * lws spawn reads the pipe itself on windows, up to 4KB at a
+		 * time, and delivers the data in in / len; the wsi has no
+		 * readable fd for us.  Log the whole delivery, a piece at a
+		 * time: keeping only the first sizeof(buf) - 1 bytes used to
+		 * lose the rest of every larger read.
 		 */
-		ilen = (int)len;
-		if (ilen > (int)sizeof(buf) - 1)
-			ilen = (int)sizeof(buf) - 1;
-		if (ilen > 0)
+		while (len) {
+			ilen = (int)len;
+			if (ilen > (int)sizeof(buf) - 1)
+				ilen = (int)sizeof(buf) - 1;
 			memcpy(buf, in, (size_t)ilen);
+			buf[ilen] = '\0';
+			lwsl_notice("[DELETION] %s", (const char *)buf);
+			in = (uint8_t *)in + ilen;
+			len -= (size_t)ilen;
+		}
 #else
 		ilen = (int)read((int)(intptr_t)lws_get_socket_fd(wsi), buf, sizeof(buf) - 1);
 		if (ilen < 1) {
 			return -1;
 		}
+		buf[ilen] = '\0';
+		lwsl_notice("[DELETION] %s", (const char *)buf);
 #endif
-		if (ilen > 0) {
-			buf[ilen] = '\0';
-			lwsl_notice("[DELETION] %s", (const char *)buf);
-		}
 		break;
 
 	default:
