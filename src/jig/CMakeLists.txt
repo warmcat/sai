@@ -31,7 +31,7 @@ add_dependencies("sai-jig" sai_git_hash)
 		set_property(TARGET sai-device PROPERTY MACOSX_RPATH YES)
 	endif()
 
-	target_link_libraries(${SUB} websockets ${SAI_LWS_LIB_PATH})
+	target_link_libraries(${SUB} websockets ${SAI_LWS_LIB_PATH} ${LIBWEBSOCKETS_DEP_LIBS})
 	
 	message("LWS_OPENSSL_LIBRARIES ${SUB} '${LWS_OPENSSL_LIBRARIES}'")
 	if (LWS_OPENSSL_LIBRARIES)
