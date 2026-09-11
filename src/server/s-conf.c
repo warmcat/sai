@@ -31,7 +31,7 @@ struct lws_context *
 sai_lws_context_from_json(const char *config_dir,
 			  struct lws_context_creation_info *info,
 			  const struct lws_protocols **pprotocols,
-			  const char *jpol)
+			  const char *jpol, int argc, const char **argv)
 {
 	int cs_len = SAI_CONFIG_STRING_SIZE - 1;
 	struct lws_context *context;
@@ -53,6 +53,32 @@ sai_lws_context_from_json(const char *config_dir,
 		       LWS_SERVER_OPTION_HTTP_HEADERS_SECURITY_BEST_PRACTICES_ENFORCE |
 		       LWS_SERVER_OPTION_VALIDATE_UTF8;
 	info->pss_policies_json = jpol;
+
+	/*
+	 * Let lws see our commandline: lws_cmdline_option_cx() needs it, and
+	 * it is how lws_stub children (lws plugins that spawn a privileged
+	 * helper by re-exec'ing us with --lws-stub=<name>) are recognized,
+	 * both by the plugins themselves and by lwsws_get_config_vhosts()
+	 */
+	lws_cmdline_option_handle_builtin(argc, argv, info);
+
+	if (info->lws_stub) {
+		/*
+		 * We are a stub child, not a sai-server.  We exist only to
+		 * host the plugin protocol that spawned us, on the stub-dummy
+		 * vhost lwsws_get_config_vhosts() creates instead of parsing
+		 * our real vhosts.  So none of our own protocols or the SS
+		 * websrv listener should come up, and we must keep our
+		 * privileges rather than dropping to the configured uid / gid,
+		 * since the stub's whole purpose is to do the privileged work.
+		 */
+		lwsl_notice("%s: lws stub child '%s'\n", __func__,
+			    info->lws_stub);
+		info->options |= LWS_SERVER_OPTION_DO_SSL_GLOBAL_INIT |
+				 LWS_SERVER_OPTION_VH_SKIP_PRIV_DROP;
+		info->pss_policies_json = NULL;
+		pprotocols = NULL;
+	}
 
 	lwsl_notice("Using config dir: \"%s\"\n", config_dir);
 

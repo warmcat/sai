@@ -87,7 +87,7 @@ int main(int argc, const char **argv)
 		conf = p;
 
 	context = sai_lws_context_from_json(conf, &info, pprotocols,
-					    default_ss_policy);
+					    default_ss_policy, argc, argv);
 	if (!context) {
 		lwsl_err("lws init failed\n");
 		return 1;
