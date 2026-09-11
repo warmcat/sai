@@ -71,23 +71,27 @@ static void sigint_handler(int sig)
 
 int main(int argc, const char **argv)
 {
-	int logs = LLL_USER | LLL_ERR | LLL_WARN | LLL_NOTICE;
 	const char *p, *conf = "/etc/sai/server";
 	struct lws_context_creation_info info;
 
 	signal(SIGINT, sigint_handler);
 
-	if ((p = lws_cmdline_option(argc, argv, "-d")))
-		logs = atoi(p);
+	/*
+	 * lws owns the generic switches: -d for the log level, and
+	 * --lws-stub=<name> when an lws plugin re-exec'd us as its privileged
+	 * helper.  This must come after zeroing info and before anything that
+	 * logs, since it sets the log level as well as filling in info.
+	 */
+	memset(&info, 0, sizeof(info));
+	lws_cmdline_option_handle_builtin(argc, argv, &info);
 
-	lws_set_log_level(logs, NULL);
-	lwsl_user("Sai Server - Copyright (C) 2019-2025 Andy Green <andy@warmcat.com>\n");
+	lwsl_user("Sai Server - Copyright (C) 2019-2026 Andy Green <andy@warmcat.com>\n");
 
 	if ((p = lws_cmdline_option(argc, argv, "-c")))
 		conf = p;
 
 	context = sai_lws_context_from_json(conf, &info, pprotocols,
-					    default_ss_policy, argc, argv);
+					    default_ss_policy);
 	if (!context) {
 		lwsl_err("lws init failed\n");
 		return 1;

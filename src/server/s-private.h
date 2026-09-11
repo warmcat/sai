@@ -273,11 +273,6 @@ struct vhd {
 	unsigned int		viewers_are_present:1;
 };
 
-extern struct lws_context *
-sai_lws_context_from_json(const char *config_dir,
-			  struct lws_context_creation_info *info,
-			  const struct lws_protocols **pprotocols,
-			  const char *jpol, int argc, const char **argv);
 extern const struct lws_protocols protocol_ws, protocol_ws_power;
 
 int

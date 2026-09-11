@@ -4,7 +4,6 @@ set(CPACK_DEBIAN_SERVER_PACKAGE_NAME ${SUB})
 
 set(SRCS
 	s-sai.c
-	s-conf.c
 	s-notification.c
 	s-comms.c
 	s-helpers.c
@@ -18,6 +17,7 @@ set(SRCS
 	s-resource.c
 	s-watcher.c
 	../common/c-utils.c
+	../common/c-conf.c
 	../common/c-sqlite3.c
 	../common/struct-metadata.c
 )

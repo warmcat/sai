@@ -4,12 +4,12 @@ set(CPACK_DEBIAN_SERVER_PACKAGE_NAME ${SUB})
 
 set(SRCS
 	w-sai.c
-	w-conf.c
 	w-comms.c
 	w-artifact.c
 	w-ws-server.c
 	w-ws-browser.c
 	../common/c-utils.c
+	../common/c-conf.c
 	../common/c-sqlite3.c
 	../common/struct-metadata.c
 )

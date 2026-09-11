@@ -232,11 +232,6 @@ typedef struct saiw_websrv {
 } saiw_websrv_t;
 
 
-extern struct lws_context *
-sai_lws_context_from_json(const char *config_dir,
-			  struct lws_context_creation_info *info,
-			  const struct lws_protocols **pprotocols,
-			  const char *pol);
 extern const struct lws_protocols protocol_ws;
 extern const lws_ss_info_t ssi_saiw_websrv;
 
