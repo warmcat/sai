@@ -545,7 +545,10 @@ function renderPconHierarchy(container) {
 function update_task_activities() {
 	for (const uuid in ongoing_task_activities) {
 		const cat = ongoing_task_activities[uuid];
-		document.querySelectorAll("[id='taskstate_" + uuid + "'], [data-task-uuid='" + uuid + "']").forEach(function(el) {
+		[ document.getElementById("taskstate_" + uuid),
+		  document.getElementById("tt_" + uuid) ].forEach(function(el) {
+			if (!el)
+				return;
 			el.classList.remove("activity-1", "activity-2", "activity-3");
 			if (cat > 0) {
 				el.classList.add("activity-" + cat);
@@ -2305,7 +2308,12 @@ function sai_tt_cmp_vals(a, b)
 /*
  * Reorder the rows of a task table in place: failed first, then the user's
  * primary key and direction (rows lacking a value for it go last either
- * way), then task name and platform to keep the order stable
+ * way), then task name and platform to keep the order stable.
+ *
+ * Sort keys are read once per row, and the DOM is only touched if the
+ * order actually changed, in a single fragment append: this runs after
+ * every live state change and on the duration tick, so it must be cheap
+ * in the common no-op case.
  */
 function sai_tt_resort(tab)
 {
@@ -2315,36 +2323,67 @@ function sai_tt_resort(tab)
 
 	var so = sai_tt_sort_get();
 	var now_ut = Math.round((new Date().getTime() / 1000));
-	var rows = Array.prototype.slice.call(tbody.querySelectorAll("tr.tt-row"));
+	var cur = Array.prototype.slice.call(tbody.rows);
+	var items = cur.map(function(tr) {
+		return {
+			tr:	tr,
+			failed:	tr.dataset.state === "4" ? 0 : 1,
+			key:	sai_tt_row_key(tr, so.key, now_ut),
+			name:	tr.dataset.name,
+			plat:	tr.dataset.plat
+		};
+	});
 
-	rows.sort(function(ra, rb) {
-		var fa = ra.dataset.state === "4" ? 0 : 1,
-		    fb = rb.dataset.state === "4" ? 0 : 1;
+	items.sort(function(a, b) {
+		if (a.failed !== b.failed)
+			return a.failed - b.failed;
 
-		if (fa !== fb)
-			return fa - fb;
-
-		var ka = sai_tt_row_key(ra, so.key, now_ut),
-		    kb = sai_tt_row_key(rb, so.key, now_ut);
-
-		if (ka === null && kb !== null)
+		if (a.key === null && b.key !== null)
 			return 1;
-		if (kb === null && ka !== null)
+		if (b.key === null && a.key !== null)
 			return -1;
-		if (ka !== null) {
-			var c = sai_tt_cmp_vals(ka, kb);
+		if (a.key !== null) {
+			var c = sai_tt_cmp_vals(a.key, b.key);
 			if (c)
 				return so.dir * c;
 		}
 
-		var c2 = sai_tt_cmp_vals(ra.dataset.name, rb.dataset.name);
+		var c2 = sai_tt_cmp_vals(a.name, b.name);
 		if (c2)
 			return c2;
 
-		return sai_tt_cmp_vals(ra.dataset.plat, rb.dataset.plat);
+		return sai_tt_cmp_vals(a.plat, b.plat);
 	});
 
-	rows.forEach(function(r) { tbody.appendChild(r); });
+	var moved = false;
+	for (var i = 0; i < items.length; i++)
+		if (items[i].tr !== cur[i]) {
+			moved = true;
+			break;
+		}
+	if (!moved)
+		return;
+
+	var frag = document.createDocumentFragment();
+	items.forEach(function(it) { frag.appendChild(it.tr); });
+	tbody.appendChild(frag);
+}
+
+/*
+ * Coalesce re-sorts: a burst of task state broadcasts (or the per-task
+ * refresh after a pane rebuild) asks many times, we sort once
+ */
+var sai_tt_resort_timer = null;
+
+function sai_tt_schedule_resort()
+{
+	if (sai_tt_resort_timer)
+		return;
+
+	sai_tt_resort_timer = window.setTimeout(function() {
+		sai_tt_resort_timer = null;
+		document.querySelectorAll("table.tt").forEach(sai_tt_resort);
+	}, 0);
 }
 
 /*
@@ -2360,6 +2399,19 @@ function sai_tt_refresh_row(t)
 	/* the row tracks the latest run only; ignore news about older ones */
 	var run = typeof t.run !== 'undefined' ? t.run : 0;
 	if (run < parseInt(tr.dataset.run))
+		return;
+
+	/*
+	 * Nothing to do if the row already reflects this task: the refresh
+	 * pass after a pane rebuild hits every task, and the rows were just
+	 * rendered from the same data
+	 */
+	var k = sai_tt_row_keys(t), changed = !tr.classList.contains("taskstate" + t.state) ||
+					      tr.dataset.rebuildable !== String(t.rebuildable);
+	for (var n in k)
+		if (tr.dataset[n] !== String(k[n]))
+			changed = true;
+	if (!changed)
 		return;
 
 	var now_ut = Math.round((new Date().getTime() / 1000));
@@ -2378,7 +2430,7 @@ function sai_tt_refresh_row(t)
 	tr.cells[3].textContent = sai_tt_fmt_dur(sai_tt_dur_secs(t, now_ut));
 	tr.cells[4].innerHTML = sai_tt_step_html(t);
 
-	sai_tt_resort(tr.closest("table"));
+	sai_tt_schedule_resort();
 }
 
 /*
@@ -2408,7 +2460,7 @@ function sai_tt_tick()
 	});
 
 	if (live && sai_tt_sort_get().key === "duration")
-		document.querySelectorAll("table.tt").forEach(sai_tt_resort);
+		sai_tt_schedule_resort();
 }
 
 function sai_tt_set_selected(uuid)
@@ -2472,6 +2524,32 @@ function sai_tt_split_begin(left, x0)
 	document.addEventListener('touchend', finish);
 }
 
+/*
+ * Everything the tasks pane's markup depends on, flattened to a string, so
+ * a rebuild can be skipped when an overview refresh brings nothing new.
+ * Live per-task changes are applied in place by refresh_state(), so most
+ * overview messages during a build change nothing here.
+ */
+var sai_tasks_pane_sig = null;
+
+function sai_tasks_pane_signature(o)
+{
+	var e = o.e;
+	var parts = [ e.uuid, e.state, e.adhoc ? 1 : 0, e.repo_name, e.ref,
+		      e.hash, e.weburl || "", auth_state, gitohashi_integ ? 1 : 0 ];
+
+	if (o.t)
+		for (var q = 0; q < o.t.length; q++) {
+			var t = o.t[q];
+
+			parts.push(t.uuid, t.run, t.state, t.started, t.duration,
+				   t.build_step, t.build_step_count, t.total_steps,
+				   t.rebuildable, t.platform, t.taskname);
+		}
+
+	return parts.join("\x01");
+}
+
 function render_selected_event_tasks(o) {
 	var now_ut = Math.round((new Date().getTime() / 1000));
 	var s = "";
@@ -2494,6 +2572,21 @@ function render_selected_event_tasks(o) {
 		var c = document.getElementById("sai_event_tasks");
 		if (c)
 			c.innerHTML = "<div class=\"sb-empty\">Select a project and branch</div>";
+		sai_tasks_pane_sig = null;
+		return;
+	}
+
+	/*
+	 * Same event, same tasks, same header state as what's already in the
+	 * pane (and nobody replaced the pane contents since): don't rebuild.
+	 * Rebuilding recreates hundreds of platform icon <img>s and throws
+	 * away the sub-panes' scroll positions for nothing.
+	 */
+	var sig = sai_tasks_pane_signature(o);
+	var container = document.getElementById("sai_event_tasks");
+	if (container && sig === sai_tasks_pane_sig &&
+	    container.querySelector(".event-tasks-header[data-ev='" + san(e.uuid) + "']")) {
+		update_summary_and_progress(e.uuid);
 		return;
 	}
 
@@ -2503,7 +2596,7 @@ function render_selected_event_tasks(o) {
 	 * available yet (sidebar-scoped overview events arrive with t:[] and
 	 * fetch their tasks on demand via selectEvent -> eventinfo).
 	 */
-	s += "<div class=\"event-tasks-header";
+	s += "<div data-ev=\"" + san(e.uuid) + "\" class=\"event-tasks-header";
 	if (e.state == 3) s += " comp_pass";
 	if (e.state == 4 || e.state == 6) s += " comp_fail";
 	if (e.adhoc) s += " adhoc";
@@ -2606,10 +2699,10 @@ function render_selected_event_tasks(o) {
 		s += "<div class=\"no-tasks\">No tasks for this event</div>";
 	}
 
-	var container = document.getElementById("sai_event_tasks");
 	if (container) {
+		sai_tasks_pane_sig = sig;
 		/*
-		 * The pane is rebuilt on every overview refresh; carry the
+		 * The pane is rebuilt when its content changed; carry the
 		 * sub-panes' scroll positions across so it doesn't jump
 		 */
 		var lp = document.getElementById("sai_tasks_left"),
