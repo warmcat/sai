@@ -145,6 +145,15 @@ saiw_event_db_close_all_now(struct vhd *vhd)
 static void
 saiw_close_artifact(struct pss *pss)
 {
+	/*
+	 * lws hands the close callbacks wsi->user_space, which is NULL if the
+	 * connection went away before per-session storage was allocated (eg,
+	 * a wsi that never bound to a protocol, closed on error or timeout).
+	 * There can be no artifact state without a pss, so nothing to do.
+	 */
+	if (!pss)
+		return;
+
 	if (pss->blob_artifact) {
 		sqlite3_blob_close(pss->blob_artifact);
 		pss->blob_artifact = NULL;
@@ -811,6 +820,8 @@ http_resp:
 	case LWS_CALLBACK_CLOSED:
 
 		lwsl_wsi_info(wsi, "CLOSED browse conn");
+		if (!pss)
+			break;
 		lws_buflist2_destroy_all_segments(&pss->raw_tx);
 		lws_buflist_destroy_all_segments(&pss->rx_reasm);
 		saiw_browser_state_changed(pss, 0);
