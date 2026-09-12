@@ -1160,9 +1160,8 @@ function sai_taskinfo_render(t, now_ut)
 		/* started is a unix time, in seconds */
 		s += "<span class=\"ti5\"> " +
 		     agify(now_ut, t.t.started) + " ago, Dur: " +
-		     (t.t.duration ? t.t.duration / 1000000 :
-			now_ut - t.t.started).toFixed(1) +
-			"s</span><div id=\"sai_arts\"></div><div id=\"metrics-summary-" + san(t.t.uuid) + "\"></div>";
+		     sai_tt_fmt_dur(sai_tt_dur_secs(t.t, now_ut)) +
+			"</span><div id=\"sai_arts\"></div><div id=\"metrics-summary-" + san(t.t.uuid) + "\"></div>";
 		sai_arts = "";
 	}
 
@@ -2109,13 +2108,21 @@ function sai_tt_is_ongoing(state)
 	return state === 1 || state === 2 || state === 6 || state === 10;
 }
 
-/* wallclock seconds the task took / has taken so far, or -1 if never started */
+/*
+ * Wallclock seconds the task has been building, or -1 if it never started.
+ *
+ * While it's still going, that's now minus the time the first step was
+ * accepted (t.started, unix secs).  Once it reached a disposition, the
+ * server stored the elapsed seconds at that moment in t.duration (see
+ * sais_process_rej()); it also refreshes t.duration at each step boundary,
+ * so it must not be preferred over the live clock for an ongoing task.
+ */
 function sai_tt_dur_secs(t, now_ut)
 {
-	if (t.duration)
-		return t.duration / 1000000;
 	if (t.started && sai_tt_is_ongoing(t.state))
 		return Math.max(0, now_ut - t.started);
+	if (t.duration)
+		return t.duration;
 
 	return -1;
 }
@@ -2275,10 +2282,10 @@ function sai_tt_row_key(tr, key, now_ut)
 	case "started":
 		return parseInt(d.started) > 0 ? parseInt(d.started) : null;
 	case "duration":
-		if (parseInt(d.dur) > 0)
-			return parseInt(d.dur) / 1000000;
 		if (parseInt(d.started) > 0 && sai_tt_is_ongoing(state))
 			return now_ut - parseInt(d.started);
+		if (parseInt(d.dur) > 0)
+			return parseInt(d.dur);
 		return null;
 	case "step":
 		return sai_tt_state_rank(state) * 10000 + (parseInt(d.step) + 1);
@@ -2390,7 +2397,7 @@ function sai_tt_tick()
 	rows.forEach(function(tr) {
 		var d = tr.dataset;
 
-		if (parseInt(d.dur) > 0 || !(parseInt(d.started) > 0) ||
+		if (!(parseInt(d.started) > 0) ||
 		    !sai_tt_is_ongoing(parseInt(d.state)))
 			return;
 
