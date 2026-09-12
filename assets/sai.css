@@ -2467,7 +2467,8 @@ table.tt {
 table.tt th.tt-th {
 	position: sticky;
 	top: 0;
-	z-index: 1;
+	/* above the platform icons: img.zup is positioned at z-index 11 */
+	z-index: 20;
 	background: #f1f5f9;
 	color: #1e293b;
 	text-align: left;
