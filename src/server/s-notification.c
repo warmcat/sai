@@ -1075,6 +1075,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		pss->dry = 1;
 		lejp_construct(&saictx, sai_saifile_lejp_cb, pss, saifile_paths,
 			       LWS_ARRAY_SIZE(saifile_paths));
+		sai_lejp_enable_comments(&saictx);
 		m = lejp_parse(&saictx, (uint8_t *)pss->sn.saifile,
 			       (int)pss->sn.saifile_out_pos);
 		sai_event_db_close(&pss->vhd->sqlite3_cache, (sqlite3 **)&pss->sn.e.pdb);
@@ -1109,6 +1110,7 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		pss->dry = 0;
 		lejp_construct(&saictx, sai_saifile_lejp_cb, pss, saifile_paths,
 			       LWS_ARRAY_SIZE(saifile_paths));
+		sai_lejp_enable_comments(&saictx);
 		m = lejp_parse(&saictx, (uint8_t *)pss->sn.saifile,
 			       (int)pss->sn.saifile_out_pos);
 
