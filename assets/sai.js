@@ -544,14 +544,13 @@ function renderPconHierarchy(container) {
 
 function update_task_activities() {
 	for (const uuid in ongoing_task_activities) {
-		const el = document.getElementById("taskstate_" + uuid);
-		if (el) {
-			const cat = ongoing_task_activities[uuid];
+		const cat = ongoing_task_activities[uuid];
+		document.querySelectorAll("[id='taskstate_" + uuid + "'], [data-task-uuid='" + uuid + "']").forEach(function(el) {
 			el.classList.remove("activity-1", "activity-2", "activity-3");
 			if (cat > 0) {
 				el.classList.add("activity-" + cat);
 			}
-		}
+		});
 	}
 }
 
@@ -1994,6 +1993,478 @@ function render_event_decals() {
 	render_sb_events();
 }
 
+/*
+ * Event task table: the right-hand sub-pane of the tasks pane.
+ *
+ * One row per task (its latest run), coloured by the same taskstateN classes
+ * as the sectionalized view on the left.  Clicking a column header makes it
+ * the primary sort key; clicking it again flips the direction.  The choice
+ * and the splitter position both persist in localStorage.
+ *
+ * Failed tasks always float to the top, above the user's sort order: once a
+ * task has failed it isn't going to succeed, and what failed is always the
+ * most interesting thing about an event.  Within the failed group, and again
+ * within the rest, the user's sort order applies.
+ */
+
+var SAI_TT_SORT_LS = "sai-tasktable-sort";
+var SAI_TT_SPLIT_LS = "sai-tasks-left-flex";
+var sai_tt_sort = null; /* { key, dir } lazily loaded from localStorage */
+
+var sai_tt_columns = [
+	{ key: "taskname", label: "Task" },
+	{ key: "platform", label: "Platform" },
+	{ key: "started",  label: "Started" },
+	{ key: "duration", label: "Duration" },
+	{ key: "step",     label: "Step" }
+];
+
+/*
+ * Rank for the "step" column: how far along the task is in its life, from
+ * waiting through building to a final disposition
+ */
+function sai_tt_state_rank(state)
+{
+	switch (state) {
+	case 8:  return 0; /* not ready */
+	case 0:  return 1; /* waiting */
+	case 1:  return 2; /* passed to builder */
+	case 10: return 3; /* paused */
+	case 2:  return 4; /* being built */
+	case 6:  return 4; /* being built, has failures */
+	case 3:  return 6; /* passed */
+	case 4:  return 7; /* failed */
+	case 5:  return 8; /* cancelled */
+	case 7:  return 9; /* deleted */
+	}
+	return 10;
+}
+
+function sai_tt_sort_get()
+{
+	if (sai_tt_sort)
+		return sai_tt_sort;
+
+	sai_tt_sort = { key: "taskname", dir: 1 };
+	try {
+		var j = JSON.parse(localStorage.getItem(SAI_TT_SORT_LS));
+		if (j && sai_tt_columns.some(function(c) { return c.key === j.key; }))
+			sai_tt_sort = { key: j.key, dir: j.dir < 0 ? -1 : 1 };
+	} catch (e) {}
+
+	return sai_tt_sort;
+}
+
+/* a column header was clicked: make it primary, or flip its direction */
+function sai_tt_sort_click(key)
+{
+	var so = sai_tt_sort_get();
+
+	if (so.key === key)
+		so.dir = -so.dir;
+	else {
+		so.key = key;
+		so.dir = 1;
+	}
+	try {
+		localStorage.setItem(SAI_TT_SORT_LS, JSON.stringify(so));
+	} catch (e) {}
+
+	document.querySelectorAll("table.tt").forEach(function(tab) {
+		sai_tt_mark_header(tab);
+		sai_tt_resort(tab);
+	});
+}
+
+function sai_tt_mark_header(tab)
+{
+	var so = sai_tt_sort_get();
+
+	tab.querySelectorAll("th.tt-th").forEach(function(th) {
+		th.classList.remove("sort-asc", "sort-desc");
+		if (th.dataset.key === so.key)
+			th.classList.add(so.dir > 0 ? "sort-asc" : "sort-desc");
+	});
+}
+
+/* the latest run of each task uuid, keyed by uuid */
+function sai_tt_latest_runs(tasks)
+{
+	var run_max = {};
+
+	for (var q = 0; q < tasks.length; q++) {
+		var tx = tasks[q];
+		var ru = typeof tx.run !== 'undefined' ? tx.run : 0;
+		var cur = run_max[tx.uuid];
+
+		if (!cur || ru > (typeof cur.run !== 'undefined' ? cur.run : 0))
+			run_max[tx.uuid] = tx;
+	}
+
+	return run_max;
+}
+
+function sai_tt_is_ongoing(state)
+{
+	return state === 1 || state === 2 || state === 6 || state === 10;
+}
+
+/* wallclock seconds the task took / has taken so far, or -1 if never started */
+function sai_tt_dur_secs(t, now_ut)
+{
+	if (t.duration)
+		return t.duration / 1000000;
+	if (t.started && sai_tt_is_ongoing(t.state))
+		return Math.max(0, now_ut - t.started);
+
+	return -1;
+}
+
+function sai_tt_fmt_dur(secs)
+{
+	if (secs < 0)
+		return "";
+
+	secs = Math.round(secs);
+	var h = Math.floor(secs / 3600),
+	    m = Math.floor((secs % 3600) / 60),
+	    sx = secs % 60;
+
+	if (h)
+		return h + "h " + m + "m " + sx + "s";
+	if (m)
+		return m + "m " + sx + "s";
+
+	return sx + "s";
+}
+
+/* total step count as reported, or 0 if unknown */
+function sai_tt_total_steps(t)
+{
+	var total = typeof t.total_steps !== 'undefined' ? t.total_steps :
+							 t.build_step_count;
+
+	return (typeof total !== 'undefined' && total > 0) ? total : 0;
+}
+
+/* text for the "Step" column: where the task is, or how it ended up */
+function sai_tt_step_html(t)
+{
+	var total = sai_tt_total_steps(t);
+	var have = total && typeof t.build_step !== 'undefined' && t.build_step >= 0;
+	var at = have ? " at step " + (t.build_step + 1) + "/" + total : "";
+	var s;
+
+	switch (t.state) {
+	case 0:  return "waiting";
+	case 1:  return "assigned";
+	case 2:
+	case 6:
+		s = have ? "step " + (t.build_step + 1) + "/" + total : "building";
+		if (t.state === 6)
+			s += " (failures)";
+		if (have) {
+			/* same percentage the left-hand view shades with */
+			var pct = Math.round((t.build_step + 1) * 100 / (total + 2));
+			pct = Math.min(100, Math.max(0, Math.round(pct / 5) * 5));
+			s += "<span class=\"tt-bar\"><span class=\"w-" + pct +
+			     "\"></span></span>";
+		}
+		return s;
+	case 3:  return "passed";
+	case 4:  return "failed" + at;
+	case 5:  return "cancelled";
+	case 7:  return "deleted";
+	case 8:  return "not ready";
+	case 10: return "paused" + at;
+	}
+
+	return "state " + t.state;
+}
+
+/*
+ * Sort keys live on the row as data- attributes, so re-sorting after a live
+ * state change is a pure DOM reorder and doesn't need the task list handy
+ */
+function sai_tt_row_keys(t)
+{
+	return {
+		run:	 typeof t.run !== 'undefined' ? t.run : 0,
+		state:	 t.state,
+		name:	 t.taskname,
+		plat:	 t.platform,
+		started: t.started ? t.started : 0,
+		dur:	 t.duration ? t.duration : 0,
+		step:	 (typeof t.build_step !== 'undefined' && t.build_step >= 0) ?
+				t.build_step : -1
+	};
+}
+
+function sai_tt_row_set_keys(tr, t)
+{
+	var k = sai_tt_row_keys(t);
+
+	for (var n in k)
+		tr.dataset[n] = k[n];
+}
+
+function sai_tt_row_html(t, e, now_ut)
+{
+	var s = "<tr id=\"tt_" + san(t.uuid) + "\" class=\"tt-row taskstate" + t.state +
+		(t.uuid === selected_task_uuid ? " selected" : "") + "\"" +
+		" data-task-uuid=\"" + san(t.uuid) + "\"" +
+		" data-event-uuid=\"" + san(e.uuid) + "\"" +
+		" data-platform=\"" + san(t.platform) + "\"" +
+		" data-rebuildable=\"" + t.rebuildable + "\"";
+	var k = sai_tt_row_keys(t);
+
+	for (var n in k)
+		s += " data-" + n + "=\"" + san(k[n]) + "\"";
+	s += ">";
+
+	s += "<td class=\"tt-name\">" + san(t.taskname) + "</td>";
+	s += "<td class=\"tt-plat\">" + sai_plat_icon(t.platform, 0) + " " +
+	     san(t.platform) + "</td>";
+	s += "<td class=\"tt-started\">" +
+	     (t.started ? agify(now_ut, t.started) + " ago" : "") + "</td>";
+	s += "<td class=\"tt-dur tt-num\">" +
+	     sai_tt_fmt_dur(sai_tt_dur_secs(t, now_ut)) + "</td>";
+	s += "<td class=\"tt-step\">" + sai_tt_step_html(t) + "</td>";
+	s += "</tr>";
+
+	return s;
+}
+
+/*
+ * Build the table HTML for an event's tasks.  Rows come out in task-list
+ * order; the caller runs sai_tt_resort() once the table is in the DOM so
+ * there's exactly one comparator.
+ */
+function sai_tt_render(o, now_ut)
+{
+	var so = sai_tt_sort_get();
+	var s = "<table class=\"tt\" data-event-uuid=\"" + san(o.e.uuid) +
+		"\"><thead><tr>";
+
+	sai_tt_columns.forEach(function(c) {
+		s += "<th class=\"tt-th" +
+		     (c.key === so.key ? (so.dir > 0 ? " sort-asc" : " sort-desc") : "") +
+		     "\" data-key=\"" + c.key + "\">" + c.label + "</th>";
+	});
+	s += "</tr></thead><tbody>";
+
+	var latest = sai_tt_latest_runs(o.t);
+	for (var u in latest)
+		s += sai_tt_row_html(latest[u], o.e, now_ut);
+
+	s += "</tbody></table>";
+
+	return s;
+}
+
+/* the sortable value of a row for the given column, or null if it has none */
+function sai_tt_row_key(tr, key, now_ut)
+{
+	var d = tr.dataset, state = parseInt(d.state);
+
+	switch (key) {
+	case "taskname":
+		return d.name;
+	case "platform":
+		return d.plat;
+	case "started":
+		return parseInt(d.started) > 0 ? parseInt(d.started) : null;
+	case "duration":
+		if (parseInt(d.dur) > 0)
+			return parseInt(d.dur) / 1000000;
+		if (parseInt(d.started) > 0 && sai_tt_is_ongoing(state))
+			return now_ut - parseInt(d.started);
+		return null;
+	case "step":
+		return sai_tt_state_rank(state) * 10000 + (parseInt(d.step) + 1);
+	}
+
+	return null;
+}
+
+function sai_tt_cmp_vals(a, b)
+{
+	if (typeof a === "number" && typeof b === "number")
+		return a - b;
+
+	return String(a).localeCompare(String(b));
+}
+
+/*
+ * Reorder the rows of a task table in place: failed first, then the user's
+ * primary key and direction (rows lacking a value for it go last either
+ * way), then task name and platform to keep the order stable
+ */
+function sai_tt_resort(tab)
+{
+	var tbody = tab ? tab.tBodies[0] : null;
+	if (!tbody)
+		return;
+
+	var so = sai_tt_sort_get();
+	var now_ut = Math.round((new Date().getTime() / 1000));
+	var rows = Array.prototype.slice.call(tbody.querySelectorAll("tr.tt-row"));
+
+	rows.sort(function(ra, rb) {
+		var fa = ra.dataset.state === "4" ? 0 : 1,
+		    fb = rb.dataset.state === "4" ? 0 : 1;
+
+		if (fa !== fb)
+			return fa - fb;
+
+		var ka = sai_tt_row_key(ra, so.key, now_ut),
+		    kb = sai_tt_row_key(rb, so.key, now_ut);
+
+		if (ka === null && kb !== null)
+			return 1;
+		if (kb === null && ka !== null)
+			return -1;
+		if (ka !== null) {
+			var c = sai_tt_cmp_vals(ka, kb);
+			if (c)
+				return so.dir * c;
+		}
+
+		var c2 = sai_tt_cmp_vals(ra.dataset.name, rb.dataset.name);
+		if (c2)
+			return c2;
+
+		return sai_tt_cmp_vals(ra.dataset.plat, rb.dataset.plat);
+	});
+
+	rows.forEach(function(r) { tbody.appendChild(r); });
+}
+
+/*
+ * A task state broadcast arrived: update the matching row's colour, sort
+ * keys and cells, then re-sort the table so it moves to where it belongs
+ */
+function sai_tt_refresh_row(t)
+{
+	var tr = document.getElementById("tt_" + t.uuid);
+	if (!tr)
+		return;
+
+	/* the row tracks the latest run only; ignore news about older ones */
+	var run = typeof t.run !== 'undefined' ? t.run : 0;
+	if (run < parseInt(tr.dataset.run))
+		return;
+
+	var now_ut = Math.round((new Date().getTime() / 1000));
+	var stale = [];
+
+	for (var i = 0; i < tr.classList.length; i++)
+		if (tr.classList[i].startsWith("taskstate"))
+			stale.push(tr.classList[i]);
+	stale.forEach(function(c) { tr.classList.remove(c); });
+	tr.classList.add("taskstate" + t.state);
+
+	sai_tt_row_set_keys(tr, t);
+	tr.dataset.rebuildable = t.rebuildable;
+
+	tr.cells[2].innerHTML = t.started ? agify(now_ut, t.started) + " ago" : "";
+	tr.cells[3].textContent = sai_tt_fmt_dur(sai_tt_dur_secs(t, now_ut));
+	tr.cells[4].innerHTML = sai_tt_step_html(t);
+
+	sai_tt_resort(tr.closest("table"));
+}
+
+/*
+ * Periodic: keep the duration of ongoing tasks ticking, and if that's the
+ * sort key, keep them in order too
+ */
+function sai_tt_tick()
+{
+	var rows = document.querySelectorAll("tr.tt-row");
+	if (!rows.length)
+		return;
+
+	var now_ut = Math.round((new Date().getTime() / 1000));
+	var live = 0;
+
+	rows.forEach(function(tr) {
+		var d = tr.dataset;
+
+		if (parseInt(d.dur) > 0 || !(parseInt(d.started) > 0) ||
+		    !sai_tt_is_ongoing(parseInt(d.state)))
+			return;
+
+		var txt = sai_tt_fmt_dur(now_ut - parseInt(d.started));
+		if (tr.cells[3].textContent !== txt)
+			tr.cells[3].textContent = txt;
+		live++;
+	});
+
+	if (live && sai_tt_sort_get().key === "duration")
+		document.querySelectorAll("table.tt").forEach(sai_tt_resort);
+}
+
+function sai_tt_set_selected(uuid)
+{
+	document.querySelectorAll("tr.tt-row").forEach(function(tr) {
+		tr.classList.toggle("selected", !!uuid && tr.dataset.taskUuid === uuid);
+	});
+}
+
+/* re-apply the remembered splitter position to a freshly rendered pane */
+function sai_tt_apply_split()
+{
+	var l = document.getElementById("sai_tasks_left");
+	if (!l)
+		return;
+
+	var f = null;
+	try {
+		f = localStorage.getItem(SAI_TT_SPLIT_LS);
+	} catch (e) {}
+	if (f)
+		l.style.flex = f;
+}
+
+/*
+ * Start dragging the splitter between the two task sub-panes.  The pane
+ * markup is rebuilt on every event refresh, so this is driven from a
+ * delegated mousedown / touchstart rather than a listener on the element.
+ */
+function sai_tt_split_begin(left, x0)
+{
+	var w0 = left.getBoundingClientRect().width;
+
+	var apply = function(x) {
+		var w = Math.round(w0 + (x - x0));
+		if (w < 20)
+			w = 0;
+		/* shrinkable, so a remembered width wider than the pane can't hide the table */
+		left.style.flex = "0 1 " + w + "px";
+	};
+	var finish = function() {
+		document.removeEventListener('mousemove', mm);
+		document.removeEventListener('mouseup', finish);
+		document.removeEventListener('touchmove', tm);
+		document.removeEventListener('touchend', finish);
+		try {
+			localStorage.setItem(SAI_TT_SPLIT_LS, left.style.flex);
+		} catch (e) {}
+	};
+	var mm = function(e) { apply(e.clientX); };
+	var tm = function(e) {
+		if (e.touches.length === 1) {
+			apply(e.touches[0].clientX);
+			e.preventDefault();
+		}
+	};
+
+	document.addEventListener('mousemove', mm);
+	document.addEventListener('mouseup', finish);
+	document.addEventListener('touchmove', tm, { passive: false });
+	document.addEventListener('touchend', finish);
+}
+
 function render_selected_event_tasks(o) {
 	var now_ut = Math.round((new Date().getTime() / 1000));
 	var s = "";
@@ -2049,6 +2520,13 @@ function render_selected_event_tasks(o) {
 	s += "</div>";
 
 	if (o.t && o.t.length) {
+		/*
+		 * Below the full-width header, two sub-panes with a draggable
+		 * splitter: the sectionalized view on the left, the sortable
+		 * task table on the right
+		 */
+		s += "<div class=\"tasks-split\">" +
+		     "<div class=\"tasks-split-left\" id=\"sai_tasks_left\">";
 		s += "<table class=\"tasks-table-display\"><tr><td class=\"tasks\" id=\"taskcont-" + san(e.uuid) + "\">";
 
 		var run_max = {}, run_list = {};
@@ -2085,6 +2563,7 @@ function render_selected_event_tasks(o) {
 
 			s1 += "<div id=\"taskstate_" + t.uuid + "\" class=\"taskstate taskstate" + t.state +
 				(run_list[t.uuid].length > 1 ? " has_runs" : "") +
+				"\" data-task-uuid=\"" + san(t.uuid) +
 				"\" data-event-uuid=\"" + san(e.uuid) + "\" data-platform=\"" + san(t.platform) +
 				"\" data-rebuildable=\"" + t.rebuildable + "\">";
 			s1 += "<a href=\"index.html?task=" + t.uuid + "\">" +
@@ -2111,14 +2590,41 @@ function render_selected_event_tasks(o) {
 		}
 
 		s += "</td></tr></table>";
+		s += "</div>" +
+		     "<div class=\"resizer-v\" id=\"resizer_tasks\"></div>" +
+		     "<div class=\"tasks-split-right\" id=\"sai_tasks_right\">" +
+		     sai_tt_render(o, now_ut) +
+		     "</div></div>";
 	} else {
 		s += "<div class=\"no-tasks\">No tasks for this event</div>";
 	}
 
 	var container = document.getElementById("sai_event_tasks");
 	if (container) {
+		/*
+		 * The pane is rebuilt on every overview refresh; carry the
+		 * sub-panes' scroll positions across so it doesn't jump
+		 */
+		var lp = document.getElementById("sai_tasks_left"),
+		    rp = document.getElementById("sai_tasks_right");
+		var l_top = lp ? lp.scrollTop : 0,
+		    r_top = rp ? rp.scrollTop : 0,
+		    r_left = rp ? rp.scrollLeft : 0;
+
 		container.innerHTML = s;
-		
+
+		sai_tt_apply_split();
+		sai_tt_resort(container.querySelector("table.tt"));
+
+		lp = document.getElementById("sai_tasks_left");
+		rp = document.getElementById("sai_tasks_right");
+		if (lp)
+			lp.scrollTop = l_top;
+		if (rp) {
+			rp.scrollTop = r_top;
+			rp.scrollLeft = r_left;
+		}
+
 		// Refresh progress bars for these tasks
 		if (o.t) {
 			for (var q = 0; q < o.t.length; q++) {
@@ -2137,6 +2643,7 @@ function clear_task_view()
 {
 	selected_task_uuid = null;
 	window.current_task_run = null;
+	sai_tt_set_selected(null);
 	var stickyEl = document.getElementById("sai_sticky");
 	var overviewEl = document.getElementById("sai_overview");
 	/* on a gitohashi page the sticky is the overview strip, not a task view */
@@ -2213,6 +2720,7 @@ function init_task_logs_dom() {
 function selectTask(taskUuid, runVal) {
 	selected_task_uuid = taskUuid;
 	window.current_task_run = runVal;
+	sai_tt_set_selected(taskUuid);
 
 	// Update URL query parameters dynamically (fully relative)
 	var par = new URLSearchParams(window.location.search);
@@ -2418,6 +2926,8 @@ function refresh_state(t)
 			}
 		}
 	});
+
+	sai_tt_refresh_row(t);
 
 	const urlParams = new URLSearchParams(window.location.search);
 	const urlTask = urlParams.get('task');
@@ -4567,6 +5077,17 @@ window.addEventListener("load", function() {
 			var id = hdr.id.substring(8);
 			toggleSegment(id);
 		}
+		/* task table: column header picks the sort, row picks the task */
+		var tth = e.target.closest('th.tt-th');
+		if (tth) {
+			sai_tt_sort_click(tth.dataset.key);
+			return;
+		}
+		var ttr = e.target.closest('tr.tt-row');
+		if (ttr) {
+			selectTask(ttr.dataset.taskUuid, '-1');
+			return;
+		}
 		var pbtn = e.target.closest('.sai-pagination-btn');
 		if (pbtn) {
 			if (window.change_page) {
@@ -4773,6 +5294,7 @@ window.addEventListener("load", function() {
 
 	setInterval(function() {
 		update_task_activities();
+		sai_tt_tick();
 
 	    var locked = document.body.scrollHeight -
 		document.body.clientHeight <= document.body.scrollTop + 1;
@@ -4789,7 +5311,8 @@ window.addEventListener("load", function() {
 
 		// find the taskstate div parent
 		while (target && target !== document.body) {
-			if (target.classList && target.classList.contains("taskstate")) {
+			if (target.classList && (target.classList.contains("taskstate") ||
+						 target.classList.contains("tt-row"))) {
 				taskDiv = target;
 				break;
 			}
@@ -4799,7 +5322,7 @@ window.addEventListener("load", function() {
 		if (taskDiv && auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
 			event.preventDefault();
 
-			const taskUuid = taskDiv.id.substring(10);
+			const taskUuid = taskDiv.dataset.taskUuid || taskDiv.id.substring(10);
 			const eventUuid = taskDiv.dataset.eventUuid;
 			const platform = taskDiv.dataset.platform;
 
@@ -4897,6 +5420,24 @@ window.addEventListener("load", function() {
 			createContextMenu(event, menuItems);
 		}
 	});
+	/*
+	 * Splitter between the two task sub-panes: delegated, because the
+	 * tasks pane markup is regenerated on every event refresh
+	 */
+	document.addEventListener('mousedown', function(e) {
+		var rz = e.target.closest ? e.target.closest('.resizer-v') : null;
+		if (!rz || !rz.previousElementSibling)
+			return;
+		e.preventDefault();
+		sai_tt_split_begin(rz.previousElementSibling, e.clientX);
+	});
+	document.addEventListener('touchstart', function(e) {
+		var rz = e.target.closest ? e.target.closest('.resizer-v') : null;
+		if (!rz || !rz.previousElementSibling || e.touches.length !== 1)
+			return;
+		sai_tt_split_begin(rz.previousElementSibling, e.touches[0].clientX);
+	}, { passive: true });
+
 	const resizer = document.getElementById('resizer');
 	if (resizer) {
 		const rightPane = resizer.nextElementSibling;
