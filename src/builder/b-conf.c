@@ -367,6 +367,7 @@ saib_config_global(struct sai_builder *builder, const char *d)
 	lwsl_info("%s: %s\n", __func__, (char *)buf);
 	lejp_construct(&ctx, saib_conf_global_cb, &a,
 			paths_global, LWS_ARRAY_SIZE(paths_global));
+	sai_lejp_enable_comments(&ctx);
 
 	do {
 		n = (int)read(fd, buf, sizeof(buf));
@@ -407,6 +408,7 @@ saib_config(struct sai_builder *builder, const char *d)
 	}
 	lwsl_notice("%s: %s\n", __func__, (char *)buf);
 	lejp_construct(&ctx, saib_conf_cb, &a, paths, LWS_ARRAY_SIZE(paths));
+	sai_lejp_enable_comments(&ctx);
 
 	do {
 		n = (int)read(fd, buf, sizeof(buf));

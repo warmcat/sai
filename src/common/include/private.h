@@ -23,6 +23,17 @@
 
 #include <libwebsockets.h>
 
+/*
+ * lws made lejp '#' to-end-of-line comments opt-in (LEJP_FLAG_FEAT_COMMENTS);
+ * .sai.json and the /etc/sai conf files document comment support, so opt
+ * their parsers in.  Older lws accepted comments unconditionally.
+ */
+#if defined(LEJP_FLAG_FEAT_COMMENTS)
+#define sai_lejp_enable_comments(_ctx) ((_ctx)->flags |= LEJP_FLAG_FEAT_COMMENTS)
+#else
+#define sai_lejp_enable_comments(_ctx) do { (void)(_ctx); } while (0)
+#endif
+
 #if defined(WIN32)
 #define HAVE_STRUCT_TIMESPEC
 #endif

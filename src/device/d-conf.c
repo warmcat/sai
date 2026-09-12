@@ -215,6 +215,7 @@ said_config_global(struct sai_devices *devices, const char *d)
 	lwsl_info("%s: %s\n", __func__, (char *)buf);
 	lejp_construct(&ctx, said_conf_global_cb, &a,
 			paths_global, LWS_ARRAY_SIZE(paths_global));
+	sai_lejp_enable_comments(&ctx);
 
 	do {
 		n = (int)read(fd, buf, sizeof(buf));

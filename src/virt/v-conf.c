@@ -103,6 +103,7 @@ saiv_conf_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 
 	memset(&vctx, 0, sizeof(vctx));
 	lejp_construct(&ctx, saiv_conf_plat_cb, &vctx, paths_plat, LWS_ARRAY_SIZE(paths_plat));
+	sai_lejp_enable_comments(&ctx);
 
 	while ((n = read(fd, buf, sizeof(buf))) > 0) {
 		m = lejp_parse(&ctx, buf, (int)n);
@@ -188,6 +189,7 @@ saiv_config_global(struct sai_virt *virt, const char *filepath)
 	}
 
 	lejp_construct(&ctx, saiv_conf_global_cb, virt, paths_global, LWS_ARRAY_SIZE(paths_global));
+	sai_lejp_enable_comments(&ctx);
 
 	while ((n = read(fd, buf, sizeof(buf))) > 0) {
 		m = lejp_parse(&ctx, buf, (int)n);
