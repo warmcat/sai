@@ -134,7 +134,7 @@ endif()
 include_directories(${CMAKE_BINARY_DIR})
 add_custom_target(sai_git_hash ALL
     COMMAND ${CMAKE_COMMAND}
-    -DCMAKE_SOURCE_DIR=${CMAKE_SOURCE_DIR}
+    -DSAI_SOURCE_DIR=${CMAKE_SOURCE_DIR}
     -DCPACK_PACKAGE_VERSION=${CPACK_PACKAGE_VERSION}
     -DOUTPUT_FILE=${CMAKE_BINARY_DIR}/sai-git-hash.h
     -P ${CMAKE_SOURCE_DIR}/cmake/GetGitHash.cmake
