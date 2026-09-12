@@ -5424,8 +5424,13 @@ window.addEventListener("load", function() {
 		var rz = e.target.closest ? e.target.closest('.resizer-v') : null;
 		if (!rz || !rz.previousElementSibling || e.touches.length !== 1)
 			return;
+		/*
+		 * Claim the gesture: no pan of the surrounding scrollers, and
+		 * no synthesized mousedown after touchend starting a second drag
+		 */
+		e.preventDefault();
 		sai_tt_split_begin(rz.previousElementSibling, e.touches[0].clientX);
-	}, { passive: true });
+	}, { passive: false });
 
 	const resizer = document.getElementById('resizer');
 	if (resizer) {

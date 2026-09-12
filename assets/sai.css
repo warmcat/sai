@@ -1229,6 +1229,7 @@ table.comp.adhoc {
   cursor: ew-resize;
   background-color: #ccc;
   flex-shrink: 0;
+  touch-action: none;
 }
 
 .step-progress {
@@ -2203,6 +2204,7 @@ div.ibuil.vm-builder {
 	cursor: ns-resize;
 	background-color: #ccc;
 	flex-shrink: 0;
+	touch-action: none;
 }
 
 .event-tasks-header {
@@ -2448,12 +2450,18 @@ td.e6 a:hover {
 	overflow: auto;
 }
 
+/*
+ * 13px wide hit target (finger-friendly) drawing the same 5px bar the
+ * other resizers use; touch-action: none so the browser doesn't turn a
+ * touch drag into a pan of the surrounding scrollers
+ */
 .resizer-v {
-	width: 5px;
-	margin: 0 4px;
+	width: 13px;
 	cursor: ew-resize;
-	background-color: #ccc;
+	background: linear-gradient(to right, transparent 4px, #ccc 4px,
+				    #ccc 9px, transparent 9px);
 	flex-shrink: 0;
+	touch-action: none;
 }
 
 /* the task table itself */
