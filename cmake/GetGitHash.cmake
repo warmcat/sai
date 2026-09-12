@@ -1,19 +1,29 @@
+# Run in cmake script mode (-P) by the sai_git_hash target.
+#
+# Note: in script mode CMAKE_SOURCE_DIR is forced to the current working
+# directory, so the caller must pass the checkout under SAI_SOURCE_DIR.
+
+set(GIT_HASH "unknown")
+
+if(NOT SAI_SOURCE_DIR)
+    set(SAI_SOURCE_DIR "${CMAKE_SOURCE_DIR}")
+endif()
+
 find_package(Git)
 if(GIT_EXECUTABLE)
     execute_process(
         COMMAND "${GIT_EXECUTABLE}" describe --tags --always
-        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        WORKING_DIRECTORY "${SAI_SOURCE_DIR}"
         RESULT_VARIABLE GIT_RESULT
-        OUTPUT_VARIABLE GIT_HASH
+        OUTPUT_VARIABLE GIT_OUT
         OUTPUT_STRIP_TRAILING_WHITESPACE
         ERROR_QUIET
     )
-    if(NOT GIT_RESULT EQUAL 0)
-        # Git failed (e.g. running as root in a user directory)
-        return()
+    # Git can fail (e.g. running as root in a user directory, or not a
+    # checkout); fall through with "unknown" so the header always exists.
+    if(GIT_RESULT EQUAL 0 AND NOT "${GIT_OUT}" STREQUAL "")
+        set(GIT_HASH "${GIT_OUT}")
     endif()
-else()
-    set(GIT_HASH "unknown")
 endif()
 
 set(NEW_HASH_FILE_CONTENT "#define SAI_BUILD_INFO \"${CPACK_PACKAGE_VERSION}-${GIT_HASH}\"\n")
