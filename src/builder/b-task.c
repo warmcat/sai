@@ -461,9 +461,7 @@ saib_task_destroy(struct sai_nspawn *ns)
 			    __func__, ns->task->uuid, ns->task->build_step_count, ns->inp);
 #if defined(LWS_WITH_STUB)
 		if (builder.mgr_deletion) {
-			char json[256];
-			lws_snprintf(json, sizeof(json), "{\"delete\": \"%s\"}", ns->inp_vn);
-			if (lws_stub_request(builder.mgr_deletion, json, NULL, 0, NULL, NULL, NULL) < 0)
+			if (saib_deletion_request(ns->inp_vn) < 0)
 				lwsl_err("%s: failed to queue deletion\n", __func__);
 		}
 #endif

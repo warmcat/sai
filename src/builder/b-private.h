@@ -375,6 +375,8 @@ extern int
 saib_power_init(void);
 extern int
 saib_deletion_init(const char *argv0);
+int
+saib_deletion_request(const char *job);
 extern void
 suspender_destroy(void);
 int

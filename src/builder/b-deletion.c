@@ -98,9 +98,20 @@ sai_rm_rf_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 	return 0;
 }
 
+/*
+ * Shared between sai_deletion_worker() (whose frame never returns while the
+ * stub lives) and the UDS protocol via the vhost user pointer.
+ */
+struct deletion_worker_state {
+	const char	*home_dir;
+	const char	*secret;
+};
+
 struct child_conn {
 	struct lejp_ctx jctx;
+	const char *secret;		/* the stub secret, from stdin */
 	char home_dir[PATH_MAX];
+	unsigned int authenticated:1;
 };
 
 static signed char
@@ -108,10 +119,35 @@ child_lejp_cb(struct lejp_ctx *ctx, char reason)
 {
 	struct child_conn *conn = (struct child_conn *)ctx->user;
 
+	if (reason == LEJPCB_VAL_STR_END && !strcmp(ctx->path, "secret")) {
+		/*
+		 * Every request must carry the exact 128-char stub secret.
+		 * The socket is owner-only as well, but this is the gate that
+		 * distinguishes the parent from anything else running as our
+		 * uid.  Compare in constant time and fixed length.
+		 */
+		if (strlen(ctx->buf) != 128 ||
+		    lws_timingsafe_bcmp(ctx->buf, conn->secret, 128)) {
+			lwsl_warn("%s: bad stub secret, dropping connection\n",
+				  __func__);
+			return -1;
+		}
+
+		conn->authenticated = 1;
+
+		return 0;
+	}
+
 	if (reason == LEJPCB_VAL_STR_END && !strcmp(ctx->path, "delete")) {
 		struct lws_dir_info di;
 		char full_path[PATH_MAX];
 		struct stat st;
+
+		if (!conn->authenticated) {
+			lwsl_warn("%s: delete request without secret, ignoring\n",
+				  __func__);
+			return -1;
+		}
 
 		lwsl_notice("%s: received delete request for '%s'\n", __func__, ctx->buf);
 
@@ -164,7 +200,7 @@ child_lejp_cb(struct lejp_ctx *ctx, char reason)
 	return 0;
 }
 
-static const char * const child_paths[] = { "delete" };
+static const char * const child_paths[] = { "secret", "delete" };
 
 static int
 callback_sai_deletion_uds(struct lws *wsi, enum lws_callback_reasons reason,
@@ -174,16 +210,22 @@ callback_sai_deletion_uds(struct lws *wsi, enum lws_callback_reasons reason,
 
 	switch (reason) {
 	case LWS_CALLBACK_RAW_ADOPT:
-		/* Get home_dir from vhost user data */
+		/* Get home_dir + secret from vhost user data */
 		{
-			const char *vuser = (const char *)lws_get_vhost_user(lws_get_vhost(wsi));
-			lwsl_notice("%s: ADOPT: vhost user is '%s'\n", __func__, vuser ? vuser : "NULL");
-			lws_strncpy(conn->home_dir, vuser ? vuser : "", sizeof(conn->home_dir));
-			lwsl_notice("%s: ADOPT: conn->home_dir set to '%s'\n", __func__, conn->home_dir);
+			struct deletion_worker_state *vuser =
+				(struct deletion_worker_state *)
+					lws_get_vhost_user(lws_get_vhost(wsi));
+
+			if (!vuser) {
+				lwsl_err("%s: ADOPT: no vhost user data\n", __func__);
+				return -1;
+			}
+			lws_strncpy(conn->home_dir, vuser->home_dir,
+				    sizeof(conn->home_dir));
+			conn->secret = vuser->secret;
 		}
-		/* We would normally verify the secret here, but for simplicity we skip it 
-		   since it's a local UDS with 0600 perms. */
-		lejp_construct(&conn->jctx, child_lejp_cb, conn, child_paths, 1);
+		lejp_construct(&conn->jctx, child_lejp_cb, conn, child_paths,
+			       LWS_ARRAY_SIZE(child_paths));
 		break;
 
 	case LWS_CALLBACK_RAW_RX: {
@@ -235,9 +277,13 @@ extern void crash_handler(int signum);
 int
 sai_deletion_worker(const char *home_dir_unused)
 {
+	struct deletion_worker_state wstate;
 	struct lws_context_creation_info info;
 	struct lws_context *cx;
 	struct lws_vhost *vh_uds;
+#if !defined(WIN32)
+	mode_t om;
+#endif
 	char uds[256];
 	char secret[129];
 	char home_dir[PATH_MAX];
@@ -297,26 +343,40 @@ sai_deletion_worker(const char *home_dir_unused)
 
 	lws_snprintf(uds, sizeof(uds), "%s/sai-deletion.sock", home_dir);
 
+	wstate.home_dir = home_dir;
+	wstate.secret = secret;
+
 	/* 4. Create UDS server vhost */
 	memset(&info, 0, sizeof(info));
 	info.options = LWS_SERVER_OPTION_UNIX_SOCK | LWS_SERVER_OPTION_ONLY_RAW;
 	info.iface = uds;
 	info.protocols = protocol_deletion_uds;
 	info.vhost_name = "sai-deletion";
-	
-	/* Pass the home_dir via pvo to the protocol so it can be extracted in protocol init */
-	/* Actually, we can just pass it via user pointer for the protocol! */
-	info.user = home_dir;
+	info.user = &wstate;
 
+	/*
+	 * bind() inside lws_create_vhost() creates the socket file with its
+	 * mode masked by the process umask, so that is the only place the
+	 * mode can be decided without a window where it is wrong: a chmod()
+	 * afterwards leaves a window where the socket is connectable by more
+	 * than our own uid.  So bind under a tightened umask instead and do
+	 * not chmod the path at all (mirrors lws_stub_server_init()).
+	 */
+
+#if !defined(WIN32)
+	om = umask(0077);
+#endif
 	unlink(info.iface);
 	vh_uds = lws_create_vhost(cx, &info);
+#if !defined(WIN32)
+	umask(om);
+#endif
+
 	if (!vh_uds) {
 		lwsl_err("%s: Failed to create UDS vhost\n", __func__);
 		return 1;
 	}
 
-	if (chmod(info.iface, 0600) < 0)
-		lwsl_warn("%s: failed to chmod UDS %s: %s\n", __func__, info.iface, strerror(errno));
 	lwsl_notice("STUB-READY (sai-deletion)\n");
 
 	while (lws_service(cx, 0) >= 0)
@@ -420,11 +480,8 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 			    __func__, path, (unsigned long long)age);
 
 #if defined(LWS_WITH_STUB)
-					if (builder.mgr_deletion) {
-						char json[256];
-						lws_snprintf(json, sizeof(json), "{\"delete\": \"%s\"}", lde->name);
-						lws_stub_request(builder.mgr_deletion, json, NULL, 0, NULL, NULL, NULL);
-					}
+					if (builder.mgr_deletion)
+						saib_deletion_request(lde->name);
 #endif
 	} else {
 		struct inactive_job *ij = lwsac_use_zero(&ctx->ac, sizeof(*ij), 0);
@@ -499,11 +556,8 @@ saib_deletion_free_kib(unsigned int needed_kib)
 					__func__, needed_kib / 1024, free_kib / 1024, sorted[n]->name, (unsigned long long)sorted[n]->age);
 
 #if defined(LWS_WITH_STUB)
-				if (builder.mgr_deletion) {
-					char json[256];
-					lws_snprintf(json, sizeof(json), "{\"delete\": \"%s\"}", sorted[n]->name);
-					lws_stub_request(builder.mgr_deletion, json, NULL, 0, NULL, NULL, NULL);
-				}
+				if (builder.mgr_deletion)
+					saib_deletion_request(sorted[n]->name);
 #endif
 			}
 		}
@@ -664,6 +718,33 @@ sai_deletion_connected_cb(struct lws_stub_manager *mgr)
 	lwsl_notice("%s: scheduling initial cleanup immediately upon connection\n", __func__);
 	lws_sul_schedule(builder.context, 0, &builder.sul_cleanup_jobs,
 			 sul_cleanup_jobs_cb, 1);
+}
+
+/*
+ * Queue a fire-and-forget deletion of job dir \p job (a name under
+ * <home>/jobs/) with the deletion stub.  Every request embeds the stub's
+ * 128-char secret: the stub refuses any delete that did not prove it, which
+ * is what distinguishes us from anything else that managed to connect to
+ * the owner-only UDS.
+ */
+int
+saib_deletion_request(const char *job)
+{
+	const char *secret;
+	char json[384];
+
+	if (!builder.mgr_deletion)
+		return -1;
+
+	secret = lws_stub_get_secret(builder.mgr_deletion);
+	if (!secret)
+		return -1;
+
+	lws_snprintf(json, sizeof(json),
+		     "{\"secret\":\"%s\",\"delete\":\"%s\"}", secret, job);
+
+	return lws_stub_request(builder.mgr_deletion, json, NULL, 0,
+				NULL, NULL, NULL);
 }
 
 static int
