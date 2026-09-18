@@ -289,6 +289,25 @@ local_srv_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	if (g->a.top_schema_index == 0) {
 		sai_builder_registration_t *r = (sai_builder_registration_t *)g->a.dest;
 
+		/*
+		 * Registration creates and retargets PCONs, rebinds
+		 * builder->PCON mappings and sets the URLs sai-power will
+		 * then fetch from its own network position, so it has to
+		 * prove the fleet link secret (the same "link-key" conf
+		 * sai-server authenticates builders with) before anything
+		 * from it is applied.  Fail closed when we have no key
+		 * configured, and compare in constant time.
+		 */
+		if (!power.link_key ||
+		    strlen(r->secret) != strlen(power.link_key) ||
+		    lws_timingsafe_bcmp(r->secret, power.link_key,
+				    (uint32_t)strlen(power.link_key))) {
+			lwsl_ss_warn(h, "registration without a valid link "
+					"secret, dropping");
+			lwsac_free(&g->a.ac);
+			return LWSSSSRET_DISCONNECT_ME;
+		}
+
 		lwsl_ss_notice(h, "Registered builder '%s' on pcon '%s'",
 			    r->builder_name, r->power_controller_name);
 

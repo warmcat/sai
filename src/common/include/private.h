@@ -313,6 +313,9 @@ struct sai_nspawn {
 	lws_sorted_usec_list_t		sul_mirror;
 	lws_sorted_usec_list_t		sul_task_cancel;
 
+	/* builder: sai_artifact_t of uploads still in flight for this ns */
+	lws_dll2_owner_t		artifact_owner;
+
 	sai_plat_t			*sp; /* the sai_plat */
 	struct sai_plat_server		*spm; /* the sai plat / server with the ss / wsi */
 
@@ -345,6 +348,7 @@ struct sai_nspawn {
 	uint8_t				user_cancel:1;
 	uint8_t				user_killed:1;
 	uint8_t				reap_cb_called:1;
+	uint8_t				destroying:1;
 };
 
 /*
@@ -870,6 +874,7 @@ typedef struct sai_builder_registration {
 	char				power_off_type[16];
 	char				power_off_url[128];
 	char				power_monitor_url[128];
+	char				secret[129]; /* fleet link-key (wire only) */
 } sai_builder_registration_t;
 
 typedef struct tasmota_data {
@@ -971,7 +976,7 @@ extern const lws_struct_map_t
 	lsm_build_metric[14],
 	lsm_plat[14], /* +1 for pcon */
 	lsm_builder_platform[1],
-	lsm_builder_registration[9],
+	lsm_builder_registration[10],
 	lsm_schema_sq3_map_power_controller[1],
 	lsm_schema_sq3_map_controlled_builder[1],
 	lsm_schema_builder_registration[1],
@@ -1038,7 +1043,7 @@ sai_is_safe_ref(const char *s);
 /*
  * The .sai.json "artifacts" field is repo-controlled and reaches the
  * builder as a comma-separated list of globs, possibly with a path part
- * before the first '*', eg "build/*.rpm,*.tar.gz".  The builder scans
+ * before the first '*', eg "build/ *.rpm,*.tar.gz".  The builder scans
  * them under the per-instance build dir and renames what it matches into
  * its uploads dir, so a pattern whose path part climbs out of the
  * instance dir (a ".." component, an absolute pattern, or a windows

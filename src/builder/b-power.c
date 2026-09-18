@@ -109,6 +109,17 @@ saib_power_client_state(void *userobj, void *sh, lws_ss_constate_t state,
 		if (builder.power_monitor_url)
 			lws_strncpy(r.power_monitor_url, builder.power_monitor_url, sizeof(r.power_monitor_url));
 
+		/*
+		 * sai-power refuses the registration without the fleet link
+		 * secret
+		 */
+		if (!builder.link_key)
+			lwsl_err("%s: no link-key in conf, sai-power will "
+				 "refuse our registration\n", __func__);
+		else
+			lws_strncpy(r.secret, builder.link_key,
+				    sizeof(r.secret));
+
 		/* Add platforms */
 		lws_start_foreach_dll(struct lws_dll2 *, d, builder.sai_plat_owner.head) {
 			sai_plat_t *sp = lws_container_of(d, sai_plat_t, sai_plat_list);

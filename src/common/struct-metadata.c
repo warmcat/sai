@@ -478,6 +478,8 @@ const lws_struct_map_t lsm_builder_registration[] = {
 	LSM_CARRAY(sai_builder_registration_t, power_off_type, "power_off_type"),
 	LSM_CARRAY(sai_builder_registration_t, power_off_url, "power_off_url"),
 	LSM_CARRAY(sai_builder_registration_t, power_monitor_url, "power_monitor_url"),
+	/* deliberately not persisted in the sq3 map */
+	LSM_CARRAY(sai_builder_registration_t, secret, "secret"),
 };
 
 const lws_struct_map_t lsm_schema_builder_registration[] = {
