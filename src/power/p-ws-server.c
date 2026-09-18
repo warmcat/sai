@@ -475,6 +475,33 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 	case LWSSSCS_CONNECTED:
 		lwsl_ss_notice(sps->ss, "@@@@@@@@@@@@@@ sai-power CONNECTED to server");
+
+		/*
+		 * sai-server refuses to process anything from us until we
+		 * prove the fleet link secret, so it has to be the first
+		 * message on the (re)connection, ahead of the stay info.
+		 */
+		{
+			saip_server_link_t *m =
+				(saip_server_link_t *)lws_ss_to_user_object(sps->ss);
+			uint8_t abuf[LWS_PRE + 256];
+			size_t al;
+
+			if (!power.link_key)
+				lwsl_err("%s: no link-key in conf, sai-server "
+					 "will refuse us\n", __func__);
+
+			al = (size_t)lws_snprintf((char *)abuf + LWS_PRE,
+					sizeof(abuf) - LWS_PRE,
+					"{\"schema\":\"" SAI_LINKAUTH_SCHEMA
+					"\",\"secret\":\"%s\"}",
+					power.link_key ? power.link_key : "");
+
+			sai_ss_queue_frag_on_buflist_REQUIRES_LWS_PRE(sps->ss,
+					&m->bl_pwr_to_srv, abuf + LWS_PRE, al,
+					LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+		}
+
 		saip_queue_stay_info(sps);
 		break;
 

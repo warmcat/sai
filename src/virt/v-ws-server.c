@@ -266,6 +266,30 @@ saiv_server_state(void *userobj, void *sh, lws_ss_constate_t state,
 	case LWSSSCS_CONNECTED:
 		lwsl_notice("%s: Connected to sai-server\n", __func__);
 
+		/*
+		 * sai-server refuses to process anything from us until we
+		 * prove the fleet link secret, so it has to be the first
+		 * message on the (re)connection.
+		 */
+		{
+			uint8_t abuf[LWS_PRE + 256];
+			size_t al;
+
+			if (!virt.link_key)
+				lwsl_err("%s: no link-key in conf, sai-server "
+					 "will refuse us\n", __func__);
+
+			al = (size_t)lws_snprintf((char *)abuf + LWS_PRE,
+					sizeof(abuf) - LWS_PRE,
+					"{\"schema\":\"" SAI_LINKAUTH_SCHEMA
+					"\",\"secret\":\"%s\"}",
+					virt.link_key ? virt.link_key : "");
+
+			sai_ss_queue_frag_on_buflist_REQUIRES_LWS_PRE(g->ss,
+					&g->bl_tx, abuf + LWS_PRE, al,
+					LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+		}
+
 		sai_power_managed_builders_t pmb;
 		memset(&pmb, 0, sizeof(pmb));
 

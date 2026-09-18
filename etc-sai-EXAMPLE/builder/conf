@@ -2,6 +2,12 @@
         "perms":        "sai:nobody",
         "home":         "/home/sai",
         "host":         "bionic-noi",
+
+	# the fleet-wide secret sai-server's "link-key" pvo also has;
+	# the server refuses our connection without it
+	#
+	"link-key":	"34c8e17b90d2a6f5c1e8430b76af2915e0d4cbf68a27e19dd5b0f3c6e48a71d2",
+
 	"rebuild_script_user": "cd ~/libwebsockets/build && git fetch origin +main:m && git reset --hard m && make -j12 && cd ../../sai/build && git fetch origin +main:m && git reset --hard m && make -j12",
 	"rebuild_script_root": "cd /home/agreen/libwebsockets/build && make -j12 install && cd /home/agreen/sai/build && make -j12 install && systemctl restart sai-builder",
 

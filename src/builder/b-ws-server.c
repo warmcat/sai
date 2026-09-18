@@ -797,6 +797,33 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		lws_sul_schedule(builder.context, 0, &spm->sul_load_report,
 				 saib_sul_load_report_cb, 1);
 
+		/*
+		 * sai-server refuses to process anything from us until we
+		 * prove the fleet link secret, so it has to be the first
+		 * message on the (re)connection, ahead of the plats.
+		 */
+		{
+			uint8_t abuf[LWS_PRE + 256];
+			size_t al;
+
+			if (!builder.link_key)
+				lwsl_err("%s: no link-key in conf, "
+					 "sai-server will refuse us\n",
+					 __func__);
+
+			al = (size_t)lws_snprintf((char *)abuf + LWS_PRE,
+					sizeof(abuf) - LWS_PRE,
+					"{\"schema\":\"" SAI_LINKAUTH_SCHEMA
+					"\",\"secret\":\"%s\"}",
+					builder.link_key ?
+						builder.link_key : "");
+
+			if (saib_srv_queue_tx(spm->ss, abuf + LWS_PRE, al,
+					      LWSSS_FLAG_SOM |
+					      LWSSS_FLAG_EOM))
+				return -1;
+		}
+
 		if (saib_srv_queue_json_fragments_helper(spm->ss,
 				lsm_schema_map_plat,
 				LWS_ARRAY_SIZE(lsm_schema_map_plat),

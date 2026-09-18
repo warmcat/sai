@@ -4,6 +4,11 @@
         "hostname":     "virt-host-1",
         "max_vms":      4,
 
+        # the fleet-wide secret sai-server's "link-key" pvo also has;
+        # the server refuses our connection without it
+        #
+        "link-key":     "34c8e17b90d2a6f5c1e8430b76af2915e0d4cbf68a27e19dd5b0f3c6e48a71d2",
+
         "servers": [
                 {
                         "url": "wss://libwebsockets.org:4444/sai/builder"

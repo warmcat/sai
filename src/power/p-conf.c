@@ -33,6 +33,7 @@ static const char * const paths_global[] = {
 	"perms",
 	"wol-if",
 	"database",
+	"link-key",
 	"servers[].url",
 	"servers[]"
 };
@@ -41,6 +42,7 @@ enum enum_paths_global {
 	LEJPM_PERMS,
 	LEJPM_WOL_IF,
 	LEJPM_DATABASE,
+	LEJPM_LINK_KEY,
 	LEJPM_SERVERS_URL,
 	LEJPM_SERVERS
 };
@@ -97,6 +99,10 @@ saip_conf_global_cb(struct lejp_ctx *ctx, char reason)
 
 	case LEJPM_DATABASE:
 		pp = &a->power->database;
+		break;
+
+	case LEJPM_LINK_KEY:
+		pp = &a->power->link_key;
 		break;
 
 	case LEJPM_SERVERS_URL:

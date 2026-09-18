@@ -65,6 +65,9 @@ struct sai_virt {
 	const char		*perms;		/* user:group */
 	const char		*port;		/* port we listen on */
 
+	/* fleet secret shared with sai-server ("link-key" in conf) */
+	const char		*link_key;
+
 	char			hostname[64];
 
 	struct lwsac		*pending_tasks_ac;

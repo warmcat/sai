@@ -129,11 +129,13 @@ saiv_config(struct sai_virt *virt, const char *d)
 }
 
 static const char * const paths_global[] = {
+	"link-key",
 	"servers[].url",
 	"max_vms",
 };
 
 enum {
+	VJG_LINK_KEY,
 	VJG_SERVER_URL,
 	VJG_MAX_VMS,
 };
@@ -145,6 +147,10 @@ saiv_conf_global_cb(struct lejp_ctx *ctx, char reason)
 
 	if (reason == LEJPCB_VAL_STR_END) {
 		switch (ctx->path_match - 1) {
+		case VJG_LINK_KEY:
+			v->link_key = strdup(ctx->buf);
+			break;
+
 		case VJG_SERVER_URL:
 		{
 			saiv_server_t *srv = malloc(sizeof(*srv));

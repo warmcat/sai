@@ -173,6 +173,9 @@ struct sai_builder {
 	const char		*metrics_path;
 	const char		*metrics_secret;
 
+	/* fleet secret shared with sai-server ("link-key" in conf) */
+	const char		*link_key;
+
 	const char		*url_sai_power;
 	const char		*power_controller_name;
 

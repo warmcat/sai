@@ -74,6 +74,15 @@
                         #
 			"notification-key":	"51b3ee2f06ef2a893cfe901972bd13065d7dbae4cf087b396ee38e7bf78f79a6",
 
+			# The fleet-wide secret that builders and sai-power
+			# daemons must present in the first ws message on
+			# their connection, before anything else from them is
+			# processed.  sai-server refuses to start without it.
+			# Generate it the same way as notification-key and set
+			# the same value as "link-key" in every builder's and
+			# sai-power's conf.
+			#
+			"link-key":		"34c8e17b90d2a6f5c1e8430b76af2915e0d4cbf68a27e19dd5b0f3c6e48a71d2",
 			# Unix socket sai-server serves its control link for
 			# sai-web on.  The link is admin-equivalent, so give it
 			# a filesystem path: lws binds it before dropping

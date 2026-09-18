@@ -61,6 +61,14 @@
  */
 #define SAI_WEBSRV_UDS_DEFAULT "@com.warmcat.sai-websrv"
 
+/*
+ * Builders and sai-power daemons prove the fleet-wide link secret (conf
+ * "link-key" on all three daemons) in the first ws message on their
+ * connection to sai-server, before sai-server processes anything else from
+ * them.  This is the schema name of that message.
+ */
+#define SAI_LINKAUTH_SCHEMA "com.warmcat.sai.linkauth"
+
 #define SAI_BUILDER_INSTANCE_LIMIT 256
 
 struct sai_plat;
@@ -488,6 +496,7 @@ typedef struct {
 	size_t				len;
 	int				uid;
 	int				fd;
+	char				sent_auth;
 	char				sent_json;
 	int				run;
 } sai_artifact_t;

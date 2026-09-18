@@ -170,6 +170,9 @@ struct pss {
 	lws_struct_args_t	a;
 	struct lejp_ctx		ctx_power;
 
+	/* link auth state: parse of the first ws message from the peer */
+	struct lejp_ctx		auth_ctx;
+
 	const char		*server_name;
 
 	struct lwsac		*query_ac;
@@ -212,6 +215,8 @@ struct pss {
 	unsigned int		announced:1;
 	unsigned int		bulk_binary_data:1;
 	unsigned int		is_power:1;
+	unsigned int		link_authed:1;
+	unsigned int		auth_secret_ok:1;
 
 	uint8_t			ovstate; /* SOS_ substate when doing overview */
 };
@@ -264,6 +269,7 @@ struct vhd {
 	lws_usec_t		last_check_abandoned_tasks;
 
 	const char		*notification_key;
+	const char		*link_key; /* fleet secret builders / sai-power auth with */
 	const char		*websrv_sockpath; /* control link uds we serve */
 	unsigned int		task_abandoned_timeout_mins;
 

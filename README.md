@@ -95,6 +95,50 @@ the browser, with JWT-authentication for manual job control.
    most cases spend most of their time idle, this enables a very good optimization
    of average power down to nearly zero.
 
+## Link authentication ("link-key")
+
+sai-server's listener is expected to be reachable by distributed builders
+across the internet, so daemons connecting to it must prove a shared
+fleet-wide secret before sai-server treats them as part of the fleet.
+Without it, anyone who could reach the listener would count as a builder,
+able to register platforms, win real task dispatches (with the repo build
+script and artifact upload nonce) and forge task results.
+
+The first ws message on any connection to sai-server's `/sai/builder` or
+`/sai/power` endpoints must be
+
+```
+{"schema":"com.warmcat.sai.linkauth","secret":"<link-key>"}
+```
+
+sai-server compares the secret in constant time and processes nothing else
+from the peer until it is proven, dropping the connection on a wrong secret.
+The client daemons take care of this themselves and send the auth message
+ahead of their first messages on (re)connect: sai-builder (on its main and
+artifact links), sai-power and sai-virt.  sai-power also requires the same
+secret from builders registering with it over the LAN.
+
+Set up the same key on both sides, generating it as 64 hex chars from 32
+random bytes the same way as `notification-key`:
+
+```
+$ dd if=/dev/random bs=32 count=1 | sha256sum | cut -d' ' -f1
+```
+
+ - on sai-server, in the `vhosts|ws-protocols|com-warmcat-sai` section of
+   the config JSON next to `notification-key`... sai-server refuses to start
+   without it
+
+```
+			"link-key":		"<link-key>",
+```
+
+ - on every sai-builder, sai-power and sai-virt host, at the top level of
+   the daemon's conf, eg, `/etc/sai/builder/conf`
+
+```
+	"link-key":		"<link-key>",
+```
 ## sai-web <-> sai-server control link ("sockpath")
 
 sai-web is the only thing that talks to sai-server on behalf of browsers,

@@ -56,6 +56,23 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 
 	*flags = 0;
 
+	if (!ap->sent_auth) {
+		/*
+		 * This connection lands on sai-server's /builder endpoint
+		 * too, so the link auth message has to go out before the
+		 * artifact JSON + bulk data are accepted.
+		 */
+		*flags |= LWSSS_FLAG_SOM | LWSSS_FLAG_EOM;
+		*len = (size_t)lws_snprintf((char *)buf, *len,
+			 "{\"schema\":\"" SAI_LINKAUTH_SCHEMA
+			 "\",\"secret\":\"%s\"}",
+			 builder.link_key ? builder.link_key : "");
+
+		ap->sent_auth = 1;
+
+		return lws_ss_request_tx(ap->ss);
+	}
+
 	if (!ap->sent_json) {
 		*flags |= LWSSS_FLAG_SOM;
 

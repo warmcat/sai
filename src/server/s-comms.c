@@ -60,6 +60,84 @@ static const struct {
 	{ "sai sha512=", LWS_GENHMAC_TYPE_SHA512 },
 };
 
+/* paths of the link auth message's members we care about */
+static const char * const link_auth_paths[] = { "secret" };
+
+static signed char
+sais_link_auth_lejp_cb(struct lejp_ctx *ctx, char reason)
+{
+	struct pss *pss = (struct pss *)ctx->user;
+	struct vhd *vhd = pss->vhd;
+
+	if (reason == LEJPCB_VAL_STR_END && ctx->path_match == 1) {
+		size_t kl = strlen(vhd->link_key);
+
+		if (strlen(ctx->buf) != kl ||
+		    lws_timingsafe_bcmp(ctx->buf, vhd->link_key, (uint32_t)kl))
+			/* wrong secret... kill the parse */
+			return -1;
+
+		pss->auth_secret_ok = 1;
+	}
+
+	return 0;
+}
+
+/*
+ * The first ws message on a /builder or /power connection must prove the
+ * fleet link secret ({"schema":"com.warmcat.sai.linkauth","secret":...}).
+ * Nothing else from the peer is processed until it did: without this, any
+ * internet peer that could reach the listener was a "builder", able to
+ * register platforms, receive real task dispatches (with their build
+ * scripts and artifact upload nonces) and forge task results.
+ *
+ * Returns 0 to keep waiting / on success, or -1 to drop the connection.
+ */
+static int
+sais_link_auth_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl,
+		  unsigned int ss_flags)
+{
+	int n;
+
+	if (ss_flags & LWSSS_FLAG_SOM) {
+		lejp_construct(&pss->auth_ctx, sais_link_auth_lejp_cb, pss,
+			       link_auth_paths,
+			       LWS_ARRAY_SIZE(link_auth_paths));
+		pss->auth_secret_ok = 0;
+	}
+
+	n = lejp_parse(&pss->auth_ctx, buf, (int)bl);
+	if (n < 0 && n != LEJP_CONTINUE) {
+		lwsl_notice("%s: link auth JSON invalid, dropping\n", __func__);
+		return -1;
+	}
+
+	if (n == LEJP_CONTINUE) {
+		/* the auth message is not complete yet */
+
+		if (ss_flags & LWSSS_FLAG_EOM) {
+			lwsl_notice("%s: link auth incomplete at EOM, dropping\n",
+				  __func__);
+			return -1;
+		}
+
+		return 0;
+	}
+
+	/* the auth JSON completed */
+
+	if (!pss->auth_secret_ok) {
+		lwsl_notice("%s: link secret mismatch, dropping\n", __func__);
+		return -1;
+	}
+
+	pss->link_authed = 1;
+	lwsl_notice("%s: peer authenticated on %s\n", __func__,
+		    pss->is_power ? "/power" : "/builder");
+
+	return 0;
+}
+
 int
 sai_get_head_status(struct vhd *vhd, const char *projname)
 {
@@ -115,6 +193,16 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (lws_pvo_get_str(in, "notification-key",
 				    &vhd->notification_key)) {
 			lwsl_warn("%s: notification_key pvo required\n", __func__);
+			return -1;
+		}
+
+		/*
+		 * The fleet-wide secret builders and sai-power daemons must
+		 * present in their first ws message.  Required: without it
+		 * the builder/power endpoints are unauthenticated.
+		 */
+		if (lws_pvo_get_str(in, "link-key", &vhd->link_key)) {
+			lwsl_err("%s: link-key pvo required\n", __func__);
 			return -1;
 		}
 
@@ -596,7 +684,16 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		 * A ws client sent us something... it could be a builder or
 		 * it could be sai-power. We can tell which by the `is_power`
 		 * flag we set in the pss during ESTABLISHED.
+		 *
+		 * Either way, until it proved the link secret in its first
+		 * message, nothing else it sends is processed.
 		 */
+
+		if (!pss->link_authed) {
+			if (sais_link_auth_rx(vhd, pss, in, len, ssf) < 0)
+				return -1;
+			break;
+		}
 
 		if (pss->is_power) {
 			if (sais_power_rx(vhd, pss, in, len, ssf)) {

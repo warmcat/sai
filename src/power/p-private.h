@@ -143,6 +143,9 @@ struct sai_power {
 
 	const char		*wol_if;
 	const char		*database;
+
+	/* fleet secret shared with sai-server ("link-key" in conf) */
+	const char		*link_key;
 	
 	struct sqlite3		*pdb;
 
