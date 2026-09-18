@@ -295,6 +295,10 @@ int
 sais_validate_id(const char *id, int reqlen);
 
 int
+sais_buflist_append_bounded(struct lws_buflist **head, const uint8_t *buf,
+			    size_t len, size_t cap);
+
+int
 saiw_ws_json_tx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
 
 int

@@ -37,6 +37,13 @@
 
 #include "s-private.h"
 
+/*
+ * Sanity cap on the per-message power-link reassembly.  Real messages on
+ * this link (state updates, PCON topology, energy reports) are all small;
+ * the passthrough path buffers the whole message before forwarding.
+ */
+#define SAIS_POWER_RX_CACHE_MAX (64 * 1024)
+
 #if 0
 /*
  * (Structs and maps removed - now in common/include/private.h and common/struct-metadata.c)
@@ -97,8 +104,9 @@ sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	}
 
 	/* We always cache the fragment until we know what it is */
-	if (lws_buflist_append_segment(&pss->power_rx_cache, buf, bl) < 0) {
-		lwsl_err("%s: failed to append to power_rx_cache\n", __func__);
+	if (sais_buflist_append_bounded(&pss->power_rx_cache, buf, bl,
+					SAIS_POWER_RX_CACHE_MAX)) {
+		lwsl_err("%s: power link rx cache over cap / OOM\n", __func__);
 		return -1;
 	}
 

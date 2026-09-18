@@ -515,6 +515,9 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	case LWS_CALLBACK_CLOSED:
 		lwsac_free(&pss->query_ac);
 
+		/* a conn closed mid-message must not leak its reassembly */
+		lws_buflist_destroy_all_segments(&pss->power_rx_cache);
+
 		{
 			const unsigned char *cp = lws_get_close_payload(wsi);
 			int clen = lws_get_close_length(wsi);
@@ -562,7 +565,11 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		 */
 
 		if (pss->is_power) {
-			sais_power_rx(vhd, pss, in, len, ssf);
+			if (sais_power_rx(vhd, pss, in, len, ssf)) {
+				lwsl_err("%s: sais_power_rx returned error, dropping connection\n",
+					 __func__);
+				return -1;
+			}
 			break;
 		}
 

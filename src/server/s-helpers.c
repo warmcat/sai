@@ -65,6 +65,29 @@ reject:
 	return 1;
 }
 
+/*
+ * Append a rx fragment to a per-connection reassembly / forwarding buflist,
+ * enforcing a sanity cap on the total bytes buffered for the message.  A peer
+ * that sends SOM and then an endless stream of continuation fragments must
+ * not be able to grow server memory without bound waiting for an EOM that
+ * never comes.
+ *
+ * Returns 0 if appended, else nonzero (over the cap or OOM): callers should
+ * drop the connection.
+ */
+int
+sais_buflist_append_bounded(struct lws_buflist **head, const uint8_t *buf,
+			    size_t len, size_t cap)
+{
+	if (len > cap || lws_buflist_total_len(head) > cap - len)
+		return 1;
+
+	if (lws_buflist_append_segment(head, buf, len) < 0)
+		return 1;
+
+	return 0;
+}
+
 int
 sql3_get_integer_cb(void *user, int cols, char **values, char **name)
 {
