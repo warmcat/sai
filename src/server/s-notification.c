@@ -981,8 +981,8 @@ sai_notification_file_upload_cb(void *data, const char *name,
 
 		lws_genhmac_destroy(&pss->hmac, result);
 
-		if (memcmp(result, pss->notification_sig,
-			   lws_genhmac_size(pss->hmac_type))) {
+		if (lws_timingsafe_bcmp(result, pss->notification_sig,
+				(uint32_t)lws_genhmac_size(pss->hmac_type))) {
 			lwsl_err("%s: hmac mismatch\n", __func__);
 
 			return -1;

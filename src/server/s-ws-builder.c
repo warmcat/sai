@@ -1230,7 +1230,16 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				}
 
 				task = (sai_task_t *)o.head;
-				n = strcmp(task->art_up_nonce, ap->artifact_up_nonce);
+
+				/*
+				 * Both are fixed 32-char hex in 33-byte
+				 * arrays, so a fixed-length compare stays
+				 * in-bounds whatever the sender sent
+				 */
+
+				n = lws_timingsafe_bcmp(task->art_up_nonce,
+							ap->artifact_up_nonce,
+							32);
 
 				if (n) {
 					lwsl_err("%s: artifact nonce mismatch\n",
