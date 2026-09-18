@@ -300,6 +300,9 @@ sais_buflist_append_bounded(struct lws_buflist **head, const uint8_t *buf,
 			    size_t len, size_t cap);
 
 int
+sais_watcher_url_matches(const sai_watcher_service_t *s, const char *url);
+
+int
 saiw_ws_json_tx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
 
 int

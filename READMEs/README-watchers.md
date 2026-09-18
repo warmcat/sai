@@ -19,7 +19,8 @@ Watchers are defined in JSON files located in `/etc/sai/server/conf.d/`. Each fi
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `name` | string | Unique name for the service (e.g., "coverity"). Used to find icons in `assets/watchers/<name>/icon.svg`. |
-| `match` | string | Substring to match against the reported URL to identify this service. |
+| `match` | string | `host[/path]` the reported URL must be on: the URL's host must be this host or a subdomain of it, and the path (if given) must prefix the URL's path.  A substring appearing anywhere else in the URL does not match. |
+| `allow_private` | number | Optional, default 0.  Set to 1 to let the service match URLs on private / loopback / link-local literal hosts (for internal services); by default these are rejected so repo-controlled `SAI_WATCH_URL` lines cannot make the server scrape itself or its LAN. |
 | `rules` | array | List of scraping rules to extract data from HTML. |
 | `ui` | array | List of rendering rules for the Web UI. |
 

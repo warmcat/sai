@@ -556,6 +556,7 @@ const lws_struct_map_t lsm_watcher_service[] = {
 	LSM_STRING_PTR	(sai_watcher_service_t, match,		"match"),
 	LSM_STRING_PTR	(sai_watcher_service_t, icon,		"icon"),
 	LSM_STRING_PTR	(sai_watcher_service_t, auth_token_file, "auth_token_file"),
+	LSM_UNSIGNED	(sai_watcher_service_t, allow_private,	"allow_private"),
 	LSM_LIST	(sai_watcher_service_t, rules_owner, sai_watcher_rule_t, list,
 			 NULL, lsm_watcher_rule,		"rules"),
 	LSM_LIST	(sai_watcher_service_t, ui_owner, sai_watcher_ui_rule_t, list,

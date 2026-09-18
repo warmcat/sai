@@ -1,9 +1,170 @@
 #include <libwebsockets.h>
 #include <string.h>
+#include <strings.h>
 #include <time.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include "s-private.h"
+
+/*
+ * Is this a host that never belongs on the open internet: a literal IP in
+ * a private / loopback / link-local range, or a local-only name?  Used to
+ * stop repo-influenced watcher urls pointing the server's ss fetch at
+ * itself or its LAN.  Literal addresses are classified exactly by range;
+ * hostnames can only be checked textually (a name that resolves into a
+ * private range is not visible until connect time).
+ */
+static int
+host_is_local(const char *host)
+{
+	unsigned int b[4];
+	const char *p = host;
+	size_t len = strlen(host);
+	int n = 0;
+
+	/* take it as a dotted-quad IPv4 literal if it has the shape */
+
+	while (n < 4) {
+		unsigned int v = 0;
+		int digits = 0;
+
+		while (*p >= '0' && *p <= '9' && digits < 3) {
+			v = (v * 10) + (unsigned int)(*p - '0');
+			p++;
+			digits++;
+		}
+		if (!digits || v > 255)
+			break;
+		b[n++] = v;
+		if (n < 4) {
+			if (*p != '.')
+				break;
+			p++;
+		}
+	}
+
+	if (n == 4 && !*p) {
+		/* 0/8, 10/8, 127/8, 100.64/10, 169.254/16, 172.16/12, 192.168/16 */
+		if (b[0] == 0 || b[0] == 10 || b[0] == 127 ||
+		    (b[0] == 172 && (b[1] & 0xf0) == 16) ||
+		    (b[0] == 192 && b[1] == 168) ||
+		    (b[0] == 169 && b[1] == 254) ||
+		    (b[0] == 100 && (b[1] & 0xc0) == 64))
+			return 1;
+
+		return 0;
+	}
+
+	if (strchr(host, ':')) {
+		/*
+		 * IPv6 literal: ULA fc00::/7, link-local fe80::/10, and
+		 * anything starting with :: (loopback, v4-mapped, ...)
+		 * are not global.  Port has already been split off.
+		 */
+		if (!strncasecmp(host, "fc", 2) || !strncasecmp(host, "fd", 2) ||
+		    !strncasecmp(host, "fe8", 3) || !strncasecmp(host, "fe9", 3) ||
+		    !strncasecmp(host, "fea", 3) || !strncasecmp(host, "feb", 3) ||
+		    host[0] == ':')
+			return 1;
+
+		return 0;
+	}
+
+	if (!strcasecmp(host, "localhost") ||
+	    (len > 10 && !strcasecmp(host + len - 10, ".localhost")) ||
+	    (len > 6 && !strcasecmp(host + len - 6, ".local")))
+		return 1;
+
+	return 0;
+}
+
+/*
+ * Decide if a builder-reported SAI_WATCH_URL url really belongs to the
+ * configured service s.  The url comes from build output of whatever repo
+ * was CI'd, so this is the gate that stops the watcher poller becoming an
+ * SSRF with a read-back channel into the public results page.
+ *
+ * The url must be http(s) on a non-local host (unless the service opts in
+ * with allow_private), its host must be exactly the configured match host
+ * or a subdomain of it, and any path in the match must prefix the url's
+ * path.  It is not enough for the match string to appear somewhere in the
+ * url: that let eg http://169.254.169.254/latest/meta-data/<match>/ pass.
+ */
+int
+sais_watcher_url_matches(const sai_watcher_service_t *s, const char *url)
+{
+	char mhost[160];
+	const char *m = s->match, *slash;
+	lws_parse_uri_t *u;
+	size_t ml, hl;
+	int ret = 0;
+
+	if (!m || !m[0])
+		return 0;
+
+	u = lws_parse_uri_create(url);
+	if (!u)
+		return 0;
+
+	do {
+		if (strcmp(u->scheme, "http") && strcmp(u->scheme, "https"))
+			break;
+
+		if (u->unix_skt)
+			break;
+
+		if (!s->allow_private && host_is_local(u->host))
+			break;
+
+		/* the match is host[/path], tolerate a scheme on it */
+
+		if (!strncmp(m, "https://", 8))
+			m += 8;
+		else if (!strncmp(m, "http://", 7))
+			m += 7;
+
+		slash = strchr(m, '/');
+		ml = slash ? (size_t)(slash - m) : strlen(m);
+		hl = strlen(u->host);
+
+		if (!ml || ml >= sizeof(mhost) || hl < ml)
+			break;
+
+		memcpy(mhost, m, ml);
+		mhost[ml] = '\0';
+
+		/*
+		 * Host must BE the configured host or a subdomain of it:
+		 * <match>.attacker.tld and <user>@ style tricks fail this
+		 */
+		if (strcasecmp(u->host, mhost) &&
+		    (hl == ml || u->host[hl - ml - 1] != '.' ||
+		     strcasecmp(u->host + hl - ml, mhost)))
+			break;
+
+		if (slash && u->path) {
+			const char *up = u->path, *mp = slash;
+			size_t pl;
+
+			/* parsers differ on keeping the leading '/' */
+
+			if (*up == '/')
+				up++;
+			else
+				mp++;
+
+			pl = strlen(mp);
+			if (strncmp(up, mp, pl))
+				break;
+		}
+
+		ret = 1;
+	} while (0);
+
+	lws_parse_uri_destroy(&u);
+
+	return ret;
+}
 
 typedef struct watcher_fetch {
 	struct lws_ss_handle	*ss;
@@ -314,7 +475,7 @@ sais_watcher_cb(lws_sorted_usec_list_t *sul)
 			/* Identify service */
 			lws_start_foreach_dll(struct lws_dll2 *, p, vhd->watcher_services.head) {
 				sai_watcher_service_t *s = lws_container_of(p, sai_watcher_service_t, list);
-				if (strstr(w->url, s->match)) {
+				if (sais_watcher_url_matches(s, w->url)) {
 					w->service = s;
 					break;
 				}

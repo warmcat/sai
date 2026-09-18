@@ -121,6 +121,7 @@ typedef struct sai_watcher_service {
 	const char			*match;
 	const char			*icon;
 	const char			*auth_token_file; /* optional file with secret token */
+	uint8_t				allow_private; /* accept private/loopback hosts */
 
 	lws_dll2_owner_t		rules_owner; /* sai_watcher_rule_t */
 	lws_dll2_owner_t		ui_owner;    /* sai_watcher_ui_rule_t */
@@ -974,7 +975,7 @@ extern const lws_struct_map_t
 	lsm_schema_taskclone[1],
 	lsm_watcher_rule[6],
 	lsm_watcher_ui_rule[4],
-	lsm_watcher_service[6],
+	lsm_watcher_service[7],
 	lsm_watcher[8],
 	lsm_schema_sq3_map_watcher[1],
 	lsm_schema_json_map_watcher[1],
