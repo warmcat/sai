@@ -713,6 +713,18 @@ next_plat: ;
 
 	case LEJPNSAIF_CONFIGURATIONS_ARTIFACTS:
 		lws_strncpy(sn->t.artifacts, ctx->buf, sizeof(sn->t.artifacts));
+		/*
+		 * The builder scans these globs under the task's instance dir
+		 * and renames what matches into its uploads dir, for publish
+		 * as downloadable artifacts.  Reject path escapes at intake
+		 * like the other hostile-field cases; the builder checks
+		 * again on its side.
+		 */
+		if (!sai_artifacts_list_safe(sn->t.artifacts)) {
+			lwsl_notice("%s: rejecting artifacts list with path "
+				    "escape '%s'\n", __func__, sn->t.artifacts);
+			return -1;
+		}
 		break;
 
 	case LEJPNSAIF_CONFIGURATIONS_CPACK:

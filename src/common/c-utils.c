@@ -82,6 +82,69 @@ sai_get_ref(const char *fullref)
 }
 
 /*
+ * Core single-pattern check for sai_artifacts_pattern_safe() /
+ * sai_artifacts_list_safe(): a pattern is unsafe if it is absolute, has a
+ * windows drive / UNC / ADS shape or backslash separators, or contains a
+ * ".." that is a whole path component (ie, could climb out of the build
+ * instance dir the pattern is scanned under).
+ */
+static int
+artifacts_pattern_n_safe(const char *p, size_t len)
+{
+	size_t n;
+
+	if (!len)
+		return 1;
+
+	if (p[0] == '/' || p[0] == '\\')
+		return 0;
+
+	for (n = 0; n < len; n++) {
+		if (p[n] == ':' || p[n] == '\\')
+			return 0;
+
+		if (n + 1 < len && p[n] == '.' && p[n + 1] == '.' &&
+		    (n == 0 || p[n - 1] == '/') &&
+		    (n + 2 == len || p[n + 2] == '/' || p[n + 2] == '*'))
+			return 0;
+	}
+
+	return 1;
+}
+
+int
+sai_artifacts_pattern_safe(const char *pat)
+{
+	if (!pat)
+		return 1;
+
+	return artifacts_pattern_n_safe(pat, strlen(pat));
+}
+
+int
+sai_artifacts_list_safe(const char *list)
+{
+	const char *p = list;
+
+	if (!p)
+		return 1;
+
+	while (1) {
+		const char *e = strchr(p, ',');
+		size_t len = e ? (size_t)(e - p) : strlen(p);
+
+		if (!artifacts_pattern_n_safe(p, len))
+			return 0;
+
+		if (!e)
+			break;
+		p = e + 1;
+	}
+
+	return 1;
+}
+
+/*
  * Returns nonzero if s contains any byte that is dangerous to interpolate into
  * a shell context: the shell metacharacters ` $ ; | & < > ( ) \ and the quote
  * characters, plus glob chars, any control byte (< 0x20) or DEL.  Used to gate

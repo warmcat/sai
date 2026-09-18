@@ -24,6 +24,7 @@
 #include <assert.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <stdlib.h> /* realpath() on posix */
 
 #include "sai-git-hash.h"
 #include "b-private.h"
@@ -551,6 +552,31 @@ artifact_glob_cb(void *data, const char *path)
 	 * + filename part
 	 */
 
+#if !defined(WIN32)
+	{
+		char rp[384], rip[384];
+		size_t rl;
+
+		/*
+		 * The glob came from repo-controlled .sai.json, so before we
+		 * rename the match away, make sure the resolved path really
+		 * sits under the instance dir: a symlink planted in the build
+		 * dir points the scan at host files outside it even when the
+		 * pattern itself looked clean.
+		 */
+
+		if (!realpath(path, rp) || !realpath(ns->inp, rip))
+			return 1;
+
+		rl = strlen(rip);
+		if (strncmp(rp, rip, rl) || (rp[rl] && rp[rl] != '/')) {
+			lwsl_err("%s: artifact '%s' resolves outside the "
+				 "instance dir, skipping\n", __func__, path);
+			return 1;
+		}
+	}
+#endif
+
 	p = path;
 	while (*p) {
 		if (*p == '/' || *p == '\\')
@@ -686,6 +712,24 @@ saib_start_artifact_upload(struct sai_nspawn *ns)
 			break;
 		continue;
 scan:
+		/*
+		 * The glob is repo-controlled all the way from .sai.json:
+		 * its path part decides where we scan from, so it must stay
+		 * inside the instance dir (no ".." components, absolute
+		 * patterns, or windows drive / UNC shapes).
+		 */
+
+		if (!sai_artifacts_pattern_safe(filt)) {
+			lwsl_err("%s: ignoring artifact glob '%s' that escapes "
+				 "the build dir\n", __func__, filt);
+			filt[0] = '\0';
+			m = 0;
+
+			if (ts.e == LWS_TOKZE_ENDED)
+				break;
+			continue;
+		}
+
 		lws_strncpy(scandir, ns->inp, sizeof(scandir));
 		m = (int)strlen(scandir);
 

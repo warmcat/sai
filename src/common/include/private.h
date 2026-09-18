@@ -1026,6 +1026,22 @@ sai_is_git_hash(const char *s);
 int
 sai_is_safe_ref(const char *s);
 
+/*
+ * The .sai.json "artifacts" field is repo-controlled and reaches the
+ * builder as a comma-separated list of globs, possibly with a path part
+ * before the first '*', eg "build/*.rpm,*.tar.gz".  The builder scans
+ * them under the per-instance build dir and renames what it matches into
+ * its uploads dir, so a pattern whose path part climbs out of the
+ * instance dir (a ".." component, an absolute pattern, or a windows
+ * drive / UNC shape) turns repo content into host-file exfiltration and
+ * destructive moves.  These return 1 when safe to scan, else 0.
+ */
+int
+sai_artifacts_pattern_safe(const char *pat);
+
+int
+sai_artifacts_list_safe(const char *list);
+
 void
 sai_dump_stderr(const uint8_t *buf, size_t w);
 
