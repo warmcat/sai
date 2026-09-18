@@ -34,6 +34,13 @@
 
 #include "s-private.h"
 
+/*
+ * Sanity cap on the per-builder loadreport reassembly.  Loadreports are
+ * small; the reassembly exists so fragmented ones can be forwarded to the
+ * web side as an atomic message.
+ */
+#define SAIS_LOADREPORT_REASSEMBLY_MAX (64 * 1024)
+
 const lws_struct_map_t lsm_schema_map_ta[] = {
 	LSM_SCHEMA (sai_task_t,	    NULL, lsm_task,    "com-warmcat-sai-ta"),
 };
@@ -804,10 +811,15 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				 */
 
 				*((unsigned int *)(buf - sizeof(int))) = ss_flags;
-				if (lws_buflist_append_segment(&pss->onward_reassembly,
-							       buf - sizeof(int),
-							       bl + sizeof(int)) < 0)
+				if (sais_buflist_append_bounded(
+						&pss->onward_reassembly,
+						buf - sizeof(int),
+						bl + sizeof(int),
+						SAIS_LOADREPORT_REASSEMBLY_MAX)) {
+					lwsl_err("%s: loadreport reassembly over cap / OOM\n",
+						 __func__);
 					return -1;
+				}
 			}
 
 			pss->frag = 1;
@@ -1144,10 +1156,15 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 			 */
 
 			*((unsigned int *)(buf - sizeof(int))) = ss_flags;
-			if (lws_buflist_append_segment(&pss->onward_reassembly,
-						       buf - sizeof(int),
-						       bl + sizeof(int)) < 0)
+			if (sais_buflist_append_bounded(
+					&pss->onward_reassembly,
+					buf - sizeof(int),
+					bl + sizeof(int),
+					SAIS_LOADREPORT_REASSEMBLY_MAX)) {
+				lwsl_err("%s: loadreport reassembly over cap / OOM\n",
+					 __func__);
 				return -1;
+			}
 
 			/*
 			 * Then let's forward the whole reassembly buflist on

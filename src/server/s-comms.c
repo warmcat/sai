@@ -517,6 +517,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		/* a conn closed mid-message must not leak its reassembly */
 		lws_buflist_destroy_all_segments(&pss->power_rx_cache);
+		lws_buflist_destroy_all_segments(&pss->onward_reassembly);
 
 		{
 			const unsigned char *cp = lws_get_close_payload(wsi);
