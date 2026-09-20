@@ -26,6 +26,21 @@ Please bear in mind what parts of the system are secrets and look after the secu
 In particular, all web pieces are made available on the internet with a strict CSP.  That means
 no inline styles or scripts.  You can find the web pieces (JS, HTML, css) in ./assets/
 
+## Churn management
+
+When you produced fixes, if possible (main branch, target is within 8 patches back,
+no intervening non-sai- tag) it's preferable to --amend apply the fixes directly to
+the patch that originated the problem, essentially editing the history, even if
+it means just doing that and not adding any fix patch or explanation.  Similarly, unless
+asked to produce a new patch or the goal is an explicit phased series, if it's on the
+main branch and we are iterating on the same work, and HEAD patch is yours from the
+last iteration, it's preferable to directly use --amend on it to commit.
+
+If the changes are for mixed purposes, if you initiate new core library changes or fixes,
+these should be broken out into their own patch, even if the rest relates to recent
+changes and is squashed in with those.
+
+
 ## Build testing
 
 Please don't worry about build-testing, just push patches when you are confident they are complete and have considered all affected code (ie, not half-assed) and ready and I will try them and report back with grounded information.

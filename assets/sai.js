@@ -4703,7 +4703,7 @@ function ws_open_sai()
 			case "com-warmcat-sai-artifact":
 				console.log(jso);
 
-				sai_arts += "<div class=\"sai_arts\"><img src=\"artifact.svg\">&nbsp;<a href=\"artifacts/" +
+				sai_arts += "<div class=\"sai_arts\"><img src=\"artifact.svg\">&nbsp;<a href=\"/sai/artifacts/" +
 					san(jso.task_uuid) + "/" +
 					san(jso.artifact_down_nonce) + "/" +
 					san(jso.blob_filename) + "\">" +

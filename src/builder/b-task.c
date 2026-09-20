@@ -351,7 +351,18 @@ saib_task_destroy(struct sai_nspawn *ns)
 {
 	int n;
 
-	lwsl_notice("====== saib_task_destroy START (ns=%p, uuid=%s, spm=%p) ======\n", 
+	/*
+	 * The last in-flight artifact upload calls this from its own
+	 * DESTROYING; if we got here first via the cleaner or cancel paths, the
+	 * outstanding artifact destroys below would otherwise call us back
+	 * reentrantly.
+	 */
+
+	if (ns->destroying)
+		return;
+	ns->destroying = 1;
+
+	lwsl_notice("====== saib_task_destroy START (ns=%p, uuid=%s, spm=%p) ======\n",
 		(void*)ns, ns->task ? ns->task->uuid : "null", (void*)ns->spm);
 
 	lwsl_notice("%s: destroying task %s\n", __func__,
@@ -359,6 +370,24 @@ saib_task_destroy(struct sai_nspawn *ns)
 
 	lws_sul_cancel(&ns->sul_cleaner);
 	lws_sul_cancel(&ns->sul_task_cancel);
+
+	/*
+	 * Any artifact uploads still referencing us must go first... their
+	 * DESTROYING unlinks their temp file and accounts against
+	 * ns->count_artifacts, but skips the recursive destroy since we are
+	 * already destroying.
+	 */
+
+	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+				   ns->artifact_owner.head) {
+		sai_artifact_t *ap = lws_container_of(d, sai_artifact_t, list);
+		struct lws_ss_handle *h = ap->ss;
+
+		lwsl_notice("%s: destroying in-flight artifact %s\n", __func__,
+			    ap->path);
+
+		lws_ss_destroy(&h);
+	} lws_end_foreach_dll_safe(d, d1);
 
 	/*
 	 * If able, builder should reintroduce himself to get
@@ -617,6 +646,17 @@ artifact_glob_cb(void *data, const char *path)
 	/* take a copy so we can unlink the path later */
 	lws_strncpy(ap->path, upp, sizeof(ap->path));
 
+	/*
+	 * The upload outlives the task's own steps and must know its ns, so
+	 * DESTROYING can account for it and destroy the ns when the last one
+	 * finishes; and saib_task_destroy() can find and kill in-flight uploads
+	 * if it goes first.  The SS user object is zalloc'd, so without this
+	 * ap->ns is NULL.
+	 */
+
+	ap->ns = ns;
+	lws_dll2_add_tail(&ap->list, &ns->artifact_owner);
+
 	lwsl_notice("%s: artifact ss created '%s'\n", __func__, ap->path);
 	ns->count_artifacts++;
 
@@ -645,6 +685,9 @@ artifact_glob_cb(void *data, const char *path)
  * still stuff we need to send out.  Give it some time then force destruction
  * of the task and reset the nspawn.
  */
+
+/* cap on how long we let artifact uploads hold the ns alive */
+#define SAIB_ARTIFACT_UPLOAD_MAX_US (10 * 60 * LWS_USEC_PER_SEC)
 
 static void
 saib_start_artifact_upload(struct sai_nspawn *ns)
@@ -776,9 +819,21 @@ scan:
 		/* no artifacts to hang around for... nuke the ns now */
 		lws_sul_cancel(&ns->sul_cleaner);
 		saib_task_destroy(ns);
-	} else
+	} else {
 		lwsl_notice("%s: created / waiting on %d artifact uploads\n",
 				__func__, ns->count_artifacts);
+
+		/*
+		 * The ns now lives until the last upload destroys it, not the
+		 * 20s task grace timer... but keep a much longer hard cap so
+		 * a stream stuck retrying can't pin the ns (and the builder's
+		 * idle / power state) forever.
+		 */
+
+		lws_sul_schedule(builder.context, 0, &ns->sul_cleaner,
+				 saib_sub_cleaner_cb,
+				 SAIB_ARTIFACT_UPLOAD_MAX_US);
+	}
 }
 
 void

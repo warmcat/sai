@@ -176,8 +176,14 @@ saib_artifact_state(void *userobj, void *sh, lws_ss_constate_t state,
 		}
 		unlink(ap->path);
 
-		ap->ns->count_artifacts--;
-		if (!ap->ns->count_artifacts) {
+		/*
+		 * Account for us on the ns, and if we were what it was waiting
+		 * for, destroy it.  If the ns is already destroying us via
+		 * saib_task_destroy(), it will complete itself.
+		 */
+
+		if (ap->ns && ap->ns->count_artifacts &&
+		    !--ap->ns->count_artifacts && !ap->ns->destroying) {
 			lwsl_notice("%s: last artifact completed, destroying ns now\n", __func__);
 			saib_task_destroy(ap->ns);
 		}

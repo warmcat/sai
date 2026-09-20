@@ -504,6 +504,24 @@ void sigint_handler(int sig)
 void
 sai_ns_destroy(struct sai_nspawn *ns)
 {
+	/*
+	 * In-flight artifact uploads still reference the ns; their SS handles
+	 * outlive it until lws_context_destroy() tears them down, which would
+	 * then touch freed ns.  Destroy them first, and mark the ns as already
+	 * destroying so their DESTROYING doesn't try to run the full task
+	 * teardown from inside builder shutdown.
+	 */
+
+	ns->destroying = 1;
+
+	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1,
+				   ns->artifact_owner.head) {
+		sai_artifact_t *ap = lws_container_of(d, sai_artifact_t, list);
+		struct lws_ss_handle *h = ap->ss;
+
+		lws_ss_destroy(&h);
+	} lws_end_foreach_dll_safe(d, d1);
+
 	lws_dll2_remove(&ns->list);
 	free(ns);
 }

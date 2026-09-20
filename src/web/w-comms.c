@@ -52,6 +52,7 @@ typedef enum {
 	SHMUT_BROWSE,
 	SHMUT_STATUS,
 	SHMUT_ARTIFACTS,
+	SHMUT_ARTIFACTS_SAI,
 	SHMUT_LOGIN
 } sai_http_murl_t;
 
@@ -60,6 +61,7 @@ static const char * const well_known[] = {
 	"/sai/browse",
 	"/status",
 	"/artifacts/", /* HTTP api for accessing build artifacts */
+	"/sai/artifacts/", /* same, via the /sai mount the pages live under */
 	"/login"
 };
 
@@ -451,14 +453,17 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			goto passthru;
 
 		case SHMUT_ARTIFACTS:
+		case SHMUT_ARTIFACTS_SAI:
 			/*
 			 * HTTP Bulk GET interface for artifact download
 			 *
-			 * /artifacts/<taskhash>/<down_nonce>/filename
+			 * [/sai]/artifacts/<taskhash>/<down_nonce>/filename
 			 */
 			lwsl_notice("%s: SHMUT_ARTIFACTS\n", __func__);
 			pss->artifact_offset = 0;
-			if (saiw_get_blob(vhd, (const char *)in + 11,
+			if (saiw_get_blob(vhd,
+					  (const char *)in +
+					  (mu == SHMUT_ARTIFACTS ? 11 : 15),
 					  &pss->pdb_artifact,
 					  &pss->blob_artifact,
 					  &pss->artifact_length)) {
