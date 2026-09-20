@@ -433,6 +433,9 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			goto passthru;
 
 		case SHMUT_HOOK:
+			if (!vhd)
+				/* no db etc without completed protocol init */
+				return -1;
 			pss->our_form = 1;
 			lwsl_notice("LWS_CALLBACK_HTTP: sees hook\n");
 			return 0;
@@ -453,6 +456,9 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			lwsl_notice("%s: not our form\n", __func__);
 			goto passthru;
 		}
+
+		if (!vhd)
+			return -1;
 
 		/* create the POST argument parser if not already existing */
 
@@ -536,6 +542,9 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			goto passthru;
 		}
 
+		if (!vhd)
+			return -1;
+
 		if (pss->spa) {
 			lws_spa_finalize(pss->spa);
 			lws_spa_destroy(pss->spa);
@@ -572,6 +581,18 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 	 */
 
 	case LWS_CALLBACK_FILTER_PROTOCOL_CONNECTION:
+		/*
+		 * If PROTOCOL_INIT failed on this vhost (eg, it has the
+		 * protocol bound but not the pvo set), lws frees the vhd
+		 * yet keeps serving the protocol here: refuse the upgrade
+		 * instead of letting a connection in that can only be torn
+		 * down half-established.
+		 */
+		if (!vhd) {
+			lwsl_wsi_err(wsi, "refusing conn: protocol init failed"
+					" on this vhost\n");
+			return -1;
+		}
 		return 0;
 
 	case LWS_CALLBACK_ESTABLISHED:
@@ -651,6 +672,14 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		/* remove pss from vhd->builders (active connection list) */
 		lws_dll2_remove(&pss->same);
 
+		/*
+		 * On a vhost where protocol init failed there is no vhd and
+		 * the conn was never established as a builder: there is
+		 * nothing vhd-relative to tear down.
+		 */
+		if (!vhd)
+			break;
+
 		sais_builder_disconnected(vhd, wsi);
 
 		sais_resource_wellknown_remove_pss(&pss->vhd->server, pss);
@@ -673,6 +702,9 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		break;
 
 	case LWS_CALLBACK_RECEIVE:
+
+		if (!vhd)
+			return -1;
 
 		pss->wsi = wsi;
 		ssf = (lws_is_first_fragment(wsi) ? LWSSS_FLAG_SOM : 0) |

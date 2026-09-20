@@ -378,12 +378,19 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return 1;
 		}
 
-		r = lws_ss_client_connect(vhd->h_ss_websrv) ? -1 : 0;
+		/*
+		 * The streamtype is nailed_up, so lws_ss_create() above
+		 * already tried the connection and owns retrying it via
+		 * the ss backoff policy... a synchronous failure there (eg,
+		 * sai-server not restarted yet) is normal startup racing.
+		 * Don't call lws_ss_client_connect() from init and don't
+		 * fail init over the link: returning nonzero would make
+		 * lws free the vhd but keep serving this vhost, leaving
+		 * browsers on a dead protocol until the next sai-web
+		 * restart.
+		 */
 
-		if (r)
-			lwsl_wsi_err(wsi, "client connect for web -> srv failed");
-
-		return r;
+		return 0;
 
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
 		saiw_event_db_close_all_now(vhd);
