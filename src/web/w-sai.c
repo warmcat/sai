@@ -42,14 +42,15 @@ static const char * const default_ss_policy =
 		"}],"
 	  "\"s\": ["
 		/*
-		 * Unix Domain Socket connections to sai-server webevents
+		 * Unix Domain Socket connection to sai-server's control link.
+		 *
+		 * The endpoint here is only the fallback: protocol init
+		 * overlays the "sockpath" from the conf on to it before
+		 * creating the stream, see SAI_WEBSRV_UDS_DEFAULT.
 		 */
 		"{\"websrv\": {"
-			"\"endpoint\":"		"\"+${sockpath}\","
+			"\"endpoint\":"		"\"+" SAI_WEBSRV_UDS_DEFAULT "\","
 			"\"protocol\":"		"\"ws\","
-			"\"metadata\": ["
-				"{\"sockpath\": \"\"}"
-			"],"
 			"\"retry\": \"default\","
 			"\"nailed_up\":"		"true"
 		"}}"

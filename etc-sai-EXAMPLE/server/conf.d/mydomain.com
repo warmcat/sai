@@ -74,6 +74,21 @@
                         #
 			"notification-key":	"51b3ee2f06ef2a893cfe901972bd13065d7dbae4cf087b396ee38e7bf78f79a6",
 
+			# Unix socket sai-server serves its control link for
+			# sai-web on.  The link is admin-equivalent, so give it
+			# a filesystem path: lws binds it before dropping
+			# privileges and gives it the uid:gid from the global
+			# conf with mode 0660, so only that user and group can
+			# connect.  The user sai-web runs as must be that user
+			# or a member of that group.  Set the same path as
+			# "sockpath" in sai-web's conf.
+			#
+			# If unset, the abstract-namespace socket
+			# @com.warmcat.sai-websrv is used, which any local user
+			# can connect to.
+			#
+			"sockpath":		"/var/run/sai-websrv",
+
 			# auth jwk path
 			# You can generate a suitable key like this
 			#

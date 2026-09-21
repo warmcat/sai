@@ -264,6 +264,7 @@ struct vhd {
 	lws_usec_t		last_check_abandoned_tasks;
 
 	const char		*notification_key;
+	const char		*websrv_sockpath; /* control link uds we serve */
 	unsigned int		task_abandoned_timeout_mins;
 
 	/*

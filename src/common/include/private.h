@@ -48,6 +48,19 @@
 #define UDS_PATHNAME_RESPROXY "/var/run/com.warmcat.com.saib.resproxy"
 #endif
 
+/*
+ * The sai-web <-> sai-server ss control link ("websrv").  The link is
+ * admin-equivalent (eventdelete, taskreset, taskclone...), so it should be
+ * served on a path-based unix socket that filesystem permissions gate: both
+ * daemons take the path from the "sockpath" pvo in their lejp conf, which is
+ * the single source of truth for it.
+ *
+ * Without a conf sockpath, both sides fall back to this abstract-namespace
+ * name, which older confs relied on.  Any local uid can connect to an
+ * abstract socket (F-015), so both daemons warn when they end up here.
+ */
+#define SAI_WEBSRV_UDS_DEFAULT "@com.warmcat.sai-websrv"
+
 #define SAI_BUILDER_INSTANCE_LIMIT 256
 
 struct sai_plat;

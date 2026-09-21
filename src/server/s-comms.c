@@ -264,7 +264,40 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				"CREATE UNIQUE INDEX IF NOT EXISTS name_idx ON builders (name)",
 				"create builder name index");
 
-		lwsl_notice("%s: creating server stream\n", __func__);
+		/*
+		 * Where we serve the websrv control link for sai-web... it is
+		 * admin-equivalent, so it wants to be a path-based unix
+		 * socket that filesystem permissions gate.  lws binds it
+		 * during protocol init, before dropping privileges, and
+		 * gives it the conf uid:gid with mode 0660: only that user
+		 * and group can connect.  Without a conf sockpath, fall back
+		 * to the legacy abstract-namespace name, which any local
+		 * user can connect to.
+		 */
+		if (lws_pvo_get_str(in, "sockpath", &vhd->websrv_sockpath)) {
+			vhd->websrv_sockpath = SAI_WEBSRV_UDS_DEFAULT;
+			lwsl_warn("%s: no \"sockpath\" pvo: serving the"
+				  " admin control link on abstract socket %s,"
+				  " which any local user can connect to."
+				  "  Set \"sockpath\" to a filesystem path"
+				  " in both the sai-server and sai-web confs\n",
+				  __func__, vhd->websrv_sockpath);
+		} else {
+			char pol[256];
+
+			lws_snprintf(pol, sizeof(pol),
+				     "{\"s\":[{\"websrv\":{\"endpoint\":\"+%s\"}}]}",
+				     vhd->websrv_sockpath);
+
+			if (lws_ss_policy_overlay(vhd->context, pol) < 0) {
+				lwsl_err("%s: unable to apply sockpath %s\n",
+					 __func__, vhd->websrv_sockpath);
+				return -1;
+			}
+		}
+
+		lwsl_notice("%s: creating server stream on %s\n", __func__,
+			    vhd->websrv_sockpath);
 
 		if (lws_ss_create(vhd->context, 0, &ssi_server, vhd,
 				  &vhd->h_ss_websrv, NULL, NULL)) {

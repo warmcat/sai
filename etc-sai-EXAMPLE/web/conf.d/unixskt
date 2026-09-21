@@ -63,6 +63,20 @@
 			#
 			"database":		"/srv/sai/sai-master",
 
+			# Unix socket sai-server serves its control link on:
+			# the same "sockpath" as in sai-server's conf.  It is
+			# owned by sai-server's uid:gid with mode 0660, so the
+			# user sai-web runs as (see ../conf) must be that user
+			# or a member of that group, eg,
+			#
+			#  usermod -a -G apache sai
+			#
+			# If unset, the abstract-namespace socket
+			# @com.warmcat.sai-websrv is used, which any local user
+			# can connect to.
+			#
+			"sockpath":		"/var/run/sai-websrv",
+
 			# sai-web does NO auth of its own: no JWK, no JWT
 			# validation, no grant logic.  It learns the login
 			# state from the x-lws-login-* headers the lws-login

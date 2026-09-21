@@ -36,6 +36,10 @@ struct lws_context *context;
  * The pass up authenticated browser task and event redo requests, and receive
  * information about updates to tasks and events that they might have clients
  * that are watching.
+ *
+ * The endpoint here is only the fallback: the comms protocol init overlays
+ * the "sockpath" from the conf on to it before creating the stream, see
+ * SAI_WEBSRV_UDS_DEFAULT.
  */
 
 
@@ -45,7 +49,7 @@ static const char * const default_ss_policy =
 		/* uds link between web and server pieces */
 		"{\"websrv\": {"
 			"\"server\":"		"true,"
-			"\"endpoint\":"		"\"+@com.warmcat.sai-websrv\","
+			"\"endpoint\":"		"\"+" SAI_WEBSRV_UDS_DEFAULT "\","
 			"\"protocol\":"		"\"ws\""
 		"}}"
 	    "]"

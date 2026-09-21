@@ -274,6 +274,37 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 		}
 
+		/*
+		 * Where to find sai-server's control link... the same
+		 * "sockpath" as in sai-server's conf.  Without one, fall back
+		 * to the legacy abstract-namespace name sai-server also falls
+		 * back to.
+		 *
+		 * The streamtype is nailed_up, so lws_ss_create() connects
+		 * immediately: the conf sockpath has to be overlaid on to the
+		 * policy endpoint before we get there.
+		 */
+		if (lws_pvo_get_str(in, "sockpath", &vhd->sockpath)) {
+			vhd->sockpath = SAI_WEBSRV_UDS_DEFAULT;
+			lwsl_warn("%s: no \"sockpath\" pvo: connecting to"
+				  " sai-server's control link on abstract"
+				  " socket %s; set \"sockpath\" to the same"
+				  " filesystem path in both confs\n",
+				  __func__, vhd->sockpath);
+		} else {
+			char pol[256];
+
+			lws_snprintf(pol, sizeof(pol),
+				     "{\"s\":[{\"websrv\":{\"endpoint\":\"+%s\"}}]}",
+				     vhd->sockpath);
+
+			if (lws_ss_policy_overlay(vhd->context, pol) < 0) {
+				lwsl_err("%s: unable to apply sockpath %s\n",
+					 __func__, vhd->sockpath);
+				return -1;
+			}
+		}
+
 		lws_snprintf((char *)buf, sizeof(buf), "%s-events.sqlite3",
 				vhd->sqlite3_path_lhs);
 
@@ -334,6 +365,7 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		/*
 		 * Reach out to the sai-server part over the SS ws websrv link
+		 * (nailed_up: this connects, using the sockpath overlaid above)
 		 */
 
 		if (lws_ss_create(lws_get_context(wsi), 0, &ssi_saiw_websrv, vhd,
@@ -343,10 +375,6 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 			return 1;
 		}
-
-		if (lws_ss_set_metadata(vhd->h_ss_websrv, "sockpath",
-				    "@com.warmcat.sai-websrv", 23))
-			lwsl_warn("%s: unable to set metadata\n", __func__);
 
 		r = lws_ss_client_connect(vhd->h_ss_websrv) ? -1 : 0;
 

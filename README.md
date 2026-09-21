@@ -95,6 +95,40 @@ the browser, with JWT-authentication for manual job control.
    most cases spend most of their time idle, this enables a very good optimization
    of average power down to nearly zero.
 
+## sai-web <-> sai-server control link ("sockpath")
+
+sai-web is the only thing that talks to sai-server on behalf of browsers,
+over a unix socket ws link that sai-server serves and sai-web connects to.
+Everything the UI can do with admin rights arrives at sai-server over this
+link and is trusted (deleting events, resetting and cloning tasks, whose
+build scripts the builders then run), so who can connect to the socket is who
+has admin on the CI.
+
+Both daemons take the socket path from the optional `sockpath` pvo in the
+`vhosts|ws-protocols|com-warmcat-sai` section of their conf, and it must be
+the same on both sides:
+
+```
+			"sockpath":		"/var/run/sai-websrv",
+```
+
+sai-server binds it during protocol init, before dropping privileges, and lws
+gives the socket sai-server's conf `uid`:`gid` with mode 0660 (the same way it
+treats any path-based listen socket).  So only that user and members of that
+group can connect: put the user sai-web runs as in sai-server's group, eg,
+with the example confs (sai-server runs as `apache`, sai-web as `sai`)
+
+```
+# usermod -a -G apache sai
+```
+
+If `sockpath` is not set on a side, that side falls back to the
+abstract-namespace socket `@com.warmcat.sai-websrv` that older confs used, and
+warns at startup: abstract sockets have no filesystem permissions, so any
+local user on the host can connect to the link.  Existing deployments keep
+working unchanged, but should add the pvo to both confs and restart both
+daemons (sai-server first, sai-web reconnects by itself).
+
 ## Build flow and support for embedded
 
 ![build flow](READMEs/sai-build-test-flow.png)

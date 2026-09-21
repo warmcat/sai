@@ -210,6 +210,7 @@ struct vhd {
 	struct lws_ss_handle		*h_ss_websrv; /* client */
 
 	const char			*sqlite3_path_lhs;
+	const char			*sockpath; /* sai-server control link uds */
 
 	lws_dll2_owner_t		sqlite3_cache; /* sais_sqlite_cache_t */
 	lws_dll2_owner_t		tasklog_cache;
