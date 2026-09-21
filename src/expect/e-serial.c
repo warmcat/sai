@@ -226,6 +226,11 @@ callback_serial(struct lws *wsi, enum lws_callback_reasons reason,
 		break;
 
 	case LWS_CALLBACK_RAW_CLOSE_FILE:
+		/*
+		 * The collation sul lives in the pss, which is freed with
+		 * the wsi: at context destroy it can still be scheduled
+		 */
+		lws_sul_cancel(&pss->sul);
 		break;
 
 	case LWS_CALLBACK_RAW_WRITEABLE_FILE:
