@@ -655,6 +655,18 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		return -1;
 
 	case LWS_CALLBACK_CLOSED:
+		/*
+		 * This can also arrive for wsis that were never established
+		 * as a builder or power conn, eg on a vhost where protocol
+		 * init failed, or one dropped at the ESTABLISHED URL checks.
+		 * Those were never added to a vhd conn list and have no
+		 * teardown state, and may not even be in a ws condition:
+		 * asking about the peer's close payload dereferences wsi->ws,
+		 * which only exists on a conn that got that far.
+		 */
+		if (!pss || lws_dll2_is_detached(&pss->same))
+			break;
+
 		lwsac_free(&pss->query_ac);
 
 		/* a conn closed mid-message must not leak its reassembly */
@@ -671,14 +683,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		}
 		/* remove pss from vhd->builders (active connection list) */
 		lws_dll2_remove(&pss->same);
-
-		/*
-		 * On a vhost where protocol init failed there is no vhd and
-		 * the conn was never established as a builder: there is
-		 * nothing vhd-relative to tear down.
-		 */
-		if (!vhd)
-			break;
 
 		sais_builder_disconnected(vhd, wsi);
 
