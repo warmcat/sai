@@ -156,6 +156,15 @@ the same on both sides:
 			"sockpath":		"/var/run/sai-websrv",
 ```
 
+Only one sai-server vhost may carry the com-warmcat-sai protocol: the
+builders, the hook intake and this link all belong to that one vhost's
+protocol instance.  A second vhost with the protocol (eg, a unix-socket vhost
+for a front-end proxy) would bind its own copy of the link on the same path
+and sai-web would see a vhd with no builders on it; sai-server now refuses to
+initialize the protocol on any vhost after the first.  Hook notifications go
+to the same vhost the builders use, eg, `http://127.0.0.1:4444/update-hook`
+from a hook on the same host.
+
 sai-server binds it during protocol init, before dropping privileges, and lws
 gives the socket sai-server's conf `uid`:`gid` with mode 0660 (the same way it
 treats any path-based listen socket).  So only that user and members of that

@@ -40,6 +40,16 @@
 extern const lws_struct_map_t lsm_schema_sq3_map_event[];
 extern const lws_ss_info_t ssi_server;
 
+/*
+ * The vhost whose protocol instance serves the websrv control link.  All the
+ * builder, power and task state sai-web sees over the link belongs to that
+ * one vhd, so sai-server supports exactly one vhost carrying the
+ * com-warmcat-sai protocol: a second one would bind its own link on the same
+ * path, unlinking the first, and sai-web would then be talking to a vhd that
+ * has no builders on it.
+ */
+static struct lws_vhost *sais_link_vhost;
+
 typedef enum {
 	SHMUT_NONE = -1,
 	SHMUT_HOOK,
@@ -189,6 +199,17 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		vhd->context = lws_get_context(wsi);
 		vhd->vhost = lws_get_vhost(wsi);
+
+		if (sais_link_vhost) {
+			lwsl_err("%s: com-warmcat-sai is already active on"
+				 " vhost %s; only one sai-server vhost may"
+				 " carry it (builders, hooks and the sai-web"
+				 " control link all belong to that vhd)."
+				 "  Remove the protocol from vhost %s\n",
+				 __func__, lws_get_vhost_name(sais_link_vhost),
+				 lws_get_vhost_name(vhd->vhost));
+			return -1;
+		}
 
 		if (lws_pvo_get_str(in, "notification-key",
 				    &vhd->notification_key)) {
@@ -394,6 +415,8 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 		}
 
+		sais_link_vhost = vhd->vhost;
+
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_central,
 				 sais_central_cb, 500 * LWS_US_PER_MS);
 
@@ -403,6 +426,8 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		break;
 
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
+		if (vhd && vhd->vhost == sais_link_vhost)
+			sais_link_vhost = NULL;
 		sais_server_destroy(vhd, &vhd->server);
 		goto passthru;
 
