@@ -11,7 +11,7 @@
 
         "servers": [
                 {
-                        "url": "wss://libwebsockets.org:4444/sai/builder"
+                        "url": "wss://libwebsockets.org:4444/sai/power"
                 }
         ],
 
