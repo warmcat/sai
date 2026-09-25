@@ -922,7 +922,8 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, sp->nspawn_owner.head) {
 		struct sai_nspawn *xns = lws_container_of(d, struct sai_nspawn, list);
 
-		lwsl_notice("%s: nspawn_census: %s\n", __func__, xns->task->uuid);
+		lwsl_notice("%s: nspawn_census: %s\n", __func__,
+			    xns->task ? xns->task->uuid : "(no task)");
 
 	} lws_end_foreach_dll_safe(d, d1);
 	lwsl_notice("%s:\n", __func__);
@@ -1050,9 +1051,11 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 
 		if (saib_create_listen_uds(builder.context, &ns->slp_control,
 					&ns->vhosts[0])) {
-			lwsl_err("%s: Failed to create ctl log proxy listen UDS %s\n",
-					__func__, ns->slp_control.sockpath);
-			return -1;
+			saib_task_logf(spm, ns, NULL,
+				       "Unable to create the sai-device control "
+				       "log proxy socket %s",
+				       ns->slp_control.sockpath);
+			goto bail;
 		}
 
 		for (n = 0; n < (int)LWS_ARRAY_SIZE(ns->slp); n++) {
@@ -1070,9 +1073,11 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 
 			if (saib_create_listen_uds(builder.context, &ns->slp[n],
 						&ns->vhosts[n + 1])) {
-				lwsl_err("%s: Failed to create log proxy listen UDS %s\n",
-						__func__, ns->slp[n].sockpath);
-				return -1;
+				saib_task_logf(spm, ns, NULL,
+					       "Unable to create the sai-device "
+					       "tty%d log proxy socket %s",
+					       n, ns->slp[n].sockpath);
+				goto bail;
 			}
 		}
 	}

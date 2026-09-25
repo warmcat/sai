@@ -268,8 +268,13 @@ callback_sai_stdwsi(struct lws *wsi, enum lws_callback_reasons reason,
 				op->ns->stdwsi[ch] = NULL;
 		}
 		if (op && op->lsp) {
+			/*
+			 * ns is op->ns, which saib_sub_cleaner_cb() clears
+			 * when it gives up on a child that refused to die, so
+			 * it can legitimately be NULL here
+			 */
 			if (lws_spawn_stdwsi_closed(op->lsp, wsi) &&
-			    ns->reap_cb_called) {
+			    ns && ns->reap_cb_called) {
 				lwsl_notice("%s: freeing op from stdwsi_cb\n", __func__);
 				free(op);
 			}
@@ -476,14 +481,20 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	 * server so it can store them.
 	 */
 
-	if (!op->spawn || !ns->spm)
+	if (!op->spawn || !ns->spm || !ns->spm->ss)
 		goto skip;
 
 	memset(&m, 0, sizeof(m));
 
+	/*
+	 * Not being able to key the metrics is not a reason to fail a step
+	 * that exited 0... the metrics are just bookkeeping
+	 */
 	if (sai_metrics_hash((uint8_t *)m.key, sizeof(m.key),
-			     ns->sp->name, ns->task->build, ns->project_name, ns->ref))
-		goto fail;
+			     ns->sp->name, ns->task->build, ns->project_name, ns->ref)) {
+		lwsl_notice("%s: unable to hash metrics key\n", __func__);
+		goto skip;
+	}
 
 	lws_strncpy(m.builder_name, ns->sp->name,	sizeof(m.builder_name));
 	lws_strncpy(m.project_name, ns->project_name,	sizeof(m.project_name));
@@ -499,10 +510,16 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	m.parallel	= ns->task->parallel;
 	m.step		= ns->task->build_step + 1;
 
+	/*
+	 * Likewise: if we can't get the metrics away, complete the step
+	 * anyway.  Returning here used to leave the ns in EXECUTING_STEPS with
+	 * a dead child, no grace timer and no status update, so the task hung
+	 * on the server until something else knocked it over.
+	 */
 	if (saib_srv_queue_json_fragments_helper(ns->spm->ss,
 					lsm_schema_map_build_metric,
 					LWS_ARRAY_SIZE(lsm_schema_map_build_metric), &m))
-		return;
+		lwsl_notice("%s: unable to queue step metrics\n", __func__);
 
 skip:
 
