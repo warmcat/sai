@@ -226,6 +226,15 @@ struct sai_builder {
 	uint64_t		disk_total_kib;
 	uint64_t		disk_reserved_kib;
 
+	/*
+	 * Strictly-increasing log chunk timestamp latch.  It is builder-wide
+	 * and not per-nspawn: a task's steps are each a separate nspawn, and
+	 * the browser pages a task's logs with a strictly-greater-than
+	 * timestamp cursor, so a later step issuing a timestamp a previous
+	 * step already used means those rows are never delivered.
+	 */
+	lws_usec_t		last_log_us;
+
 	uint16_t		wrap14;
 	unsigned int		build_timeout_secs;
 
@@ -347,6 +356,26 @@ saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp, st
 
 int
 saib_srv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned int ss_flags);
+
+/*
+ * Queue a log chunk for a task that has no nspawn (yet, or ever): the task-
+ * acceptance path needs to be able to explain a refusal or a failed setup in
+ * the task's own log, since that is the only log that survives the builder's
+ * VM going away.
+ */
+int
+saib_log_chunk_create_uuid(struct sai_plat_server *spm, const char *task_uuid,
+			   const void *buf, size_t len, int channel);
+
+/*
+ * Report a builder-side decision about a task into the task's own log (and our
+ * local log).  \p ns may be NULL, in which case \p spm and \p task_uuid say
+ * where it goes.
+ */
+int
+saib_task_logf(struct sai_plat_server *spm, struct sai_nspawn *ns,
+	       const char *task_uuid, const char *fmt, ...)
+	LWS_FORMAT(4);
 
 int
 saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,

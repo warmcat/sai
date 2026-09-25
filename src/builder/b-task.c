@@ -518,8 +518,14 @@ saib_sub_cleaner_cb(lws_sorted_usec_list_t *sul)
 						 sul_cleaner);
 	lwsl_warn("%s: +++++ Task completion grace period ended with ns alive\n", __func__);
 
-
 	if (ns->op && ns->op->lsp) {
+		if (!ns->term_budget)
+			saib_task_logf(ns->spm, ns, NULL,
+				       "Step %d completed but its process is "
+				       "still alive after the grace period, "
+				       "terminating it",
+				       ns->task ? ns->task->build_step + 1 : 0);
+
 		lwsl_notice("%s: +++++++++++ killing child process (budget %d)\n", __func__, ns->term_budget);
 		lws_spawn_piped_kill_child_process(ns->op->lsp);
 
@@ -532,6 +538,11 @@ saib_sub_cleaner_cb(lws_sorted_usec_list_t *sul)
 					 saib_sub_cleaner_cb, 250 * LWS_US_PER_MS);
 			return;
 		}
+
+		saib_task_logf(ns->spm, ns, NULL,
+			       "Unable to terminate the step process, "
+			       "abandoning it: the builder may have a stray "
+			       "process left behind");
 
 		lwsl_err("%s: ============= unable to kill child process -> destroying ns forcibly\n", __func__);
 		/*
@@ -874,7 +885,7 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 		script_path[512];
 	sai_plat_t *sp = NULL;
 	struct sai_nspawn *ns;
-	int n, en, ml, fd;
+	int n, en = 0, ml, fd;
 	sai_task_t *task;
 
 	task = (sai_task_t *)a->dest;
@@ -979,6 +990,14 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 	memset(ns, 0, sizeof(*ns));
 	ns->builder	= &builder;
 	ns->sp		= sp;
+	/*
+	 * Bind the task and the server connection immediately: every failure
+	 * path from here on wants to be able to say what went wrong in the
+	 * task's own log, and nothing should ever see an nspawn on the list
+	 * with no task.
+	 */
+	ns->task	= task;
+	ns->spm		= spm;
 
 	/*
 	 * Find the lowest free ordinal and use that.  It doesn't
@@ -1076,13 +1095,7 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 	ns->hash		= task->git_hash;
 	ns->git_repo_url	= task->git_repo_url;
 
-	if (ns->task && ns->task->ac_task_container) {
-		struct lwsac *ac = ns->task->ac_task_container;
-		lwsac_free(&ac);
-	}
-
-	ns->task		= task; /* we are owning this nspawn for the duration */
-	ns->spm			= spm; /* bind this task to the spm the req came in on */
+	/* ns->task / ns->spm were bound when the nspawn was created */
 
 	if (!ns->task->build_step) {
 		ns->spins	= 0;
@@ -1177,14 +1190,18 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 			ns->inp, csep);
 	fd = open(script_path, O_CREAT | O_TRUNC | O_WRONLY, 0755);
 	if (fd < 0) {
-		lwsl_warn("%s: failed to open git script for write %s\n",
-			  __func__, script_path);
+		saib_task_logf(spm, ns, NULL,
+			       "Unable to create %s: errno %d (%s)",
+			       script_path, errno, strerror(errno));
 		goto bail;
 	}
 
 	if ((size_t)write(fd, git_helper_sh, strlen(git_helper_sh)) != strlen(git_helper_sh)) {
-		lwsl_warn("%s: failed to write git script %s\n", __func__, script_path);
+		en = errno;
 		close(fd);
+		saib_task_logf(spm, ns, NULL,
+			       "Unable to write %s: errno %d (%s)",
+			       script_path, en, strerror(en));
 		goto bail;
 	}
 	close(fd);
@@ -1196,13 +1213,18 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 			_SH_DENYNO, _S_IWRITE))
 		fd = -1;
 	if (fd < 0) {
-		lwsl_warn("%s: failed to open git script for write %s\n", __func__, script_path);
+		saib_task_logf(spm, ns, NULL,
+			       "Unable to create %s: errno %d (%s)",
+			       script_path, errno, strerror(errno));
 		goto bail;
 	}
 
 	if ((size_t)write(fd, git_helper_bat, (unsigned int)strlen(git_helper_bat)) != strlen(git_helper_bat)) {
-		lwsl_warn("%s: failed to write git script %s\n", __func__, script_path);
+		en = errno;
 		close(fd);
+		saib_task_logf(spm, ns, NULL,
+			       "Unable to write %s: errno %d (%s)",
+			       script_path, en, strerror(en));
 		goto bail;
 	}
 	close(fd);
@@ -1237,10 +1259,21 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 	return 0;
 
 ebail:
-	lwsl_err("%s: unable to create %s\n", __func__, ns->inp);
+	saib_task_logf(spm, ns, NULL,
+		       "Unable to create the job dir %s: errno %d (%s)",
+		       ns->inp, en, strerror(en));
 
 bail:
-	lwsl_notice("%s: failing spawn cleanly\n", __func__);
+	/*
+	 * We are about to report this step as failed with nothing in the log to
+	 * say why, unless one of the paths that got us here already did.  These
+	 * builders are often transient VMs, so the local log is no help after
+	 * the fact.
+	 */
+	saib_task_logf(spm, ns, NULL,
+		       "Builder %s could not start step %d, failing the task",
+		       sp->name, ns->task ? ns->task->build_step + 1 : 0);
+
 	saib_set_ns_state(ns, NSSTATE_FAILED);
 	saib_task_grace(ns);
 

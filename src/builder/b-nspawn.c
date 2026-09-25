@@ -24,6 +24,9 @@
 #include <libwebsockets.h>
 
 #include <string.h>
+#include <stdarg.h>
+#include <stdio.h>
+#include <errno.h>
 
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -39,55 +42,46 @@
 
 extern struct lws_vhost *builder_vhost;
 
-int
-saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
+/*
+ * Build and queue one log chunk.  \p task_uuid identifies the task it belongs
+ * to; \p ns may be NULL, in which case there is no retcode to attach and no
+ * spew accounting to do.
+ */
+
+static int
+saib_log_chunk(struct sai_plat_server *spm, struct sai_nspawn *ns,
+	       const char *task_uuid, const void *buf, size_t len, int channel)
 {
 	char lj[2600 + LWS_PRE];
 	lws_usec_t us;
 	int n = 0;
 
-	if (!ns || !ns->spm)
+	if (!spm || !task_uuid || !task_uuid[0])
 		return 1;
 
-	if (!ns->task)
-		return 0;
-
-	{
-		unsigned int limit = ns->task->task_log_limit ? ns->task->task_log_limit : 30000;
-		ns->log_count++;
-
-		if (ns->log_count > limit) {
-			if (!ns->killed_for_spew) {
-				ns->killed_for_spew = 1;
-				if (ns->op && ns->op->lsp) {
-					const char *msg = ">saib> <=== Killed by Sai due to log spew limit exceeded\n";
-					saib_log_chunk_create(ns, (void *)msg, strlen(msg), 3);
-					lws_spawn_piped_kill_child_process(ns->op->lsp);
-				}
-			}
-			return 0;
-		}
-	}
 	/*
 	 * The web pages a task's logs 50 rows at a time with a strictly
 	 * greater-than timestamp cursor, so chunks sharing the timestamp of
 	 * the last row on a page are never delivered.  On Windows the clock
 	 * ticks at a millisecond or coarser, so a burst of chunks readily
-	 * shares one: issue strictly increasing timestamps per nspawn.
+	 * shares one: issue strictly increasing timestamps.  The latch is
+	 * builder-wide rather than per-nspawn, since a task's steps are each
+	 * their own nspawn and must not reissue timestamps an earlier step
+	 * already used.
 	 */
 	us = lws_now_usecs();
-	if (us <= ns->last_log_us)
-		us = ns->last_log_us + 1;
-	ns->last_log_us = us;
+	if (us <= builder.last_log_us)
+		us = builder.last_log_us + 1;
+	builder.last_log_us = us;
 
 	n = lws_snprintf(lj + LWS_PRE, sizeof(lj) - LWS_PRE,
 		"{\"schema\":\"com-warmcat-sai-logs\","
 		 "\"task_uuid\":\"%s\", \"timestamp\": %llu,"
 		 "\"channel\": %d, \"len\": %d, ",
-		 ns->task->uuid, (unsigned long long)us,
+		 task_uuid, (unsigned long long)us,
 		 channel, (int)len);
 
-	if (ns->retcode_set) {
+	if (ns && ns->retcode_set) {
 		n += lws_snprintf(lj + LWS_PRE + n,
 				  sizeof(lj) - LWS_PRE - (unsigned int)n,
 				  "\"finished\":%d,", ns->retcode);
@@ -103,17 +97,95 @@ saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
 			  sizeof(lj) - LWS_PRE - (unsigned int)n,
 			  "\"log\":\"");
 
-	// puts((const char *)&chunk[1]);
-	// puts((const char *)start);
-
 	n += lws_b64_encode_string(buf, (int)len, (char *)&lj[LWS_PRE + n],
 				   (int)sizeof(lj) - LWS_PRE - n - 5);
 
-	lj[LWS_PRE + n++] = '\"';
+	lj[LWS_PRE + n++] = '"';
 	lj[LWS_PRE + n++] = '}';
 	lj[LWS_PRE + n] = '\0';
 
-	return saib_srv_queue_tx(ns->spm->ss, lj + LWS_PRE, (size_t)n, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+	return saib_srv_queue_tx(spm->ss, lj + LWS_PRE, (size_t)n,
+				 LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
+}
+
+int
+saib_log_chunk_create_uuid(struct sai_plat_server *spm, const char *task_uuid,
+			   const void *buf, size_t len, int channel)
+{
+	return saib_log_chunk(spm, NULL, task_uuid, buf, len, channel);
+}
+
+int
+saib_log_chunk_create(struct sai_nspawn *ns, void *buf, size_t len, int channel)
+{
+	if (!ns || !ns->spm)
+		return 1;
+
+	if (!ns->task)
+		return 0;
+
+	{
+		unsigned int limit = ns->task->task_log_limit ? ns->task->task_log_limit : 30000;
+
+		ns->log_count++;
+
+		if (ns->log_count > limit) {
+			if (!ns->killed_for_spew) {
+				const char *msg = ">saib> <=== Killed by Sai due to log spew limit exceeded\n";
+
+				ns->killed_for_spew = 1;
+
+				/*
+				 * Say so directly rather than recursively:
+				 * re-entering here would find the limit
+				 * already exceeded and silently drop the one
+				 * message that explains the kill.
+				 */
+				saib_log_chunk(ns->spm, ns, ns->task->uuid,
+					       msg, strlen(msg), 3);
+
+				if (ns->op && ns->op->lsp)
+					lws_spawn_piped_kill_child_process(ns->op->lsp);
+			}
+			return 0;
+		}
+	}
+
+	return saib_log_chunk(ns->spm, ns, ns->task->uuid, buf, len, channel);
+}
+
+/*
+ * Report a builder-side problem with a task in the task's own log, as well as
+ * in our local log.  The builders are often transient VMs whose local logs are
+ * gone by the time anybody looks, so anything that decides a task's fate has to
+ * say why in the stream that goes to the server.
+ */
+
+int
+saib_task_logf(struct sai_plat_server *spm, struct sai_nspawn *ns,
+	       const char *task_uuid, const char *fmt, ...)
+{
+	char s[512];
+	va_list ap;
+	int n;
+
+	n = lws_snprintf(s, sizeof(s), ">saib> ");
+
+	va_start(ap, fmt);
+	n += vsnprintf(s + n, sizeof(s) - (unsigned int)n - 2, fmt, ap);
+	va_end(ap);
+
+	if (n > (int)sizeof(s) - 2)
+		n = (int)sizeof(s) - 2;
+	s[n++] = '\n';
+	s[n] = '\0';
+
+	lwsl_warn("%s", s);
+
+	if (ns)
+		return saib_log_chunk_create(ns, s, (size_t)n, 3);
+
+	return saib_log_chunk_create_uuid(spm, task_uuid, s, (size_t)n, 3);
 }
 
 /*
@@ -308,8 +380,19 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		goto fail;
 	}
 
-	switch (si->si_code) {
-	case CLD_EXITED:
+	/*
+	 * lws reports the disposition as CLD_EXITED + si_status for a clean
+	 * exit, and si_code 0 for anything else, with si_status carrying
+	 * 128 + signal the way a shell does (or -1 if the child was reaped
+	 * elsewhere and we never learned).  si_signo is not filled in, so the
+	 * signal has to come out of si_status.
+	 *
+	 * Every branch must set retcode / retcode_set: leaving them alone
+	 * reports ecode 0 to the server, which it reads as a failure with no
+	 * explanation anywhere.
+	 */
+
+	if (si->si_code == CLD_EXITED) {
 		lwsl_notice("%s: Process Exited with exit code %d\n",
 			    __func__, si->si_status);
 		exit_code = si->si_status;
@@ -317,17 +400,30 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 		ns->retcode = SAISPRF_EXIT | si->si_status;
 		if (ns->user_cancel)
 			ns->retcode = SAISPRF_TERMINATED;
-		break;
-	case CLD_KILLED:
-	case CLD_DUMPED:
-		lwsl_notice("%s: Process Terminated by signal %d / %d\n",
-			    __func__, si->si_status, si->si_signo);
-		ns->retcode = SAISPRF_SIGNALLED | si->si_signo;
+	} else {
+		int sig = si->si_status > 128 ? si->si_status - 128 : 0;
+
+		exit_code = -1;
+
+		if (sig) {
+			saib_task_logf(ns->spm, ns, NULL,
+				       "Build process terminated by signal %d",
+				       sig);
+			ns->retcode = SAISPRF_SIGNALLED | sig;
+		} else {
+			/*
+			 * We know he's gone but not how... don't let it look
+			 * like a clean exit
+			 */
+			saib_task_logf(ns->spm, ns, NULL,
+				       "Build process disappeared without a "
+				       "usable exit status (si_code %d, "
+				       "si_status %d)", si->si_code,
+				       si->si_status);
+			ns->retcode = SAISPRF_TERMINATED;
+		}
+
 		ns->retcode_set = 1;
-		break;
-	default:
-		lwsl_notice("%s: SI code %d\n", __func__, si->si_code);
-		break;
 	}
 #else
 	exit_code = si->retcode & 0xff;
@@ -637,7 +733,9 @@ saib_spawn_script(struct sai_nspawn *ns)
 	fd = open(ns->script_path, O_CREAT | O_TRUNC | O_WRONLY, 0755);
 #endif
 	if (fd < 0) {
-		lwsl_err("%s: unable to open %s for write\n", __func__, ns->script_path);
+		saib_task_logf(ns->spm, ns, NULL,
+			       "Unable to create the step script %s: errno %d (%s)",
+			       ns->script_path, errno, strerror(errno));
 		return 1;
 	}
 
@@ -686,8 +784,12 @@ saib_spawn_script(struct sai_nspawn *ns)
 	/* but from the script's pov, it's chrooted at /home/sai */
 
 	if (write(fd, st, (unsigned int)n) != n) {
+		int en = errno;
+
 		close(fd);
-		lwsl_err("%s: failed to write runscript to %s\n", __func__, ns->script_path);
+		saib_task_logf(ns->spm, ns, NULL,
+			       "Unable to write the step script %s: errno %d (%s)",
+			       ns->script_path, en, strerror(en));
 		return 1;
 	}
 
@@ -753,7 +855,10 @@ saib_spawn_script(struct sai_nspawn *ns)
 	lwsl_user("%s: calling lws_spawn_piped for task uuid %s\n", __func__, ns->task->uuid);
 	lws_spawn_piped(&info);
 	if (!op->lsp) {
-		lwsl_user("%s: lws_spawn_piped failed to provide lsp\n", __func__);
+		saib_task_logf(ns->spm, ns, NULL,
+			       "Unable to spawn the step process (errno %d (%s)): "
+			       "the builder could not fork, allocate a pty or "
+			       "exec %s", errno, strerror(errno), ns->script_path);
 		/*
 		 * op is attached to wsi and will be freed in reap cb,
 		 * we can't free it here
