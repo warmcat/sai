@@ -206,11 +206,8 @@ sais_dump_logs_to_db(lws_sorted_usec_list_t *sul)
 static void
 sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 {
-	char event_uuid[33], q[256], esc_uuid[129];
 	sais_logcache_pertask_t *lcpt = NULL;
-	sqlite3 *pdb = NULL;
 	sai_log_t *hlog;
-	int step;
 
 	if (!log || !log->log)
 		return;
@@ -313,27 +310,20 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
 		}
 	}
 
-	if (log->len < 5 || memcmp(log->log, " Step ", 5))
-		return;
-
-	step = atoi(&log->log[5]);
-
-	sai_task_uuid_to_event_uuid(event_uuid, log->task_uuid);
-
-	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
-			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb))
-		return;
-
-	lws_sql_purify(esc_uuid, log->task_uuid, sizeof(esc_uuid));
-
-	lws_snprintf(q, sizeof(q),
-		     "UPDATE tasks SET build_step=%d WHERE uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
-		     step, esc_uuid, esc_uuid);
-
-	if (sai_sqlite3_statement(pdb, q, "update build_step"))
-		lwsl_err("%s: failed to update build_step\n", __func__);
-
-	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+	/*
+	 * There used to be a second, log-driven writer of tasks.build_step
+	 * here, matching a chunk starting " Step " and taking the step number
+	 * out of it.  The builder's line is ">saib> Step N: [...]", so it never
+	 * matched and has been dead for a long time; sais_process_rej()'s
+	 * SAI_TASK_REASON_ACCEPTED handler is the only thing that advances
+	 * build_step, and it does so from the DB rather than from log text.
+	 *
+	 * It isn't worth reviving: logs reach the db from a 250ms timer, so a
+	 * step's line can land after the next step was already accepted, and
+	 * rewinding build_step there re-runs a step -- or makes
+	 * build_step == build_step_count - 1 come true early, which has the
+	 * builder delete the job dir out from under the rest of the build.
+	 */
 }
 
 sai_plat_t *
