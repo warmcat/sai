@@ -93,6 +93,20 @@ struct saib_opaque_spawn {
 #define SAI_STAY_POLL_US			(20 * LWS_US_PER_SEC)
 #define SAI_CLEANUP_JOBS_INTERVAL_US		(60ULL * 60ULL * LWS_US_PER_SEC)
 #define SAI_CLEANUP_JOB_DIR_MIN_AGE_SECS	(24ull * 3600u)
+/*
+ * The disk-pressure path may delete job dirs of any age, so it needs its own
+ * floor: a dir this young is either in use or between the steps of a task we
+ * are still building, and deleting it breaks that build.
+ */
+#define SAI_FREEKIB_JOB_DIR_MIN_AGE_SECS	(30u * 60u)
+/*
+ * How long a job dir hold survives without being renewed.  A task whose steps
+ * are still coming renews its hold at every step, so this only has to outlast
+ * the gap between one step finishing and the next being offered (plus however
+ * long the server takes to get around to us).  It is the backstop that stops a
+ * task that died on the server side pinning its job dir forever.
+ */
+#define SAI_JOBDIR_HOLD_MAX_SECS		(2u * 3600u)
 
 
 struct saib_ws_pss;
@@ -147,6 +161,7 @@ struct sai_builder {
 	lws_dll2_owner_t	sai_plat_server_owner; /* servers we connect to */
 	lws_dll2_owner_t	devices_owner; /* sai_serial_t */
 	lws_dll2_owner_t	lsp_owner; /* list of lws_spawn_piped */
+	lws_dll2_owner_t	jobdir_hold_owner; /* saib_jobdir_hold_t */
 	lws_dll2_owner_t	shell_owner; /* list of sai_shell */
 
 	struct lws_ss_handle	*ss_stay;
@@ -412,7 +427,36 @@ saib_deletion_request(const char *job);
 extern void
 suspender_destroy(void);
 int
-saib_deletion_free_kib(unsigned int needed_kib);
+saib_deletion_free_kib(unsigned int needed_kib, const char *protect_vn);
+
+/*
+ * A task's build steps are each their own nspawn, so between steps there is no
+ * live nspawn pointing at the job dir and nothing else stops the deletion paths
+ * removing it.  A hold on the job dir's 8-char "vn" name covers that gap.
+ */
+
+typedef struct saib_jobdir_hold {
+	lws_dll2_t		list;
+	char			vn[16];
+	uint64_t		renewed;	/* lws_now_secs() */
+} saib_jobdir_hold_t;
+
+void
+saib_jobdir_hold(const char *vn);
+void
+saib_jobdir_release(const char *vn);
+int
+saib_jobdir_is_held(const char *vn);
+void
+saib_jobdir_holds_destroy(void);
+
+/*
+ * The job dir name for a task: the first 4 and last 4 chars of its uuid.  Both
+ * the acceptance path (which must protect the dir before the nspawn exists)
+ * and the nspawn setup derive it, so it lives in one place.
+ */
+void
+saib_task_jobdir_vn(char *dest, size_t dest_len, const char *task_uuid);
 int
 saib_reassess_idle_situation(void);
 void

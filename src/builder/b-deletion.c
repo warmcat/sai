@@ -398,6 +398,109 @@ sai_deletion_worker(const char *home_dir_unused)
  * We are careful not to delete anything that is part of an ongoing job.
  */
 
+/*
+ * Job dir holds
+ *
+ * A task's build steps are each offered, run and destroyed separately, so
+ * between one step finishing and the next being offered there is no nspawn
+ * pointing at the job dir.  The live-nspawn scan below is therefore not enough
+ * to protect a job dir of a build that is still going: a hold covers the gap.
+ *
+ * Holds are renewed at every step and dropped when the task finishes or fails,
+ * with a generous expiry as a backstop for a task that vanished server-side.
+ */
+
+static saib_jobdir_hold_t *
+saib_jobdir_hold_find(const char *vn)
+{
+	lws_start_foreach_dll(struct lws_dll2 *, p, builder.jobdir_hold_owner.head) {
+		saib_jobdir_hold_t *h = lws_container_of(p, saib_jobdir_hold_t, list);
+
+		if (!strcmp(h->vn, vn))
+			return h;
+
+	} lws_end_foreach_dll(p);
+
+	return NULL;
+}
+
+void
+saib_jobdir_hold(const char *vn)
+{
+	saib_jobdir_hold_t *h;
+
+	if (!vn || !vn[0])
+		return;
+
+	h = saib_jobdir_hold_find(vn);
+	if (!h) {
+		h = malloc(sizeof(*h));
+		if (!h)
+			return;
+		memset(h, 0, sizeof(*h));
+		lws_strncpy(h->vn, vn, sizeof(h->vn));
+		lws_dll2_add_tail(&h->list, &builder.jobdir_hold_owner);
+		lwsl_info("%s: holding job dir %s\n", __func__, vn);
+	}
+
+	h->renewed = (uint64_t)lws_now_secs();
+}
+
+void
+saib_jobdir_release(const char *vn)
+{
+	saib_jobdir_hold_t *h;
+
+	if (!vn || !vn[0])
+		return;
+
+	h = saib_jobdir_hold_find(vn);
+	if (!h)
+		return;
+
+	lwsl_info("%s: releasing job dir %s\n", __func__, vn);
+	lws_dll2_remove(&h->list);
+	free(h);
+}
+
+int
+saib_jobdir_is_held(const char *vn)
+{
+	saib_jobdir_hold_t *h = saib_jobdir_hold_find(vn);
+	uint64_t now;
+
+	if (!h)
+		return 0;
+
+	now = (uint64_t)lws_now_secs();
+
+	if (now > h->renewed &&
+	    now - h->renewed > SAI_JOBDIR_HOLD_MAX_SECS) {
+		lwsl_notice("%s: hold on job dir %s expired after %llus\n",
+			    __func__, vn,
+			    (unsigned long long)(now - h->renewed));
+		lws_dll2_remove(&h->list);
+		free(h);
+
+		return 0;
+	}
+
+	return 1;
+}
+
+void
+saib_jobdir_holds_destroy(void)
+{
+	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
+				   builder.jobdir_hold_owner.head) {
+		saib_jobdir_hold_t *h = lws_container_of(p, saib_jobdir_hold_t, list);
+
+		lws_dll2_remove(&h->list);
+		free(h);
+
+	} lws_end_foreach_dll_safe(p, p1);
+}
+
 struct inactive_job {
 	struct inactive_job *next;
 	char name[32];
@@ -451,6 +554,18 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 
 	} lws_end_foreach_dll(p);
 
+	/*
+	 * A task between two of its steps has no live nspawn, so it will not be
+	 * on the active list above... but its job dir still holds the tree the
+	 * next step is going to build in
+	 */
+
+	if (saib_jobdir_is_held(lde->name)) {
+		lwsl_info("%s: %s is held (task still building)\n", __func__,
+			  lde->name);
+		return 0;
+	}
+
 	lws_snprintf(path, sizeof(path), "%s/%s", dirpath, lde->name);
 	if (stat(path, &sb)) {
 		lwsl_notice("%s: stat failed %s: errno %d (%s)\n", __func__, path, errno, strerror(errno));
@@ -499,8 +614,16 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 	return 0;
 }
 
+/*
+ * Try to get \p needed_kib available under <home>/jobs by removing job dirs.
+ *
+ * \p protect_vn, if given, is the job dir of the task this is being done on
+ * behalf of: it must survive even though it has no live nspawn, since its
+ * earlier steps' output is what the next step builds on.
+ */
+
 int
-saib_deletion_free_kib(unsigned int needed_kib)
+saib_deletion_free_kib(unsigned int needed_kib, const char *protect_vn)
 {
 	struct sai_builder *b = &builder;
 	struct cleanup_ctx ctx;
@@ -529,27 +652,63 @@ saib_deletion_free_kib(unsigned int needed_kib)
 		} lws_end_foreach_dll_safe(d2, d3);
 	} lws_end_foreach_dll_safe(d, d1);
 
+	/*
+	 * Add the dir we must not touch to the active list: the scan spares
+	 * anything on it, and it needs no other special-casing
+	 */
+
+	if (protect_vn && protect_vn[0]) {
+		struct active_job_uuid *aj = lwsac_use_zero(&ctx.ac, sizeof(*aj), 64);
+
+		if (aj) {
+			lws_strncpy(aj->uuid, protect_vn, sizeof(aj->uuid));
+			lws_dll2_add_tail(&aj->list, &ctx.active_owner);
+		}
+	}
+
 	lws_snprintf(path, sizeof(path), "%s/jobs", b->home);
 	lws_dir(path, &ctx, scan_jobs_dir_cb);
 
 	if (ctx.inactive_count) {
-		int n, to_delete = 1;
+		int n, to_delete = 1, candidates = 0;
 		struct inactive_job **sorted, *ij;
-
-		/* Assume each job frees roughly 100MB to reduce ping-ponging */
-		to_delete = (int)(needed_kib - free_kib) / (100 * 1024);
-		if (to_delete < 1) to_delete = 1;
-		if (to_delete > ctx.inactive_count) to_delete = ctx.inactive_count;
 
 		sorted = lwsac_use(&ctx.ac, sizeof(*sorted) * (unsigned int)ctx.inactive_count, 0);
 		if (sorted) {
-			n = 0;
 			ij = ctx.inactive_head;
 			while (ij) {
-				sorted[n++] = ij;
+				/*
+				 * Unlike the periodic cleanup, we delete dirs
+				 * that are not yet a day old, so we need our
+				 * own floor: something this fresh belongs to a
+				 * build that is still going on (a task waiting
+				 * for its next step to be offered, say) and
+				 * taking it just breaks that build instead of
+				 * fixing our disk problem.
+				 */
+				if (ij->age >= SAI_FREEKIB_JOB_DIR_MIN_AGE_SECS)
+					sorted[candidates++] = ij;
+				else
+					lwsl_info("%s: sparing %s, only %llus old\n",
+						  __func__, ij->name,
+						  (unsigned long long)ij->age);
 				ij = ij->next;
 			}
-			qsort(sorted, (size_t)ctx.inactive_count, sizeof(*sorted), compare_age);
+
+			if (!candidates) {
+				lwsl_warn("%s: need %uMiB, only %uMiB free, but no "
+					  "job dir is old enough to remove\n",
+					  __func__, needed_kib / 1024,
+					  free_kib / 1024);
+				goto done;
+			}
+
+			/* Assume each job frees roughly 100MB to reduce ping-ponging */
+			to_delete = (int)(needed_kib - free_kib) / (100 * 1024);
+			if (to_delete < 1) to_delete = 1;
+			if (to_delete > candidates) to_delete = candidates;
+
+			qsort(sorted, (size_t)candidates, sizeof(*sorted), compare_age);
 
 			for (n = 0; n < to_delete; n++) {
 				lwsl_notice("%s: out of space (need %uMiB, free %uMiB): requesting removal of %s (age %llus)\n",
@@ -562,6 +721,8 @@ saib_deletion_free_kib(unsigned int needed_kib)
 			}
 		}
 	}
+
+done:
 
 	lwsac_free(&ctx.ac);
 	return 0;

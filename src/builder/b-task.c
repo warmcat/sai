@@ -168,8 +168,53 @@ const char *git_helper_bat =
 
 
 
+/*
+ * The job dir for a task is named from the first 4 and last 4 chars of its
+ * uuid.  Both the acceptance path (which has to protect the dir before any
+ * nspawn exists) and the nspawn setup need it.
+ */
+
+void
+saib_task_jobdir_vn(char *dest, size_t dest_len, const char *task_uuid)
+{
+	size_t l = strlen(task_uuid);
+
+	if (dest_len < 9 || l < 8) {
+		lws_strncpy(dest, task_uuid, dest_len);
+		return;
+	}
+
+	memcpy(dest, task_uuid, 4);
+	memcpy(dest + 4, task_uuid + l - 4, 4);
+	dest[8] = '\0';
+}
+
+/*
+ * The server keeps re-offering a task we refused, so an explanation of the
+ * refusal has to be rate-limited or it becomes the task's log.  One line per
+ * task per minute is enough to see why a task sat around.
+ */
+
 static int
-saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
+saib_refusal_loggable(const char *task_uuid)
+{
+	static char last_uuid[65];
+	static lws_usec_t last_us;
+	lws_usec_t now = lws_now_usecs();
+
+	if (!strcmp(last_uuid, task_uuid) &&
+	    now - last_us < 60 * LWS_US_PER_SEC)
+		return 0;
+
+	lws_strncpy(last_uuid, task_uuid, sizeof(last_uuid));
+	last_us = now;
+
+	return 1;
+}
+
+static int
+saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
+		     sai_plat_t *sp)
 {
 	unsigned int tc = sp->job_limit ? sp->job_limit : 6u;
 #if 0
@@ -214,22 +259,60 @@ saib_can_accept_task(sai_task_t *task, sai_plat_t *sp)
 		}
 	}
 
-	if ((((builder.ram_limit_kib * 4) / 3) - builder.ram_reserved_kib) < task->est_peak_mem_kib) {
-		lwsl_notice("%s: reject task %s: not enough RAM: task %u vs %u lim - %u res\n", __func__,
-			    task->uuid, (unsigned int)task->est_peak_mem_kib, (unsigned int)builder.ram_limit_kib, (unsigned int)builder.ram_reserved_kib);
-		return 1;
+	{
+		uint64_t budget = (builder.ram_limit_kib * 4) / 3;
+
+		budget = builder.ram_reserved_kib > budget ? 0 :
+					budget - builder.ram_reserved_kib;
+
+		if (budget < task->est_peak_mem_kib) {
+			if (saib_refusal_loggable(task->uuid))
+				saib_task_logf(spm, NULL, task->uuid,
+					"Builder %s can't take this step yet: "
+					"needs %uMiB RAM, %lluMiB of its "
+					"%lluMiB budget left", sp->name,
+					(unsigned int)(task->est_peak_mem_kib / 1024),
+					(unsigned long long)(budget / 1024),
+					(unsigned long long)((builder.ram_limit_kib * 4) / 3 / 1024));
+			return 1;
+		}
 	}
 
 	{
-		unsigned int free_disk = saib_get_free_disk_kib(builder.home);
-		unsigned int needed_disk = task->est_disk_kib + (unsigned int)builder.disk_reserved_kib;
+		uint64_t free_disk = saib_get_free_disk_kib(builder.home);
+		uint64_t needed_disk = (uint64_t)task->est_disk_kib +
+						builder.disk_reserved_kib;
+		char vn[16];
 
 		/* leave 12.5% of free space as a safety margin */
 		if (free_disk < needed_disk + (free_disk / 8)) {
-			lwsl_notice("%s: reject task %s: not enough disk: needed %u (task %u + res %u), actual free %u\n", __func__,
-				    task->uuid, needed_disk, (unsigned int)task->est_disk_kib, (unsigned int)builder.disk_reserved_kib, free_disk);
-			
-			saib_deletion_free_kib(needed_disk + (free_disk / 8));
+			uint64_t want = needed_disk + (free_disk / 8);
+
+			if (saib_refusal_loggable(task->uuid))
+				saib_task_logf(spm, NULL, task->uuid,
+					"Builder %s can't take this step yet: "
+					"needs %lluMiB (step %uMiB + %lluMiB "
+					"reserved by other steps), only %lluMiB "
+					"free on %s", sp->name,
+					(unsigned long long)(needed_disk / 1024),
+					(unsigned int)(task->est_disk_kib / 1024),
+					(unsigned long long)(builder.disk_reserved_kib / 1024),
+					(unsigned long long)(free_disk / 1024),
+					builder.home);
+
+			/*
+			 * Try to make room, but never at the cost of the job
+			 * dir of the very task we are being offered: its
+			 * earlier steps' output is in there
+			 */
+
+			saib_task_jobdir_vn(vn, sizeof(vn), task->uuid);
+
+			if (want > 0xffffffffull)
+				want = 0xffffffffull;
+
+			saib_deletion_free_kib((unsigned int)want, vn);
+
 			return 1;
 		}
 	}
@@ -453,8 +536,20 @@ saib_task_destroy(struct sai_nspawn *ns)
 					      (unsigned int)ns->retcode,
 					      SAI_TASK_REASON_DESTROYED);
 
-		builder.ram_reserved_kib	-= ns->task->est_peak_mem_kib;
-		builder.disk_reserved_kib	-= ns->task->est_disk_kib;
+		/*
+		 * Only ever give back what this ns took.  Giving back the
+		 * task's estimate for an ns that never reserved anything (it
+		 * failed during setup) underflowed these, after which every
+		 * offered task looked disk-starved and the deletion path
+		 * purged job dirs to try to make room that was never missing.
+		 */
+
+		builder.ram_reserved_kib  -= builder.ram_reserved_kib < ns->res_ram_kib ?
+					builder.ram_reserved_kib : ns->res_ram_kib;
+		builder.disk_reserved_kib -= builder.disk_reserved_kib < ns->res_disk_kib ?
+					builder.disk_reserved_kib : ns->res_disk_kib;
+		ns->res_ram_kib = 0;
+		ns->res_disk_kib = 0;
 		if (ns->spm)
 			lws_sul_schedule(builder.context, 0,
 					 &ns->spm->sul_load_report,
@@ -481,19 +576,45 @@ saib_task_destroy(struct sai_nspawn *ns)
 	 * since they will touch it during their close handling.
 	 */
 
-	if (ns->task && (ns->retcode & SAISPRF_EXIT) &&
-	    (ns->retcode & 0xff) == 0 &&
-	    ns->task->build_step == ns->task->build_step_count - 1) {
-		/* Task succeeded completely, so clean up the directory. */
+	if (ns->task && ns->inp_vn[0]) {
+		int step_ok = (ns->retcode & SAISPRF_EXIT) &&
+			      !(ns->retcode & 0xff);
+		int last_step = ns->task->build_step ==
+					ns->task->build_step_count - 1;
 
-		lwsl_notice("%s: task %s succeeded (all %d steps), requesting deletion of job dir %s\n",
-			    __func__, ns->task->uuid, ns->task->build_step_count, ns->inp);
+		if (step_ok && !last_step) {
+			/*
+			 * More steps of this task are coming, but each step is
+			 * its own nspawn: from here until the next step is
+			 * offered there is no live nspawn pointing at the job
+			 * dir, and the deletion paths only spare dirs that
+			 * have one.  Hold it over the gap, or the next step
+			 * finds its src/ tree gone.
+			 */
+			saib_jobdir_hold(ns->inp_vn);
+		} else {
+			/*
+			 * Either we're done or we failed.  Failed job dirs are
+			 * deliberately left for inspection, so just drop the
+			 * hold and let the normal age / disk pressure rules
+			 * decide when they go.
+			 */
+			saib_jobdir_release(ns->inp_vn);
+
+			if (step_ok) {
+				/* Task succeeded completely, clean up the dir */
+
+				lwsl_notice("%s: task %s succeeded (all %d steps), requesting deletion of job dir %s\n",
+					    __func__, ns->task->uuid,
+					    ns->task->build_step_count, ns->inp);
 #if defined(LWS_WITH_STUB)
-		if (builder.mgr_deletion) {
-			if (saib_deletion_request(ns->inp_vn) < 0)
-				lwsl_err("%s: failed to queue deletion\n", __func__);
-		}
+				if (builder.mgr_deletion &&
+				    saib_deletion_request(ns->inp_vn) < 0)
+					lwsl_err("%s: failed to queue deletion\n",
+						 __func__);
 #endif
+			}
+		}
 	}
 
 	if (ns->task && ns->task->ac_task_container) {
@@ -968,7 +1089,7 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 	 * We're not already running it, let's consider accepting it
 	 */
 
-	if (saib_can_accept_task(task, sp)) {
+	if (saib_can_accept_task(spm, task, sp)) {
 		lwsl_warn("%s: builder rejects offered task\n", __func__);
 		if (saib_queue_task_status_update(sp, spm, task->uuid, 0,
 						  SAI_TASK_REASON_BUSY)) {
@@ -1153,9 +1274,13 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 		goto ebail;
 	}
 
-	memcpy(ns->inp_vn, ns->fsm.ovname, 4);
-	memcpy(ns->inp_vn + 4, ns->fsm.ovname + strlen(ns->fsm.ovname) - 4, 4);
-	ns->inp_vn[8] = '\0';
+	saib_task_jobdir_vn(ns->inp_vn, sizeof(ns->inp_vn), ns->fsm.ovname);
+
+	/*
+	 * Renew the hold on the job dir for as long as this task has steps
+	 * running or pending on us
+	 */
+	saib_jobdir_hold(ns->inp_vn);
 
 	n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
 			  ns->inp_vn, csep);
@@ -1251,8 +1376,16 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 
 	task->started = (uint64_t)lws_now_secs();
 
-	builder.ram_reserved_kib += task->est_peak_mem_kib;
-	builder.disk_reserved_kib += task->est_disk_kib;
+	/*
+	 * Remember what we reserved on the ns itself, so the destroy gives back
+	 * exactly this and nothing at all for an ns that failed before getting
+	 * here
+	 */
+
+	ns->res_ram_kib			 = task->est_peak_mem_kib;
+	ns->res_disk_kib		 = task->est_disk_kib;
+	builder.ram_reserved_kib	+= ns->res_ram_kib;
+	builder.disk_reserved_kib	+= ns->res_disk_kib;
 
 	if (saib_queue_task_status_update(sp, spm, task->uuid, 0, SAI_TASK_REASON_ACCEPTED))
 		goto bail;

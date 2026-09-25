@@ -207,13 +207,28 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 
 		lwsl_notice("%s: received task cancel for %s, erase %d\n", __func__, can->task_uuid, can->erase);
 
-		if (can->erase) {
+		{
+			char vn[16];
+
+			/*
+			 * Job dirs are named from the task uuid, they are not
+			 * the uuid itself... asking for the uuid deleted just
+			 * silently removed nothing.
+			 */
+
+			saib_task_jobdir_vn(vn, sizeof(vn), can->task_uuid);
+
+			/* it's not going to get any more steps */
+			saib_jobdir_release(vn);
+
+			if (can->erase) {
 #if defined(LWS_WITH_STUB)
-			if (builder.mgr_deletion) {
-				if (saib_deletion_request(can->task_uuid) < 0)
-					lwsl_err("%s: failed to queue deletion\n", __func__);
-			}
+				if (builder.mgr_deletion &&
+				    saib_deletion_request(vn) < 0)
+					lwsl_err("%s: failed to queue deletion\n",
+						 __func__);
 #endif
+			}
 		}
 
 		lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,

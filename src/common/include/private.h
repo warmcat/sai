@@ -337,6 +337,18 @@ struct sai_nspawn {
 	int				instance_ordinal;
 	int				count_artifacts;
 
+	/*
+	 * What we actually added to builder.ram_reserved_kib /
+	 * disk_reserved_kib for this nspawn, so the destroy can give back
+	 * exactly that and no more.  The task's estimates are not usable for
+	 * that: an nspawn that failed before the reservation was made never
+	 * added anything, and giving back its estimate anyway underflows the
+	 * builder-wide counters (which then reject every subsequent task and
+	 * make the deletion path purge job dirs).
+	 */
+	unsigned int			res_ram_kib;
+	unsigned int			res_disk_kib;
+
 	uint8_t				spins;
 	uint8_t				state;		/* NSSTATE_ */
 	uint8_t				stdcount;

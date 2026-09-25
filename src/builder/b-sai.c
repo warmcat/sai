@@ -976,6 +976,8 @@ saib_app_run(int argc, const char **argv)
 		lws_stub_destroy(&builder.mgr_deletion);
 #endif
 
+	saib_jobdir_holds_destroy();
+
 
 	/* destroy the unique servers */
 
