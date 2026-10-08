@@ -307,6 +307,12 @@ typedef struct {
 	 * lane needs looking at.  Like a failed run, it's kept for longer.
 	 */
 	int				overran;
+	/*
+	 * Nonzero for a run sai-server gave up on because the builder doing
+	 * it disconnected.  A task whose runs keep getting lost like that is
+	 * failed rather than retried forever.
+	 */
+	int				lost;
 } sai_task_t;
 
 struct saib_logproxy {
@@ -1081,7 +1087,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[15],
-	lsm_task[35],
+	lsm_task[36],
 	lsm_log[9],
 	lsm_artifact[9],
 	lsm_plat_list[1],

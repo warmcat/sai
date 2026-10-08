@@ -688,6 +688,8 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 		t->build_step = 0;
 		
 		if (!from_rejection) {
+			/* the new run hasn't been lost to anything yet */
+			t->lost = 0;
 			/* Reset builder bindings for the new run so it can be picked up by any suitable builder */
 			t->builder[0] = '\0';
 			t->builder_name[0] = '\0';
@@ -767,7 +769,7 @@ sais_task_remove_all_tries(struct vhd *vhd, const char *task_uuid)
 	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 
 	lws_snprintf(cmd, sizeof(cmd), 
-		"update tasks set state=%d,started=0,duration=0,build_step=0,builder_name='',builder='',server_name='' where uuid='%s' and run=0",
+		"update tasks set state=%d,started=0,duration=0,build_step=0,lost=0,builder_name='',builder='',server_name='' where uuid='%s' and run=0",
 		-1, esc);
 	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 

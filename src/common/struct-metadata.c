@@ -233,6 +233,7 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_SIGNED	(sai_task_t, idle,		"idle"),
 	LSM_CARRAY	(sai_task_t, pool,		"pool"),
 	LSM_SIGNED	(sai_task_t, overran,		"overran"),
+	LSM_SIGNED	(sai_task_t, lost,		"lost"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {

@@ -441,6 +441,7 @@ sais_idle_new_run(struct vhd *vhd, sqlite3 *pdb, const char *task_uuid,
 	t->run++;
 	t->state		= SAIES_WAITING;
 	t->overran		= 0;
+	t->lost			= 0;
 	t->started		= 0;
 	t->duration		= 0;
 	t->build_step		= 0;

@@ -52,6 +52,12 @@ enum sai_overview_state {
 	SOS_TASKS,
 };
 
+/*
+ * A task is failed instead of retried once this many of its runs in a row were
+ * lost to the builder doing them disconnecting
+ */
+#define SAIS_TASK_LOST_RUNS_FAIL	3
+
 typedef struct sais_logcache_pertask {
 	lws_dll2_t		list; /* vhd->tasklog_cache is the owner */
 	char			uuid[65];
@@ -557,6 +563,94 @@ sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down
 }
 
 /*
+ * The builder doing this task disconnected while it was at it, so whatever it
+ * was about to tell us went with it and the run's log just stops.
+ *
+ * Mostly that's a builder restarting, or a network blip, and it's right to
+ * start the task again on whichever builder can take it.  But if it keeps
+ * happening, eg, a sai-virt VM that is destroyed at the same point every time,
+ * retrying forever just burns the builder: after a few runs in a row are lost
+ * like that, fail the task instead, and say why.  Rebuilding it starts the
+ * count again.
+ */
+
+typedef struct {
+	lws_dll2_t		list;
+	char			uuid[65];
+	int			step;
+} sais_lost_task_t;
+
+static void
+sais_task_lost_by_builder(struct vhd *vhd, const char *task_uuid,
+			  const char *builder_name, int step)
+{
+	char esc[96], q[384], event_uuid[33];
+	uint64_t started = 0;
+	sqlite3 *pdb = NULL;
+	int lost = 0;
+
+	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
+	lws_sql_purify(esc, task_uuid, sizeof(esc));
+
+	if (!sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+				      vhd->sqlite3_path_lhs, event_uuid, 0,
+				      &pdb)) {
+		lws_snprintf(q, sizeof(q), "update tasks set lost=1 where "
+			     "uuid='%s' and run=(select max(run) from tasks "
+			     "where uuid='%s')", esc, esc);
+		if (sqlite3_exec(pdb, q, NULL, NULL, NULL) != SQLITE_OK)
+			lwsl_err("%s: unable to mark %s lost\n", __func__,
+				 task_uuid);
+
+		/* how many of the newest runs, in a row, were lost */
+		lws_snprintf(q, sizeof(q), "select count(*) from tasks where "
+			     "uuid='%s' and lost=1 and run > (select "
+			     "coalesce(max(run), -1) from tasks where "
+			     "uuid='%s' and lost=0)", esc, esc);
+		sqlite3_exec(pdb, q, sql3_get_integer_cb, &lost, NULL);
+
+		lws_snprintf(q, sizeof(q), "select started from tasks where "
+			     "uuid='%s' order by run desc limit 1", esc);
+		sqlite3_exec(pdb, q, sai_sql3_get_uint64_cb, &started, NULL);
+
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+	}
+
+	if (lost >= SAIS_TASK_LOST_RUNS_FAIL) {
+		lwsl_notice("%s: failing task %s, its last %d runs were lost "
+			    "to disconnected builders\n", __func__, task_uuid,
+			    lost);
+		sais_task_logf(vhd, task_uuid,
+			"builder %s disconnected while this task was at step "
+			"%d, so its log stops there.  That's %d runs in a row "
+			"lost to a builder disconnecting, so it's not being "
+			"retried again: failing the task.  Rebuild it once the "
+			"builder is sorted out", builder_name, step, lost);
+
+		if (sais_set_task_state(vhd, task_uuid, SAIES_FAIL, 0,
+				started ? (uint64_t)lws_now_secs() - started : 0))
+			lwsl_notice("%s: task state update failed, possibly "
+				    "event deleted\n", __func__);
+		return;
+	}
+
+	lwsl_notice("%s: resetting task %s from disconnected builder %s\n",
+		    __func__, task_uuid, builder_name);
+	sais_task_clear_build_and_logs(vhd, task_uuid, 0);
+
+	/*
+	 * Say so at the top of the retry's log: the reset above has already
+	 * moved us to a new run, so this lands there
+	 */
+	sais_task_logf(vhd, task_uuid,
+		"builder %s disconnected while this task was at step %d, so "
+		"the last run's log stops there; retrying the task from the "
+		"beginning (%d run%s in a row lost like this, giving up at "
+		"%d)", builder_name, step, lost, lost == 1 ? "" : "s",
+		SAIS_TASK_LOST_RUNS_FAIL);
+}
+
+/*
  * Called from the builder protocol LWS_CALLBACK_CLOSED handler
  */
 void
@@ -597,8 +691,16 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 
 					if (!sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
 							      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
+						lws_dll2_owner_t lost;
+						struct lwsac *lac = NULL;
 						sqlite3_stmt *sm;
 
+						/*
+						 * Collect them first: dealing with each one
+						 * writes to this db
+						 */
+
+						lws_dll2_owner_clear(&lost);
 						lws_snprintf(q, sizeof(q),
 							"SELECT uuid, build_step FROM tasks WHERE "
 							"builder_name=? AND (state = 0 OR state = %d OR state = %d) "
@@ -609,31 +711,36 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 						if (sqlite3_prepare_v2(pdb, q, -1, &sm, NULL) == SQLITE_OK) {
 							sqlite3_bind_text(sm, 1, sp->name, -1, SQLITE_TRANSIENT);
 							while (sqlite3_step(sm) == SQLITE_ROW) {
-								const unsigned char *task_uuid = sqlite3_column_text(sm, 0);
-								int bs = sqlite3_column_int(sm, 1);
+								const char *task_uuid = (const char *)
+									sqlite3_column_text(sm, 0);
+								sais_lost_task_t *lt;
 
-								if (task_uuid) {
-									lwsl_notice("%s: resetting task %s from disconnected builder %s\n",
-											__func__, (const char *)task_uuid, sp->name);
-									sais_task_clear_build_and_logs(vhd, (const char *)task_uuid, 0);
+								if (!task_uuid)
+									continue;
 
-									/*
-									 * The builder went away mid-task, so whatever it
-									 * was about to tell us went with it and its log just
-									 * stops.  Say so at the top of the retry's log: the
-									 * reset above has already moved us to a new run, so
-									 * this lands there.
-									 */
-									sais_task_logf(vhd, (const char *)task_uuid,
-										"builder %s disconnected while this task was "
-										"at step %d, so its log stops there; retrying "
-										"the task from the beginning",
-										sp->name, bs);
-								}
+								lt = lwsac_use_zero(&lac, sizeof(*lt), 512);
+								if (!lt)
+									break;
+
+								lws_strncpy(lt->uuid, task_uuid,
+									    sizeof(lt->uuid));
+								lt->step = sqlite3_column_int(sm, 1);
+								lws_dll2_add_tail(&lt->list, &lost);
 							}
 							sqlite3_finalize(sm);
 						}
 						sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+
+						lws_start_foreach_dll(struct lws_dll2 *, pl,
+								      lost.head) {
+							sais_lost_task_t *lt = lws_container_of(pl,
+									sais_lost_task_t, list);
+
+							sais_task_lost_by_builder(vhd, lt->uuid,
+									sp->name, lt->step);
+						} lws_end_foreach_dll(pl);
+
+						lwsac_free(&lac);
 					}
 				} lws_end_foreach_dll(pe);
 
