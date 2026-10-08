@@ -377,14 +377,21 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
  * only place that survives is the task's log.
  *
  * The log column holds base64 the browser decodes, and the timestamps are the
- * builder's monotonic clock, so borrow the newest one we have for this task
- * rather than inventing a value from our own unrelated clock.
+ * builder's monotonic clock, so borrow the newest one we have for this run of
+ * the task rather than inventing a value from our own unrelated clock.
+ *
+ * Only this run's: the browser times a run's log from its first row, and an
+ * earlier run may have been on another builder, or the same sai-virt VM name
+ * booted afresh, whose monotonic clock has nothing to do with this run's.  If
+ * this run has no rows yet, eg, our note at the top of a retry, leave it 0:
+ * the browser then takes its time base from the builder's first row instead.
+ * Paging is by uid, so that's safe.
  */
 
 int
 sais_task_logf(struct vhd *vhd, const char *task_uuid, const char *fmt, ...)
 {
-	char text[512], esc[132], q[224], event_uuid[33];
+	char text[512], esc[132], q[320], event_uuid[33];
 	uint64_t ts = 0;
 	sqlite3 *pdb = NULL;
 	sai_log_t log;
@@ -415,14 +422,15 @@ sais_task_logf(struct vhd *vhd, const char *task_uuid, const char *fmt, ...)
 				      &pdb)) {
 		lws_snprintf(q, sizeof(q),
 			     "select coalesce(max(timestamp), 0) from logs "
-			     "where task_uuid='%s'", esc);
+			     "where task_uuid='%s' and run=(select max(run) "
+			     "from tasks where uuid='%s')", esc, esc);
 		sqlite3_exec(pdb, q, sai_sql3_get_uint64_cb, &ts, NULL);
 		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 	}
 
 	memset(&log, 0, sizeof(log));
 	lws_strncpy(log.task_uuid, task_uuid, sizeof(log.task_uuid));
-	log.timestamp	= ts + 1;
+	log.timestamp	= ts ? ts + 1 : 0;
 	log.channel	= 3;
 	log.len		= (size_t)n;
 
