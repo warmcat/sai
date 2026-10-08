@@ -44,20 +44,28 @@ sai_uuid16_create(struct lws_context *context, char *dest33)
 	return 0;
 }
 
+/*
+ * The key build metrics are stored and looked up under: the builder instance
+ * ("host.platform") the task ran on, the task's name, the repo and the short
+ * ref.  The builder makes it when it reports a step's metrics, and the server
+ * when it estimates what a task will need from them, so both must hash the
+ * same things.
+ */
+
 int
 sai_metrics_hash(uint8_t *key, size_t key_len, const char *sp_name,
-		 const char *spawn, const char *project_name,
+		 const char *taskname, const char *project_name,
 		 const char *ref)
 {
 	struct lws_genhash_ctx ctx;
 	uint8_t hash[32];
 
 //	lwsl_notice("%s: }}}}}}}}}}}}}}}}}}}}} '%s' '%s' '%s' '%s'\n", __func__,
-//	sp_name, spawn, project_name, ref);
+//	sp_name, taskname, project_name, ref);
 
 	if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256)		 ||
 	    lws_genhash_update(&ctx, sp_name,	   strlen(sp_name))	 ||
-	    lws_genhash_update(&ctx, spawn,	   strlen(spawn))	 ||
+	    lws_genhash_update(&ctx, taskname,	   strlen(taskname))	 ||
 	    lws_genhash_update(&ctx, project_name, strlen(project_name)) ||
 	    lws_genhash_update(&ctx, ref,	   strlen(ref))		 ||
 	    lws_genhash_destroy(&ctx, hash))

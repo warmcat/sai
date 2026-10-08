@@ -24,6 +24,7 @@
 #include <signal.h>
 #include <time.h>
 #include <assert.h>
+#include <limits.h>
 
 #include "s-private.h"
 
@@ -104,49 +105,100 @@ sais_task_insert(struct lws_context *cx, sqlite3 *pdb, sai_event_t *e,
 					(uint32_t)uid);
 }
 
-void
-sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task)
+static unsigned int
+sais_metric_scale(uint64_t v, unsigned int div)
 {
-	char query[256], hex[65];
+	v /= div;
+
+	return v > UINT_MAX ? UINT_MAX : (unsigned int)v;
+}
+
+/*
+ * Estimate what a task will need on the builder instance builder_name, from
+ * the metrics it reported the last time each step of the task ran there.
+ * With no history for it, the estimates are all 0, so it fits anywhere.
+ *
+ * With step 0, it's the whole task: the peak RAM of its worst step and its
+ * job dir at its largest, so a builder can decide whether to commit to it at
+ * all, since its later steps can only run on the same builder.  With a
+ * 1-based step, it's that step: its own peak RAM, and only what it adds to
+ * the job dir the earlier steps left behind, since that's already on disk.
+ *
+ * Times are summed over the steps it covers.
+ */
+
+void
+sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task,
+				const char *builder_name, int step)
+{
+	uint64_t mem = 0, stg = 0, stg_prev = 0, wall = 0, cpu = 0, v;
 	sqlite3_stmt *stmt;
+	char hex[65];
+	int s;
 
 	task->est_peak_mem_kib	= 0;
 	task->est_disk_kib	= 0;
-	task->est_wallclock_ms	= 0; /* actually total us compute */
+	task->est_wallclock_ms	= 0;
 	task->est_compute_ms	= 0;
 
-	if (!vhd->pdb_metrics || !task->repo_name || !task->builder[0] ||
-	    !task->taskname[0])
+	if (!vhd->pdb_metrics || !builder_name || !builder_name[0] ||
+	    !task->taskname[0] || !task->repo_name || !task->git_ref)
 		return;
 
-	if (sai_metrics_hash((uint8_t *)hex, sizeof(hex), task->repo_name,
-			     task->builder, task->taskname, task->git_ref))
+	if (sai_metrics_hash((uint8_t *)hex, sizeof(hex), builder_name,
+			     task->taskname, task->repo_name,
+			     sai_get_ref(task->git_ref)))
 		return;
 
-	lws_snprintf(query, sizeof(query),
-		     "SELECT peak_mem_rss, stg_bytes, wallclock_us, us_cpu_user, us_cpu_sys "
-		     "FROM build_metrics "
-		     "ORDER BY unixtime DESC "
-		     "WHERE key = '%s' and step = %d "
-		     "LIMIT 1", hex, task->build_step + 1);
+	/*
+	 * The most recent row for each step: unixtime is the autoincrement
+	 * primary key, so the biggest is the newest
+	 */
 
-	if (sqlite3_prepare_v2(vhd->pdb_metrics, query, -1, &stmt, NULL) != SQLITE_OK)
+	if (sqlite3_prepare_v2(vhd->pdb_metrics,
+			"SELECT step, peak_mem_rss, stg_bytes, wallclock_us, "
+				"us_cpu_user + us_cpu_sys "
+			"FROM build_metrics AS m WHERE key = ?1 AND "
+			"unixtime = (SELECT MAX(unixtime) FROM build_metrics "
+				"WHERE key = ?1 AND step = m.step)",
+			-1, &stmt, NULL) != SQLITE_OK) {
+		lwsl_err("%s: unable to prepare: %s\n", __func__,
+			 sqlite3_errmsg(vhd->pdb_metrics));
 		return;
+	}
 
-	if (sqlite3_step(stmt) == SQLITE_ROW) {
-		if (sqlite3_column_type(stmt, 0) != SQLITE_NULL)
-			task->est_peak_mem_kib = (unsigned int)sqlite3_column_int(stmt, 0);
-		if (sqlite3_column_type(stmt, 1) != SQLITE_NULL)
-			task->est_disk_kib = (unsigned int)sqlite3_column_int(stmt, 1);
-		if (sqlite3_column_type(stmt, 2) != SQLITE_NULL)
-			task->est_wallclock_ms = (unsigned int)(sqlite3_column_int(stmt, 2) / 1000);
-		if (sqlite3_column_type(stmt, 3) != SQLITE_NULL &&
-		    sqlite3_column_type(stmt, 4) != SQLITE_NULL)
-			task->est_compute_ms = (unsigned int)((sqlite3_column_int(stmt, 3) +
-							       sqlite3_column_int(stmt, 4)) / 1000);
+	sqlite3_bind_text(stmt, 1, hex, -1, SQLITE_STATIC);
+
+	while (sqlite3_step(stmt) == SQLITE_ROW) {
+		s = sqlite3_column_int(stmt, 0);
+
+		if (step && s == step - 1)
+			stg_prev = (uint64_t)sqlite3_column_int64(stmt, 2);
+
+		if (step && s != step)
+			continue;
+
+		v = (uint64_t)sqlite3_column_int64(stmt, 1);
+		if (v > mem)
+			mem = v;
+		v = (uint64_t)sqlite3_column_int64(stmt, 2);
+		if (v > stg)
+			stg = v;
+		wall += (uint64_t)sqlite3_column_int64(stmt, 3);
+		cpu += (uint64_t)sqlite3_column_int64(stmt, 4);
 	}
 
 	sqlite3_finalize(stmt);
+
+	if (step)
+		stg = stg > stg_prev ? stg - stg_prev : 0;
+
+	/* the metrics are in bytes and us */
+
+	task->est_peak_mem_kib	= sais_metric_scale(mem, 1024);
+	task->est_disk_kib	= sais_metric_scale(stg, 1024);
+	task->est_wallclock_ms	= sais_metric_scale(wall, 1000);
+	task->est_compute_ms	= sais_metric_scale(cpu, 1000);
 }
 
 int
@@ -947,6 +999,13 @@ sais_metrics_db_init(struct vhd *vhd)
 		vhd->pdb_metrics = NULL;
 		return 1;
 	}
+
+	/* every step offer looks up the newest metrics for a key's steps */
+
+	sai_sqlite3_statement(vhd->pdb_metrics,
+			      "CREATE INDEX IF NOT EXISTS build_metrics_key_step "
+			      "ON build_metrics (key, step, unixtime)",
+			      "create build_metrics index");
 
 	return 0;
 }

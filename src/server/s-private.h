@@ -629,7 +629,8 @@ void
 sais_server_destroy(struct vhd *vhd, sais_t *server);
 
 void
-sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task);
+sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task,
+				const char *builder_name, int step);
 
 int
 sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase, int killed);

@@ -242,6 +242,7 @@ struct sai_builder {
 	lws_sorted_usec_list_t	sul_cleanup_jobs;
 	lws_sorted_usec_list_t	sul_clock_wait;
 	lws_sorted_usec_list_t	sul_deletion_respawn;
+	lws_sorted_usec_list_t	sul_reintroduce; /* after refusing for resources */
 
 #if defined(__APPLE__)
 	lws_sorted_usec_list_t	sul_release_wakelock;

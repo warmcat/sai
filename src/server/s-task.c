@@ -874,7 +874,6 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *sp,
 		   const char *platform_name)
 {
 	const sai_task_t *task_template;
-	sai_task_t temp_task;
 
 	if (sp->busy) {
 		lwsl_wsi_warn(pss->wsi, "::::::::::::: ABORTING task alloc due to BUSY on %s", sp->name);
@@ -897,21 +896,13 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *sp,
 	}
 
 	/*
-	 * We have a candidate task, check if the builder has enough
-	 * resources for it
+	 * Whether the builder has the resources for it is up to the builder:
+	 * the offer of the task's first step carries what the whole task took
+	 * the last times it ran on this builder, and the builder weighs that
+	 * against its real budget and what its other work has reserved, and
+	 * says in the task log if it can't take it yet.  We have nothing live
+	 * to judge it by here.
 	 */
-	memcpy(&temp_task, task_template, sizeof(temp_task));
-	sais_get_task_metrics_estimates(vhd, &temp_task);
-
-	if (temp_task.est_peak_mem_kib > sp->avail_mem_kib ||
-	    temp_task.est_disk_kib > sp->avail_sto_kib) {
-		lwsl_notice("%s: builder %s lacks resources for task %s "
-			    "(mem %uk/%uk, sto %uk/%uk), trying another\n",
-			    __func__, sp->name, temp_task.uuid,
-			    temp_task.est_peak_mem_kib, sp->avail_mem_kib,
-			    temp_task.est_disk_kib, sp->avail_sto_kib);
-		return 1;
-	}
 
 	if (sais_is_task_inflight(vhd, NULL, task_template->uuid, NULL)) {
 		lwsl_info("%s: ~~~~~~~~ skipping %s as listed on inflight\n",
@@ -1164,8 +1155,6 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 	*temp_task = *task_template;
 	temp_task->ac_task_container = ac;
 
-	sais_get_task_metrics_estimates(vhd, temp_task);
-
 	build_step = temp_task->build_step;
 
 	/* get the event */
@@ -1197,6 +1186,15 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 			  __func__, temp_task->builder_name);
 		goto bail;
 	}
+
+	/*
+	 * What it took on this builder before: for the first step, the whole
+	 * task, since taking it commits the builder to all its steps; after
+	 * that, just the step.  It needs the repo and ref from the event.
+	 */
+
+	sais_get_task_metrics_estimates(vhd, temp_task, sp->name,
+					build_step ? build_step + 1 : 0);
 
 	if (!inflight) {
 		if (sais_add_to_inflight_list_if_absent(vhd, sp, task_uuid,

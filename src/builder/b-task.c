@@ -508,6 +508,42 @@ saib_idletask_yielding_res(uint64_t *ram_kib, uint64_t *disk_kib)
 	} lws_end_foreach_dll(mp);
 }
 
+/*
+ * Refusing an offer makes the server mark us busy, and it only offers us work
+ * again when we reintroduce ourselves, which we do when one of our tasks ends.
+ * When we refuse for lack of resources, nothing we are running may be about
+ * to end, eg, we're running nothing and waiting for old job dirs to be
+ * deleted: so then reintroduce ourselves after a while anyway, to be offered
+ * the work again and see if it fits by then.
+ */
+
+#define SAIB_REINTRODUCE_US (15 * LWS_US_PER_SEC)
+
+static void
+saib_reintroduce_cb(lws_sorted_usec_list_t *sul)
+{
+	lws_start_foreach_dll(struct lws_dll2 *, d,
+			      builder.sai_plat_server_owner.head) {
+		struct sai_plat_server *spm = lws_container_of(d,
+					struct sai_plat_server, list);
+
+		if (spm->ss &&
+		    saib_srv_queue_json_fragments_helper(spm->ss,
+					lsm_schema_map_plat,
+					LWS_ARRAY_SIZE(lsm_schema_map_plat),
+					&builder.sai_plat_owner))
+			lwsl_warn("%s: unable to queue plats for %s\n",
+				  __func__, spm->name ? spm->name : "?");
+	} lws_end_foreach_dll(d);
+}
+
+static void
+saib_reintroduce_later(void)
+{
+	lws_sul_schedule(builder.context, 0, &builder.sul_reintroduce,
+			 saib_reintroduce_cb, SAIB_REINTRODUCE_US);
+}
+
 static int
 saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 		     sai_plat_t *sp)
@@ -523,7 +559,7 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 //	int cpu_load = saib_get_system_cpu(&builder);
 #endif
 
-	unsigned int executing = 0;
+	unsigned int executing = 0, est_mem_was = 0;
 
 	if (builder.one_shot_active) {
 		if (!builder.one_shot_task_uuid[0]) {
@@ -563,63 +599,11 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 	disk_reserved_kib = builder.disk_reserved_kib > yield_disk_kib ?
 				builder.disk_reserved_kib - yield_disk_kib : 0;
 
-	{
-		uint64_t budget = (builder.ram_limit_kib * 4) / 3;
-
-		budget = ram_reserved_kib > budget ? 0 :
-					budget - ram_reserved_kib;
-
-		if (budget < task->est_peak_mem_kib) {
-			if (saib_refusal_loggable(task->uuid))
-				saib_task_logf(spm, NULL, task->uuid,
-					"Builder %s can't take this step yet: "
-					"needs %uMiB RAM, %lluMiB of its "
-					"%lluMiB budget left", sp->name,
-					(unsigned int)(task->est_peak_mem_kib / 1024),
-					(unsigned long long)(budget / 1024),
-					(unsigned long long)((builder.ram_limit_kib * 4) / 3 / 1024));
-			return 1;
-		}
-	}
-
-	{
-		uint64_t free_disk = saib_get_free_disk_kib(builder.home);
-		uint64_t needed_disk = (uint64_t)task->est_disk_kib +
-						disk_reserved_kib;
-		char vn[16];
-
-		/* leave 12.5% of free space as a safety margin */
-		if (free_disk < needed_disk + (free_disk / 8)) {
-			uint64_t want = needed_disk + (free_disk / 8);
-
-			if (saib_refusal_loggable(task->uuid))
-				saib_task_logf(spm, NULL, task->uuid,
-					"Builder %s can't take this step yet: "
-					"needs %lluMiB (step %uMiB + %lluMiB "
-					"reserved by other steps), only %lluMiB "
-					"free on %s", sp->name,
-					(unsigned long long)(needed_disk / 1024),
-					(unsigned int)(task->est_disk_kib / 1024),
-					(unsigned long long)(disk_reserved_kib / 1024),
-					(unsigned long long)(free_disk / 1024),
-					builder.home);
-
-			/*
-			 * Try to make room, but never at the cost of the job
-			 * dir of the very task we are being offered: its
-			 * earlier steps' output is in there
-			 */
-
-			saib_task_jobdir_vn(vn, sizeof(vn), task->uuid);
-
-			if (want > 0xffffffffull)
-				want = 0xffffffffull;
-
-			saib_deletion_free_kib((unsigned int)want, vn);
-
-			return 1;
-		}
-	}
+	/*
+	 * Count what's running first: it's cheap, and refusing for it later
+	 * would waste the deletions the disk check below may start, and could
+	 * say in the task log that we are running it after all, when we aren't
+	 */
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, sp->nspawn_owner.head) {
 		struct sai_nspawn *xns = lws_container_of(p, struct sai_nspawn, list);
@@ -635,6 +619,109 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 			    __func__, task->uuid, tc);
 		return 1; /* nope */
 	}
+
+	/*
+	 * The estimates are what this task or step took the last times it ran
+	 * on this builder.  They are only a guess, and must not be able to
+	 * keep it from running forever: what we hold back for our other work
+	 * comes back when it finishes, so it's worth waiting for, but if the
+	 * estimate is more than we can have even with nothing else going on,
+	 * no amount of waiting will get it.
+	 */
+
+	{
+		uint64_t whole = (builder.ram_limit_kib * 4) / 3, budget;
+
+		/*
+		 * Bigger than our whole budget: it wants all of it, then, and
+		 * runs as soon as nothing else holds any
+		 */
+		if (task->est_peak_mem_kib > whole) {
+			est_mem_was = task->est_peak_mem_kib;
+			task->est_peak_mem_kib = (unsigned int)whole;
+		}
+
+		budget = ram_reserved_kib > whole ? 0 : whole - ram_reserved_kib;
+
+		if (budget < task->est_peak_mem_kib) {
+			if (saib_refusal_loggable(task->uuid))
+				saib_task_logf(spm, NULL, task->uuid,
+					"Builder %s can't take this step yet: "
+					"needs %uMiB RAM, %lluMiB of its "
+					"%lluMiB budget left", sp->name,
+					(unsigned int)(task->est_peak_mem_kib / 1024),
+					(unsigned long long)(budget / 1024),
+					(unsigned long long)(whole / 1024));
+			saib_reintroduce_later();
+			return 1;
+		}
+	}
+
+	{
+		uint64_t free_disk = saib_get_free_disk_kib(builder.home);
+		uint64_t needed_disk = (uint64_t)task->est_disk_kib +
+						disk_reserved_kib;
+		char vn[16];
+
+		/* leave 12.5% of free space as a safety margin */
+		if (free_disk < needed_disk + (free_disk / 8)) {
+			uint64_t want = needed_disk + (free_disk / 8);
+			int clearing;
+
+			/*
+			 * Try to make room, but never at the cost of the job
+			 * dir of the very task we are being offered: its
+			 * earlier steps' output is in there
+			 */
+
+			saib_task_jobdir_vn(vn, sizeof(vn), task->uuid);
+
+			if (want > 0xffffffffull)
+				want = 0xffffffffull;
+
+			clearing = saib_deletion_free_kib((unsigned int)want, vn);
+
+			/*
+			 * Wait while we are clearing space, or for our other
+			 * steps to finish and give theirs back.  But with
+			 * neither, waiting won't find it any more space.
+			 */
+
+			if (clearing || disk_reserved_kib) {
+				if (saib_refusal_loggable(task->uuid))
+					saib_task_logf(spm, NULL, task->uuid,
+						"Builder %s can't take this step yet: "
+						"needs %lluMiB (step %uMiB + %lluMiB "
+						"reserved by other steps), only %lluMiB "
+						"free on %s", sp->name,
+						(unsigned long long)(needed_disk / 1024),
+						(unsigned int)(task->est_disk_kib / 1024),
+						(unsigned long long)(disk_reserved_kib / 1024),
+						(unsigned long long)(free_disk / 1024),
+						builder.home);
+
+				saib_reintroduce_later();
+				return 1;
+			}
+
+			saib_task_logf(spm, NULL, task->uuid,
+				"Builder %s is taking this step although it "
+				"used %uMiB of disk before and there's only "
+				"%lluMiB free on %s, with nothing more to clear "
+				"and no other steps' reservations to wait for: "
+				"it may run out of space", sp->name,
+				(unsigned int)(task->est_disk_kib / 1024),
+				(unsigned long long)(free_disk / 1024),
+				builder.home);
+		}
+	}
+
+	if (est_mem_was)
+		saib_task_logf(spm, NULL, task->uuid,
+			"Builder %s is taking this step although it peaked at "
+			"%uMiB RAM before, more than its whole %lluMiB budget: "
+			"it may run short", sp->name, est_mem_was / 1024,
+			(unsigned long long)((builder.ram_limit_kib * 4) / 3 / 1024));
 
 	return 0; /* acceptable */
 }

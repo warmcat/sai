@@ -635,6 +635,8 @@ struct cleanup_ctx {
 	char ages_trustworthy;
 	/* ask again about dirs moved aside for deletion still lying around */
 	char reap_aside;
+	/* dirs moved aside for deletion that are still there */
+	int deleting;
 };
 
 struct active_job_uuid {
@@ -670,13 +672,17 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
 
 	if (lde->name[0] == '.') {
 #if defined(LWS_WITH_STUB)
+		if (strncmp(lde->name, SAIB_JOBDIR_DELETING_PREFIX,
+			    strlen(SAIB_JOBDIR_DELETING_PREFIX)))
+			return 0;
+
+		ctx->deleting++;
+
 		/*
 		 * A job dir we moved aside to delete and is still here: the
 		 * stub went away before it got to it, or we did
 		 */
-		if (ctx->reap_aside && builder.mgr_deletion &&
-		    !strncmp(lde->name, SAIB_JOBDIR_DELETING_PREFIX,
-			     strlen(SAIB_JOBDIR_DELETING_PREFIX))) {
+		if (ctx->reap_aside && builder.mgr_deletion) {
 			lwsl_notice("%s: %s left over, deleting it\n",
 				    __func__, lde->name);
 			saib_deletion_request_name(lde->name);
@@ -773,6 +779,11 @@ scan_jobs_dir_cb(const char *dirpath, void *user, struct lws_dir_entry *lde)
  * \p protect_vn, if given, is the job dir of the task this is being done on
  * behalf of: it must survive even though it has no live nspawn, since its
  * earlier steps' output is what the next step builds on.
+ *
+ * The removal happens later.  Returns how many job dirs it asked to have
+ * removed now, plus how many it asked about before that are still going: 0 if
+ * there's already enough space, or nothing it may remove and nothing more
+ * coming free.
  */
 
 int
@@ -782,6 +793,7 @@ saib_deletion_free_kib(unsigned int needed_kib, const char *protect_vn)
 	struct cleanup_ctx ctx;
 	char path[256];
 	unsigned int free_kib = saib_get_free_disk_kib(b->home);
+	int requested = 0;
 
 	if (free_kib >= needed_kib)
 		return 0;
@@ -874,8 +886,9 @@ saib_deletion_free_kib(unsigned int needed_kib, const char *protect_vn)
 					__func__, needed_kib / 1024, free_kib / 1024, sorted[n]->name, (unsigned long long)sorted[n]->age);
 
 #if defined(LWS_WITH_STUB)
-				if (builder.mgr_deletion)
-					saib_deletion_request(sorted[n]->name);
+				if (builder.mgr_deletion &&
+				    !saib_deletion_request(sorted[n]->name))
+					requested++;
 #endif
 			}
 		}
@@ -884,7 +897,8 @@ saib_deletion_free_kib(unsigned int needed_kib, const char *protect_vn)
 done:
 
 	lwsac_free(&ctx.ac);
-	return 0;
+
+	return requested + ctx.deleting;
 }
 
 void

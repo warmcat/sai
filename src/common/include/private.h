@@ -1165,7 +1165,7 @@ sai_task_describe(sai_task_t *task, char *buf, size_t len);
 
 int
 sai_metrics_hash(uint8_t *key, size_t key_len, const char *sp_name,
-		 const char *spawn, const char *project_name,
+		 const char *taskname, const char *project_name,
 		 const char *ref);
 
 const char *

@@ -526,9 +526,15 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	/*
 	 * Not being able to key the metrics is not a reason to fail a step
 	 * that exited 0... the metrics are just bookkeeping
+	 *
+	 * Key them by the task's name, not its build: the server cuts the
+	 * build it offers us short after the step being offered, so it's
+	 * different for every step, and the server wants to find all the
+	 * steps of the task under the one key.
 	 */
 	if (sai_metrics_hash((uint8_t *)m.key, sizeof(m.key),
-			     ns->sp->name, ns->task->build, ns->project_name, ns->ref)) {
+			     ns->sp->name, ns->task->taskname, ns->project_name,
+			     ns->ref)) {
 		lwsl_notice("%s: unable to hash metrics key\n", __func__);
 		goto skip;
 	}
