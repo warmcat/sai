@@ -13,6 +13,9 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <strings.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <libvirt/libvirt.h>
 #include <libvirt/virterror.h>
 
@@ -501,15 +504,125 @@ out:
 	return r;
 }
 
+#if defined(__linux__)
+/*
+ * The idx'th whitespace-separated field of line, or NULL
+ */
+
+static const char *
+saiv_field(const char *line, int idx, size_t *len)
+{
+	const char *p = line, *s;
+
+	while (1) {
+		while (*p == ' ' || *p == '\t')
+			p++;
+		if (!*p)
+			return NULL;
+
+		s = p;
+		while (*p && *p != ' ' && *p != '\t')
+			p++;
+
+		if (!idx--) {
+			*len = lws_ptr_diff_size_t(p, s);
+			return s;
+		}
+	}
+}
+
+/*
+ * What MAC does the host's neighbour table have for IPv4 address ip?  Lines
+ * of /proc/net/arp look like
+ *
+ *   10.199.0.149   0x1   0x2   52:54:00:12:34:56   *   br0
+ *
+ * where flags 0x0 is an entry that never resolved.  Returns 0 and fills mac
+ * if there is one.
+ */
+
+static int
+saiv_host_neigh_mac(const char *ip, char *mac, size_t mac_len)
+{
+	char buf[1024], line[256];
+	size_t ll = 0, flen, iplen = strlen(ip);
+	const char *f;
+	int fd, n, i, r = 1;
+
+	fd = open("/proc/net/arp", O_RDONLY);
+	if (fd < 0)
+		return -1;
+
+	while (r && (n = (int)read(fd, buf, sizeof(buf))) > 0) {
+		for (i = 0; i < n && r; i++) {
+			if (buf[i] != '\n') {
+				if (ll < sizeof(line) - 1)
+					line[ll++] = buf[i];
+				continue;
+			}
+
+			line[ll] = '\0';
+			ll = 0;
+
+			f = saiv_field(line, 0, &flen);
+			if (!f || flen != iplen || strncmp(f, ip, flen))
+				continue;
+
+			f = saiv_field(line, 2, &flen);
+			if (!f || (flen == 3 && !strncmp(f, "0x0", 3)))
+				continue; /* incomplete */
+
+			f = saiv_field(line, 3, &flen);
+			if (!f || flen != 17)
+				continue;
+
+			lws_strnncpy(mac, f, flen, mac_len);
+			r = 0;
+		}
+	}
+
+	close(fd);
+
+	return r;
+}
+
+/*
+ * Does the running domain have a NIC with this MAC?
+ */
+
+static int
+saiv_dom_has_mac(virDomainPtr dom, const char *mac)
+{
+	char *xml = virDomainGetXMLDesc(dom, 0);
+	const char *p;
+	int r = 0;
+
+	if (!xml)
+		return -1;
+
+	for (p = xml; !r && (p = strstr(p, "<mac address='")); p += 14)
+		if (!strncasecmp(p + 14, mac, 17) && p[14 + 17] == '\'')
+			r = 1;
+
+	free(xml);
+
+	return r;
+}
+#endif
+
 /*
  * Does this VM have the address ip?  We ask what libvirt's DHCP server leased
- * it, and failing that, what the host's ARP table has for its NICs' MACs,
- * which also covers networks libvirt doesn't run DHCP on, eg, a bridge onto
- * the host's LAN.  The VM has just talked to us from that address, so the ARP
- * entry will be there.
+ * it, and failing that, what libvirt finds in the host's ARP table for its
+ * NICs' MACs.
  *
- * If it doesn't, say what libvirt did tell us about the VM, otherwise there's
- * no way to see why a builder's /whoami was refused.
+ * libvirt's ARP lookup only covers NICs on a libvirt network though, not
+ * <interface type='bridge'> straight onto a bridge like the host's LAN, where
+ * libvirt has no DHCP lease either.  So failing both, we look up the MAC the
+ * host has for ip ourselves, and see if it's one of the VM's.  The VM has just
+ * talked to us from that address, so the host will have it.
+ *
+ * If none of that finds it, say what we were told about the VM, otherwise
+ * there's no way to see why a builder's /whoami was refused.
  */
 
 static int
@@ -568,6 +681,23 @@ ops_libvirt_has_addr(struct sai_virt *virt, struct saiv_vm *vm, const char *ip)
 		}
 		free(ifs);
 	}
+
+#if defined(__linux__)
+	if (!found) {
+		char mac[18];
+
+		if (saiv_host_neigh_mac(ip, mac, sizeof(mac)))
+			lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+				     ", host neighbour table: nothing for %s",
+				     ip);
+		else {
+			found = saiv_dom_has_mac(dom, mac) == 1;
+			lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+				     ", host neighbour table: %s is %s", ip,
+				     mac);
+		}
+	}
+#endif
 
 	virDomainFree(dom);
 
