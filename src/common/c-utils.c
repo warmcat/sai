@@ -63,7 +63,7 @@ sai_metrics_hash(uint8_t *key, size_t key_len, const char *sp_name,
 	    lws_genhash_destroy(&ctx, hash))
 		return 1;
 
-	lws_hex_from_byte_array(hash, sizeof(hash), (char *)key, sizeof(key_len));
+	lws_hex_from_byte_array(hash, sizeof(hash), (char *)key, key_len);
 	key[key_len - 1] = '\0';
 
 	return 0;
