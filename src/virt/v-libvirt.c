@@ -504,8 +504,12 @@ out:
 /*
  * Does this VM have the address ip?  We ask what libvirt's DHCP server leased
  * it, and failing that, what the host's ARP table has for its NICs' MACs,
- * which also covers networks libvirt doesn't run DHCP on.  The VM has just
- * talked to us from that address, so the ARP entry will be there.
+ * which also covers networks libvirt doesn't run DHCP on, eg, a bridge onto
+ * the host's LAN.  The VM has just talked to us from that address, so the ARP
+ * entry will be there.
+ *
+ * If it doesn't, say what libvirt did tell us about the VM, otherwise there's
+ * no way to see why a builder's /whoami was refused.
  */
 
 static int
@@ -515,11 +519,15 @@ ops_libvirt_has_addr(struct sai_virt *virt, struct saiv_vm *vm, const char *ip)
 		VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_LEASE,
 		VIR_DOMAIN_INTERFACE_ADDRESSES_SRC_ARP,
 	};
+	static const char * const src_names[] = { "lease", "arp" };
+	char seen[384], *p = seen, *end = seen + sizeof(seen);
 	virDomainInterfacePtr *ifs;
 	int s, n, i, found = 0;
 	virDomainPtr dom;
 	virConnectPtr c;
 	unsigned int j;
+
+	*p = '\0';
 
 	c = saiv_libvirt_conn();
 	if (!c)
@@ -533,11 +541,28 @@ ops_libvirt_has_addr(struct sai_virt *virt, struct saiv_vm *vm, const char *ip)
 		ifs = NULL;
 		n = virDomainInterfaceAddresses(dom, &ifs, srcs[s], 0);
 
+		p += lws_snprintf(p, lws_ptr_diff_size_t(end, p), "%s%s:",
+				  s ? ", " : "", src_names[s]);
+		if (n < 0)
+			p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+					  " failed (%s)",
+					  virGetLastErrorMessage());
+		else if (!n)
+			p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+					  " none");
+
 		for (i = 0; i < n; i++) {
-			for (j = 0; j < ifs[i]->naddrs; j++)
-				if (ifs[i]->addrs[j].addr &&
-				    !strcmp(ifs[i]->addrs[j].addr, ip))
+			for (j = 0; j < ifs[i]->naddrs; j++) {
+				if (!ifs[i]->addrs[j].addr)
+					continue;
+
+				p += lws_snprintf(p, lws_ptr_diff_size_t(end, p),
+						  " %s (%s)", ifs[i]->addrs[j].addr,
+						  ifs[i]->hwaddr ? ifs[i]->hwaddr :
+								   "?");
+				if (!strcmp(ifs[i]->addrs[j].addr, ip))
 					found = 1;
+			}
 
 			virDomainInterfaceFree(ifs[i]);
 		}
@@ -545,6 +570,10 @@ ops_libvirt_has_addr(struct sai_virt *virt, struct saiv_vm *vm, const char *ip)
 	}
 
 	virDomainFree(dom);
+
+	if (!found)
+		lwsl_notice("%s: %s isn't %s, libvirt says it has %s\n",
+			    __func__, ip, vm->name, seen);
 
 	return found;
 }

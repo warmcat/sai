@@ -155,8 +155,14 @@ callback_virt_http(struct lws *wsi, enum lws_callback_reasons reason,
 			if (!vm) {
 				lwsl_warn("%s: whoami from %s, which is not one "
 					  "of our VMs\n", __func__, peer);
-				return saiv_http_reply_text(wsi,
-						"NAK: not one of our VMs");
+				/*
+				 * The builder can't see what address we saw
+				 * it come from, and that's all we go on
+				 */
+				lws_snprintf(reply, sizeof(reply), "NAK: %s is "
+					     "not one of our VMs", peer);
+
+				return saiv_http_reply_text(wsi, reply);
 			}
 
 			lwsl_notice("%s: whoami from %s: %s\n", __func__, peer,

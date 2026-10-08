@@ -84,8 +84,9 @@ saib_whoami_reply(saib_whoami_t *g)
 	size_t n;
 
 	if (g->len < 5 || memcmp(g->reply, "ACK: ", 5)) {
-		lwsl_warn("%s: sai-virt doesn't know this VM: '%.*s', asking "
-			  "again in %ds\n", __func__, (int)g->len, g->reply,
+		lwsl_warn("%s: sai-virt at %s doesn't know this VM: '%.*s', "
+			  "asking again in %ds\n", __func__, g->url,
+			  (int)g->len, g->reply,
 			  (int)(whoami_retry_us / LWS_US_PER_SEC));
 		return;
 	}
@@ -258,8 +259,12 @@ saib_whoami_pending(void)
 	if (lws_ss_set_metadata(ss_whoami, "url", g->url, strlen(g->url)))
 		lwsl_err("%s: unable to set url\n", __func__);
 
-	lwsl_notice("%s: asking sai-virt which VM we are: %s\n", __func__,
-		    g->url);
+	/*
+	 * We don't tell it anything: it knows which VM we are from the
+	 * address our request comes from, and says so if it doesn't
+	 */
+	lwsl_notice("%s: asking sai-virt which VM we are, from the address "
+		    "we reach it from: %s\n", __func__, g->url);
 
 	lws_sul_schedule(builder.context, 0, &sul_whoami, sul_whoami_cb, 1);
 
