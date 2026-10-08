@@ -253,13 +253,17 @@ sudo systemctl enable sai-builder
 
 ### 3.5 Shut it down, and leave it down
 
-Booting the basis VM gave it a machine-id.  Empty it as the last thing before shutting down, inside the basis VM, so each spawned VM generates its own at boot.  Otherwise every clone has the same one, and things derived from it, like the DHCP client id `systemd-networkd` sends, collide, so concurrent clones fight over one IP address.  Do this again whenever you shut the basis VM down after maintenance.
+Booting the basis VM gave it a machine-id.  **Every time you finish with the basis VM**, after setting it up here and after any later maintenance, the last thing to do inside it is to leave `/etc/machine-id` existing but empty, and shut it down:
 
 ```bash
-sudo truncate -s 0 /etc/machine-id && sudo poweroff
+sudo rm -f /etc/machine-id ; sudo touch /etc/machine-id ; sudo shutdown -h now
 ```
 
-The basis VM must stay defined, and shut off.  Its disk is the read-only backing file of every running VM spawned from it; **booting the basis VM while any of those exist corrupts them**.  `sai-virt` won't spawn new VMs while the basis VM is running, but it can't protect ones that are already running.  To maintain the basis image, stop `sai-virt` first (it destroys its VMs as it exits), then boot the basis VM, make your changes, shut it down and start `sai-virt` again.
+Each spawned VM then generates its own machine-id at boot.  If the basis VM's is left in the image, every clone has the same one, and things derived from it collide.  In particular, the DHCP client id NetworkManager and `systemd-networkd` send is derived from it, and a DHCP server gives the same lease to every client that sends the same id, whatever their MAC.  So concurrent clones all get one IP address, and `sai-virt` can't tell them apart.
+
+The file has to be there, though, just empty: if it's missing, systemd has nowhere to put the machine-id it generates early in boot, while the root filesystem is still read-only, so the clones boot with none.  NetworkManager and D-Bus need one, so the clones then don't bring up their network at all.
+
+The basis VM must stay defined, and shut off.  Its disk is the read-only backing file of every running VM spawned from it; **booting the basis VM while any of those exist corrupts them**.  `sai-virt` won't spawn new VMs while the basis VM is running, but it can't protect ones that are already running.  To maintain the basis image, stop `sai-virt` first (it destroys its VMs as it exits), then boot the basis VM, make your changes, empty its machine-id and shut it down as above, and start `sai-virt` again.
 
 ### 3.6 Tell sai-virt about the basis VM
 
