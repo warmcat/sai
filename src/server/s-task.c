@@ -716,6 +716,45 @@ sais_add_pending_plat(struct vhd *vhd, const char *name, int count, int unmet)
 	sais_find_or_add_pending_plat(vhd, name, count, unmet);
 }
 
+/*
+ * Note that builder has real work for the platform bound to it, so it won't
+ * be taking any of the platform's unmet tasks.  sai-virt needs this to tell
+ * its VMs that are busy apart from the ones still coming up to meet demand.
+ */
+
+static void
+sais_pending_plat_add_busy(struct vhd *vhd, const char *plat,
+			   const char *builder_name)
+{
+	sai_busy_builder_t *bb;
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->pending_plats.head) {
+		sais_plat_t *pl = lws_container_of(p, sais_plat_t, list);
+
+		if (strcmp(pl->plat, plat))
+			continue;
+
+		lws_start_foreach_dll(struct lws_dll2 *, p1,
+				      pl->busy_builders.head) {
+			bb = lws_container_of(p1, sai_busy_builder_t, list);
+
+			if (!strcmp(bb->name, builder_name))
+				return; /* busy with another event's task too */
+
+		} lws_end_foreach_dll(p1);
+
+		bb = lwsac_use_zero(&vhd->ac_plats, sizeof(*bb), 512);
+		if (!bb)
+			return;
+
+		lws_strncpy(bb->name, builder_name, sizeof(bb->name));
+		lws_dll2_add_tail(&bb->list, &pl->busy_builders);
+
+		return;
+
+	} lws_end_foreach_dll(p);
+}
+
 static void
 sais_destroy_pending_plat_list(struct vhd *vhd)
 {
@@ -817,6 +856,38 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 				lwsl_err("%s: %d: Unable to perform: %s\n",
 					 __func__, n, sqlite3_errmsg(pdb));
 			}
+
+			/*
+			 * ...and which builders the same tasks, the ones not
+			 * counted as unmet, are bound to
+			 */
+
+			if (sqlite3_prepare_v2(pdb, "select distinct platform, builder_name "
+						    "from tasks t1 where idle=0 and "
+						    "run = (select max(run) from tasks t2 where t1.uuid = t2.uuid) and "
+						    "(state = 0 or state = 1 or state = 2 or state = 9) and "
+						    "builder_name IS NOT NULL and builder_name != ''", -1, &sm,
+							   NULL) != SQLITE_OK) {
+				lwsl_err("%s: Unable to %s\n",
+					 __func__, sqlite3_errmsg(pdb));
+				sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+
+				goto bail;
+			}
+
+			do {
+				n = sqlite3_step(sm);
+				if (n == SQLITE_ROW)
+					sais_pending_plat_add_busy(vhd,
+						(const char *)sqlite3_column_text(sm, 0),
+						(const char *)sqlite3_column_text(sm, 1));
+			} while (n == SQLITE_ROW);
+
+			sqlite3_finalize(sm);
+
+			if (n != SQLITE_DONE)
+				lwsl_err("%s: Unable to list busy builders: %s\n",
+					 __func__, sqlite3_errmsg(pdb));
 
 			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 		}

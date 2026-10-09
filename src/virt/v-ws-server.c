@@ -108,6 +108,69 @@ saiv_watch_cb(lws_sorted_usec_list_t *sul)
 			 SAIV_WATCH_INTERVAL_US);
 }
 
+/*
+ * sai-server lists the builders, "host.platform", that have work bound to them
+ * for the platform.  Our VMs' builders take the VM name as their host.
+ */
+
+static int
+saiv_vm_is_busy(const saiv_vm_t *vm, const sai_platform_pending_task_t *t)
+{
+	size_t n = strlen(vm->name);
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, t->busy.head) {
+		const sai_busy_builder_t *bb = lws_container_of(p,
+						sai_busy_builder_t, list);
+
+		if (!strncmp(bb->name, vm->name, n) && bb->name[n] == '.')
+			return 1;
+
+	} lws_end_foreach_dll(p);
+
+	return 0;
+}
+
+/*
+ * How many more VMs the pending task entry wants from us, and for which of our
+ * platforms.
+ *
+ * The unmet tasks are the ones no builder has taken yet.  Our VMs that aren't
+ * busy, because they're still booting or are up but idle, are about to take
+ * them, so we only need more VMs for the rest.  Our busy VMs won't be taking
+ * any, however long the work they already have takes.
+ */
+
+static int
+saiv_plat_demand(const sai_platform_pending_task_t *t, saiv_plat_t **pvp)
+{
+	int uncommitted = 0;
+
+	*pvp = NULL;
+
+	lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
+		saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
+		const char *pname = vp->platform[0] ? vp->platform : vp->name;
+
+		if (!strcmp(pname, t->plat)) {
+			*pvp = vp;
+			break;
+		}
+	} lws_end_foreach_dll(d);
+
+	if (!*pvp)
+		return 0;
+
+	lws_start_foreach_dll(struct lws_dll2 *, v, (*pvp)->vm_owner.head) {
+		saiv_vm_t *vm = lws_container_of(v, saiv_vm_t, list);
+
+		if (!saiv_vm_is_busy(vm, t))
+			uncommitted++;
+
+	} lws_end_foreach_dll(v);
+
+	return (int)t->unmet - uncommitted;
+}
+
 void
 saiv_try_spawn(void)
 {
@@ -122,24 +185,12 @@ saiv_try_spawn(void)
 		/* Step 1: Count true demand */
 		lws_start_foreach_dll(struct lws_dll2 *, p, pt->tasks.head) {
 			sai_platform_pending_task_t *t = lws_container_of(p, sai_platform_pending_task_t, list);
+			saiv_plat_t *found_vp;
+			int true_demand = saiv_plat_demand(t, &found_vp);
 
-			saiv_plat_t *found_vp = NULL;
-			lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
-				saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
-				const char *pname = vp->platform[0] ? vp->platform : vp->name;
-				if (!strcmp(pname, t->plat)) {
-					found_vp = vp;
-					break;
-				}
-			} lws_end_foreach_dll(d);
-
-			if (found_vp) {
-				int true_demand = (int)t->unmet - (int)found_vp->vm_owner.count;
-				if (true_demand > 0) {
-					/* Apply wait magnification factor */
-					total_wheel_weight += true_demand + found_vp->wait_magnification;
-				}
-			}
+			if (true_demand > 0)
+				/* Apply wait magnification factor */
+				total_wheel_weight += true_demand + found_vp->wait_magnification;
 		} lws_end_foreach_dll(p);
 
 		if (total_wheel_weight == 0)
@@ -154,28 +205,17 @@ saiv_try_spawn(void)
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, pt->tasks.head) {
 			sai_platform_pending_task_t *t = lws_container_of(p, sai_platform_pending_task_t, list);
+			saiv_plat_t *found_vp;
+			int true_demand = saiv_plat_demand(t, &found_vp);
 
-			saiv_plat_t *found_vp = NULL;
-			lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
-				saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
-				const char *pname = vp->platform[0] ? vp->platform : vp->name;
-				if (!strcmp(pname, t->plat)) {
-					found_vp = vp;
+			if (true_demand > 0) {
+				target -= (true_demand + found_vp->wait_magnification);
+				if (target < 0) {
+					winner = found_vp;
 					break;
-				}
-			} lws_end_foreach_dll(d);
-
-			if (found_vp) {
-				int true_demand = (int)t->unmet - (int)found_vp->vm_owner.count;
-				if (true_demand > 0) {
-					target -= (true_demand + found_vp->wait_magnification);
-					if (target < 0) {
-						winner = found_vp;
-						break;
-					} else {
-						/* This platform wasn't picked, increase its wait magnification */
-						found_vp->wait_magnification++;
-					}
+				} else {
+					/* This platform wasn't picked, increase its wait magnification */
+					found_vp->wait_magnification++;
 				}
 			}
 		} lws_end_foreach_dll(p);

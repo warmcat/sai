@@ -251,6 +251,7 @@ typedef struct sais_plat {
 	char		busy;
 	int		pending_count;
 	int		unmet_count;
+	lws_dll2_owner_t busy_builders; /* sai_busy_builder_t, in ac_plats */
 } sais_plat_t;
 
 /*

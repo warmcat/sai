@@ -486,6 +486,22 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 				lws_strncpy(ptask->plat, pl->plat, sizeof(ptask->plat));
 				ptask->pending = (unsigned int)pl->pending_count;
 				ptask->unmet = (unsigned int)pl->unmet_count;
+
+				lws_start_foreach_dll(struct lws_dll2 *, pb,
+						      pl->busy_builders.head) {
+					sai_busy_builder_t *bb = lws_container_of(pb,
+							sai_busy_builder_t, list),
+						*bb1 = lwsac_use_zero(&ac,
+							sizeof(*bb1), 1024);
+
+					if (bb1) {
+						lws_strncpy(bb1->name, bb->name,
+							    sizeof(bb1->name));
+						lws_dll2_add_tail(&bb1->list,
+								  &ptask->busy);
+					}
+				} lws_end_foreach_dll(pb);
+
 				lws_dll2_add_tail(&ptask->list, &pt.tasks);
 			}
 		} lws_end_foreach_dll(px1);

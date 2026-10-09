@@ -1047,11 +1047,21 @@ typedef struct sai_pcon_control {
 	char			on;
 } sai_pcon_control_t;
 
+/*
+ * A builder that has real (not idle) work bound to it, so it won't be taking
+ * any of the platform's unmet tasks
+ */
+typedef struct sai_busy_builder {
+	lws_dll2_t		list;
+	char			name[96]; /* host.platform */
+} sai_busy_builder_t;
+
 typedef struct sai_platform_pending_task {
 	lws_dll2_t		list;
 	char			plat[64];
 	unsigned int		pending;
 	unsigned int		unmet;
+	lws_dll2_owner_t	busy; /* sai_busy_builder_t */
 } sai_platform_pending_task_t;
 
 typedef struct sai_platform_pending_tasks {
@@ -1139,7 +1149,8 @@ extern const lws_struct_map_t
 	lsm_schema_sq3_map_watcher[1],
 	lsm_schema_json_map_watcher[1],
 	lsm_watcher_conf[1],
-	lsm_pending_task[3],
+	lsm_busy_builder[1],
+	lsm_pending_task[4],
 	lsm_pending_tasks[2],
 	lsm_schema_pending_tasks[1];
 

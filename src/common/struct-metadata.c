@@ -630,10 +630,17 @@ const lws_struct_map_t lsm_watcher_conf[] = {
 			 NULL, lsm_watcher_service,		"watchers"),
 };
 
+const lws_struct_map_t lsm_busy_builder[] = {
+	LSM_CARRAY	(sai_busy_builder_t, name,			"name"),
+};
+
 const lws_struct_map_t lsm_pending_task[] = {
 	LSM_CARRAY	(sai_platform_pending_task_t, plat,		"plat"),
 	LSM_UNSIGNED	(sai_platform_pending_task_t, pending,		"pending"),
 	LSM_UNSIGNED	(sai_platform_pending_task_t, unmet,		"unmet"),
+	LSM_LIST	(sai_platform_pending_task_t, busy,
+			 sai_busy_builder_t, list,
+			 NULL, lsm_busy_builder,			"busy"),
 };
 
 const lws_struct_map_t lsm_pending_tasks[] = {
