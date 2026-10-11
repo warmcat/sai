@@ -165,6 +165,10 @@ struct pss {	struct vhd		*vhd;
 	lws_dll2_owner_t	logs_owner;
 	lws_sorted_usec_list_t	sul_logcache;
 	lws_sorted_usec_list_t	sul_overview;
+
+	/* the event whose problems it's shown, see w-problems.c */
+	char			problems_event[33];
+	lws_sorted_usec_list_t	sul_problems;
 	lws_struct_args_t	a;
 
 	union {
@@ -251,6 +255,8 @@ struct vhd {
 	 */
 	lws_dll2_owner_t		visible_projects;
 	struct lwsac			*ac_visible;
+
+	lws_dll2_owner_t		problems_cache; /* see w-problems.c */
 };
 
 /* nonzero if a "projects" pvo limits the projects this vhost shows */
@@ -410,6 +416,25 @@ saiw_event_visible(struct vhd *vhd, const char *uuid);
  */
 const char *
 saiw_visible_sql(struct vhd *vhd);
+
+/* w-problems.c */
+
+int
+saiw_browser_send_problems(struct vhd *vhd, struct pss *pss,
+			   const char *event_uuid);
+
+int
+saiw_browser_send_problem_excerpts(struct vhd *vhd, struct pss *pss,
+				   const char *event_uuid, const char *uids);
+
+void
+saiw_problems_changed(struct vhd *vhd, const char *event_uuid);
+
+void
+saiw_problems_pss_close(struct pss *pss);
+
+void
+saiw_problems_destroy(struct vhd *vhd);
 
 /* w-findings.c, for admins only */
 

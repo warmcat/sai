@@ -10,11 +10,14 @@ set(SRCS
 	w-ws-server.c
 	w-ws-browser.c
 	w-findings.c
+	w-problems.c
 	w-visible.c
 	../common/c-utils.c
 	../common/c-pool.c
 	../common/c-conf.c
 	../common/c-sqlite3.c
+	../common/c-problems.c
+	../common/c-problems-summary.c
 	../common/struct-metadata.c
 )
 

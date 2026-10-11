@@ -45,6 +45,17 @@ static lws_struct_map_t lsm_browser_evinfo[] = {
 	LSM_CARRAY	(sai_browse_rx_evinfo_t, event_hash,	"event_hash"),
 };
 
+/* which problems' excerpts, "1,2,3" */
+typedef struct sai_browse_rx_problems {
+	char				event_hash[65];
+	char				uids[512];
+} sai_browse_rx_problems_t;
+
+static lws_struct_map_t lsm_browser_problems[] = {
+	LSM_CARRAY	(sai_browse_rx_problems_t, event_hash,	"event_hash"),
+	LSM_CARRAY	(sai_browse_rx_problems_t, uids,	"uids"),
+};
+
 static lws_struct_map_t lsm_browser_branchlist[] = {
 	LSM_CARRAY	(sai_browse_rx_branchlist_t, project,	"project"),
 };
@@ -155,6 +166,11 @@ static const lws_struct_map_t lsm_schema_json_map_bwsrx[] = {
 			/* shares struct */   "com.warmcat.sai.findingget"),
 	LSM_SCHEMA	(sai_findingset_t, NULL, lsm_findingset,
 					      "com.warmcat.sai.findingset"),
+	/* problems found in an event's logs, answered locally */
+	LSM_SCHEMA	(sai_browse_rx_problems_t, NULL, lsm_browser_problems,
+			/* shares struct */   "com.warmcat.sai.problems"),
+	LSM_SCHEMA	(sai_browse_rx_problems_t, NULL, lsm_browser_problems,
+					      "com.warmcat.sai.problem_excerpts"),
 };
 
 enum {
@@ -184,6 +200,8 @@ enum {
 	SAIM_WS_BROWSER_RX_FINDINGS,
 	SAIM_WS_BROWSER_RX_FINDINGGET,
 	SAIM_WS_BROWSER_RX_FINDINGSET,
+	SAIM_WS_BROWSER_RX_PROBLEMS,
+	SAIM_WS_BROWSER_RX_PROBLEM_EXCERPTS,
 };
 
 /* nonzero if s is exactly len hex chars, as task / event uuids are */
@@ -1038,6 +1056,10 @@ saiw_rx_visible(struct vhd *vhd, int schema_idx, void *dest)
 	case SAIM_WS_BROWSER_RX_FINDINGSET:
 		return saiw_project_visible(vhd,
 				((sai_findingset_t *)dest)->repo);
+	case SAIM_WS_BROWSER_RX_PROBLEMS:
+	case SAIM_WS_BROWSER_RX_PROBLEM_EXCERPTS:
+		return saiw_event_visible(vhd,
+				((sai_browse_rx_problems_t *)dest)->event_hash);
 	}
 
 	return 1;
@@ -1453,6 +1475,24 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	case SAIM_WS_BROWSER_RX_FINDINGS:
 		saiw_browser_send_findings(vhd, pss);
 		goto ok;
+
+	case SAIM_WS_BROWSER_RX_PROBLEMS:
+	case SAIM_WS_BROWSER_RX_PROBLEM_EXCERPTS:
+	{
+		sai_browse_rx_problems_t *pr = (sai_browse_rx_problems_t *)a.dest;
+
+		if (!saiw_id_ok(pr->event_hash, 32)) {
+			lwsl_notice("%s: bad problems event uuid\n", __func__);
+			goto soft_error;
+		}
+
+		if (a.top_schema_index == SAIM_WS_BROWSER_RX_PROBLEMS)
+			saiw_browser_send_problems(vhd, pss, pr->event_hash);
+		else
+			saiw_browser_send_problem_excerpts(vhd, pss,
+						pr->event_hash, pr->uids);
+		goto ok;
+	}
 
 	case SAIM_WS_BROWSER_RX_FINDINGGET:
 		saiw_browser_send_finding(vhd, pss,

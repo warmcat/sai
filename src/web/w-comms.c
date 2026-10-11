@@ -446,6 +446,7 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		/* we may have failed init, and lws freed the vhd */
 		if (!vhd)
 			goto passthru;
+		saiw_problems_destroy(vhd);
 		saiw_event_db_close_all_now(vhd);
 		lws_struct_sq3_close(&vhd->pdb);
 		saiw_visible_destroy(vhd);
@@ -942,6 +943,7 @@ http_resp:
 		lws_dll2_remove(&pss->subs_list);
 		lws_sul_cancel(&pss->sul_logcache);
 		lws_sul_cancel(&pss->sul_overview);
+		saiw_problems_pss_close(pss);
 
 		for (n = 0; n < 4; n++) {
 			if (pss->last_bps[n]) {

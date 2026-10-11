@@ -89,6 +89,8 @@ const lws_struct_map_t lsm_schema_json_map[] = {
 			 /* shares struct */ "com.warmcat.sai.pcon_energy"),
 	LSM_SCHEMA	(sai_ptydata_t, NULL, lsm_ptydata,
 			 "com.warmcat.sai.ptydata"),
+	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
+			/* shares struct */   "sai-problems"),
 };
 
 enum {
@@ -103,6 +105,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_POWER_MANAGED_BUILDERS,
 	SAIS_WS_WEBSRV_RX_PCON_ENERGY,
 	SAIS_WS_WEBSRV_RX_PTYDATA,
+	SAIS_WS_WEBSRV_RX_PROBLEMS,	/* found more problems in an event */
 };
 
 /*
@@ -548,6 +551,11 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 
 				saiw_browser_queue_overview(pss->vhd, pss);
 			} lws_end_foreach_dll(p);
+			break;
+
+		case SAIS_WS_WEBSRV_RX_PROBLEMS:
+			ei = (sai_browse_rx_evinfo_t *)m->a.dest;
+			saiw_problems_changed(vhd, ei->event_hash);
 			break;
 
 		case SAIS_WS_WEBSRV_RX_TASKLOGS:
