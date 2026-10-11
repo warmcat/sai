@@ -230,9 +230,10 @@ sais_central_gc_deleted_events_cb(lws_sorted_usec_list_t *sul)
 	char q[128], event_uuid[65], esc[96];
 	sqlite3_stmt *sm, *tsm;
 	sqlite3 *pdb = NULL;
+	int remaining;
 
 	/* Find one event that is in SAIES_DELETED (7) state */
-	lws_snprintf(q, sizeof(q), "SELECT uuid FROM events WHERE state = %d LIMIT 1", SAIES_DELETED);
+	lws_snprintf(q, sizeof(q), "SELECT uuid, ifnull(pruned,0) FROM events WHERE state = %d LIMIT 1", SAIES_DELETED);
 
 	if (sqlite3_prepare_v2(vhd->server.pdb, q, -1, &sm, NULL) != SQLITE_OK)
 		return;
@@ -243,6 +244,15 @@ sais_central_gc_deleted_events_cb(lws_sorted_usec_list_t *sul)
 	}
 
 	lws_strncpy(event_uuid, (const char *)sqlite3_column_text(sm, 0), sizeof(event_uuid));
+	if (sqlite3_column_int(sm, 1)) {
+		/*
+		 * Its db already went to keep under event-db-limit-mb, see
+		 * s-event-db-limit.c... there are no tasks to GC, only its row
+		 */
+		sqlite3_finalize(sm);
+		remaining = 0;
+		goto drop_event;
+	}
 	sqlite3_finalize(sm);
 
 	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
@@ -278,7 +288,7 @@ sais_central_gc_deleted_events_cb(lws_sorted_usec_list_t *sul)
 	}
 
 	/* Check if the event DB is completely empty of tasks now */
-	int remaining = 1; /* Assume 1 just in case query fails */
+	remaining = 1; /* Assume 1 just in case query fails */
 	if (sqlite3_prepare_v2(pdb, "SELECT count(*) FROM tasks", -1, &tsm, NULL) == SQLITE_OK) {
 		if (sqlite3_step(tsm) == SQLITE_ROW)
 			remaining = sqlite3_column_int(tsm, 0);
@@ -286,11 +296,14 @@ sais_central_gc_deleted_events_cb(lws_sorted_usec_list_t *sul)
 	}
 	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
+drop_event:
 	if (remaining == 0) {
 		/* Everything is gone, we can delete the logical event and unlink the sqlite files safely */
 		lws_sql_purify(esc, event_uuid, sizeof(esc));
 		lws_snprintf(q, sizeof(q), "DELETE FROM events WHERE uuid='%s'", esc);
 		sqlite3_exec(vhd->server.pdb, q, NULL, NULL, NULL);
+		/* our idle handle on it would outlive its files */
+		sai_event_db_cache_drop(&vhd->sqlite3_cache, event_uuid);
 		sai_event_db_delete_database(vhd->sqlite3_path_lhs, event_uuid);
 		lwsl_notice("%s: Completed GC for deleted event %s\n", __func__, event_uuid);
 	}

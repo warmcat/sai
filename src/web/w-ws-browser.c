@@ -496,6 +496,46 @@ bail:
 	return 1;
 }
 
+/*
+ * The browser asked for something in an event whose db we can't open.  Tell
+ * it whether that's because sai-server pruned the db to keep its storage under
+ * its limit, and the event is still listed with only its result, or the event
+ * is just gone.
+ */
+
+static void
+saiw_browser_event_gone(struct pss *pss, const char *event_uuid)
+{
+	uint8_t buf[LWS_PRE + 160];
+	char esc[80];
+	sqlite3_stmt *sm;
+	int pruned = 0, n;
+
+	/* one in a project this vhost doesn't show is just gone */
+	if (saiw_event_visible(pss->vhd, event_uuid) &&
+	    sqlite3_prepare_v2(pss->vhd->pdb, "SELECT ifnull(pruned,0) FROM "
+			       "events WHERE uuid = ?", -1, &sm, NULL) ==
+								SQLITE_OK) {
+		sqlite3_bind_text(sm, 1, event_uuid, -1, SQLITE_TRANSIENT);
+		pruned = sqlite3_step(sm) == SQLITE_ROW &&
+			 sqlite3_column_int(sm, 0);
+		sqlite3_finalize(sm);
+	}
+
+	if (pruned)
+		n = lws_snprintf((char *)buf + LWS_PRE, sizeof(buf) - LWS_PRE,
+				 "{\"schema\":\"com.warmcat.sai.event_pruned\","
+				 "\"event_hash\":\"%s\"}",
+				 lws_json_purify(esc, event_uuid,
+						 sizeof(esc) - 1, NULL));
+	else
+		n = lws_snprintf((char *)buf + LWS_PRE, sizeof(buf) - LWS_PRE,
+				 "{\"schema\":\"com.warmcat.sai.event_deleted\"}");
+
+	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, buf + LWS_PRE, (size_t)n,
+					       LWS_WRITE_TEXT);
+}
+
 /* we leave an allocation in sch->query_ac ... */
 
 static int
@@ -541,11 +581,7 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub, i
 	if (!saiw_event_visible(pss->vhd, event_uuid) ||
 	    sai_event_db_ensure_open(pss->vhd->context, &pss->vhd->sqlite3_cache,
 			      pss->vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
-		uint8_t buf[LWS_PRE + 128];
-		int n1 = lws_snprintf((char *)buf + LWS_PRE, sizeof(buf) - LWS_PRE,
-				     "{\"schema\":\"com.warmcat.sai.event_deleted\"}");
-		saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, buf + LWS_PRE, (size_t)n1,
-						       LWS_WRITE_TEXT);
+		saiw_browser_event_gone(pss, event_uuid);
 		return 0;
 	}
 
@@ -1710,15 +1746,9 @@ saiw_broadcast_logs_batch(struct vhd *vhd, struct pss *pss)
 		if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
 					     vhd->sqlite3_path_lhs, event_uuid,
 					     0, &pdb)) {
-			uint8_t buf[LWS_PRE + 128];
-			int n1;
 			lwsl_notice("%s: unable to open event-specific database\n",
 					__func__);
-
-			n1 = lws_snprintf((char *)buf + LWS_PRE, sizeof(buf) - LWS_PRE,
-				     "{\"schema\":\"com.warmcat.sai.event_deleted\"}");
-			saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, buf + LWS_PRE, (size_t)n1,
-						       LWS_WRITE_TEXT);
+			saiw_browser_event_gone(pss, event_uuid);
 
 			return 0;
 		}
@@ -2193,7 +2223,9 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 
 				e = lws_container_of(walk, sai_event_t, list);
 				sum[0] = '\0';
-				if (!sai_event_db_ensure_open(vhd->context,
+				/* a pruned event has no db to summarize */
+				if (!e->pruned &&
+				    !sai_event_db_ensure_open(vhd->context,
 						&vhd->sqlite3_cache,
 						vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
 					saiw_event_summary_string(pdb, e->uuid, sum,
@@ -2239,7 +2271,10 @@ saiw_browser_queue_overview(struct vhd *vhd, struct pss *pss)
 
 		task_index = 0;
 
-		if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+		if (e->pruned)
+			/* its db was deleted, it has no tasks to list */
+			;
+		else if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
 				      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb)) {
 			lwsl_err("%s: unable to open event-specific database\n",
 					__func__);

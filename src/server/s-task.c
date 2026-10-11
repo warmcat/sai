@@ -40,7 +40,7 @@ sais_event_check_for_plat_tasks(struct vhd *vhd, const char *event_uuid,
 	unsigned int count = 0;
 
 	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
-			      vhd->sqlite3_path_lhs, event_uuid, 1, &check_pdb))
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &check_pdb))
 		return 0;
 
 	lws_snprintf(query, sizeof(query),
@@ -321,7 +321,7 @@ sais_task_pending_on_event(struct vhd *vhd, struct pss *pss,
 		prev_event_uuid[0] = '\0';
 		lws_snprintf(query, sizeof(query),
 			 "select uuid, created from events where repo_name='%s' and "
-			 "ref='%s' and created < %llu "
+			 "ref='%s' and created < %llu and ifnull(pruned,0)=0 "
 			 "order by created desc limit 1",
 			 esc_repo, esc_ref, (unsigned long long)last_created);
 
@@ -363,7 +363,7 @@ sais_task_pending_on_event(struct vhd *vhd, struct pss *pss,
 
 	if (checked_uuid[0] &&
 	    !sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
-			      vhd->sqlite3_path_lhs, checked_uuid, 1, &prev_pdb)) {
+			      vhd->sqlite3_path_lhs, checked_uuid, 0, &prev_pdb)) {
 		sqlite3_stmt *sm;
 
 		/* we are looking for failed tasks here */

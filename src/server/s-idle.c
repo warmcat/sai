@@ -188,7 +188,8 @@ sais_idle_hosts_refresh(struct vhd *vhd)
 	vhd->idle_hosts_stale = 0;
 
 	lws_snprintf(q, sizeof(q), "select uuid, repo_name, ref from events "
-		     "where idle > 0 and adhoc = 0 and state != %d "
+		     "where idle > 0 and adhoc = 0 and state != %d and "
+		     "ifnull(pruned,0) = 0 "
 		     "order by created desc limit %d", SAIES_DELETED,
 		     SAIS_IDLE_HOST_EVENTS);
 	if (sqlite3_prepare_v2(vhd->server.pdb, q, -1, &sm, NULL) != SQLITE_OK) {
@@ -776,7 +777,8 @@ sais_idle_builder_gone(struct vhd *vhd, sai_plat_t *sp)
 	char q[256];
 
 	lws_snprintf(q, sizeof(q), "select uuid from events where idle > 0 "
-		     "and state != %d order by created desc limit %d",
+		     "and state != %d and ifnull(pruned,0) = 0 "
+		     "order by created desc limit %d",
 		     SAIES_DELETED, SAIS_IDLE_HOST_EVENTS);
 	if (sqlite3_prepare_v2(vhd->server.pdb, q, -1, &sm, NULL) != SQLITE_OK)
 		return;

@@ -232,6 +232,10 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		else
 			vhd->task_abandoned_timeout_mins = 8 * 60;
 
+		if (!lws_pvo_get_str(in, "event-db-limit-mb", &num))
+			vhd->event_db_limit = (uint64_t)strtoull(num, NULL, 10) *
+							1024ull * 1024ull;
+
 		/*
 		 * X-Forwarded-For is only honored when explicitly opted-in.
 		 * See the trust_xff comment in s-private.h.
@@ -369,6 +373,13 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				     NULL, NULL, &err);
 			if (err)
 				sqlite3_free(err);
+
+			err = NULL;
+			sqlite3_exec(vhd->server.pdb,
+				     "ALTER TABLE events ADD COLUMN pruned integer default 0;",
+				     NULL, NULL, &err);
+			if (err)
+				sqlite3_free(err);
 		}
 
 		sai_sqlite3_statement(vhd->server.pdb, "CREATE UNIQUE INDEX IF NOT EXISTS idx_event_uuid ON events(uuid);", "create event index");
@@ -461,6 +472,12 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
 				 sais_activity_cb, 1 * LWS_US_PER_SEC);
 
+		if (vhd->event_db_limit)
+			lws_sul_schedule(vhd->context, 0,
+					 &vhd->sul_event_db_limit,
+					 sais_event_db_limit_cb,
+					 30 * LWS_US_PER_SEC);
+
 		break;
 
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
@@ -469,6 +486,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			goto passthru;
 		if (vhd->vhost == sais_link_vhost)
 			sais_link_vhost = NULL;
+		lws_sul_cancel(&vhd->sul_event_db_limit);
 		sais_server_destroy(vhd, &vhd->server);
 		sais_idle_destroy(vhd);
 		sais_repo_turns_destroy(vhd);

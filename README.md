@@ -182,6 +182,52 @@ local user on the host can connect to the link.  Existing deployments keep
 working unchanged, but should add the pvo to both confs and restart both
 daemons (sai-server first, sai-web reconnects by itself).
 
+## Limiting the disk used by event dbs ("event-db-limit-mb")
+
+Each event has its own db next to the events db, eg,
+`/srv/sai/sai-master-event-<uuid>.sqlite3`, holding its tasks with their logs
+and artifacts, so they build up.  sai-server can keep the total size of them
+under a limit given in MiB by the optional `event-db-limit-mb` pvo in the
+`vhosts|ws-protocols|com-warmcat-sai` section of its conf:
+
+```
+			"event-db-limit-mb":	"20000",
+```
+
+Unset or 0 means no limit.  With a limit, 30s after starting and every ten
+minutes after that, sai-server adds up the disk the event dbs use, including
+their `-wal` and `-shm` files.  When it is over the limit, the dbs of the
+oldest events, by when the event was created rather than when its db was last
+written, are deleted until it is under.
+
+A pruned event stays in the events db and is still listed on its branch in
+sai-web with its result, greyed out and not selectable, since its tasks, logs
+and artifacts are gone.  An old link to the event or one of its tasks says the
+event's details are no longer stored, and shows its branch instead.  A later push of the same
+commit, eg, tagging it, is built again rather than being skipped as already
+built.
+
+Some events are never pruned, so if they alone are over the limit, sai-server
+warns about it, with how many events (and MiB) are kept for each reason, and
+leaves them:
+
+ - the newest event on each repo and branch
+ - events with tasks offered to or running on builders, or whose idle tasks
+   are the ones being run for its branch, see
+   [README-idle.md](READMEs/README-idle.md)
+ - events whose db was written in the last hour, eg, by a rebuild
+ - events whose db sai-server has open at that moment
+
+Deleted events aren't counted towards the limit, sai-server is removing their
+dbs anyway.
+
+Whether an event is still active is judged from that, not from the task states
+in its db, which in old dbs can be left over from builds that were lost.
+
+An event that is pruned before all its tasks finished, eg, one waiting on a
+platform that no longer has any builders, is cancelled as well, since its tasks
+went with its db.
+
 ## Showing only some projects on a sai-web vhost ("projects")
 
 By default a sai-web vhost shows every project sai-server has built.  The

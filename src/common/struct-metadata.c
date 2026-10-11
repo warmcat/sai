@@ -147,6 +147,7 @@ const lws_struct_map_t lsm_event[] = {
 	LSM_UNSIGNED	(sai_event_t, sec,		"sec"),
 	LSM_UNSIGNED	(sai_event_t, adhoc,		"adhoc"),
 	LSM_UNSIGNED	(sai_event_t, idle,		"idle"),
+	LSM_UNSIGNED	(sai_event_t, pruned,		"pruned"),
 	LSM_JO_LIST	(sai_event_t, watcher_owner, sai_watcher_t, list,
 			 NULL, lsm_watcher,		"watchers"),
 };

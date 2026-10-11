@@ -60,6 +60,15 @@
 			# ...-event-xxxx.sqlite3 where xxxx is the event uuid.
 			#
 			"database":		"/srv/sai/sai-master",
+
+			# Optional: the most disk, in MiB, the per-event
+			# ...-event-xxxx.sqlite3 dbs may use.  Over it, the
+			# dbs of the oldest events are deleted, leaving only
+			# their result in ...-events.sqlite3.  Unset or 0 means
+			# no limit.  See "Limiting the disk used by event dbs"
+			# in README.md
+			#
+			# "event-db-limit-mb":	"20000",
                         #
                         # the push hook notification script creates a JSON
                         # object and signs it with a secret... "notification-

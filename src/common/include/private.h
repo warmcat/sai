@@ -534,6 +534,12 @@ typedef struct sai_event {
 	int				adhoc;
 	/* how many idle tasks ("lanes") the event has, see sai_task_t .idle */
 	int				idle;
+	/*
+	 * Nonzero when sai-server deleted the event's own db to keep the event
+	 * dbs under "event-db-limit-mb": only this row in the events table is
+	 * left of it, its tasks, logs and artifacts are gone
+	 */
+	int				pruned;
 
 	lws_dll2_owner_t		watcher_owner; /* sai_watcher_t */
 } sai_event_t;
@@ -1096,7 +1102,7 @@ extern const lws_struct_map_t
 	lsm_schema_sq3_map_artifact[1],
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
-	lsm_event[15],
+	lsm_event[16],
 	lsm_task[36],
 	lsm_log[9],
 	lsm_artifact[9],
@@ -1240,6 +1246,13 @@ sai_event_db_close(lws_dll2_owner_t *sqlite3_cache, struct sqlite3 **ppdb);
 
 int
 sai_event_db_close_all_now(lws_dll2_owner_t *sqlite3_cache);
+
+void
+sai_event_db_path(char *buf, size_t len, const char *sqlite3_path_lhs,
+		  const char *event_uuid, const char *suffix);
+
+int
+sai_event_db_cache_drop(lws_dll2_owner_t *sqlite3_cache, const char *event_uuid);
 
 int
 sai_event_db_delete_database(const char *sqlite3_path_lhs, const char *event_uuid);

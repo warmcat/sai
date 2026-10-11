@@ -15,6 +15,7 @@ set(SRCS
 	s-pool.c
 	s-findings.c
 	s-central.c
+	s-event-db-limit.c
 	s-ws-web.c
 	s-webops.c
 	s-resource.c

@@ -1319,6 +1319,12 @@ function summarize_build_situation(event_uuid)
 	 * events overflows the server's buflist).  Prefer that summary when the
 	 * task array isn't present.
 	 */
+	/* sai-server deleted its db to save space, only its result is left */
+	if (ev_obj && ev_obj.e && ev_obj.e.pruned)
+		return { text: sai_event_result_name(ev_obj.e.state) +
+			       ", details not stored",
+			 good: 0, bad: 0, ongoing: 0, pending: 0, total: 0 };
+
 	if (ev_obj && (!ev_obj.t || !ev_obj.t.length) && ev_obj.summary) {
 		var sc = ev_obj.sum_counts || {};
 		return {
@@ -1638,7 +1644,7 @@ function sai_sb_newest_matching_event()
 	if (!loaded_events || !loaded_events.length)
 		return null;
 	var ml = loaded_events.filter(function(o) {
-		return o && o.e &&
+		return o && o.e && !o.e.pruned &&
 			(!sb_selected_project ||
 			 o.e.repo_name === sb_selected_project) &&
 			(!sb_selected_ref || o.e.ref === sb_selected_ref);
@@ -1749,8 +1755,12 @@ function render_sb_events()
 			var sel = (e.uuid === selected_event_uuid) ? " selected" : "";
 			if (e.adhoc)
 				stateClass += " adhoc";
+			if (e.pruned)
+				stateClass += " pruned";
 			s += "<div class=\"sb-event-row" + stateClass + sel +
-			     "\" data-uuid=\"" + san(e.uuid) + "\">";
+			     "\" data-uuid=\"" + san(e.uuid) + "\"" +
+			     (e.pruned ? " title=\"The details of this event are " +
+			      "no longer stored, only its result\"" : "") + ">";
 			/* single line: when + tag + status + progress bar */
 			s += "<span class=\"sb-event-when\">" + san(sai_sb_fmt_when(e.created)) +
 			     " <span class='age-0' ut='" + e.created + "'>" +
@@ -1765,7 +1775,7 @@ function render_sb_events()
 		});
 	}
 	c.innerHTML = s;
-	c.querySelectorAll(".sb-event-row").forEach(function(row) {
+	c.querySelectorAll(".sb-event-row:not(.pruned)").forEach(function(row) {
 		row.addEventListener("click", function(ev) {
 			/* embedded gitweb links navigate on their own */
 			if (ev.target && ev.target.closest && ev.target.closest("a"))
@@ -2619,6 +2629,15 @@ function render_selected_event_tasks(o) {
 	var e = o.e;
 
 	/*
+	 * However we got here, eg, an old ?event= link, or the event we were
+	 * showing got pruned meanwhile, there's nothing to show for it
+	 */
+	if (e && e.pruned) {
+		sai_event_pruned_bail(e, e.uuid);
+		return;
+	}
+
+	/*
 	 * The tasks pane only makes sense once we have a context for it: either
 	 * a sidebar project + branch selection, or an explicit deep-link
 	 * (?event= / ?task=) that named a specific event/task.  Otherwise
@@ -2804,6 +2823,95 @@ function render_selected_event_tasks(o) {
 	}
 }
 
+function sai_event_result_name(state)
+{
+	switch (state) {
+	case 3: return "Passed";
+	case 4: return "Failed";
+	case 5: return "Cancelled";
+	}
+
+	return "Unfinished";
+}
+
+/*
+ * Say so in the notice bar above the tasks pane, until it's dismissed
+ */
+var sai_notice_timer = null;
+
+function sai_notice_show(text)
+{
+	var n = document.getElementById("sai_notice"),
+	    t = document.getElementById("sai_notice_text");
+
+	if (!n || !t)
+		return;
+
+	t.textContent = text;
+	n.classList.remove("hidden");
+
+	if (sai_notice_timer)
+		clearTimeout(sai_notice_timer);
+	sai_notice_timer = setTimeout(function() {
+		n.classList.add("hidden");
+		sai_notice_timer = null;
+	}, 30000);
+}
+
+/*
+ * sai-server deleted the db of the event we were asked to show, to keep its
+ * storage under its limit: only the event's result in the event list is left.
+ * Say so, drop the event (and any task of it) from the selection and the URL,
+ * and show its branch instead, where it's listed greyed out.  e is null if we
+ * don't hold the event, eg, a ?task= link into it.
+ */
+function sai_event_pruned_bail(e, uuid)
+{
+	var what = "This event";
+
+	if (e)
+		what = "Event " + sai_event_hash_display(e.hash) + " on " +
+		       e.repo_name + " " +
+		       (e.ref || "").replace("refs/heads/", "").replace("refs/tags/", "") +
+		       " from " + sai_sb_fmt_when(e.created);
+
+	sai_notice_show(what + ": its details are no longer stored" +
+			(e ? ", only its result (" +
+			     sai_event_result_name(e.state).toLowerCase() + ")" : "") +
+			".");
+
+	if (!uuid || selected_event_uuid === uuid)
+		selected_event_uuid = null;
+	clear_task_view();
+
+	var par = new URLSearchParams(window.location.search);
+	par.delete("event");
+	par.delete("task");
+	par.delete("run");
+	sai_update_history(par, true);
+
+	var c = document.getElementById("sai_event_tasks");
+	if (c && !selected_event_uuid) {
+		c.innerHTML = "<div class=\"sb-empty\">No events</div>";
+		sai_tasks_pane_sig = null;
+	}
+
+	if (e && (e.repo_name !== sb_selected_project ||
+		  e.ref !== sb_selected_ref)) {
+		sb_selected_project = e.repo_name;
+		sb_selected_ref = e.ref;
+		render_sb_projects();
+		sai_sb_request_branches(sb_selected_project);
+		sai_sb_update_url();
+		/* its branch's events, the scoped reply selects the newest */
+		sai_sb_request_overview(0);
+	}
+
+	render_sb_events();
+	if (!selected_event_uuid)
+		sai_sb_follow_selection();
+}
+
 /*
  * Drop the selected task and reset the task log view, eg because the
  * selected event changed to one that doesn't contain it.
@@ -2822,10 +2930,16 @@ function clear_task_view()
 }
 
 function selectEvent(uuid) {
+	var ev_obj = loaded_events.find(o => o.e.uuid === uuid);
+
+	if (ev_obj && ev_obj.e && ev_obj.e.pruned) {
+		sai_event_pruned_bail(ev_obj.e, uuid);
+		return;
+	}
+
 	selected_event_uuid = uuid;
 
 	// Check if selected task belongs to this event
-	var ev_obj = loaded_events.find(o => o.e.uuid === uuid);
 	var hasTask = false;
 	if (ev_obj && ev_obj.t && selected_task_uuid) {
 		hasTask = ev_obj.t.some(t => t.uuid === selected_task_uuid);
@@ -4720,7 +4834,7 @@ function ws_open_sai()
 				var sb_newest_before = null;
 				if (loaded_events && loaded_events.length) {
 					var _tmp = loaded_events.filter(function(o) {
-						if (!o || !o.e) return false;
+						if (!o || !o.e || o.e.pruned) return false;
 						if (sb_selected_project && o.e.repo_name !== sb_selected_project) return false;
 						if (sb_selected_ref && o.e.ref !== sb_selected_ref) return false;
 						return true;
@@ -4830,6 +4944,14 @@ function ws_open_sai()
 							 * the server so the highlight is correct */
 							if (sb_selected_project)
 								sai_sb_request_branches(sb_selected_project);
+							/*
+							 * The link is to an event whose
+							 * details are gone: say so and show
+							 * its branch instead
+							 */
+							if (_dev.e.pruned)
+								sai_event_pruned_bail(_dev.e,
+										      _dev.e.uuid);
 						}
 					}
 				}
@@ -4898,7 +5020,7 @@ function ws_open_sai()
 				var sb_newest_after = null;
 				if (loaded_events && loaded_events.length) {
 					var _tmp2 = loaded_events.filter(function(o) {
-						if (!o || !o.e) return false;
+						if (!o || !o.e || o.e.pruned) return false;
 						if (sb_selected_project && o.e.repo_name !== sb_selected_project) return false;
 						if (sb_selected_ref && o.e.ref !== sb_selected_ref) return false;
 						return true;
@@ -5271,6 +5393,12 @@ function ws_open_sai()
 				window.location.href = window.location.origin + window.location.pathname;
 				break;
 
+			case "com.warmcat.sai.event_pruned":
+				var _pe = loaded_events.find(o => o.e.uuid === jso.event_hash);
+
+				sai_event_pruned_bail(_pe ? _pe.e : null, jso.event_hash);
+				break;
+
 			/*
 			 * sai-web is about to send this task's logs from the
 			 * first row again: what we are showing is either gone
@@ -5570,6 +5698,13 @@ window.addEventListener("load", function() {
 
 	if (fbtn)
 		fbtn.addEventListener("click", sai_findings_dialog_open);
+
+	var nbtn = document.getElementById("sai_notice_close");
+
+	if (nbtn)
+		nbtn.addEventListener("click", function() {
+			document.getElementById("sai_notice").classList.add("hidden");
+		});
 
 
 	document.addEventListener('click', function(e) {

@@ -323,6 +323,7 @@ struct vhd {
 	lws_sorted_usec_list_t	sul_central; /* background task allocation sul */
 	lws_sorted_usec_list_t	sul_activity; /* activity broadcast sul */
 	lws_sorted_usec_list_t	sul_gc_events; /* incremental GC of deleted events */
+	lws_sorted_usec_list_t	sul_event_db_limit; /* see s-event-db-limit.c */
 	lws_sorted_usec_list_t	sul_watcher; /* generic async service watcher sul */
  
 	lws_dll2_owner_t	watcher_services; /* sai_watcher_service_t from config */
@@ -351,6 +352,11 @@ struct vhd {
 	const char		*link_key; /* fleet secret builders / sai-power auth with */
 	const char		*websrv_sockpath; /* control link uds we serve */
 	unsigned int		task_abandoned_timeout_mins;
+	/*
+	 * The event dbs may use up to this much disk, 0 means no limit.  Over
+	 * it, the oldest events' dbs are deleted, see s-event-db-limit.c
+	 */
+	uint64_t		event_db_limit;
 
 	/*
 	 * Only honor the X-Forwarded-For header for source_ip attribution when
@@ -433,6 +439,9 @@ sais_activity_cb(lws_sorted_usec_list_t *sul);
 
 void
 sais_central_gc_deleted_events_cb(lws_sorted_usec_list_t *sul);
+
+void
+sais_event_db_limit_cb(lws_sorted_usec_list_t *sul);
 
 sai_db_result_t
 sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_rejection);

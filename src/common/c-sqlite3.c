@@ -58,13 +58,31 @@ sai_task_index_needs_run(sqlite3 *pdb)
 	return r;
 }
 
+/*
+ * The path of an event's own db, or with suffix "-wal" / "-shm", of sqlite's
+ * files that go with it
+ */
+
+void
+sai_event_db_path(char *buf, size_t len, const char *sqlite3_path_lhs,
+		  const char *event_uuid, const char *suffix)
+{
+	char saf[33];
+
+	lws_strncpy(saf, event_uuid, sizeof(saf));
+	lws_filename_purify_inplace(saf);
+
+	lws_snprintf(buf, len, "%s-event-%s.sqlite3%s", sqlite3_path_lhs, saf,
+		     suffix);
+}
+
 int
 sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache,
 			 const char *sqlite3_path_lhs, const char *event_uuid,
 			 char create_if_needed, sqlite3 **ppdb)
 {
-	char filepath[256], saf[33];
 	sais_sqlite_cache_t *sc;
+	char filepath[256];
 
 	// lwsl_notice("%s: (sai-server) entry\n", __func__);
 
@@ -86,11 +104,8 @@ sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache
 
 	/* ... nope, well, let's open and cache him then... */
 
-	lws_strncpy(saf, event_uuid, sizeof(saf));
-	lws_filename_purify_inplace(saf);
-
-	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3",
-		     sqlite3_path_lhs, saf);
+	sai_event_db_path(filepath, sizeof(filepath), sqlite3_path_lhs,
+			  event_uuid, "");
 
 	if (lws_struct_sq3_open(cx, filepath, create_if_needed, ppdb)) {
 		lwsl_err("%s: Unable to open db %s: %s\n", __func__,
@@ -246,43 +261,63 @@ sai_event_db_close_all_now(lws_dll2_owner_t *sqlite3_cache)
 	return 0;
 }
 
+/*
+ * Close and forget a cached handle on an event db, so its files can go.
+ * Returns nonzero if the db is in use, then it is left alone.
+ */
+
+int
+sai_event_db_cache_drop(lws_dll2_owner_t *sqlite3_cache, const char *event_uuid)
+{
+	sais_sqlite_cache_t *sc;
+
+	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
+				   sqlite3_cache->head) {
+		sc = lws_container_of(p, sais_sqlite_cache_t, list);
+
+		if (!strcmp(event_uuid, sc->uuid)) {
+			if (sc->refcount)
+				return 1;
+
+			lws_struct_sq3_close(&sc->pdb);
+			lws_dll2_remove(&sc->list);
+			free(sc);
+
+			return 0;
+		}
+
+	} lws_end_foreach_dll_safe(p, p1);
+
+	return 0;
+}
+
+/*
+ * What we want is for the files not to exist, so one that already doesn't is
+ * fine: the -wal and -shm files are normally only there while something has
+ * the db open
+ */
+
 int
 sai_event_db_delete_database(const char *sqlite3_path_lhs, const char *event_uuid)
 {
-	char filepath[256], saf[33], r = 0, ra = 0;
+	static const char * const suffixes[] = { "", "-wal", "-shm" };
+	char filepath[256];
+	int ra = 0;
+	size_t n;
 
-	lws_strncpy(saf, event_uuid, sizeof(saf));
-	lws_filename_purify_inplace(saf);
+	for (n = 0; n < LWS_ARRAY_SIZE(suffixes); n++) {
+		sai_event_db_path(filepath, sizeof(filepath), sqlite3_path_lhs,
+				  event_uuid, suffixes[n]);
 
-	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3",
-		     sqlite3_path_lhs, saf);
-
-	r = (char)!!unlink(filepath);
-	if (r) {
-		lwsl_err("%s: unable to delete %s (%d)\n", __func__, filepath, errno);
-		ra = 1;
-	}
-
-	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3-wal",
-		     sqlite3_path_lhs, saf);
-
-	r = (char)!!unlink(filepath);
-	if (r) {
-		lwsl_err("%s: unable to delete %s (%d)\n", __func__, filepath, errno);
-		ra = 1;
-	}
-
-	lws_snprintf(filepath, sizeof(filepath), "%s-event-%s.sqlite3-shm",
-		     sqlite3_path_lhs, saf);
-
-	r = (char)!!unlink(filepath);
-	if (r) {
-		lwsl_err("%s: unable to delete %s (%d)\n", __func__, filepath, errno);
-		ra = 1;
+		if (unlink(filepath) && errno != ENOENT) {
+			lwsl_err("%s: unable to delete %s (%d)\n", __func__,
+				 filepath, errno);
+			ra = 1;
+		}
 	}
 
 	if (!ra)
-		lwsl_notice("%s: deleted %s OK\n", __func__, filepath);
+		lwsl_notice("%s: deleted event db %s OK\n", __func__, event_uuid);
 
 	return ra;
 }

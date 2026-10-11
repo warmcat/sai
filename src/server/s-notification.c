@@ -1085,17 +1085,20 @@ sai_notification_file_upload_cb(void *data, const char *name,
 		 *
 		 * Ad-hoc events are excluded: they are single-task scratch
 		 * builds of a hash that may well be pushed for real later.
+		 * So are pruned events, their tasks and logs are gone, so
+		 * building the tree again is how to see them.
 		 */
 
 		{
 			uint64_t rid = 0;
-			char qu[192], esc_hash[96];
+			char qu[256], esc_hash[96];
 
 			lws_sql_purify(esc_hash, pss->sn.e.hash, sizeof(esc_hash));
 
 			lws_snprintf(qu, sizeof(qu), "select rowid from events "
 						     "where hash='%s' and "
-						     "ifnull(adhoc,0)=0",
+						     "ifnull(adhoc,0)=0 and "
+						     "ifnull(pruned,0)=0",
 						     esc_hash);
 
 			if (sqlite3_exec(pss->vhd->server.pdb, qu,
