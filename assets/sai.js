@@ -2913,6 +2913,45 @@ function sai_event_pruned_bail(e, uuid)
 }
 
 /*
+ * sai-web doesn't have the task we asked for, or that run of it, eg, an old
+ * ?task= link to a task that was removed, or to a run of it whose tries were
+ * removed.  Say so and show what is still there: the task's latest run, or
+ * else the event it was in.
+ */
+function sai_task_gone(jso)
+{
+	if (!jso.task_hash || jso.task_hash !== selected_task_uuid)
+		return;
+
+	if (typeof jso.run !== 'undefined') {
+		sai_notice_show("Run " + jso.run + " of this task isn't " +
+				"available, showing its latest run.");
+		selectTask(jso.task_hash, '-1', true);
+		return;
+	}
+
+	sai_notice_show("This task isn't available, showing its event.");
+
+	var euuid = jso.task_hash.substring(0, 32),
+	    ev_obj = loaded_events.find(o => o.e.uuid === euuid),
+	    par = new URLSearchParams(window.location.search);
+
+	clear_task_view();
+	par.delete("task");
+	par.delete("run");
+	par.set("event", euuid);
+	sai_update_history(par, true);
+
+	selected_event_uuid = euuid;
+	if (ev_obj)
+		render_selected_event_tasks(ev_obj);
+	render_sb_events();
+
+	sai.send("{\"schema\":\"com.warmcat.sai.eventinfo\", \"js_api_version\": " +
+		 SAI_JS_API_VERSION + ", \"event_hash\": " + JSON.stringify(euuid) + "}");
+}
+
+/*
  * Drop the selected task and reset the task log view, eg because the
  * selected event changed to one that doesn't contain it.
  */
@@ -3024,7 +3063,7 @@ function init_task_logs_dom() {
 	}
 }
 
-function selectTask(taskUuid, runVal) {
+function selectTask(taskUuid, runVal, replace) {
 	selected_task_uuid = taskUuid;
 	window.current_task_run = runVal;
 	sai_tt_set_selected(taskUuid);
@@ -3037,7 +3076,7 @@ function selectTask(taskUuid, runVal) {
 	} else {
 		par.delete("run");
 	}
-	sai_update_history(par, false);
+	sai_update_history(par, !!replace);
 
 	// Setup loading state and clear logs (without the loading text overlay)
 	var stickyEl = document.getElementById("sai_sticky");
@@ -5391,6 +5430,10 @@ function ws_open_sai()
 
 			case "com.warmcat.sai.event_deleted":
 				window.location.href = window.location.origin + window.location.pathname;
+				break;
+
+			case "com.warmcat.sai.task_gone":
+				sai_task_gone(jso);
 				break;
 
 			case "com.warmcat.sai.event_pruned":

@@ -463,16 +463,28 @@ saiw_subs_request_writeable(struct vhd *vhd, const char *task_uuid)
 	return 0;
 }
 
-static int
+/*
+ * A link opened from a ?task= deep link starts out locked on that task's
+ * event.  Once the browser itself asks for something in another event, it has
+ * moved on from the deep link, so the lock no longer applies.  uuid is the
+ * event's, or a task's, which starts with its event's.
+ */
+
+static void
+saiw_pss_follow_event(struct pss *pss, const char *uuid)
+{
+	if (!pss->specific_task[0] || strlen(uuid) < 32 ||
+	    !memcmp(pss->specific_task, uuid, 32))
+		return;
+
+	lwsl_info("%s: browser moved from '%s' to '%s'\n", __func__,
+		  pss->specific_task, uuid);
+	pss->specific_task[0] = '\0';
+}
+
+static void
 saiw_pss_schedule_eventinfo(struct pss *pss, const char *event_uuid)
 {
-	/*
-	 * This pss may be locked to a specific event
-	 */
-
-	if (pss->specific_task[0] && memcmp(pss->specific_task, event_uuid, 32))
-		goto bail;
-
 	/*
 	 * The browser selected a specific event (com.warmcat.sai.eventinfo) and
 	 * wants that one event's full task list in the tasks pane.  Stash the
@@ -480,20 +492,16 @@ saiw_pss_schedule_eventinfo(struct pss *pss, const char *event_uuid)
 	 * to just that event AND emits full task data for it (bypassing the
 	 * summary-only mode used for the multi-event sidebar list).  The hint
 	 * is cleared by saiw_browser_queue_overview() after it is consumed.
+	 *
+	 * A pss still locked on a deep link's event doesn't take the hint for
+	 * other events.
 	 */
-	lws_strncpy(pss->event_tasks_uuid, event_uuid,
-		    sizeof(pss->event_tasks_uuid));
+	if (!pss->specific_task[0] || !memcmp(pss->specific_task, event_uuid, 32))
+		lws_strncpy(pss->event_tasks_uuid, event_uuid,
+			    sizeof(pss->event_tasks_uuid));
 
 	saiw_browser_queue_overview(pss->vhd, pss);
 	saiw_browser_broadcast_queue_builders(pss->vhd, pss);
-
-	return 0;
-
-bail:
-	saiw_browser_queue_overview(pss->vhd, pss);
-	saiw_browser_broadcast_queue_builders(pss->vhd, pss);
-
-	return 1;
 }
 
 /*
@@ -533,6 +541,35 @@ saiw_browser_event_gone(struct pss *pss, const char *event_uuid)
 				 "{\"schema\":\"com.warmcat.sai.event_deleted\"}");
 
 	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, buf + LWS_PRE, (size_t)n,
+					       LWS_WRITE_TEXT);
+}
+
+/*
+ * The browser asked for a task we don't have for it, eg, an old ?task= link
+ * to a task that was removed, or for a run of it we don't have, eg, one whose
+ * tries were removed.  Tell it, so it can say so and show what is still there,
+ * rather than waiting for task info that will never come.  run is -1 if it's
+ * the task that's not there, else the task is there but not that run of it.
+ */
+
+static void
+saiw_browser_task_gone(struct pss *pss, const char *task_uuid, int run)
+{
+	uint8_t buf[LWS_PRE + 512], *start = buf + LWS_PRE, *p = start,
+		*end = buf + sizeof(buf);
+	char esc[400];
+
+	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+			  "{\"schema\":\"com.warmcat.sai.task_gone\","
+			  "\"task_hash\":\"%s\"",
+			  lws_json_purify(esc, task_uuid, sizeof(esc) - 1, NULL));
+	if (run >= 0)
+		p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p),
+				  ",\"run\":%d", run);
+	p += lws_snprintf((char *)p, lws_ptr_diff_size_t(end, p), "}");
+
+	saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, start,
+					       lws_ptr_diff_size_t(p, start),
 					       LWS_WRITE_TEXT);
 }
 
@@ -607,22 +644,32 @@ saiw_pss_schedule_taskinfo(struct pss *pss, const char *task_uuid, int logsub, i
 		lwsl_err("%s: runs deserialize failed\n", __func__);
 				       
 	sai_event_db_close(&pss->vhd->sqlite3_cache, &pdb);
-	if (n < 0 || !o.head)
+	if (n < 0)
 		goto bail;
 
-	pt = lws_container_of(o.head, sai_task_t, list);
-	one_task = pt;
-
-	if (one_task->idle &&
+	/*
+	 * Idle tasks, their runs, logs and artifacts are only for admins; to
+	 * anyone else, it's not there, whichever run he asked for
+	 */
+	pt = o.head ? lws_container_of(o.head, sai_task_t, list) :
+		(task_reply.runs.head ? lws_container_of(task_reply.runs.head,
+						sai_task_t, list) : NULL);
+	if (pt && pt->idle &&
 	    pss->auth_state != SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN) {
-		/*
-		 * Idle tasks, their runs, logs and artifacts are only for
-		 * admins; to anyone else, it's not there
-		 */
 		lwsl_info("%s: %s is idle, not for this browser\n", __func__,
 			  task_uuid);
+		saiw_browser_task_gone(pss, task_uuid, -1);
 		goto bail;
 	}
+
+	if (!o.head) {
+		/* is it the task that's not there, or that run of it? */
+		saiw_browser_task_gone(pss, task_uuid,
+				       task_reply.runs.head ? run_idx : -1);
+		goto bail;
+	}
+
+	one_task = pt;
 
 	/* let the pss take over the task info ac and schedule sending */
 
@@ -1154,6 +1201,7 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 			pss->initial_log_uid = 0;
 		}
 
+		saiw_pss_follow_event(pss, ti->task_hash);
 		if (saiw_pss_schedule_taskinfo(pss, ti->task_hash, !!ti->logs, ti->run))
 			goto soft_error;
 
@@ -1165,8 +1213,8 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 
 		lws_strncpy(pss->selected_event_uuid, ei->event_hash, sizeof(pss->selected_event_uuid));
 
-		if (saiw_pss_schedule_eventinfo(pss, ei->event_hash))
-			goto soft_error;
+		saiw_pss_follow_event(pss, ei->event_hash);
+		saiw_pss_schedule_eventinfo(pss, ei->event_hash);
 
 		goto ok;
 
@@ -1602,9 +1650,14 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		buf, bl, ss_flags);
 
 ok:
+soft_error:
+	/*
+	 * A request we can't satisfy, eg, a ?task= link to a task or run
+	 * that's not there any more, isn't a reason to drop the link: the
+	 * browser would reconnect a second later, ask again, and loop
+	 */
 	ret = 0;
 
-soft_error:
 bail:
 	lwsac_free(&a.ac);
 
