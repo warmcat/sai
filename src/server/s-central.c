@@ -337,6 +337,8 @@ sais_central_gc_deleted_events_cb(lws_sorted_usec_list_t *sul)
 		lws_snprintf(q, sizeof(q), "DELETE FROM artifacts WHERE task_uuid='%s'", esc);
 		sqlite3_exec(pdb, q, NULL, NULL, NULL);
 
+		sais_problems_forget_task(vhd, pdb, tu);
+
 		lws_snprintf(q, sizeof(q), "DELETE FROM tasks WHERE uuid='%s'", esc);
 		sqlite3_exec(pdb, q, NULL, NULL, NULL);
 	}
@@ -363,6 +365,7 @@ drop_event:
 		lws_sql_purify(esc, event_uuid, sizeof(esc));
 		lws_snprintf(q, sizeof(q), "DELETE FROM events WHERE uuid='%s'", esc);
 		sqlite3_exec(vhd->server.pdb, q, NULL, NULL, NULL);
+		sais_problems_forget_event(vhd, event_uuid);
 		/* our idle handle on it would outlive its files */
 		sai_event_db_cache_drop(&vhd->sqlite3_cache, event_uuid);
 		sai_event_db_delete_database(vhd->sqlite3_path_lhs, event_uuid);

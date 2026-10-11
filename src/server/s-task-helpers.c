@@ -426,6 +426,19 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 			goto done;
 		}
 
+		/* this try ended, see what went wrong in it, see s-problems.c */
+		if (state == SAIES_SUCCESS || state == SAIES_FAIL) {
+			int run = -1;
+
+			lws_snprintf(update, sizeof(update), "select max(run) "
+				     "from tasks where uuid='%s'", esc2);
+			if (sqlite3_exec((sqlite3 *)e->pdb, update,
+					 sql3_get_integer_cb, &run, NULL) ==
+								SQLITE_OK &&
+			    run >= 0)
+				sais_problems_queue(vhd, task_uuid, run, 0);
+		}
+
 		/*
 		 * So, how many tasks for this event?
 		 */
@@ -816,6 +829,8 @@ sais_task_remove_all_tries(struct vhd *vhd, const char *task_uuid)
 
 	lws_snprintf(cmd, sizeof(cmd), "DELETE FROM artifacts WHERE task_uuid='%s'", esc);
 	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
+
+	sais_problems_forget_task(vhd, pdb, task_uuid);
 
 	lws_snprintf(cmd, sizeof(cmd), "DELETE FROM tasks WHERE uuid='%s' AND run > 0", esc);
 	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);

@@ -14,6 +14,7 @@ set(SRCS
 	s-idle.c
 	s-pool.c
 	s-findings.c
+	s-problems.c
 	s-central.c
 	s-event-db-limit.c
 	s-ws-web.c
@@ -24,6 +25,8 @@ set(SRCS
 	../common/c-pool.c
 	../common/c-conf.c
 	../common/c-sqlite3.c
+	../common/c-problems.c
+	../common/c-problems-summary.c
 	../common/struct-metadata.c
 )
 

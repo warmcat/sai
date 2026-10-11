@@ -325,6 +325,13 @@ struct vhd {
 	lws_sorted_usec_list_t	sul_gc_events; /* incremental GC of deleted events */
 	char			gc_events_cursor[33]; /* last deleted event GC'd */
 	lws_sorted_usec_list_t	sul_event_db_limit; /* see s-event-db-limit.c */
+
+	/* problems, see s-problems.c */
+	lws_dll2_owner_t	problems_queue; /* runs to read */
+	lws_sorted_usec_list_t	sul_problems;
+	int64_t			problems_scan_created; /* scan's next event */
+	char			problems_scan_uuid[33];
+	char			problems_scanning;
 	lws_sorted_usec_list_t	sul_watcher; /* generic async service watcher sul */
  
 	lws_dll2_owner_t	watcher_services; /* sai_watcher_service_t from config */
@@ -440,6 +447,29 @@ sais_activity_cb(lws_sorted_usec_list_t *sul);
 
 void
 sais_central_gc_deleted_events_cb(lws_sorted_usec_list_t *sul);
+
+/* s-problems.c */
+
+void
+sais_problems_queue(struct vhd *vhd, const char *task_uuid, int run, int scan);
+
+void
+sais_problems_scan_start(struct vhd *vhd);
+
+void
+sais_problems_cb(lws_sorted_usec_list_t *sul);
+
+void
+sais_problems_rescan_cb(lws_sorted_usec_list_t *sul);
+
+void
+sais_problems_forget_task(struct vhd *vhd, sqlite3 *pdb, const char *task_uuid);
+
+void
+sais_problems_forget_event(struct vhd *vhd, const char *event_uuid);
+
+void
+sais_problems_destroy(struct vhd *vhd);
 
 void
 sais_event_db_limit_cb(lws_sorted_usec_list_t *sul);

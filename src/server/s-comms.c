@@ -416,6 +416,27 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 		}
 
+		/*
+		 * What problems were found in which events, kept after the
+		 * events' own dbs are pruned, see s-problems.c
+		 */
+		if (sai_sqlite3_statement(vhd->server.pdb,
+			"CREATE TABLE IF NOT EXISTS problem_history ("
+			" repo_name varchar(64), hkey varchar(256),"
+			" event_uuid varchar(33), task_uuid varchar(65),"
+			" run integer, created integer,"
+			" UNIQUE (event_uuid, task_uuid, run, hkey));",
+			"create problem history table")) {
+			lwsl_err("%s: unable to create problem history table\n",
+				 __func__);
+			return -1;
+		}
+
+		sai_sqlite3_statement(vhd->server.pdb,
+			"CREATE INDEX IF NOT EXISTS idx_problem_history "
+			"ON problem_history (repo_name, hkey, created);",
+			"create problem history index");
+
 		if (lws_struct_sq3_create_table(vhd->server.pdb,
 						lsm_schema_sq3_map_plat)) {
 			lwsl_err("%s: unable to create builders table\n", __func__);
@@ -484,6 +505,10 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 					 sais_event_db_limit_cb,
 					 30 * LWS_US_PER_SEC);
 
+		/* catch up on runs that weren't read for problems */
+		lws_sul_schedule(vhd->context, 0, &vhd->sul_problems,
+				 sais_problems_rescan_cb, 20 * LWS_US_PER_SEC);
+
 		break;
 
 	case LWS_CALLBACK_PROTOCOL_DESTROY:
@@ -493,6 +518,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (vhd->vhost == sais_link_vhost)
 			sais_link_vhost = NULL;
 		lws_sul_cancel(&vhd->sul_event_db_limit);
+		sais_problems_destroy(vhd);
 		sais_server_destroy(vhd, &vhd->server);
 		sais_idle_destroy(vhd);
 		sais_repo_turns_destroy(vhd);
