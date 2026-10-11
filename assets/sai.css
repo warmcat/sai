@@ -2584,13 +2584,11 @@ td.e6 a:hover {
 }
 
 .tasks-split-left {
-	flex: 1 1 50%;
 	min-width: 0;
 	overflow: auto;
 }
 
 .tasks-split-right {
-	flex: 1 1 50%;
 	min-width: 0;
 	overflow: auto;
 }
@@ -2793,6 +2791,184 @@ tr.tt-row.selected td {
 	border: 1px solid #e2e8f0;
 	padding: 4px;
 	white-space: pre;
+}
+
+/*
+ * The problems pane, on the right of the tasks pane, see sai_problems_html()
+ */
+.tasks-split-left {
+	flex: 1 1 40%;
+}
+
+.tasks-split-right {
+	flex: 1 1 30%;
+}
+
+.tasks-split-problems {
+	flex: 1 1 30%;
+	min-width: 0;
+	overflow: auto;
+	font-size: 9pt;
+	color: #1e293b;
+	padding: 0 4px;
+}
+
+.prob-hdr {
+	position: sticky;
+	top: 0;
+	z-index: 20;
+	background: #f1f5f9;
+	font-weight: 600;
+	padding: 2px 6px;
+	border-bottom: 1px solid #cbd5e1;
+}
+
+.prob-counts {
+	font-weight: 400;
+	color: #475569;
+}
+
+.prob-status, .prob-none, .prob-more {
+	color: #64748b;
+	padding: 4px 6px;
+}
+
+.prob-group {
+	border-left: 4px solid #cbd5e1;
+	margin: 4px 0;
+	background: #ffffff;
+}
+
+.prob-group.prob-sev2 {
+	border-left-color: #dc2626;
+}
+
+.prob-group.prob-sev1 {
+	border-left-color: #ea580c;
+}
+
+.prob-group.prob-sev0 {
+	border-left-color: #ca8a04;
+}
+
+.prob-head {
+	padding: 3px 6px;
+	cursor: pointer;
+	user-select: none;
+}
+
+.prob-head:hover {
+	background: #f8fafc;
+}
+
+.prob-line1 {
+	display: flex;
+	align-items: baseline;
+	gap: 6px;
+	min-width: 0;
+}
+
+.prob-badge, .prob-phase {
+	flex: 0 0 auto;
+	font-size: 7pt;
+	text-transform: uppercase;
+	padding: 0 4px;
+	border-radius: 3px;
+	background: #e2e8f0;
+	color: #334155;
+}
+
+.prob-sev2 .prob-badge {
+	background: #fee2e2;
+	color: #991b1b;
+}
+
+.prob-sev1 .prob-badge {
+	background: #ffedd5;
+	color: #9a3412;
+}
+
+.prob-sev0 .prob-badge {
+	background: #fef9c3;
+	color: #854d0e;
+}
+
+.prob-where {
+	font-family: monospace;
+	font-weight: 600;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	min-width: 0;
+}
+
+.prob-msg {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.prob-code, .prob-tcs {
+	color: #64748b;
+}
+
+.prob-scope {
+	color: #475569;
+}
+
+.prob-hist {
+	color: #7c3aed;
+}
+
+.prob-occs {
+	padding: 0 6px 4px 12px;
+}
+
+.prob-occ {
+	margin-top: 4px;
+}
+
+a.prob-occ-link {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	flex-wrap: wrap;
+	color: #1d4ed8;
+	text-decoration: none;
+}
+
+a.prob-occ-link:hover {
+	text-decoration: underline;
+}
+
+.prob-occ-cfg {
+	font-weight: 600;
+}
+
+.prob-occ-plat, .prob-occ-bld, .prob-occ-ts, .prob-occ-run, .prob-occ-n {
+	color: #64748b;
+}
+
+.prob-occ-msg {
+	color: #334155;
+}
+
+pre.prob-ex {
+	margin: 2px 0 0 0;
+	padding: 3px 5px;
+	max-height: 12em;
+	overflow: auto;
+	font-size: 8pt;
+	background: #f8fafc;
+	border: 1px solid #e2e8f0;
+	white-space: pre;
+}
+
+/* the lines of the log a problem went to */
+.dlogsn a.log-jump-hl {
+	background: #fde68a;
+	color: #000;
+	font-weight: 700;
 }
 
 /*

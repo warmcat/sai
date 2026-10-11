@@ -1933,6 +1933,7 @@ function render_event_decals() {
 
 var SAI_TT_SORT_LS = "sai-tasktable-sort";
 var SAI_TT_SPLIT_LS = "sai-tasks-left-flex";
+var SAI_PROB_SPLIT_LS = "sai-tasks-right-flex";
 var sai_tt_sort = null; /* { key, dir } lazily loaded from localStorage */
 
 var sai_tt_columns = [
@@ -2718,6 +2719,343 @@ function sai_split_handle(e)
 }
 
 /*
+ * Problems pane: what sai-server found going wrong in the logs of every try
+ * of the event's tasks, grouped by where in the code it is however the tools
+ * put it, see READMEs/README-problems.md.  sai-web sends us the summary when
+ * we ask, and again whenever another try finishes.
+ *
+ * Opening a group shows where it was seen and the start of what the log
+ * said there, which is fetched when it's opened.  Clicking one of those opens
+ * that task's log at the line it starts.
+ */
+var sai_problems = {
+	event: null,	/* the event we asked about */
+	o: null,	/* its summary */
+	open: {},	/* the groups that are open, by id */
+	ex: {},		/* excerpts we have, by problem uid */
+	asked: {}	/* excerpts we asked for */
+};
+
+var SAI_PROB_PHASES = [ "config", "build", "link", "test", "other" ];
+var SAI_PROB_SEVS = [ "warning", "flaky", "error" ];
+
+/* nonzero if it went, we can't send before we're connected */
+function sai_problems_send(o)
+{
+	if (typeof sai === "undefined" || !sai ||
+	    sai.readyState !== WebSocket.OPEN)
+		return 0;
+
+	sai.send(JSON.stringify(o));
+
+	return 1;
+}
+
+function sai_problems_request(uuid)
+{
+	sai_problems.event = uuid;
+	sai_problems.o = null;
+	sai_problems.ex = {};
+	sai_problems.asked = {};
+	sai_problems_send({ schema: "com.warmcat.sai.problems",
+			    event_hash: uuid });
+}
+
+/* the tasks pane was drawn again for this event */
+function sai_problems_attach(uuid)
+{
+	if (sai_problems.event !== uuid) {
+		sai_problems.open = {};
+		sai_problems_request(uuid);
+	}
+	sai_problems_render();
+}
+
+function sai_problems_pct(n, of)
+{
+	return of ? Math.round((n * 100) / of) + "%" : "";
+}
+
+function sai_problems_date(secs)
+{
+	return secs ? new Date(secs * 1000).toISOString().substring(0, 10) : "";
+}
+
+/* where it is: the file and lines, the test, or what it's about */
+function sai_problems_where(g)
+{
+	var w;
+
+	if (g.phase === 3)
+		return g.code + (g.path ? " (" + g.path +
+			(g.lines.length ? ":" + g.lines[0] : "") + ")" : "");
+
+	if (!g.path)
+		return g.code || g.tool;
+
+	w = g.path;
+	if (g.lines.length) {
+		w += ":" + g.lines.slice(0, 3).join(", ");
+		if (g.lines.length > 3)
+			w += ", ...";
+	}
+
+	return w;
+}
+
+/* how often it went wrong */
+function sai_problems_often(g)
+{
+	var s = [];
+
+	if (g.phase === 3 && g.att)
+		s.push("failed " + g.fails + " of " + g.att + " runs (" +
+		       sai_problems_pct(g.fails, g.att) + ")" +
+		       (g.sev === 1 ? ", passing on retry" : ""));
+
+	if (g.runs > g.hit)
+		s.push("in " + g.hit + " of " + g.runs + " tries");
+
+	return s.join(", ");
+}
+
+/* html, agify() gives us markup */
+function sai_problems_hist(g, now_ut)
+{
+	if (!g.hist)
+		return "";
+
+	return "Also in " + g.hist.ev + " of the last " + g.hist.of +
+	       " events, since " + sai_problems_date(g.hist.first) +
+	       ", last " + agify(now_ut, g.hist.last) + " ago";
+}
+
+function sai_problems_occ_html(g, oc, now_ut)
+{
+	var s, ex = sai_problems.ex[oc.uid], href;
+
+	href = "index.html?task=" + encodeURIComponent(oc.task) +
+	       "&run=" + oc.run + "&line=" + oc.ll + "&lines=" + oc.lls;
+
+	s = "<div class=\"prob-occ\">" +
+	    "<a class=\"prob-occ-link\" href=\"" + san(href) + "\" " +
+		"title=\"Open the log here\">" +
+	    sai_plat_icon(oc.plat, 0) +
+	    "<span class=\"prob-occ-cfg\">" + san(oc.cfg) + "</span> " +
+	    "<span class=\"prob-occ-plat\">" + san(oc.plat) + "</span>" +
+	    (oc.run ? " <span class=\"prob-occ-run\">try " + (oc.run + 1) +
+		      "</span>" : "") +
+	    (oc.bld ? " <span class=\"prob-occ-bld\">" + san(oc.bld) +
+		      "</span>" : "") +
+	    (oc.ts ? " <span class=\"prob-occ-ts\">" + agify(now_ut, oc.ts) +
+		     " ago</span>" : "") +
+	    (oc.n > 1 ? " <span class=\"prob-occ-n\">x" + oc.n + "</span>" : "") +
+	    (oc.att ? " <span class=\"prob-occ-n\">failed " + oc.fails +
+		      " of " + oc.att + "</span>" : "") +
+	    "</a>";
+
+	if (oc.msg && oc.msg !== g.msgs[0])
+		s += "<div class=\"prob-occ-msg\">" + san(oc.msg) + "</div>";
+
+	s += "<pre class=\"prob-ex\">" +
+	     (typeof ex === "string" ? san(ex) : "...") + "</pre></div>";
+
+	return s;
+}
+
+function sai_problems_group_html(g, now_ut)
+{
+	var open = !!sai_problems.open[g.id], s, often = sai_problems_often(g),
+	    hist = sai_problems_hist(g, now_ut), n;
+
+	s = "<div class=\"prob-group prob-sev" + g.sev + (open ? " open" : "") +
+	    "\" data-gid=\"" + san(g.id) + "\">" +
+	    "<div class=\"prob-head\">" +
+	    "<div class=\"prob-line1\">" +
+	    "<span class=\"prob-badge\">" + SAI_PROB_SEVS[g.sev] + "</span>" +
+	    "<span class=\"prob-phase\">" + SAI_PROB_PHASES[g.phase] + "</span>" +
+	    "<span class=\"prob-where\">" + san(sai_problems_where(g)) + "</span>" +
+	    "</div>";
+
+	if (g.msgs.length)
+		s += "<div class=\"prob-msg\" title=\"" + san(g.msgs.join("\n")) +
+		     "\">" + san(g.msgs[0]) +
+		     (g.code && g.phase !== 3 && g.msgs[0].indexOf(g.code) < 0 ?
+			" <span class=\"prob-code\">[" + san(g.code) + "]</span>" :
+			"") + "</div>";
+
+	s += "<div class=\"prob-scope\">" + san(g.scope) +
+	     (g.tcs ? " <span class=\"prob-tcs\">(" + san(g.tcs) + ")</span>" : "") +
+	     (often ? ", " + san(often) : "") + "</div>";
+
+	if (hist)
+		s += "<div class=\"prob-hist\">" + hist + "</div>";
+
+	s += "</div>";
+
+	if (open) {
+		s += "<div class=\"prob-occs\">";
+		for (n = 0; n < g.occ.length; n++)
+			s += sai_problems_occ_html(g, g.occ[n], now_ut);
+		if (g.more)
+			s += "<div class=\"prob-more\">and " + g.more +
+			     " more</div>";
+		s += "</div>";
+	}
+
+	return s + "</div>";
+}
+
+function sai_problems_html()
+{
+	var o = sai_problems.o, now_ut = Math.round(Date.now() / 1000), s, n,
+	    c = [];
+
+	if (!o)
+		return "<div class=\"prob-hdr\">Problems</div>" +
+		       "<div class=\"prob-status\">Asking...</div>";
+
+	if (o.errors)
+		c.push(o.errors + " error" + (o.errors === 1 ? "" : "s"));
+	if (o.flaky)
+		c.push(o.flaky + " flaky");
+	if (o.warnings)
+		c.push(o.warnings + " warning" + (o.warnings === 1 ? "" : "s"));
+
+	s = "<div class=\"prob-hdr\">Problems" +
+	    (c.length ? " <span class=\"prob-counts\">" + c.join(", ") +
+			"</span>" : "") + "</div>" +
+	    "<div class=\"prob-status\">";
+
+	if (o.parsed < o.builds)
+		s += o.parsed + " of " + o.builds + " builds finished";
+	else
+		s += "All " + o.builds + " builds finished";
+	s += ", " + o.clean + " of " + o.runs + " tries clean</div>";
+
+	if (!o.groups.length)
+		s += "<div class=\"prob-none\">" +
+		     (o.runs ? "Nothing went wrong" : "Nothing finished yet") +
+		     "</div>";
+
+	for (n = 0; n < o.groups.length; n++)
+		s += sai_problems_group_html(o.groups[n], now_ut);
+
+	if (o.more)
+		s += "<div class=\"prob-more\">and " + o.more +
+		     " more problems</div>";
+
+	return s;
+}
+
+function sai_problems_render()
+{
+	var el = document.getElementById("sai_problems"), top;
+
+	if (!el)
+		return;
+
+	top = el.scrollTop;
+	el.innerHTML = sai_problems_html();
+	el.scrollTop = top;
+}
+
+/* the excerpts of an open group we haven't got yet */
+function sai_problems_want_excerpts(g)
+{
+	var uids = [], n;
+
+	for (n = 0; n < g.occ.length; n++)
+		if (!sai_problems.asked[g.occ[n].uid])
+			uids.push(g.occ[n].uid);
+
+	if (uids.length &&
+	    sai_problems_send({ schema: "com.warmcat.sai.problem_excerpts",
+				event_hash: sai_problems.event,
+				uids: uids.join(",") }))
+		for (n = 0; n < uids.length; n++)
+			sai_problems.asked[uids[n]] = 1;
+}
+
+function sai_problems_toggle(gid)
+{
+	var o = sai_problems.o, n;
+
+	if (sai_problems.open[gid])
+		delete sai_problems.open[gid];
+	else {
+		sai_problems.open[gid] = 1;
+		for (n = 0; o && n < o.groups.length; n++)
+			if (o.groups[n].id === gid)
+				sai_problems_want_excerpts(o.groups[n]);
+	}
+
+	sai_problems_render();
+}
+
+function sai_problems_rx(jso)
+{
+	var n;
+
+	if (jso.event_hash !== sai_problems.event)
+		return;
+
+	if (jso.schema === "com.warmcat.sai.problem_excerpts") {
+		for (n = 0; n < jso.ex.length; n++)
+			sai_problems.ex[jso.ex[n].uid] = jso.ex[n].text;
+		sai_problems_render();
+		return;
+	}
+
+	sai_problems.o = jso;
+	/* the open groups' problems may be new ones */
+	for (n = 0; n < jso.groups.length; n++)
+		if (sai_problems.open[jso.groups[n].id])
+			sai_problems_want_excerpts(jso.groups[n]);
+	sai_problems_render();
+}
+
+/*
+ * Going to a place in the log: the line it starts on, and how many lines it
+ * is, once the log has come that far
+ */
+function sai_log_jump_try()
+{
+	var j = window.sai_log_jump, a, p, n, hl;
+
+	if (!j)
+		return;
+
+	a = document.getElementById("#sn" + j.line);
+	if (!a)
+		return;
+
+	/* whatever it's folded inside is opened */
+	for (p = a.parentElement; p; p = p.parentElement)
+		if (p.classList && p.classList.contains("log-segment-body") &&
+		    p.classList.contains("hide")) {
+			var hdr = document.getElementById("hdr-" + p.id), icon;
+
+			p.classList.remove("hide");
+			icon = hdr ? hdr.querySelector('.fold-icon') : null;
+			if (icon)
+				icon.innerText = "▼";
+		}
+
+	document.querySelectorAll(".dlogsn a.log-jump-hl").forEach(function(e) {
+		e.classList.remove("log-jump-hl");
+	});
+	for (n = 0; n < Math.max(1, j.lines); n++) {
+		hl = document.getElementById("#sn" + (j.line + n));
+		if (hl)
+			hl.classList.add("log-jump-hl");
+	}
+
+	a.scrollIntoView({ block: "center" });
+	window.sai_log_jump = null;
+}
+
+/*
  * Everything the tasks pane's markup depends on, flattened to a string, so
  * a rebuild can be skipped when an overview refresh brings nothing new.
  * Live per-task changes are applied in place by refresh_state(), so most
@@ -2904,6 +3242,10 @@ function render_selected_event_tasks(o) {
 			"data-split-key=\"" + SAI_TT_SPLIT_LS + "\"></div>" +
 		     "<div class=\"tasks-split-right\" id=\"sai_tasks_right\">" +
 		     sai_tt_render(o, now_ut) +
+		     "</div>" +
+		     "<div class=\"resizer-v\" id=\"resizer_problems\" " +
+			"data-split-key=\"" + SAI_PROB_SPLIT_LS + "\"></div>" +
+		     "<div class=\"tasks-split-problems\" id=\"sai_problems\">" +
 		     "</div></div>";
 	} else {
 		s += "<div class=\"no-tasks\">No tasks for this event</div>";
@@ -2916,12 +3258,19 @@ function render_selected_event_tasks(o) {
 		 * sub-panes' scroll positions across so it doesn't jump
 		 */
 		var lp = document.getElementById("sai_tasks_left"),
-		    rp = document.getElementById("sai_tasks_right");
+		    rp = document.getElementById("sai_tasks_right"),
+		    pp = document.getElementById("sai_problems");
 		var l_top = lp ? lp.scrollTop : 0,
 		    r_top = rp ? rp.scrollTop : 0,
-		    r_left = rp ? rp.scrollLeft : 0;
+		    r_left = rp ? rp.scrollLeft : 0,
+		    p_top = pp ? pp.scrollTop : 0;
 
 		container.innerHTML = s;
+
+		sai_problems_attach(e.uuid);
+		pp = document.getElementById("sai_problems");
+		if (pp)
+			pp.scrollTop = p_top;
 
 		sai_tt_apply_split();
 		sai_tt_resort(container.querySelector("table.tt"));
@@ -3185,9 +3534,11 @@ function init_task_logs_dom() {
 	}
 }
 
-function selectTask(taskUuid, runVal, replace) {
+/* jump, if given, is { line, lines }: the place in the log to show */
+function selectTask(taskUuid, runVal, replace, jump) {
 	selected_task_uuid = taskUuid;
 	window.current_task_run = runVal;
+	window.sai_log_jump = jump && jump.line > 0 ? jump : null;
 	sai_tt_set_selected(taskUuid);
 
 	// Update URL query parameters dynamically (fully relative)
@@ -3197,6 +3548,13 @@ function selectTask(taskUuid, runVal, replace) {
 		par.set("run", runVal);
 	} else {
 		par.delete("run");
+	}
+	if (window.sai_log_jump) {
+		par.set("line", window.sai_log_jump.line);
+		par.set("lines", window.sai_log_jump.lines);
+	} else {
+		par.delete("line");
+		par.delete("lines");
 	}
 	sai_update_history(par, !!replace);
 
@@ -4601,6 +4959,15 @@ function ws_open_sai()
 			eid = par.get('event');
 			run_idx = par.get('run');
 
+			/* a new connection has to ask about the event's problems again */
+			sai_problems.event = null;
+
+			if (tid && parseInt(par.get('line') || "0", 10) > 0)
+				window.sai_log_jump = {
+					line: parseInt(par.get('line'), 10),
+					lines: parseInt(par.get('lines') || "1", 10)
+				};
+
 			if (tid) {
 				 console.log("tid " + tid);
 				 selected_task_uuid = tid;
@@ -5554,6 +5921,11 @@ function ws_open_sai()
 				window.location.href = window.location.origin + window.location.pathname;
 				break;
 
+			case "com.warmcat.sai.problems":
+			case "com.warmcat.sai.problem_excerpts":
+				sai_problems_rx(jso);
+				break;
+
 			case "com.warmcat.sai.task_gone":
 				sai_task_gone(jso);
 				break;
@@ -5825,6 +6197,9 @@ function ws_open_sai()
 						   rightPane.scrollTop =
 							rightPane.scrollHeight -
 							rightPane.clientHeight;
+
+						/* after that, so it stays where we went */
+						sai_log_jump_try();
 					}, 500);
 				}
 
@@ -5902,6 +6277,13 @@ window.addEventListener("load", function() {
 			return;
 		}
 
+		/* a problems group: open or close it */
+		var phead = e.target.closest('.prob-head');
+		if (phead && phead.parentElement) {
+			sai_problems_toggle(phead.parentElement.dataset.gid);
+			return;
+		}
+
 		var a = e.target.closest('a');
 		if (a) {
 			var href = a.getAttribute('href');
@@ -5910,7 +6292,11 @@ window.addEventListener("load", function() {
 				var urlParams = new URLSearchParams(href.substring(href.indexOf('?')));
 				var taskUuid = urlParams.get('task');
 				var runVal = urlParams.get('run') || '-1';
-				selectTask(taskUuid, runVal);
+				var line = parseInt(urlParams.get('line') || "0", 10);
+				selectTask(taskUuid, runVal, false, line > 0 ? {
+					line: line,
+					lines: parseInt(urlParams.get('lines') || "1", 10)
+				} : null);
 			}
 		}
 

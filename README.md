@@ -228,6 +228,32 @@ An event that is pruned before all its tasks finished, eg, one waiting on a
 platform that no longer has any builders, is cancelled as well, since its tasks
 went with its db.
 
+What was found going wrong in a pruned event's logs is still remembered, see
+the next section.
+
+## Problems found in the build logs
+
+When each try of a task finishes, sai-server reads its log for warnings and
+errors from configuring, compiling and linking, gcc, clang, MSVC, rustc / cargo
+and CMake alike, and for failed or flaky tests, from ctest, cargo test or
+nextest.  sai-web groups what was found in all the tries of all the event's
+tasks by where in the code it is, however each compiler put it, and says which
+builds it was in and how often, eg:
+
+```
+error  build  lib/core-net/client/connect3.c:1234, 1235
+implicit declaration of function 'lws_client_conn_wait'
+2 of 8 platforms on default: ...
+
+flaky  test   mss-lws-minimal-ss-hello_world
+default on freebsd/aarch64/llvm, failed 1 of 3 runs (33%), passing on retry
+Also in 7 of the last 40 events, since 2026-05-02, last 6 days ago
+```
+
+It's in the problems pane on the right of the tasks pane, where each one can be
+opened to see where it was seen and go to that place in the log.  See
+[READMEs/README-problems.md](READMEs/README-problems.md).
+
 ## Showing only some projects on a sai-web vhost ("projects")
 
 By default a sai-web vhost shows every project sai-server has built.  The
