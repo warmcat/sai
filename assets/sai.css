@@ -2794,3 +2794,42 @@ tr.tt-row.selected td {
 	padding: 4px;
 	white-space: pre;
 }
+
+/*
+ * Splitters are held for a moment on a touch screen before they move, see
+ * sai_split_touch(): show when it's being held, and when it's moving.  With
+ * a finger, they need to be easier to hit as well.
+ */
+.resizer, .resizer-h, .resizer-v {
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+.resizer.holding, .resizer-h.holding, .resizer-v.holding {
+	background: #93c5fd;
+}
+
+.resizer.dragging, .resizer-h.dragging, .resizer-v.dragging {
+	background: #3b82f6;
+}
+
+@media (pointer: coarse) {
+	.resizer {
+		width: 15px;
+		background: linear-gradient(to right, transparent 5px, #ccc 5px,
+					    #ccc 10px, transparent 10px);
+	}
+
+	.resizer-h {
+		height: 15px;
+		background: linear-gradient(to bottom, transparent 5px, #ccc 5px,
+					    #ccc 10px, transparent 10px);
+	}
+
+	.resizer-v {
+		width: 19px;
+		background: linear-gradient(to right, transparent 7px, #ccc 7px,
+					    #ccc 12px, transparent 12px);
+	}
+}

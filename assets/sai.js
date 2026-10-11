@@ -2542,58 +2542,179 @@ function sai_tt_set_selected(uuid)
 	});
 }
 
-/* re-apply the remembered splitter position to a freshly rendered pane */
+/*
+ * Re-apply the remembered splitter positions to a freshly rendered pane:
+ * each splitter says what it's remembered under, and sizes what's before it
+ */
 function sai_tt_apply_split()
 {
-	var l = document.getElementById("sai_tasks_left");
-	if (!l)
-		return;
+	document.querySelectorAll(".resizer-v[data-split-key]").forEach(function(rz) {
+		var f = null;
 
-	var f = null;
-	try {
-		f = localStorage.getItem(SAI_TT_SPLIT_LS);
-	} catch (e) {}
-	if (f)
-		l.style.flex = f;
+		try {
+			f = localStorage.getItem(rz.dataset.splitKey);
+		} catch (e) {}
+		if (f && rz.previousElementSibling)
+			rz.previousElementSibling.style.flex = f;
+	});
 }
 
 /*
- * Start dragging the splitter between the two task sub-panes.  The pane
- * markup is rebuilt on every event refresh, so this is driven from a
- * delegated mousedown / touchstart rather than a listener on the element.
+ * Splitters: with a mouse, they're dragged right away.  On a touch screen,
+ * they're held for a moment first, so the browser doesn't take the touch for
+ * a scroll, a text selection or a context menu, and the drag starts from
+ * where the finger is when it's held.
+ *
+ * sai_split_begin() says what dragging each one does: it returns an object
+ * whose move(dx, dy) is called as it's dragged and end() when it's let go.
  */
-function sai_tt_split_begin(left, x0)
-{
-	var w0 = left.getBoundingClientRect().width;
+var SAI_SPLIT_HOLD_MS = 350, SAI_SPLIT_SLOP_PX = 10;
 
-	var apply = function(x) {
-		var w = Math.round(w0 + (x - x0));
-		if (w < 20)
-			w = 0;
-		/* shrinkable, so a remembered width wider than the pane can't hide the table */
-		left.style.flex = "0 1 " + w + "px";
-	};
-	var finish = function() {
-		document.removeEventListener('mousemove', mm);
-		document.removeEventListener('mouseup', finish);
-		document.removeEventListener('touchmove', tm);
-		document.removeEventListener('touchend', finish);
-		try {
-			localStorage.setItem(SAI_TT_SPLIT_LS, left.style.flex);
-		} catch (e) {}
-	};
-	var mm = function(e) { apply(e.clientX); };
-	var tm = function(e) {
-		if (e.touches.length === 1) {
-			apply(e.touches[0].clientX);
-			e.preventDefault();
+function sai_split_begin(rz)
+{
+	var el, w0, h0, last_vis;
+
+	if (rz.id === "resizer") {
+		/* the builders pane on the right of everything */
+		el = rz.nextElementSibling;
+		if (!el)
+			return null;
+		w0 = el.getBoundingClientRect().width;
+		last_vis = w0 > 0 ? 1 : 0;
+		return {
+			move: function(dx) {
+				var w = Math.round(w0 - dx), vis;
+
+				if (w < 20)
+					w = 0;
+				el.style.flex = "0 0 " + w + "px";
+				vis = w > 0 ? 1 : 0;
+				if (vis !== last_vis) {
+					last_vis = vis;
+					sai.send(JSON.stringify({ schema: "com.warmcat.sai.builder_visibility", visible: vis }));
+				}
+			},
+			end: function() {
+				try {
+					localStorage.setItem('sai-right-pane-flex', el.style.flex);
+				} catch (e) {}
+			}
+		};
+	}
+
+	if (rz.id === "resizer_h") {
+		/* the tasks pane over the logs */
+		el = rz.previousElementSibling;
+		if (!el)
+			return null;
+		h0 = el.getBoundingClientRect().height;
+		return {
+			move: function(dx, dy) {
+				el.style.flex = "0 0 " + Math.max(0, Math.round(h0 + dy)) + "px";
+			},
+			end: function() {
+				try {
+					localStorage.setItem('sai-tasks-height', el.style.flex);
+				} catch (e) {}
+			}
+		};
+	}
+
+	/* the sub-panes of the tasks pane, sizing the one before it */
+	el = rz.previousElementSibling;
+	if (!el || !rz.dataset.splitKey)
+		return null;
+	w0 = el.getBoundingClientRect().width;
+	return {
+		move: function(dx) {
+			var w = Math.round(w0 + dx);
+
+			if (w < 20)
+				w = 0;
+			/* shrinkable, so a remembered width can't hide what's after */
+			el.style.flex = "0 1 " + w + "px";
+		},
+		end: function() {
+			try {
+				localStorage.setItem(rz.dataset.splitKey, el.style.flex);
+			} catch (e) {}
 		}
 	};
+}
 
+function sai_split_drag(rz, x0, y0, d)
+{
+	var mm = function(e) {
+		d.move(e.clientX - x0, e.clientY - y0);
+	};
+	var tm = function(e) {
+		if (e.touches.length !== 1)
+			return;
+		e.preventDefault();
+		d.move(e.touches[0].clientX - x0, e.touches[0].clientY - y0);
+	};
+	var fin = function() {
+		document.removeEventListener('mousemove', mm);
+		document.removeEventListener('mouseup', fin);
+		document.removeEventListener('touchmove', tm);
+		document.removeEventListener('touchend', fin);
+		document.removeEventListener('touchcancel', fin);
+		rz.classList.remove("dragging");
+		d.end();
+	};
+
+	rz.classList.add("dragging");
 	document.addEventListener('mousemove', mm);
-	document.addEventListener('mouseup', finish);
+	document.addEventListener('mouseup', fin);
 	document.addEventListener('touchmove', tm, { passive: false });
-	document.addEventListener('touchend', finish);
+	document.addEventListener('touchend', fin);
+	document.addEventListener('touchcancel', fin);
+}
+
+/* a touch on a splitter: it's only dragged if it's held still for a moment */
+function sai_split_touch(rz, x0, y0)
+{
+	var x = x0, y = y0, timer;
+
+	var tm = function(e) {
+		if (e.touches.length !== 1)
+			return;
+		x = e.touches[0].clientX;
+		y = e.touches[0].clientY;
+		if (Math.abs(x - x0) > SAI_SPLIT_SLOP_PX ||
+		    Math.abs(y - y0) > SAI_SPLIT_SLOP_PX)
+			done();
+	};
+	var done = function() {
+		clearTimeout(timer);
+		rz.classList.remove("holding");
+		document.removeEventListener('touchmove', tm);
+		document.removeEventListener('touchend', done);
+		document.removeEventListener('touchcancel', done);
+	};
+
+	rz.classList.add("holding");
+	document.addEventListener('touchmove', tm, { passive: true });
+	document.addEventListener('touchend', done);
+	document.addEventListener('touchcancel', done);
+
+	timer = setTimeout(function() {
+		var d;
+
+		done();
+		d = sai_split_begin(rz);
+		if (!d)
+			return;
+		if (navigator.vibrate)
+			navigator.vibrate(15);
+		sai_split_drag(rz, x, y, d);
+	}, SAI_SPLIT_HOLD_MS);
+}
+
+function sai_split_handle(e)
+{
+	return e.target.closest ?
+		e.target.closest('.resizer, .resizer-h, .resizer-v') : null;
 }
 
 /*
@@ -2779,7 +2900,8 @@ function render_selected_event_tasks(o) {
 
 		s += "</td></tr></table>";
 		s += "</div>" +
-		     "<div class=\"resizer-v\" id=\"resizer_tasks\"></div>" +
+		     "<div class=\"resizer-v\" id=\"resizer_tasks\" " +
+			"data-split-key=\"" + SAI_TT_SPLIT_LS + "\"></div>" +
 		     "<div class=\"tasks-split-right\" id=\"sai_tasks_right\">" +
 		     sai_tt_render(o, now_ut) +
 		     "</div></div>";
@@ -6094,96 +6216,36 @@ window.addEventListener("load", function() {
 		}
 	});
 	/*
-	 * Splitter between the two task sub-panes: delegated, because the
-	 * tasks pane markup is regenerated on every event refresh
+	 * Splitters, see sai_split_begin(): delegated, because the tasks pane
+	 * markup is regenerated on every event refresh
 	 */
 	document.addEventListener('mousedown', function(e) {
-		var rz = e.target.closest ? e.target.closest('.resizer-v') : null;
-		if (!rz || !rz.previousElementSibling)
+		var rz = sai_split_handle(e), d;
+
+		if (!rz || e.button !== 0)
+			return;
+		d = sai_split_begin(rz);
+		if (!d)
 			return;
 		e.preventDefault();
-		sai_tt_split_begin(rz.previousElementSibling, e.clientX);
+		sai_split_drag(rz, e.clientX, e.clientY, d);
 	});
 	document.addEventListener('touchstart', function(e) {
-		var rz = e.target.closest ? e.target.closest('.resizer-v') : null;
-		if (!rz || !rz.previousElementSibling || e.touches.length !== 1)
+		var rz = sai_split_handle(e);
+
+		if (!rz || e.touches.length !== 1)
 			return;
 		/*
-		 * Claim the gesture: no pan of the surrounding scrollers, and
-		 * no synthesized mousedown after touchend starting a second drag
+		 * Claim the touch: no pan of the surrounding scrollers, and no
+		 * mousedown synthesized after it starting a second drag
 		 */
 		e.preventDefault();
-		sai_tt_split_begin(rz.previousElementSibling, e.touches[0].clientX);
+		sai_split_touch(rz, e.touches[0].clientX, e.touches[0].clientY);
 	}, { passive: false });
-
-	const resizer = document.getElementById('resizer');
-	if (resizer) {
-		const rightPane = resizer.nextElementSibling;
-
-		let x = 0;
-		let rightWidth = 0;
-		let lastVisible = -1;
-
-		const onMouseMove = (e) => {
-			const dx = x - e.clientX;
-			let newRightWidth = rightWidth + dx;
-			if (newRightWidth < 20) newRightWidth = 0;
-			rightPane.style.flex = `0 0 ${newRightWidth}px`;
-			let visible = newRightWidth > 0 ? 1 : 0;
-			if (visible !== lastVisible) {
-				lastVisible = visible;
-				sai.send(JSON.stringify({ schema: "com.warmcat.sai.builder_visibility", visible: visible }));
-			}
-		};
-
-		const onMouseUp = () => {
-			document.removeEventListener('mousemove', onMouseMove);
-			document.removeEventListener('mouseup', onMouseUp);
-			localStorage.setItem('sai-right-pane-flex', rightPane.style.flex);
-		};
-
-		const onMouseDown = (e) => {
-			x = e.clientX;
-			rightWidth = rightPane.getBoundingClientRect().width;
-			lastVisible = rightWidth > 0 ? 1 : 0;
-			document.addEventListener('mousemove', onMouseMove);
-			document.addEventListener('mouseup', onMouseUp);
-		};
-
-		const onTouchMove = (e) => {
-			if (e.touches.length === 1) {
-				const dx = x - e.touches[0].clientX;
-				let newRightWidth = rightWidth + dx;
-				if (newRightWidth < 20) newRightWidth = 0;
-				rightPane.style.flex = `0 0 ${newRightWidth}px`;
-				e.preventDefault();
-				let visible = newRightWidth > 0 ? 1 : 0;
-				if (visible !== lastVisible) {
-					lastVisible = visible;
-					sai.send(JSON.stringify({ schema: "com.warmcat.sai.builder_visibility", visible: visible }));
-				}
-			}
-		};
-
-		const onTouchEnd = () => {
-			document.removeEventListener('touchmove', onTouchMove);
-			document.removeEventListener('touchend', onTouchEnd);
-			localStorage.setItem('sai-right-pane-flex', rightPane.style.flex);
-		};
-
-		const onTouchStart = (e) => {
-			if (e.touches.length === 1) {
-				x = e.touches[0].clientX;
-				rightWidth = rightPane.getBoundingClientRect().width;
-				lastVisible = rightWidth > 0 ? 1 : 0;
-				document.addEventListener('touchmove', onTouchMove, { passive: false });
-				document.addEventListener('touchend', onTouchEnd);
-			}
-		};
-
-		resizer.addEventListener('mousedown', onMouseDown);
-		resizer.addEventListener('touchstart', onTouchStart);
-	}
+	document.addEventListener('contextmenu', function(e) {
+		if (sai_split_handle(e))
+			e.preventDefault();
+	});
 
 	const savedTasksHeight = localStorage.getItem('sai-tasks-height');
 	if (savedTasksHeight) {
@@ -6191,60 +6253,6 @@ window.addEventListener("load", function() {
 		if (tasksSection) {
 			tasksSection.style.flex = savedTasksHeight;
 		}
-	}
-
-	const resizerH = document.getElementById('resizer_h');
-	if (resizerH) {
-		const tasksSection = resizerH.previousElementSibling;
-
-		let y = 0;
-		let tasksHeight = 0;
-
-		const onMouseMoveH = (e) => {
-			const dy = e.clientY - y;
-			const newHeight = tasksHeight + dy;
-			tasksSection.style.flex = `0 0 ${newHeight}px`;
-		};
-
-		const onMouseUpH = () => {
-			document.removeEventListener('mousemove', onMouseMoveH);
-			document.removeEventListener('mouseup', onMouseUpH);
-			localStorage.setItem('sai-tasks-height', tasksSection.style.flex);
-		};
-
-		const onMouseDownH = (e) => {
-			y = e.clientY;
-			tasksHeight = tasksSection.getBoundingClientRect().height;
-			document.addEventListener('mousemove', onMouseMoveH);
-			document.addEventListener('mouseup', onMouseUpH);
-		};
-
-		const onTouchMoveH = (e) => {
-			if (e.touches.length === 1) {
-				const dy = e.touches[0].clientY - y;
-				const newHeight = tasksHeight + dy;
-				tasksSection.style.flex = `0 0 ${newHeight}px`;
-				e.preventDefault();
-			}
-		};
-
-		const onTouchEndH = () => {
-			document.removeEventListener('touchmove', onTouchMoveH);
-			document.removeEventListener('touchend', onTouchEndH);
-			localStorage.setItem('sai-tasks-height', tasksSection.style.flex);
-		};
-
-		const onTouchStartH = (e) => {
-			if (e.touches.length === 1) {
-				y = e.touches[0].clientY;
-				tasksHeight = tasksSection.getBoundingClientRect().height;
-				document.addEventListener('touchmove', onTouchMoveH, { passive: false });
-				document.addEventListener('touchend', onTouchEndH);
-			}
-		};
-
-		resizerH.addEventListener('mousedown', onMouseDownH);
-		resizerH.addEventListener('touchstart', onTouchStartH);
 	}
 }, false);
 
