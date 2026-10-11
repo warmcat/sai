@@ -675,3 +675,71 @@ const lws_struct_map_t lsm_findingset[] = {
 	LSM_CARRAY	(sai_findingset_t, group,	"group"),
 	LSM_CARRAY	(sai_findingset_t, op,		"op"),
 };
+
+/*
+ * Problems found in a run's log, and the runs that were read for them, in the
+ * event db.  See c-problems.c.
+ */
+
+#define SAI_LSM_PROBLEM_COMMON \
+	LSM_UNSIGNED	(sai_problem_t, uid,		"uid"), \
+	LSM_CARRAY	(sai_problem_t, task_uuid,	"task_uuid"), \
+	LSM_SIGNED	(sai_problem_t, run,		"run"), \
+	LSM_CARRAY	(sai_problem_t, platform,	"platform"), \
+	LSM_CARRAY	(sai_problem_t, taskname,	"taskname"), \
+	LSM_CARRAY	(sai_problem_t, builder_name,	"builder_name"), \
+	LSM_UNSIGNED	(sai_problem_t, started,	"started"), \
+	LSM_SIGNED	(sai_problem_t, phase,		"phase"), \
+	LSM_SIGNED	(sai_problem_t, severity,	"severity"), \
+	LSM_CARRAY	(sai_problem_t, tool,		"tool"), \
+	LSM_CARRAY	(sai_problem_t, file,		"file"), \
+	LSM_SIGNED	(sai_problem_t, line,		"line"), \
+	LSM_SIGNED	(sai_problem_t, col,		"col"), \
+	LSM_CARRAY	(sai_problem_t, code,		"code"), \
+	LSM_CARRAY	(sai_problem_t, subject,	"subject"), \
+	LSM_CARRAY	(sai_problem_t, msg,		"msg"), \
+	LSM_CARRAY	(sai_problem_t, hkey,		"hkey"), \
+	LSM_SIGNED	(sai_problem_t, log_line,	"log_line"), \
+	LSM_SIGNED	(sai_problem_t, log_lines,	"log_lines"), \
+	LSM_SIGNED	(sai_problem_t, count,		"count"), \
+	LSM_SIGNED	(sai_problem_t, attempts,	"attempts"), \
+	LSM_SIGNED	(sai_problem_t, fails,		"fails")
+
+static const lws_struct_map_t lsm_problem[] = {
+	SAI_LSM_PROBLEM_COMMON,
+	LSM_STRING_PTR	(sai_problem_t, excerpt,	"excerpt"),
+};
+
+/* the same rows without their excerpts, for adding them up */
+static const lws_struct_map_t lsm_problem_brief[] = {
+	SAI_LSM_PROBLEM_COMMON,
+};
+
+const lws_struct_map_t lsm_schema_sq3_map_problem[] = {
+	LSM_SCHEMA_DLL2	(sai_problem_t, list, NULL, lsm_problem, "problems"),
+};
+
+const lws_struct_map_t lsm_schema_sq3_map_problem_brief[] = {
+	LSM_SCHEMA_DLL2	(sai_problem_t, list, NULL, lsm_problem_brief,
+								"problems"),
+};
+
+static const lws_struct_map_t lsm_problem_run[] = {
+	LSM_UNSIGNED	(sai_problem_run_t, uid,		"uid"),
+	LSM_CARRAY	(sai_problem_run_t, task_uuid,		"task_uuid"),
+	LSM_SIGNED	(sai_problem_run_t, run,		"run"),
+	LSM_CARRAY	(sai_problem_run_t, platform,		"platform"),
+	LSM_CARRAY	(sai_problem_run_t, taskname,		"taskname"),
+	LSM_CARRAY	(sai_problem_run_t, builder_name,	"builder_name"),
+	LSM_UNSIGNED	(sai_problem_run_t, started,		"started"),
+	LSM_SIGNED	(sai_problem_run_t, state,		"state"),
+	LSM_SIGNED	(sai_problem_run_t, version,		"version"),
+	LSM_SIGNED	(sai_problem_run_t, problems,		"problems"),
+	LSM_SIGNED	(sai_problem_run_t, dropped,		"dropped"),
+	LSM_STRING_PTR	(sai_problem_run_t, tests_passed,	"tests_passed"),
+};
+
+const lws_struct_map_t lsm_schema_sq3_map_problem_run[] = {
+	LSM_SCHEMA_DLL2	(sai_problem_run_t, list, NULL, lsm_problem_run,
+								"problem_runs"),
+};

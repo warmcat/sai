@@ -1,0 +1,23 @@
+build warning rustc crates/npro-core/src/conn.rs:42:9 code='unused_variables' subject='peer' msg='unused variable: `peer`' log=3+7 count=1 tests=0/0
+  hkey='c:crates/npro-core/src/conn.rs|unused_variables|peer'
+  | warning: unused variable: `peer`
+  |   --> crates/npro-core/src/conn.rs:42:9
+  |    |
+  | 42 |     let peer = sock.peer_addr()?;
+  |    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_peer`
+  |    |
+  |    = note: `#[warn(unused_variables)]` on by default
+build error rustc crates/npro-core/src/frame.rs:118:17 code='E0425' subject='frame_len' msg='cannot find value `frame_len` in this scope' log=11+5 count=1 tests=0/0
+  hkey='c:crates/npro-core/src/frame.rs|E0425|frame_len'
+  | error[E0425]: cannot find value `frame_len` in this scope
+  |    --> crates/npro-core/src/frame.rs:118:17
+  |     |
+  | 118 |         let n = frame_len + 4;
+  |     |                 ^^^^^^^^^ not found in this scope
+build warning rustc crates/npro-core/src/frame.rs:200:5 code='clippy::if_same_then_else' subject='if' msg='this `if` has identical blocks' log=17+4 count=1 tests=0/0
+  hkey='c:crates/npro-core/src/frame.rs|clippy::if_same_then_else|if'
+  | warning: this `if` has identical blocks
+  |   --> crates/npro-core/src/frame.rs:200:5
+  |    |
+  |    = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#if_same_then_else
+passed:

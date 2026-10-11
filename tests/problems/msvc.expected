@@ -1,0 +1,13 @@
+build error msvc lib/core-net/client/connect3.c:1236:3 code='C2065' subject='lws_client_conn_wait' msg=''lws_client_conn_wait': undeclared identifier' log=3+1 count=2 tests=0/0
+  hkey='c:lib/core-net/client/connect3.c|C2065|lws_client_conn_wait'
+  | C:\Users\sai\jobs\w11a\src\lib\core-net\client\connect3.c(1236,3): error C2065: 'lws_client_conn_wait': undeclared identifier [C:\Users\sai\jobs\w11a\src\build\lib\websockets.vcxproj]
+build warning msvc lib/core-net/output.c:80:12 code='C4018' subject='<' msg=''<': signed/unsigned mismatch' log=4+1 count=2 tests=0/0
+  hkey='c:lib/core-net/output.c|C4018|<'
+  | C:\Users\sai\jobs\w11a\src\lib\core-net\output.c(80,12): warning C4018: '<': signed/unsigned mismatch [C:\Users\sai\jobs\w11a\src\build\lib\websockets.vcxproj]
+build warning msvc :0:0 code='D9002' subject='-fno-plt' msg='ignoring unknown option '-fno-plt'' log=5+1 count=1 tests=0/0
+  hkey='m:msvc|D9002|ignoring unknown option *'
+  | cl : command line warning D9002: ignoring unknown option '-fno-plt' [C:\Users\sai\jobs\w11a\src\build\lib\websockets.vcxproj]
+link error msvc :0:0 code='LNK2019' subject='__imp_lws_foo' msg='unresolved external symbol __imp_lws_foo referenced in function main' log=6+1 count=1 tests=0/0
+  hkey='l:lws_foo'
+  | test-client.obj : error LNK2019: unresolved external symbol __imp_lws_foo referenced in function main [C:\Users\sai\jobs\w11a\src\build\test-client.vcxproj]
+passed:

@@ -1,0 +1,33 @@
+#build mkdir -p build;cd build;cmake ..;cd build && make;cd build && ctest -j4 --output-on-failure --repeat until-pass:3
+3|>saib> Starting task step 5 ===>
+1|Test project /home/agreen/jobs/abc/src/build
+1|      Start  1: api-test-lws_tokenize
+1|      Start  2: api-test-lws_struct-json
+1|      Start  3: mss-lws-minimal-ss-hello_world
+1| 1/4 Test  #1: api-test-lws_tokenize ............   Passed    0.02 sec
+1| 2/4 Test  #2: api-test-lws_struct-json .........   Passed    0.03 sec
+1| 3/4 Test  #3: mss-lws-minimal-ss-hello_world ...***Failed    5.03 sec
+1|[2026/10/11 12:30:01:1234] U: LWS Secure Streams hello_world
+1|[2026/10/11 12:30:06:1234] E: myss_state: CONNECTION_FAILED
+1|      Start  3: mss-lws-minimal-ss-hello_world
+1|      Start  4: api-test-lws_dll2
+1| 3/4 Test  #3: mss-lws-minimal-ss-hello_world ...   Passed    1.03 sec
+1| 4/4 Test  #4: api-test-lws_dll2 ................***Failed    0.10 sec
+1|=================================================================
+1|==12345==ERROR: AddressSanitizer: heap-use-after-free on address 0x602000000010 at pc 0x55d5 bp 0x7ffd sp 0x7ffd
+1|READ of size 8 at 0x602000000010 thread T0
+1|    #0 0x55d5 in lws_dll2_remove /home/agreen/jobs/abc/src/lib/core/lws-dll2.c:120:12
+1|      Start  4: api-test-lws_dll2
+1| 4/4 Test  #4: api-test-lws_dll2 ................***Failed    0.10 sec
+1|/home/agreen/jobs/abc/src/lib/core/lws-dll2.c:99:5: runtime error: signed integer overflow
+1|      Start  4: api-test-lws_dll2
+1| 4/4 Test  #4: api-test-lws_dll2 ................***Exception: SegFault  0.01 sec
+1|
+1|75% tests passed, 1 tests failed out of 4
+1|
+1|Total Test time (real) =  6.21 sec
+1|
+1|The following tests FAILED:
+1|	  4 - api-test-lws_dll2 (SEGFAULT)
+2|Errors while running CTest
+3|Build step 5 FAILED, exit code: 8

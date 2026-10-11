@@ -1403,6 +1403,157 @@ uint64_t
 sai_pool_u64_read(const uint8_t *p);
 
 /*
+ * Problems, see READMEs/README-problems.md
+ *
+ * When a real (not idle) task's run ends, sai-server reads back its log and
+ * picks out the warnings and errors from configuring, compiling and linking,
+ * and the tests that failed, including those that passed on a retry.  Each
+ * is a sai_problem_t in the event db's "problems" table, and each run read is
+ * a sai_problem_run_t in "problem_runs", even when it found nothing, so we
+ * know how many builds were clean.
+ *
+ * sai-web groups the event's problems, from all the runs of all its tasks,
+ * by where in the code they are, so the same problem reported differently
+ * by different compilers is one entry, and says which builds it affects and
+ * how often.
+ */
+
+/* bump when the parser finds different things, the runs are read again */
+#define SAI_PROBLEMS_PARSER_VERSION		1
+
+typedef enum {
+	SAI_PROB_PHASE_CONFIG,
+	SAI_PROB_PHASE_BUILD,
+	SAI_PROB_PHASE_LINK,
+	SAI_PROB_PHASE_TEST,
+	SAI_PROB_PHASE_OTHER,
+} sai_problem_phase_t;
+
+/* in order of how bad it is */
+typedef enum {
+	SAI_PROB_SEV_WARNING,
+	SAI_PROB_SEV_FLAKY,	/* a test that failed, but then passed */
+	SAI_PROB_SEV_ERROR,
+} sai_problem_sev_t;
+
+typedef struct sai_problem {
+	lws_dll2_t			list;
+	uint64_t			uid;
+	char				task_uuid[65];
+	char				platform[96];
+	char				taskname[96];
+	char				builder_name[96];
+	char				tool[16];	/* "cc", "msvc", "rustc", "ctest"... */
+	char				file[192];	/* relative to the checkout */
+	char				code[96];	/* eg, -Wfoo, C4244, E0425, test name */
+	char				subject[128];	/* the first thing it quoted */
+	char				msg[256];
+	/* what the same problem in another event is found by */
+	char				hkey[256];
+	const char			*excerpt;	/* the start of its log stanza */
+	uint64_t			started;	/* its run's, unix time */
+	int				run;
+	int				phase;		/* sai_problem_phase_t */
+	int				severity;	/* sai_problem_sev_t */
+	int				line;
+	int				col;
+	/* the line in its run's log, as the browser numbers them */
+	int				log_line;
+	int				log_lines;
+	int				count;		/* times seen in the run */
+	/* tests: how many times it ran in the run, and failed */
+	int				attempts;
+	int				fails;
+} sai_problem_t;
+
+typedef struct sai_problem_run {
+	lws_dll2_t			list;
+	uint64_t			uid;
+	char				task_uuid[65];
+	char				platform[96];
+	char				taskname[96];
+	char				builder_name[96];
+	/* "\n"-separated, with one at each end, so "\nname\n" finds one */
+	const char			*tests_passed;
+	uint64_t			started;
+	int				run;
+	int				state;		/* SAIES_SUCCESS or SAIES_FAIL */
+	int				version;	/* SAI_PROBLEMS_PARSER_VERSION */
+	int				problems;
+	int				dropped;	/* over the limit we keep */
+} sai_problem_run_t;
+
+extern const lws_struct_map_t lsm_schema_sq3_map_problem[1],
+			      lsm_schema_sq3_map_problem_brief[1],
+			      lsm_schema_sq3_map_problem_run[1];
+
+struct sai_problems_parser;
+
+/* c-problems.c: reading one run's log */
+
+struct sai_problems_parser *
+sai_problems_parser_create(const sai_task_t *t);
+
+void
+sai_problems_parser_destroy(struct sai_problems_parser **pp);
+
+/* one log row, base64 decoded, in uid order */
+void
+sai_problems_parser_feed(struct sai_problems_parser *pp, int channel,
+			 const char *buf, size_t len);
+
+/* after the last row: run_failed is set if the run ended with SAIES_FAIL */
+void
+sai_problems_parser_finish(struct sai_problems_parser *pp, int run_failed);
+
+lws_dll2_owner_t *
+sai_problems_parser_results(struct sai_problems_parser *pp);
+
+/* fills in everything but uid, tests_passed points into the parser */
+void
+sai_problems_parser_run(struct sai_problems_parser *pp, sai_problem_run_t *pr);
+
+/* the path relative to the checkout, with '/' */
+int
+sai_problems_norm_path(char *dest, size_t len, const char *path);
+
+/* lowercase, without what it quoted or any numbers, for comparing messages */
+void
+sai_problems_msg_shape(char *dest, size_t len, const char *msg);
+
+/* the symbol without the platform's decorations, eg, a leading '_' */
+void
+sai_problems_norm_sym(char *dest, size_t len, const char *sym);
+
+/* c-problems-summary.c: what an event's problems add up to */
+
+typedef struct sai_problem_hist {
+	unsigned int			events;	/* other events it was in */
+	unsigned int			of;	/* events looked at */
+	uint64_t			first;
+	uint64_t			last;
+} sai_problem_hist_t;
+
+/* returns 0 and fills *h if it was seen before */
+typedef int (*sai_problem_hist_cb)(void *opaque, const char *hkey,
+				   sai_problem_hist_t *h);
+
+typedef struct sai_problems_summary_info {
+	const char			*event_uuid;
+	/* the event's real tasks, the latest run of each, sai_task_t */
+	const lws_dll2_owner_t		*tasks;
+	const lws_dll2_owner_t		*problems;	/* sai_problem_t */
+	const lws_dll2_owner_t		*runs;		/* sai_problem_run_t */
+	sai_problem_hist_cb		hist;
+	void				*hist_opaque;
+} sai_problems_summary_info_t;
+
+/* JSON for the browser, *out is malloc'd */
+int
+sai_problems_summary_json(const sai_problems_summary_info_t *i, char **out,
+			  size_t *out_len);
+
+/*
  * c-conf.c: create the context and vhosts from an lwsws-style config dir.
  * info must be zeroed and passed through lws_cmdline_option_handle_builtin()
  * by the caller first.

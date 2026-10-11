@@ -1,0 +1,20 @@
+build error cc lib/core-net/client/connect3.c:1234:9 code='-Wimplicit-function-declaration' subject='lws_client_conn_wait' msg='implicit declaration of function ‘lws_client_conn_wait’' log=7+4 count=1 tests=0/0
+  hkey='c:lib/core-net/client/connect3.c|-Wimplicit-function-declaration|lws_client_conn_wait'
+  | /home/agreen/jobs/abc123/src/lib/core-net/client/connect3.c: In function ‘lws_client_connect_3_connect’:
+  | /home/agreen/jobs/abc123/src/lib/core-net/client/connect3.c:1234:9: error: implicit declaration of function ‘lws_client_conn_wait’ [-Wimplicit-function-declaration]
+  |  1234 |         lws_client_conn_wait(wsi, NULL);
+  |       |         ^~~~~~~~~~~~~~~~~~~~
+build warning cc lib/core-net/private-lib-core-net.h:88:1 code='-Wmissing-prototypes' subject='lws_foo' msg='no previous prototype for ‘lws_foo’' log=12+5 count=2 tests=0/0
+  hkey='c:lib/core-net/private-lib-core-net.h|-Wmissing-prototypes|lws_foo'
+  | In file included from /home/agreen/jobs/abc123/src/lib/core/private-lib-core.h:120,
+  |                  from /home/agreen/jobs/abc123/src/lib/core-net/output.c:25:
+  | /home/agreen/jobs/abc123/src/lib/core-net/private-lib-core-net.h:88:1: warning: no previous prototype for ‘lws_foo’ [-Wmissing-prototypes]
+  |    88 | lws_foo(int x)
+  |       | ^~~~~~~
+build warning cc lib/core-net/output.c:80:12 code='-Wsign-compare' subject='int' msg='comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’}' log=17+4 count=1 tests=0/0
+  hkey='c:lib/core-net/output.c|-Wsign-compare|int'
+  | /home/agreen/jobs/abc123/src/lib/core-net/output.c:80:12: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ {aka ‘long unsigned int’} [-Wsign-compare]
+  |    80 |  if (n < len)
+  |       |        ^
+  | /home/agreen/jobs/abc123/src/lib/core-net/output.c:90:3: note: in expansion of macro ‘X’
+passed:

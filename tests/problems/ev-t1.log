@@ -1,0 +1,10 @@
+#fail
+#uuid EV00000000000000000000000000000001
+#platform linux-debian-sid/x86_64-amd/gcc
+#task default
+3|>saib> Starting task step 4 ===>
+2|/home/agreen/jobs/abc123/src/lib/core-net/client/connect3.c: In function ‘lws_client_connect_3_connect’:
+2|/home/agreen/jobs/abc123/src/lib/core-net/client/connect3.c:1234:9: error: implicit declaration of function ‘lws_client_conn_wait’ [-Wimplicit-function-declaration]
+2| 1234 |         lws_client_conn_wait(wsi, NULL);
+2|      |         ^~~~~~~~~~~~~~~~~~~~
+3|Build step 4 FAILED, exit code: 2

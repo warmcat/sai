@@ -1,0 +1,15 @@
+build error cc lib/core-net/client/connect3.c:1235:3 code='-Wimplicit-function-declaration' subject='lws_client_conn_wait' msg='call to undeclared function 'lws_client_conn_wait'; ISO C99 and later do not support implicit function declarations' log=2+3 count=1 tests=0/0
+  hkey='c:lib/core-net/client/connect3.c|-Wimplicit-function-declaration|lws_client_conn_wait'
+  | /Users/agreen/jobs/def456/src/lib/core-net/client/connect3.c:1235:3: error: call to undeclared function 'lws_client_conn_wait'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  |  1235 |                 lws_client_conn_wait(wsi, NULL);
+  |       |                 ^
+build warning cc lib/core-net/private-lib-core-net.h:88:1 code='-Wmissing-prototypes' subject='lws_foo' msg='no previous prototype for function 'lws_foo'' log=5+4 count=1 tests=0/0
+  hkey='c:lib/core-net/private-lib-core-net.h|-Wmissing-prototypes|lws_foo'
+  | /Users/agreen/jobs/def456/src/lib/core-net/private-lib-core-net.h:88:1: warning: no previous prototype for function 'lws_foo' [-Wmissing-prototypes]
+  |    88 | lws_foo(int x)
+  |       | ^
+  | /Users/agreen/jobs/def456/src/lib/core-net/private-lib-core-net.h:87:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+build warning clang :0:0 code='-Wunused-command-line-argument' subject='-fno-plt' msg='argument unused during compilation: '-fno-plt'' log=10+1 count=1 tests=0/0
+  hkey='m:clang|-Wunused-command-line-argument|argument unused during compilation: *'
+  | clang: warning: argument unused during compilation: '-fno-plt' [-Wunused-command-line-argument]
+passed:

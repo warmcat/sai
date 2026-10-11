@@ -1,0 +1,7 @@
+build warning cc lib/core-net/private-lib-core-net.h:88:1 code='-Wmissing-prototypes' subject='lws_foo' msg='no previous prototype for function 'lws_foo'' log=2+4 count=1 tests=0/0
+  hkey='c:lib/core-net/private-lib-core-net.h|-Wmissing-prototypes|lws_foo'
+  | In file included from /home/sai/jobs/j5/src/lib/core/private-lib-core.h:120,
+  |                  from /home/sai/jobs/j5/src/lib/core-net/output.c:25:
+  | /home/sai/jobs/j5/src/lib/core-net/private-lib-core-net.h:88:1: warning: no previous prototype for function 'lws_foo' [-Wmissing-prototypes]
+  |    88 | lws_foo(int x)
+passed:

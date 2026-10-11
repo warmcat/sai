@@ -1,0 +1,24 @@
+link error ld minimal-http-client.c:0:0 code='undefined-reference' subject='lws_client_conn_wait' msg='undefined reference to `lws_client_conn_wait'' log=2+2 count=1 tests=0/0
+  hkey='l:lws_client_conn_wait'
+  | /usr/bin/ld: CMakeFiles/lws-minimal-http-client.dir/minimal-http-client.c.o: in function `main':
+  | minimal-http-client.c:(.text.startup+0x1a5): undefined reference to `lws_client_conn_wait'
+link error ld minimal-examples/http-client/minimal-http-client.c:212:0 code='undefined-reference' subject='lws_foo' msg='undefined reference to `lws_foo'' log=4+1 count=1 tests=0/0
+  hkey='l:lws_foo'
+  | /usr/bin/ld: /home/sai/jobs/x1/src/minimal-examples/http-client/minimal-http-client.c:212: undefined reference to `lws_foo'
+link error ld :0:0 code='missing-library' subject='-lcap' msg='cannot find -lcap: No such file or directory' log=5+1 count=1 tests=0/0
+  hkey='l:-lcap'
+  | /usr/bin/ld: cannot find -lcap: No such file or directory
+link error ld.lld minimal-http-client.c:200:0 code='undefined-reference' subject='lws_client_conn_wait' msg='undefined symbol: lws_client_conn_wait' log=7+3 count=1 tests=0/0
+  hkey='l:lws_client_conn_wait'
+  | ld.lld: error: undefined symbol: lws_client_conn_wait
+  | >>> referenced by minimal-http-client.c:200 (/home/sai/jobs/x2/src/minimal-examples/http-client/minimal-http-client.c:200)
+  | >>>               minimal-http-client.c.o:(main)
+link error ld64 :0:0 code='undefined-reference' subject='_lws_client_conn_wait' msg='undefined symbol: _lws_client_conn_wait' log=11+3 count=1 tests=0/0
+  hkey='l:lws_client_conn_wait'
+  | Undefined symbols for architecture arm64:
+  |   "_lws_client_conn_wait", referenced from:
+  |       _main in minimal-http-client.c.o
+link warning ld :0:0 code='' subject='macOS' msg='object file (/opt/homebrew/lib/libssl.a(ssl_lib.o)) was built for newer 'macOS' version (15.0) than being linked (13.0)' log=15+1 count=1 tests=0/0
+  hkey='m:ld||object file (/opt/homebrew/lib/libssl.a(ssl_lib.o)) was built for newer * version (.) than being linked (.)'
+  | ld: warning: object file (/opt/homebrew/lib/libssl.a(ssl_lib.o)) was built for newer 'macOS' version (15.0) than being linked (13.0)
+passed:

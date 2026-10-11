@@ -1,0 +1,8 @@
+#fail
+#crlf
+#build mkdir -p build;cd build;cmake ..;cd build && make -j
+3|>saib> Starting task step 4 ===>
+1|-- Configuring done
+1|-- Generating done
+2|/bin/sh: 1: make: not found
+3|Build step 4 FAILED, exit code: 127

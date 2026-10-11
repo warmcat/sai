@@ -1,0 +1,6 @@
+build error cc lib/core-net/client/connect3.c:1235:3 code='-Wimplicit-function-declaration' subject='lws_client_conn_wait' msg='call to undeclared function 'lws_client_conn_wait'; ISO C99 and later do not support implicit function declarations' log=2+3 count=1 tests=0/0
+  hkey='c:lib/core-net/client/connect3.c|-Wimplicit-function-declaration|lws_client_conn_wait'
+  | /Users/agreen/jobs/def456/src/lib/core-net/client/connect3.c:1235:3: error: call to undeclared function 'lws_client_conn_wait'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+  |  1235 |                 lws_client_conn_wait(wsi, NULL);
+  |       |                 ^
+passed:

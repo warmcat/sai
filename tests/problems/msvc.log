@@ -1,0 +1,16 @@
+#fail
+3|>saib> Starting task step 4 ===>
+1|  connect3.c
+1|C:\Users\sai\jobs\w11a\src\lib\core-net\client\connect3.c(1236,3): error C2065: 'lws_client_conn_wait': undeclared identifier [C:\Users\sai\jobs\w11a\src\build\lib\websockets.vcxproj]
+1|C:\Users\sai\jobs\w11a\src\lib\core-net\output.c(80,12): warning C4018: '<': signed/unsigned mismatch [C:\Users\sai\jobs\w11a\src\build\lib\websockets.vcxproj]
+1|cl : command line warning D9002: ignoring unknown option '-fno-plt' [C:\Users\sai\jobs\w11a\src\build\lib\websockets.vcxproj]
+1|test-client.obj : error LNK2019: unresolved external symbol __imp_lws_foo referenced in function main [C:\Users\sai\jobs\w11a\src\build\test-client.vcxproj]
+1|C:\Users\sai\jobs\w11a\src\build\bin\Release\test-client.exe : fatal error LNK1120: 1 unresolved externals [C:\Users\sai\jobs\w11a\src\build\test-client.vcxproj]
+1|
+1|Build FAILED.
+1|
+1|C:\Users\sai\jobs\w11a\src\lib\core-net\output.c(80,12): warning C4018: '<': signed/unsigned mismatch [C:\Users\sai\jobs\w11a\src\build\lib\websockets.vcxproj]
+1|C:\Users\sai\jobs\w11a\src\lib\core-net\client\connect3.c(1236,3): error C2065: 'lws_client_conn_wait': undeclared identifier [C:\Users\sai\jobs\w11a\src\build\lib\websockets.vcxproj]
+1|    1 Warning(s)
+1|    1 Error(s)
+3|Build step 4 FAILED, exit code: 1

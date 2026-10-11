@@ -178,6 +178,19 @@ sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache
 
 	sai_sqlite3_statement(*ppdb, "CREATE INDEX IF NOT EXISTS idx_art_task ON artifacts(task_uuid);", "create artifact index");
 
+	/* see c-problems.c */
+
+	if (lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_problem) ||
+	    lws_struct_sq3_create_table(*ppdb, lsm_schema_sq3_map_problem_run)) {
+		lwsl_err("%s: unable to create problem tables in %s\n", __func__,
+			 filepath);
+
+		return 5;
+	}
+
+	sai_sqlite3_statement(*ppdb, "CREATE INDEX IF NOT EXISTS idx_prob_task ON problems(task_uuid, run);", "create problems index");
+	sai_sqlite3_statement(*ppdb, "CREATE INDEX IF NOT EXISTS idx_probrun_task ON problem_runs(task_uuid, run);", "create problem runs index");
+
 	if (sai_task_index_needs_run(*ppdb)) {
 		lwsl_notice("%s: migrating idx_task_uuid in %s\n", __func__,
 			    filepath);

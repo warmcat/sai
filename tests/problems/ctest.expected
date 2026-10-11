@@ -1,0 +1,15 @@
+test flaky ctest :0:0 code='mss-lws-minimal-ss-hello_world' subject='mss-lws-minimal-ss-hello_world' msg='Failed' log=8+3 count=1 tests=1/2
+  hkey='t:mss-lws-minimal-ss-hello_world'
+  |  3/4 Test  #3: mss-lws-minimal-ss-hello_world ...***Failed    5.03 sec
+  | [2026/10/11 12:30:01:1234] U: LWS Secure Streams hello_world
+  | [2026/10/11 12:30:06:1234] E: myss_state: CONNECTION_FAILED
+test error ctest :0:0 code='api-test-lws_dll2' subject='api-test-lws_dll2' msg='AddressSanitizer: heap-use-after-free' log=14+5 count=1 tests=3/3
+  hkey='t:api-test-lws_dll2'
+  |  4/4 Test  #4: api-test-lws_dll2 ................***Failed    0.10 sec
+  | =================================================================
+  | ==12345==ERROR: AddressSanitizer: heap-use-after-free on address 0x602000000010 at pc 0x55d5 bp 0x7ffd sp 0x7ffd
+  | READ of size 8 at 0x602000000010 thread T0
+  |     #0 0x55d5 in lws_dll2_remove /home/agreen/jobs/abc/src/lib/core/lws-dll2.c:120:12
+passed:
+api-test-lws_tokenize
+api-test-lws_struct-json

@@ -1,0 +1,9 @@
+#fail
+#uuid EV00000000000000000000000000000002
+#platform netbsd-OSX-tahoe/aarch64-apple-m1/llvm
+#task default
+3|>saib> Starting task step 4 ===>
+2|/Users/agreen/jobs/def456/src/lib/core-net/client/connect3.c:1235:3: error: call to undeclared function 'lws_client_conn_wait'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+2| 1235 |                 lws_client_conn_wait(wsi, NULL);
+2|      |                 ^
+3|Build step 4 FAILED, exit code: 2

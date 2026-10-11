@@ -1,0 +1,13 @@
+config warning cmake cmake/lws_config_checks.cmake:30:0 code='' subject='CHECK_FUNCTION_EXISTS' msg='Policy CMP0075 is not set: Include file check macros honor' log=3+7 count=1 tests=0/0
+  hkey='c:cmake/lws_config_checks.cmake|policy cmp is not set: include file check macros honor|CHECK_FUNCTION_EXISTS'
+  | CMake Warning (dev) at cmake/lws_config_checks.cmake:30 (CHECK_FUNCTION_EXISTS):
+  |   Policy CMP0075 is not set: Include file check macros honor
+  |   CMAKE_REQUIRED_LIBRARIES.
+  | Call Stack (most recent call first):
+  |   CMakeLists.txt:640 (include)
+  | This warning is for project developers.  Use -Wno-dev to suppress it.
+config error cmake lib/tls/CMakeLists.txt:280:0 code='' subject='message' msg='OpenSSL libraries not found' log=11+4 count=1 tests=0/0
+  hkey='c:lib/tls/CMakeLists.txt|openssl libraries not found|message'
+  | CMake Error at lib/tls/CMakeLists.txt:280 (message):
+  |   OpenSSL libraries not found
+passed:

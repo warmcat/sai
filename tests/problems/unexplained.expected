@@ -1,0 +1,6 @@
+build error step :0:0 code='step 4' subject='' msg='/bin/sh: 1: make: not found' log=2+3 count=1 tests=0/0
+  hkey='m:step|step 4|/bin/sh: : make: not found'
+  | -- Configuring done
+  | -- Generating done
+  | /bin/sh: 1: make: not found
+passed:

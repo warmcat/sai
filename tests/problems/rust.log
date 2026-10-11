@@ -1,0 +1,26 @@
+#fail
+3|>saib> Starting task step 3 ===>
+2|   Compiling npro-core v0.3.0 (/home/sai/jobs/np1/src/crates/npro-core)
+2|warning: unused variable: `peer`
+2|  --> crates/npro-core/src/conn.rs:42:9
+2|   |
+2|42 |     let peer = sock.peer_addr()?;
+2|   |         ^^^^ help: if this is intentional, prefix it with an underscore: `_peer`
+2|   |
+2|   = note: `#[warn(unused_variables)]` on by default
+2|
+2|error[E0425]: cannot find value `frame_len` in this scope
+2|   --> crates/npro-core/src/frame.rs:118:17
+2|    |
+2|118 |         let n = frame_len + 4;
+2|    |                 ^^^^^^^^^ not found in this scope
+2|
+2|warning: this `if` has identical blocks
+2|  --> crates/npro-core/src/frame.rs:200:5
+2|   |
+2|   = help: for further information visit https://rust-lang.github.io/rust-clippy/master/index.html#if_same_then_else
+2|
+2|For more information about this error, try `rustc --explain E0425`.
+2|warning: `npro-core` (lib) generated 2 warnings
+2|error: could not compile `npro-core` (lib) due to 1 previous error; 2 warnings emitted
+3|Build step 3 FAILED, exit code: 101

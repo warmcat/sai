@@ -1,0 +1,9 @@
+test flaky nextest crates/npro-core/src/conn.rs:88:5 code='npro-core conn::tests::reconnects' subject='npro-core conn::tests::reconnects' msg='timed out waiting for peer' log=4+4 count=1 tests=1/2
+  hkey='t:npro-core conn::tests::reconnects'
+  |   TRY 1 FAIL [   0.104s] npro-core conn::tests::reconnects
+  | --- TRY 1 STDOUT:        npro-core conn::tests::reconnects ---
+  | thread 'conn::tests::reconnects' panicked at crates/npro-core/src/conn.rs:88:5:
+  | timed out waiting for peer
+passed:
+npro-core frame::tests::parses_short
+npro-core conn::tests::closes

@@ -1,0 +1,6 @@
+test flaky ctest :0:0 code='mss-lws-minimal-ss-hello_world' subject='mss-lws-minimal-ss-hello_world' msg='Failed' log=3+2 count=1 tests=1/2
+  hkey='t:mss-lws-minimal-ss-hello_world'
+  |  2/2 Test  #2: mss-lws-minimal-ss-hello_world ...***Failed    5.03 sec
+  | [2026/10/11 12:30:06:1234] E: myss_state: CONNECTION_FAILED
+passed:
+api-test-lws_tokenize

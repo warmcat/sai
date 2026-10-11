@@ -1,0 +1,18 @@
+#fail
+#build mkdir -p build;cd build;cmake .. ${cmake}
+3|>saib> Starting task step 3 ===>
+1|-- The C compiler identification is GNU 14.2.0
+2|CMake Warning (dev) at cmake/lws_config_checks.cmake:30 (CHECK_FUNCTION_EXISTS):
+2|  Policy CMP0075 is not set: Include file check macros honor
+2|  CMAKE_REQUIRED_LIBRARIES.
+2|Call Stack (most recent call first):
+2|  CMakeLists.txt:640 (include)
+2|This warning is for project developers.  Use -Wno-dev to suppress it.
+2|
+1|-- Could NOT find OpenSSL, try to set the path to OpenSSL root folder in the system variable OPENSSL_ROOT_DIR (missing: OPENSSL_CRYPTO_LIBRARY OPENSSL_INCLUDE_DIR)
+2|CMake Error at lib/tls/CMakeLists.txt:280 (message):
+2|  OpenSSL libraries not found
+2|
+2|
+1|-- Configuring incomplete, errors occurred!
+3|Build step 3 FAILED, exit code: 1

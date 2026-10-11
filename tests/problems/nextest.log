@@ -1,0 +1,12 @@
+3|>saib> Starting task step 3 ===>
+2|    Starting 3 tests across 1 binary (retries: 2)
+2|        PASS [   0.004s] npro-core frame::tests::parses_short
+2|  TRY 1 FAIL [   0.104s] npro-core conn::tests::reconnects
+2|--- TRY 1 STDOUT:        npro-core conn::tests::reconnects ---
+2|thread 'conn::tests::reconnects' panicked at crates/npro-core/src/conn.rs:88:5:
+2|timed out waiting for peer
+2|  TRY 2 PASS [   0.050s] npro-core conn::tests::reconnects
+2|        PASS [   0.004s] npro-core conn::tests::closes
+2|------------
+2|     Summary [   0.200s] 3 tests run: 3 passed (1 flaky), 0 skipped
+2|   FLAKY 2/3 [   0.050s] npro-core conn::tests::reconnects

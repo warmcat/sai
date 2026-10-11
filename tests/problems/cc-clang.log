@@ -1,0 +1,14 @@
+#fail
+3|>saib> Starting task step 4 ===>
+2|[1m/Users/agreen/jobs/def456/src/lib/core-net/client/connect3.c:1235:3: [0m[0;1;31merror: [0m[1mcall to undeclared function 'lws_client_conn_wait'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration][0m
+2| 1235 |                 lws_client_conn_wait(wsi, NULL);
+2|      |                 ^
+2|/Users/agreen/jobs/def456/src/lib/core-net/private-lib-core-net.h:88:1: warning: no previous prototype for function 'lws_foo' [-Wmissing-prototypes]
+2|   88 | lws_foo(int x)
+2|      | ^
+2|/Users/agreen/jobs/def456/src/lib/core-net/private-lib-core-net.h:87:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+2|1 warning and 1 error generated.
+2|clang: warning: argument unused during compilation: '-fno-plt' [-Wunused-command-line-argument]
+2|2026-10-11 12:30:01: warning: this is not a compiler
+2|lws_client: error: not a tool either
+3|Build step 4 FAILED, exit code: 2

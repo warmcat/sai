@@ -1,0 +1,17 @@
+#fail
+3|>saib> Starting task step 4 ===>
+2|/usr/bin/ld: CMakeFiles/lws-minimal-http-client.dir/minimal-http-client.c.o: in function `main':
+2|minimal-http-client.c:(.text.startup+0x1a5): undefined reference to `lws_client_conn_wait'
+2|/usr/bin/ld: /home/sai/jobs/x1/src/minimal-examples/http-client/minimal-http-client.c:212: undefined reference to `lws_foo'
+2|/usr/bin/ld: cannot find -lcap: No such file or directory
+2|collect2: error: ld returned 1 exit status
+2|ld.lld: error: undefined symbol: lws_client_conn_wait
+2|>>> referenced by minimal-http-client.c:200 (/home/sai/jobs/x2/src/minimal-examples/http-client/minimal-http-client.c:200)
+2|>>>               minimal-http-client.c.o:(main)
+2|clang: error: linker command failed with exit code 1 (use -v to see invocation)
+2|Undefined symbols for architecture arm64:
+2|  "_lws_client_conn_wait", referenced from:
+2|      _main in minimal-http-client.c.o
+2|ld: symbol(s) not found for architecture arm64
+2|ld: warning: object file (/opt/homebrew/lib/libssl.a(ssl_lib.o)) was built for newer 'macOS' version (15.0) than being linked (13.0)
+3|Build step 4 FAILED, exit code: 2

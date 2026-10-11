@@ -1,0 +1,25 @@
+#fail
+3|>saib> Starting task step 3 ===>
+1|running 3 tests
+1|test frame::tests::parses_short ... ok
+1|test frame::tests::rejects_long ... FAILED
+1|test conn::tests::closes ... ok
+1|
+1|failures:
+1|
+1|---- frame::tests::rejects_long stdout ----
+1|
+1|thread 'frame::tests::rejects_long' panicked at crates/npro-core/src/frame.rs:301:9:
+1|assertion `left == right` failed
+1|  left: 3
+1| right: 4
+1|note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+1|
+1|
+1|failures:
+1|    frame::tests::rejects_long
+1|
+1|test result: FAILED. 2 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+1|
+2|error: test failed, to rerun pass `-p npro-core --lib`
+3|Build step 3 FAILED, exit code: 101

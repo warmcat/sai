@@ -1,0 +1,10 @@
+#uuid EV00000000000000000000000000000007
+#platform freebsd/aarch64/llvm
+#task default
+#run 0
+3|>saib> Starting task step 5 ===>
+1| 1/2 Test  #1: api-test-lws_tokenize ............   Passed    0.02 sec
+1| 2/2 Test  #2: mss-lws-minimal-ss-hello_world ...***Failed    5.03 sec
+1|[2026/10/11 12:30:06:1234] E: myss_state: CONNECTION_FAILED
+1|      Start  2: mss-lws-minimal-ss-hello_world
+1| 2/2 Test  #2: mss-lws-minimal-ss-hello_world ...   Passed    1.03 sec

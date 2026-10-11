@@ -1,0 +1,5 @@
+#uuid EV00000000000000000000000000000003
+#platform w11/x86_64-amd/msvc
+#task default
+3|>saib> Starting task step 4 ===>
+1|  connect3.c

@@ -1,0 +1,12 @@
+test error cargo crates/npro-core/src/frame.rs:301:9 code='frame::tests::rejects_long' subject='frame::tests::rejects_long' msg='assertion `left == right` failed' log=9+9 count=1 tests=1/1
+  hkey='t:frame::tests::rejects_long'
+  | ---- frame::tests::rejects_long stdout ----
+  | 
+  | thread 'frame::tests::rejects_long' panicked at crates/npro-core/src/frame.rs:301:9:
+  | assertion `left == right` failed
+  |   left: 3
+  |  right: 4
+  | note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+passed:
+frame::tests::parses_short
+conn::tests::closes
