@@ -323,6 +323,7 @@ struct vhd {
 	lws_sorted_usec_list_t	sul_central; /* background task allocation sul */
 	lws_sorted_usec_list_t	sul_activity; /* activity broadcast sul */
 	lws_sorted_usec_list_t	sul_gc_events; /* incremental GC of deleted events */
+	char			gc_events_cursor[33]; /* last deleted event GC'd */
 	lws_sorted_usec_list_t	sul_event_db_limit; /* see s-event-db-limit.c */
 	lws_sorted_usec_list_t	sul_watcher; /* generic async service watcher sul */
  

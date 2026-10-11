@@ -223,68 +223,122 @@ sais_ensure_tables(struct vhd *vhd)
 
 }
 
+/*
+ * Incrementally get rid of deleted events: each pass tells the builders to
+ * cancel and erase one task of one of them and deletes it, until the event has
+ * no tasks left, then its row and db go.
+ *
+ * Which tasks are live comes from the builders' inflight lists, not the task
+ * states in the db, which can be stale, eg, BEING_BUILT from a build that was
+ * lost: those would otherwise never be collected, so neither would their event.
+ * A task that is still on a builder was told to cancel when the event was
+ * deleted, and is collected once it's off the inflight list.
+ *
+ * The deleted events take turns, in uuid order, so one that's waiting for
+ * builders doesn't hold up the rest.
+ */
+
 void
 sais_central_gc_deleted_events_cb(lws_sorted_usec_list_t *sul)
 {
 	struct vhd *vhd = lws_container_of(sul, struct vhd, sul_gc_events);
-	char q[128], event_uuid[65], esc[96];
+	char q[128], event_uuid[65], esc[96], tu[65];
+	lws_usec_t next = 10 * LWS_US_PER_MS;
 	sqlite3_stmt *sm, *tsm;
 	sqlite3 *pdb = NULL;
-	int remaining;
+	int remaining, pruned, n;
 
-	/* Find one event that is in SAIES_DELETED (7) state */
-	lws_snprintf(q, sizeof(q), "SELECT uuid, ifnull(pruned,0) FROM events WHERE state = %d LIMIT 1", SAIES_DELETED);
+	/* the next deleted event after the last one we looked at, or wrap */
 
-	if (sqlite3_prepare_v2(vhd->server.pdb, q, -1, &sm, NULL) != SQLITE_OK)
+	for (n = 0; n < 2; n++) {
+		if (sqlite3_prepare_v2(vhd->server.pdb, "SELECT uuid, "
+				       "ifnull(pruned,0) FROM events WHERE "
+				       "state = ? AND uuid > ? ORDER BY uuid "
+				       "LIMIT 1", -1, &sm, NULL) != SQLITE_OK)
+			return;
+
+		sqlite3_bind_int(sm, 1, SAIES_DELETED);
+		sqlite3_bind_text(sm, 2, vhd->gc_events_cursor, -1,
+				  SQLITE_TRANSIENT);
+
+		if (sqlite3_step(sm) == SQLITE_ROW &&
+		    sqlite3_column_text(sm, 0))
+			break;
+
+		sqlite3_finalize(sm);
+		if (!vhd->gc_events_cursor[0])
+			return; /* Nothing to GC */
+
+		/* go round again from the start */
+		vhd->gc_events_cursor[0] = '\0';
+	}
+	if (n == 2)
 		return;
 
-	if (sqlite3_step(sm) != SQLITE_ROW) {
-		sqlite3_finalize(sm);
-		return; /* Nothing to GC */
-	}
+	lws_strncpy(event_uuid, (const char *)sqlite3_column_text(sm, 0),
+		    sizeof(event_uuid));
+	pruned = sqlite3_column_int(sm, 1);
+	sqlite3_finalize(sm);
 
-	lws_strncpy(event_uuid, (const char *)sqlite3_column_text(sm, 0), sizeof(event_uuid));
-	if (sqlite3_column_int(sm, 1)) {
+	lws_strncpy(vhd->gc_events_cursor, event_uuid,
+		    sizeof(vhd->gc_events_cursor));
+
+	if (pruned) {
 		/*
 		 * Its db already went to keep under event-db-limit-mb, see
 		 * s-event-db-limit.c... there are no tasks to GC, only its row
 		 */
-		sqlite3_finalize(sm);
 		remaining = 0;
 		goto drop_event;
 	}
-	sqlite3_finalize(sm);
 
 	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
-			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb))
-		return;
+			      vhd->sqlite3_path_lhs, event_uuid, 0, &pdb)) {
+		/*
+		 * Missing or broken... there's no telling the builders about
+		 * its tasks, but it's deleted, so let it go rather than
+		 * trying it forever
+		 */
+		lwsl_warn("%s: can't open db of deleted event %s, dropping it\n",
+			  __func__, event_uuid);
+		remaining = 0;
+		goto drop_event;
+	}
 
-	/* Pick 1 task that is stopped to garbage collect */
-	/* 0=WAITING, 3=SUCCESS, 4=FAIL, 5=CANCELLED, 8=NOT_READY, 9=STEP_SUCCESS, 10=PAUSED, 11=YIELDED */
-	lws_snprintf(q, sizeof(q), "SELECT uuid FROM tasks WHERE state IN (0, 3, 4, 5, 8, 9, 10, 11) "
-				   "AND run=(SELECT max(run) FROM tasks t2 WHERE t2.uuid = tasks.uuid) LIMIT 1");
+	/* Pick 1 task that isn't on a builder to garbage collect */
 
-	if (sqlite3_prepare_v2(pdb, q, -1, &tsm, NULL) == SQLITE_OK) {
-		if (sqlite3_step(tsm) == SQLITE_ROW) {
+	tu[0] = '\0';
+	if (sqlite3_prepare_v2(pdb, "SELECT DISTINCT uuid FROM tasks", -1,
+			       &tsm, NULL) == SQLITE_OK) {
+		while (sqlite3_step(tsm) == SQLITE_ROW) {
 			const char *u = (const char *)sqlite3_column_text(tsm, 0);
-			if (u) {
-				char tu[65];
-				lws_strncpy(tu, u, sizeof(tu));
-				lws_sql_purify(esc, tu, sizeof(esc));
 
-				sais_task_cancel(vhd, tu, 1, 0);
+			if (!u)
+				continue;
 
-				lws_snprintf(q, sizeof(q), "DELETE FROM logs WHERE task_uuid='%s'", esc);
-				sqlite3_exec(pdb, q, NULL, NULL, NULL);
+			if (strlen(u) == 64 &&
+			    sais_is_task_inflight(vhd, NULL, u, NULL))
+				continue;
 
-				lws_snprintf(q, sizeof(q), "DELETE FROM artifacts WHERE task_uuid='%s'", esc);
-				sqlite3_exec(pdb, q, NULL, NULL, NULL);
-
-				lws_snprintf(q, sizeof(q), "DELETE FROM tasks WHERE uuid='%s'", esc);
-				sqlite3_exec(pdb, q, NULL, NULL, NULL);
-			}
+			lws_strncpy(tu, u, sizeof(tu));
+			break;
 		}
 		sqlite3_finalize(tsm);
+	}
+
+	if (tu[0]) {
+		lws_sql_purify(esc, tu, sizeof(esc));
+
+		sais_task_cancel(vhd, tu, 1, 0);
+
+		lws_snprintf(q, sizeof(q), "DELETE FROM logs WHERE task_uuid='%s'", esc);
+		sqlite3_exec(pdb, q, NULL, NULL, NULL);
+
+		lws_snprintf(q, sizeof(q), "DELETE FROM artifacts WHERE task_uuid='%s'", esc);
+		sqlite3_exec(pdb, q, NULL, NULL, NULL);
+
+		lws_snprintf(q, sizeof(q), "DELETE FROM tasks WHERE uuid='%s'", esc);
+		sqlite3_exec(pdb, q, NULL, NULL, NULL);
 	}
 
 	/* Check if the event DB is completely empty of tasks now */
@@ -295,6 +349,13 @@ sais_central_gc_deleted_events_cb(lws_sorted_usec_list_t *sul)
 		sqlite3_finalize(tsm);
 	}
 	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+
+	if (remaining && !tu[0])
+		/*
+		 * All it has left are on builders... other deleted events get
+		 * their turn meanwhile, but don't spin if it's the only one
+		 */
+		next = 1 * LWS_US_PER_SEC;
 
 drop_event:
 	if (remaining == 0) {
@@ -310,7 +371,7 @@ drop_event:
 
 	/* Keep yielding and re-scheduling as long as there's still work to do on this or other events */
 	lws_sul_schedule(vhd->context, 0, &vhd->sul_gc_events,
-			 sais_central_gc_deleted_events_cb, 10 * LWS_US_PER_MS); /* 10ms for next task */
+			 sais_central_gc_deleted_events_cb, next);
 }
 
 void
