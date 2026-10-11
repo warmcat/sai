@@ -336,8 +336,11 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			return -1;
 		}
 
-		/* the other daemon has this db open too */
-		sqlite3_busy_timeout(vhd->pdb, SAI_SQLITE3_BUSY_TIMEOUT_MS);
+		/*
+		 * the other daemon has this db open too, give it longer while
+		 * we set up the schema, see SAI_SQLITE3_INIT_BUSY_TIMEOUT_MS
+		 */
+		sqlite3_busy_timeout(vhd->pdb, SAI_SQLITE3_INIT_BUSY_TIMEOUT_MS);
 
 		sai_sqlite3_statement(vhd->pdb,
 				      "PRAGMA journal_mode=WAL;", "set WAL");
@@ -389,6 +392,8 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		sai_sqlite3_statement(vhd->pdb,
 			"CREATE TABLE IF NOT EXISTS saiweb_state (key TEXT PRIMARY KEY, val INTEGER);",
 			"create saiweb_state");
+
+		sqlite3_busy_timeout(vhd->pdb, SAI_SQLITE3_BUSY_TIMEOUT_MS);
 
 		/*
 		 * Which projects this vhost shows, if it doesn't show them

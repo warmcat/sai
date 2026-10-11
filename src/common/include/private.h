@@ -79,6 +79,15 @@
  * the lock instead: writes are small, so contention is brief.
  */
 #define SAI_SQLITE3_BUSY_TIMEOUT_MS 500
+/*
+ * ...except while a daemon sets up the shared events db's schema at startup.
+ * Even when there's nothing to change, that takes the write lock, and the
+ * other daemon may hold it for longer then, eg, sai-server recovering the db's
+ * WAL when they were restarted together.  Failing there leaves the protocol
+ * without a vhd, refusing everything until the next restart, so wait as long
+ * as it takes within reason.
+ */
+#define SAI_SQLITE3_INIT_BUSY_TIMEOUT_MS 30000
 
 struct sai_plat;
 struct sai_builder;
