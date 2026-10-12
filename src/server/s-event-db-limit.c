@@ -55,6 +55,13 @@
  * went away, has nothing left that can run after its db is gone, so it is
  * cancelled as well as pruned.
  *
+ * An event is marked pruned before its db is deleted, and if deleting it fails,
+ * the mark is taken back.  If it's the other way round and marking it fails,
+ * eg, the events db is locked, the event is left looking like it still has its
+ * db, and since it wasn't pruned, nothing was freed and we go on to prune
+ * another: earlier versions did that to most of the events.  An event left
+ * like that, with no db files at all, is marked pruned when we find it.
+ *
  * However far over the limit we think we are, no more than a tenth of the
  * event dbs (but at least a few) are pruned in a day, then we warn and wait.
  * Builds come in far slower than that once we're keeping up, so it only
@@ -100,7 +107,7 @@ static const char * const evdb_result_names[] = {
 	"on a builder or hosting idle tasks",
 	"written in the last hour",
 	"open in sai-server",
-	"failed to delete",
+	"failed to prune",
 };
 
 typedef struct sais_evdb {
@@ -108,7 +115,9 @@ typedef struct sais_evdb {
 	char			uuid[33];
 	uint64_t		size;
 	time_t			mtime; /* newest of its files */
+	time_t			created;
 	int			state;
+	char			files; /* how many of its files there are */
 	char			newest; /* newest event on its repo + ref */
 } sais_evdb_t;
 
@@ -131,6 +140,7 @@ sais_event_db_stat(struct vhd *vhd, sais_evdb_t *ed)
 		if (stat(filepath, &st))
 			continue;
 
+		ed->files++;
 		ed->size += (uint64_t)st.st_blocks * 512ull;
 		if (st.st_mtime > ed->mtime)
 			ed->mtime = st.st_mtime;
@@ -176,14 +186,54 @@ sais_event_db_live(struct vhd *vhd, const char *event_uuid)
 }
 
 /*
- * Delete the event's db if we can, and mark it pruned in the events table
+ * Mark the event pruned, at when it was pruned, or 0 for not counting towards
+ * the daily limit, or not pruned again
+ */
+
+static int
+sais_event_db_mark(struct vhd *vhd, const char *uuid, int pruned, time_t at,
+		   int state)
+{
+	sqlite3_stmt *sm;
+
+	if (sqlite3_prepare_v2(vhd->server.pdb, "UPDATE events SET pruned=?, "
+			       "pruned_at=?, state=? WHERE uuid=?", -1, &sm,
+			       NULL) != SQLITE_OK) {
+		lwsl_err("%s: %s\n", __func__, sqlite3_errmsg(vhd->server.pdb));
+		return 1;
+	}
+
+	sqlite3_bind_int(sm, 1, pruned);
+	if (at)
+		sqlite3_bind_int64(sm, 2, (sqlite3_int64)at);
+	else
+		sqlite3_bind_null(sm, 2);
+	sqlite3_bind_int(sm, 3, state);
+	sqlite3_bind_text(sm, 4, uuid, -1, SQLITE_TRANSIENT);
+
+	return sai_sqlite3_step_done(vhd->server.pdb, sm, "mark event pruned");
+}
+
+/* its unfinished tasks went with its db, they can never run now */
+
+static int
+sais_event_db_pruned_state(int state)
+{
+	if (state != SAIES_SUCCESS && state != SAIES_FAIL &&
+	    state != SAIES_CANCELLED)
+		return SAIES_CANCELLED;
+
+	return state;
+}
+
+/*
+ * Mark the event pruned, then delete its db if we can
  */
 
 static sais_evdb_result_t
 sais_event_db_prune(struct vhd *vhd, sais_evdb_t *ed, time_t now)
 {
-	sqlite3_stmt *sm;
-	int state = ed->state;
+	int state = sais_event_db_pruned_state(ed->state);
 
 	if (ed->newest)
 		return SAIS_EVDB_NEWEST;
@@ -198,26 +248,18 @@ sais_event_db_prune(struct vhd *vhd, sais_evdb_t *ed, time_t now)
 	if (sai_event_db_cache_drop(&vhd->sqlite3_cache, ed->uuid))
 		return SAIS_EVDB_IN_USE;
 
-	if (sai_event_db_delete_database(vhd->sqlite3_path_lhs, ed->uuid))
+	/* if we can't say it's gone, it doesn't go */
+	if (sais_event_db_mark(vhd, ed->uuid, 1, now, state))
 		return SAIS_EVDB_FAILED;
 
-	/* its unfinished tasks went with its db, they can never run now */
-	if (state != SAIES_SUCCESS && state != SAIES_FAIL &&
-	    state != SAIES_CANCELLED)
-		state = SAIES_CANCELLED;
-
-	if (sqlite3_prepare_v2(vhd->server.pdb, "UPDATE events SET pruned=1, "
-			       "pruned_at=?, state=? WHERE uuid=?", -1, &sm,
-			       NULL) != SQLITE_OK) {
-		lwsl_err("%s: %s\n", __func__, sqlite3_errmsg(vhd->server.pdb));
+	if (sai_event_db_delete_database(vhd->sqlite3_path_lhs, ed->uuid)) {
+		/* it's still there, as much as it can be */
+		if (sais_event_db_mark(vhd, ed->uuid, 0, 0, ed->state))
+			lwsl_err("%s: event %s is marked pruned, but its db "
+				 "couldn't all be deleted\n", __func__,
+				 ed->uuid);
 		return SAIS_EVDB_FAILED;
 	}
-
-	sqlite3_bind_int64(sm, 1, (sqlite3_int64)now);
-	sqlite3_bind_int(sm, 2, state);
-	sqlite3_bind_text(sm, 3, ed->uuid, -1, SQLITE_TRANSIENT);
-	if (sai_sqlite3_step_done(vhd->server.pdb, sm, "mark event pruned"))
-		return SAIS_EVDB_FAILED;
 
 	lwsl_notice("%s: pruned event %s (state %d -> %d), freeing %llu\n",
 		    __func__, ed->uuid, ed->state, state,
@@ -236,7 +278,8 @@ sais_event_db_limit_cb(lws_sorted_usec_list_t *sul)
 	lws_usec_t next = SAIS_EVENT_DB_LIMIT_INTERVAL_US;
 	uint64_t held[SAIS_EVDB_COUNT];
 	uint64_t total = 0, initial, gc_size = 0;
-	unsigned int gc_count = 0, day = 0, day_max;
+	unsigned int gc_count = 0, day = 0, day_max, repaired = 0;
+	char repair_failed = 0;
 	time_t now = (time_t)lws_now_secs();
 	struct lwsac *ac = NULL;
 	lws_dll2_owner_t owner;
@@ -258,7 +301,7 @@ sais_event_db_limit_cb(lws_sorted_usec_list_t *sul)
 		"SELECT uuid, state, (row_number() OVER (PARTITION BY "
 			"repo_name, ref, (ifnull(adhoc,0) != 0 OR state = ?1) "
 			"ORDER BY created DESC) = 1 AND ifnull(adhoc,0) = 0 "
-			"AND state != ?1) FROM events "
+			"AND state != ?1), created FROM events "
 		"WHERE ifnull(pruned,0) = 0 ORDER BY created DESC",
 		-1, &sm, NULL) != SQLITE_OK) {
 		lwsl_err("%s: %s\n", __func__, sqlite3_errmsg(vhd->server.pdb));
@@ -281,6 +324,7 @@ sais_event_db_limit_cb(lws_sorted_usec_list_t *sul)
 		lws_strncpy(ed->uuid, u, sizeof(ed->uuid));
 		ed->state	= sqlite3_column_int(sm, 1);
 		ed->newest	= (char)sqlite3_column_int(sm, 2);
+		ed->created	= (time_t)sqlite3_column_int64(sm, 3);
 		sais_event_db_stat(vhd, ed);
 
 		if (ed->state == SAIES_DELETED) {
@@ -290,12 +334,39 @@ sais_event_db_limit_cb(lws_sorted_usec_list_t *sul)
 			continue;
 		}
 
+		/*
+		 * Its db is gone but it isn't marked pruned, see above.  An
+		 * event's db is made with it, so if it's not new, it's lost.
+		 */
+		if (!ed->files && now - ed->created > SAIS_EVENT_DB_QUIET_SECS) {
+			int st = sais_event_db_pruned_state(ed->state);
+
+			if (!sais_event_db_mark(vhd, ed->uuid, 1, 0, st)) {
+				lwsl_notice("%s: event %s has no db, marked "
+					    "it pruned\n", __func__, ed->uuid);
+				sais_eventchange(vhd->h_ss_websrv, ed->uuid, st);
+			} else
+				repair_failed = 1;
+			repaired++;
+			continue;
+		}
+
 		total		+= ed->size;
 
 		lws_dll2_add_tail(&ed->list, &owner);
 	}
 
 	sqlite3_finalize(sm);
+
+	/*
+	 * Which is the newest on its branch was worked out with those, prune
+	 * nothing until it's worked out again without them
+	 */
+	if (repaired) {
+		if (!repair_failed)
+			next = 1 * LWS_US_PER_SEC;
+		goto bail;
+	}
 
 	initial = total;
 
@@ -348,6 +419,9 @@ sais_event_db_limit_cb(lws_sorted_usec_list_t *sul)
 		held[r] += ed->size;
 		if (r == SAIS_EVDB_PRUNED)
 			total -= ed->size;
+		if (r == SAIS_EVDB_FAILED)
+			/* something's wrong, leave the rest until next time */
+			break;
 
 	} lws_end_foreach_dll_back(p);
 

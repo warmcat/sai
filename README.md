@@ -238,6 +238,11 @@ lowered a lot, raise the limit or free the space, and it carries on at that
 rate.  When each event was pruned is kept in the events db, so restarting
 doesn't reset it.
 
+An event is marked pruned before its db is deleted, so it can't be left
+looking like it still has its details when they're gone.  An event that's
+found like that anyway, with no db files at all, is marked pruned then, which
+doesn't count towards the daily limit.
+
 What was found going wrong in a pruned event's logs is still remembered, see
 the next section.
 
