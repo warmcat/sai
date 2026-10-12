@@ -228,6 +228,16 @@ An event that is pruned before all its tasks finished, eg, one waiting on a
 platform that no longer has any builders, is cancelled as well, since its tasks
 went with its db.
 
+However far over the limit it seems to be, no more than a tenth of the event
+dbs (but at least 8) are pruned in any 24 hours; after that, sai-server warns
+that it's over the limit and leaves the rest.  Once the limit is keeping up,
+builds come in far slower than that, so it only stops pruning when something
+has gone wrong with adding up what the dbs use, rather than letting that empty
+the build history in an hour.  If the warning is right, eg, the limit was
+lowered a lot, raise the limit or free the space, and it carries on at that
+rate.  When each event was pruned is kept in the events db, so restarting
+doesn't reset it.
+
 What was found going wrong in a pruned event's logs is still remembered, see
 the next section.
 

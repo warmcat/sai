@@ -384,6 +384,14 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 				     NULL, NULL, &err);
 			if (err)
 				sqlite3_free(err);
+
+			/* when it was pruned, see s-event-db-limit.c */
+			err = NULL;
+			sqlite3_exec(vhd->server.pdb,
+				     "ALTER TABLE events ADD COLUMN pruned_at integer;",
+				     NULL, NULL, &err);
+			if (err)
+				sqlite3_free(err);
 		}
 
 		sai_sqlite3_statement(vhd->server.pdb, "CREATE UNIQUE INDEX IF NOT EXISTS idx_event_uuid ON events(uuid);", "create event index");

@@ -54,6 +54,14 @@
  * An event whose tasks hadn't all finished, eg, waiting for a platform that
  * went away, has nothing left that can run after its db is gone, so it is
  * cancelled as well as pruned.
+ *
+ * However far over the limit we think we are, no more than a tenth of the
+ * event dbs (but at least a few) are pruned in a day, then we warn and wait.
+ * Builds come in far slower than that once we're keeping up, so it only
+ * stops us when what we add up has gone wrong, as when deleted events were
+ * counted while their GC was stuck, which pruned almost everything in an
+ * hour.  When each event was pruned is kept in the events table, so it
+ * holds across restarts.
  */
 
 #include <libwebsockets.h>
@@ -69,6 +77,10 @@
 #define SAIS_EVENT_DB_LIMIT_BATCH		16
 /* an event whose db was written more recently than this may be in use */
 #define SAIS_EVENT_DB_QUIET_SECS		(60 * 60)
+/* the most of the event dbs pruned in a day, and the most that's at least */
+#define SAIS_EVENT_DB_DAY_PERCENT		10
+#define SAIS_EVENT_DB_DAY_MIN			8
+#define SAIS_EVENT_DB_DAY_SECS			(24 * 60 * 60)
 
 typedef enum {
 	SAIS_EVDB_PRUNED,
@@ -195,14 +207,15 @@ sais_event_db_prune(struct vhd *vhd, sais_evdb_t *ed, time_t now)
 		state = SAIES_CANCELLED;
 
 	if (sqlite3_prepare_v2(vhd->server.pdb, "UPDATE events SET pruned=1, "
-			       "state=? WHERE uuid=?", -1, &sm, NULL) !=
-								SQLITE_OK) {
+			       "pruned_at=?, state=? WHERE uuid=?", -1, &sm,
+			       NULL) != SQLITE_OK) {
 		lwsl_err("%s: %s\n", __func__, sqlite3_errmsg(vhd->server.pdb));
 		return SAIS_EVDB_FAILED;
 	}
 
-	sqlite3_bind_int(sm, 1, state);
-	sqlite3_bind_text(sm, 2, ed->uuid, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_int64(sm, 1, (sqlite3_int64)now);
+	sqlite3_bind_int(sm, 2, state);
+	sqlite3_bind_text(sm, 3, ed->uuid, -1, SQLITE_TRANSIENT);
 	if (sai_sqlite3_step_done(vhd->server.pdb, sm, "mark event pruned"))
 		return SAIS_EVDB_FAILED;
 
@@ -223,7 +236,7 @@ sais_event_db_limit_cb(lws_sorted_usec_list_t *sul)
 	lws_usec_t next = SAIS_EVENT_DB_LIMIT_INTERVAL_US;
 	uint64_t held[SAIS_EVDB_COUNT];
 	uint64_t total = 0, initial, gc_size = 0;
-	unsigned int gc_count = 0;
+	unsigned int gc_count = 0, day = 0, day_max;
 	time_t now = (time_t)lws_now_secs();
 	struct lwsac *ac = NULL;
 	lws_dll2_owner_t owner;
@@ -286,6 +299,22 @@ sais_event_db_limit_cb(lws_sorted_usec_list_t *sul)
 
 	initial = total;
 
+	/* how many were pruned in the last day, and how many we can */
+
+	if (sqlite3_prepare_v2(vhd->server.pdb, "SELECT count(*) FROM events "
+			       "WHERE ifnull(pruned_at,0) > ?", -1, &sm,
+			       NULL) == SQLITE_OK) {
+		sqlite3_bind_int64(sm, 1, (sqlite3_int64)(now -
+						SAIS_EVENT_DB_DAY_SECS));
+		if (sqlite3_step(sm) == SQLITE_ROW)
+			day = (unsigned int)sqlite3_column_int(sm, 0);
+		sqlite3_finalize(sm);
+	}
+
+	day_max = ((owner.count + day) * SAIS_EVENT_DB_DAY_PERCENT) / 100;
+	if (day_max < SAIS_EVENT_DB_DAY_MIN)
+		day_max = SAIS_EVENT_DB_DAY_MIN;
+
 	gc[0] = '\0';
 	if (gc_size)
 		lws_snprintf(gc, sizeof(gc), " (not counting %lluMiB of %u "
@@ -307,7 +336,8 @@ sais_event_db_limit_cb(lws_sorted_usec_list_t *sul)
 		sais_evdb_t *ed = lws_container_of(p, sais_evdb_t, list);
 
 		if (total <= vhd->event_db_limit ||
-		    counts[SAIS_EVDB_PRUNED] == SAIS_EVENT_DB_LIMIT_BATCH)
+		    counts[SAIS_EVDB_PRUNED] == SAIS_EVENT_DB_LIMIT_BATCH ||
+		    day + counts[SAIS_EVDB_PRUNED] >= day_max)
 			break;
 
 		if (!ed->size)
@@ -321,7 +351,19 @@ sais_event_db_limit_cb(lws_sorted_usec_list_t *sul)
 
 	} lws_end_foreach_dll_back(p);
 
-	if (total > vhd->event_db_limit) {
+	if (total > vhd->event_db_limit &&
+	    day + counts[SAIS_EVDB_PRUNED] >= day_max)
+		/* it may still go wrong after this, but not all at once */
+		lwsl_warn("%s: event dbs use %lluMiB, over the limit of "
+			  "%lluMiB%s, but %u were pruned in the last day, the "
+			  "most allowed of %u event dbs, so no more for now.  "
+			  "If that's right, raise the limit or free the "
+			  "space\n", __func__,
+			  (unsigned long long)(total >> 20),
+			  (unsigned long long)(vhd->event_db_limit >> 20), gc,
+			  day + counts[SAIS_EVDB_PRUNED],
+			  (unsigned int)owner.count + day);
+	else if (total > vhd->event_db_limit) {
 		if (counts[SAIS_EVDB_PRUNED] == SAIS_EVENT_DB_LIMIT_BATCH)
 			/* there's more to do, but let other things run */
 			next = 1 * LWS_US_PER_SEC;
