@@ -1419,7 +1419,7 @@ sai_pool_u64_read(const uint8_t *p);
  */
 
 /* bump when the parser finds different things, the runs are read again */
-#define SAI_PROBLEMS_PARSER_VERSION		1
+#define SAI_PROBLEMS_PARSER_VERSION		2
 
 typedef enum {
 	SAI_PROB_PHASE_CONFIG,

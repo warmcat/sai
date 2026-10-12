@@ -1,0 +1,30 @@
+#fail
+3|>saib> Starting task step 4 ===>
+1|[ 10%] Building C object lib/CMakeFiles/websockets.dir/core/context.c.o
+2|/home/agreen/jobs/abc123/src/lib/core/context.c:120:14: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ [-Wsign-compare]
+2|  120 |         if (n < len && m < len)
+2|      |               ^
+2|/home/agreen/jobs/abc123/src/lib/core/context.c:120:26: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ [-Wsign-compare]
+2|  120 |         if (n < len && m < len)
+2|      |                          ^
+2|/home/agreen/jobs/abc123/src/lib/core/context.c:200:9: error: 'LWS_X' macro redefined [-Werror,-Wmacro-redefined]
+2|  200 | #define LWS_X 2
+2|      |         ^
+2|In file included from /home/agreen/jobs/abc123/src/lib/core/context.c:25:
+2|/home/agreen/jobs/abc123/src/include/libwebsockets.h:345:9: note: previous definition is here
+2|  345 | #define LWS_X 1
+2|      |         ^
+2|In file included from /home/agreen/jobs/abc123/src/lib/core/context.c:25:
+2|/home/agreen/jobs/abc123/src/lib/core/private-lib-core.h:88:1: warning: no previous prototype for function 'lws_foo' [-Wmissing-prototypes]
+2|   88 | lws_foo(int x)
+2|      | ^
+1|[ 20%] Building C object lib/CMakeFiles/websockets.dir/core/output.c.o
+2|In file included from /home/agreen/jobs/abc123/src/lib/core/output.c:25:
+2|/home/agreen/jobs/abc123/src/lib/core/private-lib-core.h:88:1: warning: no previous prototype for function 'lws_foo' [-Wmissing-prototypes]
+2|   88 | lws_foo(int x)
+2|      | ^
+2|In file included from /home/agreen/jobs/abc123/src/lib/core/output.c:25:
+2|/home/agreen/jobs/abc123/src/lib/core/private-lib-core.h:88:1: warning: unused parameter 'x' [-Wunused-parameter]
+2|   88 | lws_foo(int x)
+2|      |             ^
+3|Build step 4 FAILED, exit code: 1

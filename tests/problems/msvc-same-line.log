@@ -1,0 +1,15 @@
+#fail
+3|>saib> Starting task step 4 ===>
+1|  main.c
+1|C:\Users\sai.sai-vm\jobs\A1476648\src\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\main.c(257,32): error C2220: the following warning is treated as an error [C:\Users\sai.sai-vm\jobs\A1476648\src\build\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\lws-api-test-http-client-redirect.vcxproj]
+1|C:\Users\sai.sai-vm\jobs\A1476648\src\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\main.c(257,32): warning C4013: 'strncasecmp' undefined; assuming extern returning int [C:\Users\sai.sai-vm\jobs\A1476648\src\build\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\lws-api-test-http-client-redirect.vcxproj]
+1|C:\Users\sai.sai-vm\jobs\A1476648\src\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\main.c(301,5): warning C4005: 'LWS_X': macro redefinition [C:\Users\sai.sai-vm\jobs\A1476648\src\build\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\lws-api-test-http-client-redirect.vcxproj]
+1|C:\Users\sai.sai-vm\jobs\A1476648\src\include\libwebsockets.h(345,9): note: see previous definition of 'LWS_X' [C:\Users\sai.sai-vm\jobs\A1476648\src\build\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\lws-api-test-http-client-redirect.vcxproj]
+1|
+1|Build FAILED.
+1|
+1|C:\Users\sai.sai-vm\jobs\A1476648\src\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\main.c(257,32): error C2220: the following warning is treated as an error [C:\Users\sai.sai-vm\jobs\A1476648\src\build\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\lws-api-test-http-client-redirect.vcxproj]
+1|C:\Users\sai.sai-vm\jobs\A1476648\src\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\main.c(257,32): warning C4013: 'strncasecmp' undefined; assuming extern returning int [C:\Users\sai.sai-vm\jobs\A1476648\src\build\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\lws-api-test-http-client-redirect.vcxproj]
+1|    1 Warning(s)
+1|    1 Error(s)
+3|Build step 4 FAILED, exit code: 1

@@ -1,0 +1,9 @@
+build error msvc minimal-examples-lowlevel/api-tests/api-test-http-client-redirect/main.c:257:32 code='C4013' subject='strncasecmp' msg=''strncasecmp' undefined; assuming extern returning int' log=3+2 count=2 tests=0/0
+  hkey='c:minimal-examples-lowlevel/api-tests/api-test-http-client-redirect/main.c|C4013|strncasecmp'
+  | C:\Users\sai.sai-vm\jobs\A1476648\src\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\main.c(257,32): error C2220: the following warning is treated as an error [C:\Users\sai.sai-vm\jobs\A1476648\src\build\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\lws-api-test-http-client-redirect.vcxproj]
+  | C:\Users\sai.sai-vm\jobs\A1476648\src\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\main.c(257,32): warning C4013: 'strncasecmp' undefined; assuming extern returning int [C:\Users\sai.sai-vm\jobs\A1476648\src\build\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\lws-api-test-http-client-redirect.vcxproj]
+build warning msvc minimal-examples-lowlevel/api-tests/api-test-http-client-redirect/main.c:301:5 code='C4005' subject='LWS_X' msg=''LWS_X': macro redefinition' log=5+2 count=1 tests=0/0
+  hkey='c:minimal-examples-lowlevel/api-tests/api-test-http-client-redirect/main.c|C4005|LWS_X'
+  | C:\Users\sai.sai-vm\jobs\A1476648\src\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\main.c(301,5): warning C4005: 'LWS_X': macro redefinition [C:\Users\sai.sai-vm\jobs\A1476648\src\build\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\lws-api-test-http-client-redirect.vcxproj]
+  | C:\Users\sai.sai-vm\jobs\A1476648\src\include\libwebsockets.h(345,9): note: see previous definition of 'LWS_X' [C:\Users\sai.sai-vm\jobs\A1476648\src\build\minimal-examples-lowlevel\api-tests\api-test-http-client-redirect\lws-api-test-http-client-redirect.vcxproj]
+passed:

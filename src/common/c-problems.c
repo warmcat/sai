@@ -48,6 +48,11 @@
  * count every attempt of each test, so one that failed and then passed is
  * known to be flaky, not just broken or fine.
  *
+ * One line of code is one problem, however many things the tools say about
+ * it: eg, MSVC's C2220 saying the warning after it is being treated as an
+ * error, or two warnings about the same expression.  What else is said about
+ * a line that we already have a problem for joins that problem.
+ *
  * A step that failed without anything we recognised still says something:
  * we keep the last lines it printed before it failed.
  */
@@ -71,6 +76,8 @@
 #define SAI_PP_PREAMBLE		6
 #define SAI_PP_PREAMBLE_LEN	240
 #define SAI_PP_TEST_HASH	256
+/* what's said about a line this soon after, is the same part of the log */
+#define SAI_PP_JOIN_GAP		4
 /* names of the tests that passed, for how often the others failed */
 #define SAI_PP_PASSED_MAX	(64 * 1024)
 
@@ -81,7 +88,7 @@ typedef enum {
 	PPS_CMAKE,	/* indented, with blank lines in it */
 	PPS_LLD,	/* ">>> " lines follow */
 	PPS_LD64,	/* indented lines follow */
-	PPS_ONE,	/* nothing follows */
+	PPS_MSVC,	/* notes follow */
 	PPS_TEST,	/* a failed test's output */
 } pp_kind_t;
 
@@ -111,6 +118,7 @@ typedef struct pp_chan {
 	pp_test_t		*test;		/* PPS_TEST: whose output */
 	char			ex[SAI_PP_EXCERPT_MAX];
 	size_t			ex_len;
+	size_t			ex_diag;	/* where the diagnostic starts in ex */
 	int			ex_lines;
 	char			want_msg;	/* it's on the next line */
 
@@ -522,11 +530,127 @@ pp_test_find(struct sai_problems_parser *pp, const char *name, int create)
 	return t;
 }
 
-/* keep a copy of the problem, or count it again if we already have it */
+/* MSVC's C2220 only says that the warning after it is treated as an error */
+
+static int
+pp_says_nothing(const sai_problem_t *p)
+{
+	return !strcmp(p->tool, "msvc") && !strcmp(p->code, "C2220");
+}
+
+/*
+ * Is it about the same line of code?  A linker's problem is the symbol it
+ * names, wherever that was referenced from, and a test's is its name.
+ */
+
+static int
+pp_same_line(const sai_problem_t *p, const sai_problem_t *s)
+{
+	return (s->phase == SAI_PROB_PHASE_CONFIG ||
+		s->phase == SAI_PROB_PHASE_BUILD) &&
+	       p->phase == s->phase && s->file[0] && s->line > 0 &&
+	       p->line == s->line && !strcmp(p->file, s->file);
+}
+
+/* is this line, of len, one of the excerpt's lines already? */
+
+static int
+pp_excerpt_has(const char *ex, const char *l, size_t len)
+{
+	while (*ex) {
+		const char *e = strchr(ex, '\n');
+		size_t n = e ? (size_t)(e - ex) : strlen(ex);
+
+		if (n == len && !memcmp(ex, l, len))
+			return 1;
+		ex += n + (e ? 1 : 0);
+	}
+
+	return 0;
+}
+
+/*
+ * Something more was said about the line of a problem we have, it's more of
+ * the same problem.  It's as bad as the worst thing said about it, and its
+ * excerpt gets what was said, from the diagnostic on, as far as there's room.
+ */
+
+static void
+pp_join(struct sai_problems_parser *pp, sai_problem_t *p,
+	const sai_problem_t *s, const char *ex, size_t ex_len, size_t diag)
+{
+	size_t el = strlen(p->excerpt), n = 0, ll;
+	const char *d, *de;
+	int lines = 0;
+	char *e;
+
+	if (!strcmp(p->code, s->code) && !strcmp(p->subject, s->subject) &&
+	    !strcmp(p->msg, s->msg))
+		p->count++;
+
+	if (s->severity > p->severity)
+		p->severity = s->severity;
+
+	if (pp_says_nothing(p) && !pp_says_nothing(s)) {
+		lws_strncpy(p->tool, s->tool, sizeof(p->tool));
+		lws_strncpy(p->code, s->code, sizeof(p->code));
+		lws_strncpy(p->subject, s->subject, sizeof(p->subject));
+		lws_strncpy(p->msg, s->msg, sizeof(p->msg));
+		p->col = s->col;
+		pp_hkey(p);
+	}
+
+	/* the include chain before the diagnostic may be another file's */
+	if (diag >= ex_len)
+		return;
+	d = ex + diag;
+	ex_len -= diag;
+
+	/* it's said the same before, eg, compiling another file */
+	de = memchr(d, '\n', ex_len);
+	if (pp_excerpt_has(p->excerpt, d, de ? (size_t)(de - d) : ex_len))
+		return;
+
+	for (ll = 0; ll < el; ll++)
+		if (p->excerpt[ll] == '\n')
+			lines++;
+
+	/* whole lines of it, while they fit */
+	while (n < ex_len && lines < SAI_PP_EXCERPT_LINES) {
+		de = memchr(d + n, '\n', ex_len - n);
+		ll = de ? (size_t)(de - (d + n)) + 1 : ex_len - n;
+		if (el + n + ll > SAI_PP_EXCERPT_MAX)
+			break;
+		n += ll;
+		lines++;
+	}
+	if (!n)
+		return;
+
+	e = lwsac_use(&pp->ac, el + n + 1, 8192);
+	if (!e)
+		return;
+	memcpy(e, p->excerpt, el);
+	memcpy(e + el, d, n);
+	e[el + n] = '\0';
+	p->excerpt = e;
+
+	/* the log lines it's from include these, if they're right after */
+	if (s->log_line >= p->log_line &&
+	    s->log_line <= p->log_line + p->log_lines + SAI_PP_JOIN_GAP &&
+	    s->log_line + s->log_lines > p->log_line + p->log_lines)
+		p->log_lines = s->log_line + s->log_lines - p->log_line;
+}
+
+/*
+ * Keep a copy of the problem, or count it again if we already have it, or
+ * join it to the one we have for the same line.  diag is where in ex the
+ * diagnostic itself starts, after any include chain.
+ */
 
 static sai_problem_t *
 pp_commit(struct sai_problems_parser *pp, sai_problem_t *s, const char *ex,
-	  size_t ex_len, int dedupe)
+	  size_t ex_len, size_t diag, int dedupe)
 {
 	sai_problem_t *p;
 	char *e;
@@ -539,6 +663,12 @@ pp_commit(struct sai_problems_parser *pp, sai_problem_t *s, const char *ex,
 	if (dedupe)
 		lws_start_foreach_dll(struct lws_dll2 *, d, pp->problems.head) {
 			p = lws_container_of(d, sai_problem_t, list);
+
+			/* it counts it again if it's the same thing */
+			if (pp_same_line(p, s)) {
+				pp_join(pp, p, s, ex, ex_len, diag);
+				return p;
+			}
 
 			if (p->phase == s->phase && p->severity == s->severity &&
 			    p->line == s->line && !strcmp(p->file, s->file) &&
@@ -621,6 +751,8 @@ pp_stanza_begin(pp_chan_t *c, pp_kind_t kind, int with_preamble)
 		for (n = 0; n < c->pre_count; n++)
 			pp_ex_add(c, c->pre[n].text, c->pre[n].lineno);
 	c->pre_count = 0;
+	/* the diagnostic is added next */
+	c->ex_diag	= c->ex_len;
 }
 
 static void
@@ -648,7 +780,7 @@ pp_stanza_end(struct sai_problems_parser *pp, pp_chan_t *c)
 			}
 		}
 	} else
-		pp_commit(pp, &c->stage, c->ex, c->ex_len, 1);
+		pp_commit(pp, &c->stage, c->ex, c->ex_len, c->ex_diag, 1);
 
 	c->kind = PPS_NONE;
 	c->test = NULL;
@@ -1533,7 +1665,7 @@ pp_test_result(struct sai_problems_parser *pp, pp_chan_t *c, const char *tool,
 		lws_strncpy(s.code, name, sizeof(s.code));
 		lws_strncpy(s.subject, name, sizeof(s.subject));
 		lws_strncpy(s.msg, status, sizeof(s.msg));
-		t->p = pp_commit(pp, &s, NULL, 0, 0);
+		t->p = pp_commit(pp, &s, NULL, 0, 0, 0);
 	}
 
 	if (!capture || !t->p)
@@ -1659,8 +1791,9 @@ pp_continues(struct sai_problems_parser *pp, pp_chan_t *c, const char *l,
 				     "undefined symbol: %s", c->stage.subject);
 		return 1;
 
-	case PPS_ONE:
-		return 0;
+	case PPS_MSVC:
+		/* "x.h(345,9): note: see previous definition of 'X'" */
+		return !!strstr(l, ": note: ");
 
 	case PPS_TEST:
 		if (pp_test_output_ends(l))
@@ -1690,6 +1823,19 @@ pp_tail_add(struct sai_problems_parser *pp, const char *l, int lineno)
 		pp->tail_count++;
 }
 
+static void
+pp_pre_add(pp_chan_t *c, const char *l, int lineno)
+{
+	if (c->pre_count == SAI_PP_PREAMBLE) {
+		memmove(&c->pre[0], &c->pre[1],
+			sizeof(c->pre[0]) * (SAI_PP_PREAMBLE - 1));
+		c->pre_count--;
+	}
+	c->pre[c->pre_count].lineno = lineno;
+	lws_strncpy(c->pre[c->pre_count].text, l, sizeof(c->pre[0].text));
+	c->pre_count++;
+}
+
 /* a line from stdout or stderr */
 
 static void
@@ -1697,12 +1843,24 @@ pp_line(struct sai_problems_parser *pp, pp_chan_t *c, const char *l,
 	int lineno)
 {
 	char name[160], st[96];
-	int r;
+	int r, n;
 
 	pp_tail_add(pp, l, lineno);
 
 	if (c->kind != PPS_NONE) {
+		/*
+		 * An include chain leads into a note about where something
+		 * was defined before, eg, or into the next diagnostic: we know
+		 * which when we see what it leads to
+		 */
+		if (c->kind == PPS_CC && pp_preamble(l)) {
+			pp_pre_add(c, l, lineno);
+			return;
+		}
 		if (pp_continues(pp, c, l, lineno)) {
+			for (n = 0; n < c->pre_count; n++)
+				pp_ex_add(c, c->pre[n].text, c->pre[n].lineno);
+			c->pre_count = 0;
 			pp_ex_add(c, l, lineno);
 			return;
 		}
@@ -1799,7 +1957,7 @@ pp_line(struct sai_problems_parser *pp, pp_chan_t *c, const char *l,
 
 	pp_stage_reset(c);
 	if (!pp_msvc(l, &c->stage)) {
-		pp_stanza_begin(c, PPS_ONE, 0);
+		pp_stanza_begin(c, PPS_MSVC, 0);
 		pp_ex_add(c, l, lineno);
 		return;
 	}
@@ -1834,15 +1992,7 @@ pp_line(struct sai_problems_parser *pp, pp_chan_t *c, const char *l,
 	}
 
 	if (pp_preamble(l)) {
-		if (c->pre_count == SAI_PP_PREAMBLE) {
-			memmove(&c->pre[0], &c->pre[1],
-				sizeof(c->pre[0]) * (SAI_PP_PREAMBLE - 1));
-			c->pre_count--;
-		}
-		c->pre[c->pre_count].lineno = lineno;
-		lws_strncpy(c->pre[c->pre_count].text, l,
-			    sizeof(c->pre[0].text));
-		c->pre_count++;
+		pp_pre_add(c, l, lineno);
 		return;
 	}
 
@@ -1961,7 +2111,7 @@ pp_unexplained(struct sai_problems_parser *pp, int step, const char *why)
 	if (step > 0)
 		lws_snprintf(s.code, sizeof(s.code), "step %d", step);
 
-	pp_commit(pp, &s, ex, exl, 1);
+	pp_commit(pp, &s, ex, exl, 0, 1);
 }
 
 /* a line on sai's own channel */

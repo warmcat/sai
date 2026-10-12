@@ -34,6 +34,17 @@ diagnostic, then its notes and the source with a caret.  The start of the
 stanza is kept with the problem, along with the file and line, the warning flag
 or error code, the first thing it quoted and its message.
 
+One line of code is one problem, however many things the tools said about it.
+Eg, MSVC's `C2220: the following warning is treated as an error` and the
+warning after it on the same line are one problem, an error, named by the
+warning; so are two warnings about the same expression, or the same line of a
+header warned about differently while compiling different files.  Each thing
+said is kept in the problem's excerpt, unless it was said the same before.
+Notes are kept with what they're about, eg, `note: previous definition is here`
+in a header, after its own include chain, or MSVC's `note: see previous
+definition of 'X'`.  This isn't done for what linkers say, where the problem is
+the symbol, nor for tests.
+
 In a failed test's output, the first sanitizer report, UBSan runtime error,
 assert or Rust panic is taken to be what went wrong.
 

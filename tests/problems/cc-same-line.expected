@@ -1,0 +1,27 @@
+build warning cc lib/core/context.c:120:14 code='-Wsign-compare' subject='int' msg='comparison of integer expressions of different signedness: ‘int’ and ‘size_t’' log=3+6 count=2 tests=0/0
+  hkey='c:lib/core/context.c|-Wsign-compare|int'
+  | /home/agreen/jobs/abc123/src/lib/core/context.c:120:14: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ [-Wsign-compare]
+  |   120 |         if (n < len && m < len)
+  |       |               ^
+  | /home/agreen/jobs/abc123/src/lib/core/context.c:120:26: warning: comparison of integer expressions of different signedness: ‘int’ and ‘size_t’ [-Wsign-compare]
+  |   120 |         if (n < len && m < len)
+  |       |                          ^
+build error cc lib/core/context.c:200:9 code='-Wmacro-redefined' subject='LWS_X' msg=''LWS_X' macro redefined' log=9+7 count=1 tests=0/0
+  hkey='c:lib/core/context.c|-Wmacro-redefined|LWS_X'
+  | /home/agreen/jobs/abc123/src/lib/core/context.c:200:9: error: 'LWS_X' macro redefined [-Werror,-Wmacro-redefined]
+  |   200 | #define LWS_X 2
+  |       |         ^
+  | In file included from /home/agreen/jobs/abc123/src/lib/core/context.c:25:
+  | /home/agreen/jobs/abc123/src/include/libwebsockets.h:345:9: note: previous definition is here
+  |   345 | #define LWS_X 1
+  |       |         ^
+build warning cc lib/core/private-lib-core.h:88:1 code='-Wmissing-prototypes' subject='lws_foo' msg='no previous prototype for function 'lws_foo'' log=16+4 count=2 tests=0/0
+  hkey='c:lib/core/private-lib-core.h|-Wmissing-prototypes|lws_foo'
+  | In file included from /home/agreen/jobs/abc123/src/lib/core/context.c:25:
+  | /home/agreen/jobs/abc123/src/lib/core/private-lib-core.h:88:1: warning: no previous prototype for function 'lws_foo' [-Wmissing-prototypes]
+  |    88 | lws_foo(int x)
+  |       | ^
+  | /home/agreen/jobs/abc123/src/lib/core/private-lib-core.h:88:1: warning: unused parameter 'x' [-Wunused-parameter]
+  |    88 | lws_foo(int x)
+  |       |             ^
+passed:
