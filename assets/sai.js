@@ -1042,21 +1042,30 @@ var age_div =   [   1,   60,   3600,   86400,   604800,   2419200,  31536000  ];
 var age_limit = [ 120, 7200, 172800, 1209600,  4838400,  63072000,         0  ];
 var age_upd   = [   5,   10,    300,    1800,     3600, 12 * 3600, 12 * 3600  ];
 
+/* which of the age units it's said in, and what it says */
+function sai_age(now, secs)
+{
+	var d = Math.abs(now - secs), n;
+
+	for (n = 0; n < age_names.length; n++)
+		if (d < age_limit[n] || age_limit[n] === 0)
+			break;
+
+	return { n: n, text: ((secs > now) ? "in " : "") +
+			     Math.ceil(d / age_div[n]) + i18n(age_names[n]) };
+}
+
 function agify(now, secs)
 {
-	var d = now - secs, n;
+	var a;
 
 	if (!secs)
 		return "";
 
-	if (secs > now)
-		d = secs - now;
+	a = sai_age(now, secs);
 
-	for (n = 0; n < age_names.length; n++)
-		if (d < age_limit[n] || age_limit[n] === 0)
-			return "<span class='age-" + n + "' ut='" + secs +
-				"'>" + ((secs > now) ? "in " : "") + Math.ceil(d / age_div[n]) +
-				i18n(age_names[n]) + "</span>";
+	return "<span class='age-" + a.n + "' ut='" + secs + "'>" + a.text +
+	       "</span>";
 }
 
 var aging_timer = null;
@@ -1075,20 +1084,22 @@ function aging()
 	for (n = 0; n < elems.length; n++)
 		list.push(elems[n]);
 
+	/*
+	 * Only what changed: there can be thousands, eg, an idle lane's runs,
+	 * and each change has the page laid out and painted again
+	 */
 	for (n = 0; n < list.length; n++) {
 		var e = list[n];
-		var secs = e.getAttribute("ut");
-		var d = Math.abs(now_ut - secs);
+		var a = sai_age(now_ut, parseInt(e.getAttribute("ut"), 10));
+		var cls = "age-" + a.n;
 
-		for (var j = 0; j < age_limit.length; j++) {
-			if (d < age_limit[j] || age_limit[j] === 0) {
-				if (age_upd[j] < next)
-					next = age_upd[j];
-				break;
-			}
-		}
+		if (age_upd[a.n] < next)
+			next = age_upd[a.n];
 
-		e.outerHTML = agify(now_ut, secs);
+		if (e.className !== cls)
+			e.className = cls;
+		if (e.textContent !== a.text)
+			e.textContent = a.text;
 	}
 
 	if (next < 5)
