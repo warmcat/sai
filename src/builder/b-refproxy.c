@@ -155,7 +155,7 @@ callback_resproxy(struct lws *wsi, enum lws_callback_reasons reason,
 
 	case LWS_CALLBACK_RAW_CLOSE:
 
-		lwsl_notice("%s: CLOSE\n", __func__);
+		lwsl_notice("%s: CLOSE %s\n", __func__, pss->cookie);
 		/*
 		 * We can close at any time regardless of what the server's
 		 * doing... delist and destroy our request
@@ -199,8 +199,11 @@ callback_resproxy(struct lws *wsi, enum lws_callback_reasons reason,
 
 		p = lws_json_simple_find((const char *)in, len,
 					 "\"cookie\":", &al);
-		if (!p)
+		if (!p) {
+			lwsl_warn("%s: resource request without a cookie, "
+				  "closing it\n", __func__);
 			return -1;
+		}
 
 		lws_strnncpy(pss->cookie, p, al, sizeof(pss->cookie));
 		lws_dll2_add_tail(&pss->list, &spm->resource_pss_list);
@@ -213,6 +216,10 @@ callback_resproxy(struct lws *wsi, enum lws_callback_reasons reason,
 			memcpy(buf + LWS_PRE, in, len);
 			n = saib_srv_queue_tx(spm->ss, buf + LWS_PRE, len, LWSSS_FLAG_SOM | LWSSS_FLAG_EOM);
 			free(buf);
+			if (n)
+				lwsl_warn("%s: can't pass resource request %s "
+					  "to sai-server, closing it\n",
+					  __func__, pss->cookie);
 			return n;
 		}
 

@@ -29,11 +29,14 @@
 typedef struct sair_resource {
 	struct lws_ss_handle		*ss;
 	void				*opaque_data;
+	char				answered; /* the builder replied */
 } sair_resource_t;
 
 static lws_ss_state_return_t
 sair_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
+	sair_resource_t *lp = (sair_resource_t *)userobj;
+
 	/*
 	 * Possibly: 1) nothing comes and we get timed out by whatever spawned
 	 * us (usually ctest), 2) we get the lease acknowledgement from
@@ -44,7 +47,9 @@ sair_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 	 * "result" being 0 means it went OK, anything else we failed.
 	 */
 
-	lwsl_hexdump_notice(buf, len);
+	lp->answered = 1;
+	lwsl_notice("%s: lease response: %.*s\n", __func__, (int)len,
+		    (const char *)buf);
 
 	return LWSSSSRET_OK;
 }
@@ -62,10 +67,10 @@ sair_lp_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	if (*len > strlen(msg))
 		*len = strlen(msg);
 
+	lwsl_notice("%s: issuing requisition %s\n", __func__, msg);
+
 	memcpy(buf, msg, *len);
 	msg[0] = '\0';
-
-	lwsl_notice("%s: issuing requisition %s\n", __func__, msg);
 
 	return LWSSSSRET_OK;
 }
@@ -87,8 +92,16 @@ sair_lp_state(void *userobj, void *sh, lws_ss_constate_t state,
 	case LWSSSCS_ALL_RETRIES_FAILED:
 	case LWSSSCS_DISCONNECTED:
 		/*
-		 * That's it for us
+		 * That's it for us.  Whatever's waiting on us needs to know
+		 * why, since we were meant to stay up holding the lease.
 		 */
+		if (lp->answered)
+			lwsl_err("%s: sai-builder closed the connection after "
+				 "answering, giving up the lease\n", __func__);
+		else
+			lwsl_err("%s: sai-builder closed the connection (%s) "
+				 "without answering the requisition, see its log "
+				 "for why\n", __func__, lws_ss_state_name(state));
 		interrupted = 1;
 		break;
 
