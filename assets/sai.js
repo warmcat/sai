@@ -2905,7 +2905,11 @@ function sai_problems_group_html(g, now_ut)
 	s += "</div>";
 
 	if (open) {
-		s += "<div class=\"prob-occs\">";
+		s += "<div class=\"prob-occs\">" +
+		     "<button type=\"button\" class=\"prob-copy\" " +
+			"data-gid=\"" + san(g.id) + "\" title=\"Copy this problem, " +
+			"where it was seen and what the logs said, as text\">" +
+			"Copy</button>";
 		for (n = 0; n < g.occ.length; n++)
 			s += sai_problems_occ_html(g, g.occ[n], now_ut);
 		if (g.more)
@@ -2933,16 +2937,18 @@ function sai_problems_html()
 	if (o.warnings)
 		c.push(o.warnings + " warning" + (o.warnings === 1 ? "" : "s"));
 
+	/* a build is one of the event's tasks, a try is one run of it */
 	s = "<div class=\"prob-hdr\">Problems" +
 	    (c.length ? " <span class=\"prob-counts\">" + c.join(", ") +
 			"</span>" : "") + "</div>" +
-	    "<div class=\"prob-status\">";
-
+	    "<div class=\"prob-status\" title=\"A build is one of the " +
+	    "event's tasks: a configuration on a platform.  A try is one run " +
+	    "of it, there's another each time it's rebuilt.\">";
 	if (o.parsed < o.builds)
 		s += o.parsed + " of " + o.builds + " builds finished";
 	else
 		s += "All " + o.builds + " builds finished";
-	s += ", " + o.clean + " of " + o.runs + " tries clean</div>";
+	s += ", " + o.clean + " of their " + o.runs + " tries were clean</div>";
 
 	if (!o.groups.length)
 		s += "<div class=\"prob-none\">" +
@@ -2986,6 +2992,59 @@ function sai_problems_want_excerpts(g)
 				uids: uids.join(",") }))
 		for (n = 0; n < uids.length; n++)
 			sai_problems.asked[uids[n]] = 1;
+}
+
+/* the group as plain text, with the excerpts we have */
+function sai_problems_text(g)
+{
+	var now_ut = Math.round(Date.now() / 1000), t, n, often, oc, ex;
+
+	often = sai_problems_often(g);
+	t = SAI_PROB_SEVS[g.sev] + " " + SAI_PROB_PHASES[g.phase] + ": " +
+	    sai_problems_where(g) + "\n";
+	for (n = 0; n < g.msgs.length; n++)
+		t += "  " + g.msgs[n] + "\n";
+	t += "  " + g.scope + (g.tcs ? " (" + g.tcs + ")" : "") +
+	     (often ? ", " + often : "") + "\n";
+	if (g.hist)
+		t += "  Also in " + g.hist.ev + " of the last " + g.hist.of +
+		     " events, since " + sai_problems_date(g.hist.first) +
+		     ", last " + sai_problems_date(g.hist.last) + "\n";
+
+	for (n = 0; n < g.occ.length; n++) {
+		oc = g.occ[n];
+		ex = sai_problems.ex[oc.uid];
+		t += "\n" + oc.cfg + " " + oc.plat +
+		     (oc.run ? " try " + (oc.run + 1) : "") +
+		     (oc.bld ? " " + oc.bld : "") +
+		     (oc.ts ? " " + sai_problems_date(oc.ts) : "") +
+		     ", log line " + oc.ll + "\n";
+		if (oc.msg && oc.msg !== g.msgs[0])
+			t += "  " + oc.msg + "\n";
+		if (typeof ex === "string")
+			t += ex.replace(/\n*$/, "\n");
+	}
+	if (g.more)
+		t += "\nand " + g.more + " more\n";
+
+	return t;
+}
+
+function sai_problems_copy(gid, btn)
+{
+	var o = sai_problems.o, n;
+
+	for (n = 0; o && n < o.groups.length; n++)
+		if (o.groups[n].id === gid) {
+			if (!navigator.clipboard)
+				return;
+			navigator.clipboard.writeText(sai_problems_text(o.groups[n])).then(function() {
+				btn.textContent = "Copied";
+			}, function() {
+				btn.textContent = "Can't copy";
+			});
+			return;
+		}
 }
 
 function sai_problems_toggle(gid)
@@ -6288,9 +6347,20 @@ window.addEventListener("load", function() {
 			return;
 		}
 
-		/* a problems group: open or close it */
+		/* a problems group: copy it, or open or close it */
+		var pcopy = e.target.closest('button.prob-copy');
+		if (pcopy) {
+			sai_problems_copy(pcopy.dataset.gid, pcopy);
+			return;
+		}
 		var phead = e.target.closest('.prob-head');
 		if (phead && phead.parentElement) {
+			var psel = window.getSelection ? window.getSelection() : null;
+
+			/* the click that ends selecting some of it isn't for us */
+			if (psel && !psel.isCollapsed &&
+			    phead.contains(psel.anchorNode))
+				return;
 			sai_problems_toggle(phead.parentElement.dataset.gid);
 			return;
 		}
