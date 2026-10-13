@@ -2830,6 +2830,17 @@ function sai_problems_often(g)
 	return s.join(", ");
 }
 
+/*
+ * Did it come and go by chance: a test that failed then passed, or one that
+ * failed only some of the times it ran, or a problem in only some of the
+ * tries of the same builds
+ */
+function sai_problems_chancy(g)
+{
+	return g.sev === 1 || (g.phase === 3 && g.att && g.fails < g.att) ||
+	       g.runs > g.hit;
+}
+
 /* html, agify() gives us markup */
 function sai_problems_hist(g, now_ut)
 {
@@ -2877,11 +2888,26 @@ function sai_problems_occ_html(g, oc, now_ut)
 function sai_problems_group_html(g, now_ut)
 {
 	var open = !!sai_problems.open[g.id], s, often = sai_problems_often(g),
-	    hist = sai_problems_hist(g, now_ut), n;
+	    hist = sai_problems_hist(g, now_ut), n, icons = [];
+
+	/* in its top left corner */
+	if (g.sev === 2)
+		icons.push("<img class=\"prob-icon\" src=\"/sai/error.svg\" " +
+			   "title=\"It's an error\" alt=\"\">");
+	if (g.sev === 0)
+		icons.push("<img class=\"prob-icon\" src=\"/sai/warn.svg\" " +
+			   "title=\"It's a warning\" alt=\"\">");
+	if (sai_problems_chancy(g))
+		icons.push("<img class=\"prob-icon\" src=\"/sai/dice.svg\" " +
+			   "title=\"It only happens some of the time\" " +
+			   "alt=\"\">");
 
 	s = "<div class=\"prob-group prob-sev" + g.sev + (open ? " open" : "") +
+	    (icons.length ? " prob-icons" + icons.length : "") +
 	    "\" data-gid=\"" + san(g.id) + "\">" +
 	    "<div class=\"prob-head\">" +
+	    (icons.length ? "<span class=\"prob-corner\">" + icons.join("") +
+			    "</span>" : "") +
 	    "<div class=\"prob-line1\">" +
 	    "<span class=\"prob-badge\">" + SAI_PROB_SEVS[g.sev] + "</span>" +
 	    "<span class=\"prob-phase\">" + SAI_PROB_PHASES[g.phase] + "</span>" +

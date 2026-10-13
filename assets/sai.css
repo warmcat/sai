@@ -2880,6 +2880,32 @@ tr.tt-row.selected td {
 	cursor: pointer;
 }
 
+/* icons in the top left corner, eg, it's an error, it happens by chance */
+.prob-icons1 .prob-head, .prob-icons2 .prob-head {
+	position: relative;
+}
+
+.prob-icons1 .prob-head {
+	padding-left: 30px;
+}
+
+.prob-icons2 .prob-head {
+	padding-left: 52px;
+}
+
+.prob-corner {
+	position: absolute;
+	top: 3px;
+	left: 4px;
+	display: flex;
+	gap: 2px;
+}
+
+img.prob-icon {
+	width: 21px;
+	height: auto;
+}
+
 button.prob-copy {
 	float: right;
 	margin: 2px 0 2px 6px;

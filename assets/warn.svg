@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="27.836639mm"
+   height="26.060844mm"
+   viewBox="0 0 27.836639 26.060844"
+   version="1.1"
+   id="svg1"
+   xml:space="preserve"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><defs
+     id="defs1"><filter
+       style="color-interpolation-filters:sRGB"
+       id="filter28"
+       x="-0.17272196"
+       y="-0.19083386"
+       width="1.3451802"
+       height="1.3800941"><feGaussianBlur
+         stdDeviation="1.0726046"
+         id="feGaussianBlur28" /></filter></defs><g
+     id="layer1"
+     transform="translate(-185.03094,-164.45308)"><path
+       style="fill:#000000;fill-opacity:1;stroke:#000000;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1;filter:url(#filter28)"
+       d="m 198.21668,168.49741 c -3.98746,6.90648 -7.19635,12.02858 -9.61131,16.64727 -0.0122,1.12813 0.62238,1.84669 1.7925,1.7925 0,0 10.06553,0 17.35599,0 1.12982,-0.30273 1.81156,-1.13822 1.44563,-2.5039 -4.44328,-7.69599 -5.32652,-9.2258 -9.29391,-16.09752 -0.44443,-0.43389 -1.27144,-0.34809 -1.6889,0.16165 z"
+       id="path27-6" /><path
+       style="fill:#ffff00;fill-opacity:1;stroke:#000000;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
+       d="m 197.08368,167.33417 c -3.98746,6.90648 -7.19635,12.02858 -9.61131,16.64727 -0.0122,1.12813 0.62238,1.84669 1.7925,1.7925 0,0 10.06553,0 17.35599,0 1.12982,-0.30273 1.81156,-1.13822 1.44563,-2.5039 -4.44328,-7.69599 -5.32652,-9.2258 -9.29391,-16.09752 -0.44443,-0.43389 -1.27144,-0.34809 -1.6889,0.16165 z"
+       id="path27" /><text
+       xml:space="preserve"
+       style="font-style:normal;font-variant:normal;font-weight:100;font-stretch:normal;font-size:17.364px;font-family:Futura-Condensed-Normal;-inkscape-font-specification:'Futura-Condensed-Normal Thin';writing-mode:lr-tb;direction:ltr;fill:#000000;fill-opacity:1;stroke:none;stroke-width:34.5407;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:none;stroke-opacity:1"
+       x="195.40425"
+       y="183.43459"
+       id="text28"><tspan
+         id="tspan28"
+         style="font-style:normal;font-variant:normal;font-weight:300;font-stretch:normal;font-family:'URW Bookman';-inkscape-font-specification:'URW Bookman Light';fill:#000000;stroke:none;stroke-width:34.5407"
+         x="195.40425"
+         y="183.43459">!</tspan></text></g></svg>

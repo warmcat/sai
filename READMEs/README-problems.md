@@ -134,6 +134,11 @@ slow anything else down.
 
 ## The problems pane
 
+Icons in the top left corner of a group say it's an error or a warning, or,
+with a dice, that it only happens some of the time: a test that failed and then
+passed, or failed in only some of the times it ran, or a problem seen in only
+some of the tries of the same builds.
+
 Clicking a group opens it: each place it was seen, with the build, try, builder
 and when, and the start of what the log said there.  Clicking one of those
 opens that task's log at the lines of the stanza.  As with the other panes, the
