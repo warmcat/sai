@@ -123,13 +123,15 @@ struct saib_opaque_spawn {
  */
 #define SAI_FREEKIB_JOB_DIR_MIN_AGE_SECS	(30u * 60u)
 /*
- * How long a job dir hold survives without being renewed.  A task whose steps
- * are still coming renews its hold at every step, so this only has to outlast
- * the gap between one step finishing and the next being offered (plus however
- * long the server takes to get around to us).  It is the backstop that stops a
- * task that died on the server side pinning its job dir forever.
+ * How long a job dir hold survives without being renewed.  sai-server is what
+ * decides how long a task may keep its job dir: it gives each step two hours
+ * (src/server/s-occupation.c), and when that runs out it fails the task and
+ * tells us to stop it and erase the job dir, which releases the hold.  This
+ * is only the backstop for a task sai-server never told us the end of, eg,
+ * because we were disconnected, so it's longer than that, and it counts in
+ * monotonic time, so a wall clock step (ntp on a VM) can't expire it early.
  */
-#define SAI_JOBDIR_HOLD_MAX_SECS		(2u * 3600u)
+#define SAI_JOBDIR_HOLD_MAX_SECS		(3u * 3600u)
 /*
  * How far the wall clock and the monotonic clock may disagree about how much
  * time has passed before we call it a step rather than drift.  ntp slews both,
@@ -551,7 +553,7 @@ saib_deletion_free_kib(unsigned int needed_kib, const char *protect_vn);
 typedef struct saib_jobdir_hold {
 	lws_dll2_t		list;
 	char			vn[16];
-	uint64_t		renewed;	/* lws_now_secs() */
+	lws_usec_t		renewed;	/* lws_now_usecs() */
 } saib_jobdir_hold_t;
 
 void

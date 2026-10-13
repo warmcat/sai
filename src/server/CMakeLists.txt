@@ -17,6 +17,7 @@ set(SRCS
 	s-problems.c
 	s-central.c
 	s-event-db-limit.c
+	s-occupation.c
 	s-ws-web.c
 	s-webops.c
 	s-resource.c

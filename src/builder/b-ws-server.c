@@ -162,7 +162,8 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 	sai_resource_t *reso;
 	sai_rebuild_t *reb;
 	sai_cancel_t *can;
-	int m;
+	char vn[16];
+	int m, running;
 
 	lws_ss_validity_confirmed(spm->ss);
 
@@ -205,32 +206,11 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 
 		can = (sai_cancel_t *)spm->a.dest;
 
-		lwsl_notice("%s: received task cancel for %s, erase %d\n", __func__, can->task_uuid, can->erase);
+		lwsl_notice("%s: received task cancel for %s, erase %d, "
+			    "resume %d\n", __func__, can->task_uuid, can->erase,
+			    can->resume);
 
-		{
-			char vn[16];
-
-			/*
-			 * Job dirs are named from the task uuid, they are not
-			 * the uuid itself... asking for the uuid deleted just
-			 * silently removed nothing.
-			 */
-
-			saib_task_jobdir_vn(vn, sizeof(vn), can->task_uuid);
-
-			/* it's not going to get any more steps */
-			saib_jobdir_release(vn);
-
-			if (can->erase) {
-#if defined(LWS_WITH_STUB)
-				if (builder.mgr_deletion &&
-				    saib_deletion_request(vn) < 0)
-					lwsl_err("%s: failed to queue deletion\n",
-						 __func__);
-#endif
-			}
-		}
-
+		running = 0;
 		lws_start_foreach_dll_safe(struct lws_dll2 *, mp, mp1,
 					   builder.sai_plat_owner.head) {
 			struct sai_plat *sp = lws_container_of(mp, struct sai_plat,
@@ -254,7 +234,15 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 						ns->user_killed = 1;
 					else
 						ns->user_cancel = 1;
+					/*
+					 * what becomes of the job dir is for
+					 * saib_task_destroy() once the step
+					 * has stopped
+					 */
+					ns->cancel_resumes = !!can->resume;
+					ns->erase_on_destroy = !!can->erase;
 					ns->term_budget = 5;
+					running++;
 
 					lws_sul_schedule(ns->builder->context, 0,
 							 &ns->sul_task_cancel,
@@ -276,6 +264,33 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 				sh->user_cancel = 1;
 			}
 		} lws_end_foreach_dll_safe(shd, shd1);
+
+		if (running)
+			break;
+
+		/*
+		 * No step of it is running, so the job dir is ours to deal with
+		 * now.  Job dirs are named from the task uuid, they are not the
+		 * uuid itself... asking for the uuid deleted just silently
+		 * removed nothing.
+		 */
+
+		saib_task_jobdir_vn(vn, sizeof(vn), can->task_uuid);
+
+		if (can->resume) {
+			/* it goes on from a later step: keep the job dir */
+			saib_jobdir_hold(vn);
+			break;
+		}
+
+		/* it's not going to get any more steps */
+		saib_jobdir_release(vn);
+
+#if defined(LWS_WITH_STUB)
+		if (can->erase && builder.mgr_deletion &&
+		    saib_deletion_request(vn) < 0)
+			lwsl_err("%s: failed to queue deletion\n", __func__);
+#endif
 		break;
 
 	case SAIB_RX_VIEWERSTATE:

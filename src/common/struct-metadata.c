@@ -235,6 +235,7 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_CARRAY	(sai_task_t, pool,		"pool"),
 	LSM_SIGNED	(sai_task_t, overran,		"overran"),
 	LSM_SIGNED	(sai_task_t, lost,		"lost"),
+	LSM_UNSIGNED	(sai_task_t, occupied_until,	"occupied_until"),
 };
 
 const lws_struct_map_t lsm_schema_json_map_task[] = {
@@ -267,6 +268,7 @@ const lws_struct_map_t lsm_task_cancel[] = {
 	LSM_CARRAY	(sai_cancel_t, task_uuid,	 "task_uuid"),
 	LSM_UNSIGNED	(sai_cancel_t, erase,		 "erase"),
 	LSM_UNSIGNED	(sai_cancel_t, killed,		 "killed"),
+	LSM_UNSIGNED	(sai_cancel_t, resume,		 "resume"),
 };
 
 /* browser -> sai-web -> server: ad-hoc build seeded from an existing task */

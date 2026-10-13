@@ -507,6 +507,9 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		lws_sul_schedule(vhd->context, 0, &vhd->sul_activity,
 				 sais_activity_cb, 1 * LWS_US_PER_SEC);
 
+		lws_sul_schedule(vhd->context, 0, &vhd->sul_occupation,
+				 sais_occupation_cb, 60 * LWS_US_PER_SEC);
+
 		if (vhd->event_db_limit)
 			lws_sul_schedule(vhd->context, 0,
 					 &vhd->sul_event_db_limit,
@@ -526,6 +529,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (vhd->vhost == sais_link_vhost)
 			sais_link_vhost = NULL;
 		lws_sul_cancel(&vhd->sul_event_db_limit);
+		lws_sul_cancel(&vhd->sul_occupation);
 		sais_problems_destroy(vhd);
 		sais_server_destroy(vhd, &vhd->server);
 		sais_idle_destroy(vhd);

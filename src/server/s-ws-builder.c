@@ -892,10 +892,16 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 		 */
 
 		build_step++;
+		/*
+		 * The builder has the task's job dir for this step, renewed
+		 * for each step it starts: see s-occupation.c
+		 */
 		lws_snprintf(q, sizeof(q),
-			     "update tasks set build_step=%d "
+			     "update tasks set build_step=%d,occupied_until=%llu "
 			     "where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
-			     build_step, esc_uuid, esc_uuid);
+			     build_step,
+			     (unsigned long long)sais_occupation_until(),
+			     esc_uuid, esc_uuid);
 		if (sai_sqlite3_statement(pdb, q, "update build_step accepted"))
 			lwsl_err("%s: failed to update build_step\n", __func__);
 

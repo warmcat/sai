@@ -322,6 +322,7 @@ struct vhd {
 	lws_sorted_usec_list_t	sul_logcache;
 	lws_sorted_usec_list_t	sul_central; /* background task allocation sul */
 	lws_sorted_usec_list_t	sul_activity; /* activity broadcast sul */
+	lws_sorted_usec_list_t	sul_occupation; /* see s-occupation.c */
 	lws_sorted_usec_list_t	sul_gc_events; /* incremental GC of deleted events */
 	char			gc_events_cursor[33]; /* last deleted event GC'd */
 	lws_sorted_usec_list_t	sul_event_db_limit; /* see s-event-db-limit.c */
@@ -676,8 +677,26 @@ sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task,
 int
 sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase, int killed);
 
+/*
+ * flags for sais_task_stop_on_builders(): the step is killed (and ends as a
+ * failure, not as cancelled), the task will go on from a later step so the
+ * builder keeps its job dir and the task stays bound to it, the builder
+ * erases the job dir once the step has stopped
+ */
+#define SAIS_STOP_KILLED	(1u << 0)
+#define SAIS_STOP_RESUME	(1u << 1)
+#define SAIS_STOP_ERASE		(1u << 2)
+
 int
-sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid, int killed);
+sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid,
+			   unsigned int flags);
+
+/* see s-occupation.c */
+
+uint64_t
+sais_occupation_until(void);
+void
+sais_occupation_cb(lws_sorted_usec_list_t *sul);
 
 sai_db_result_t
 sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_rejection);

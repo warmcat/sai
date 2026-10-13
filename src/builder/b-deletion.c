@@ -504,7 +504,9 @@ saib_clock_ages_trustworthy(void)
  * to protect a job dir of a build that is still going: a hold covers the gap.
  *
  * Holds are renewed at every step and dropped when the task finishes or fails,
- * with a generous expiry as a backstop for a task that vanished server-side.
+ * or sai-server stops it for good.  A step stopped because the task was paused
+ * or rewound keeps it, since the task goes on in the same job dir.  The expiry
+ * is only a backstop for a task sai-server never told us the end of.
  */
 
 static saib_jobdir_hold_t *
@@ -540,7 +542,7 @@ saib_jobdir_hold(const char *vn)
 		lwsl_info("%s: holding job dir %s\n", __func__, vn);
 	}
 
-	h->renewed = (uint64_t)lws_now_secs();
+	h->renewed = lws_now_usecs();
 }
 
 void
@@ -564,18 +566,17 @@ int
 saib_jobdir_is_held(const char *vn)
 {
 	saib_jobdir_hold_t *h = saib_jobdir_hold_find(vn);
-	uint64_t now;
+	lws_usec_t age;
 
 	if (!h)
 		return 0;
 
-	now = (uint64_t)lws_now_secs();
+	age = lws_now_usecs() - h->renewed;
 
-	if (now > h->renewed &&
-	    now - h->renewed > SAI_JOBDIR_HOLD_MAX_SECS) {
+	if (age > (lws_usec_t)SAI_JOBDIR_HOLD_MAX_SECS * LWS_US_PER_SEC) {
 		lwsl_notice("%s: hold on job dir %s expired after %llus\n",
 			    __func__, vn,
-			    (unsigned long long)(now - h->renewed));
+			    (unsigned long long)(age / LWS_US_PER_SEC));
 		lws_dll2_remove(&h->list);
 		free(h);
 

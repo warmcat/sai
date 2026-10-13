@@ -525,7 +525,8 @@ websrvss_ws_rx_msg(websrvss_srv_t *m, const uint8_t *buf, size_t len,
 			goto soft_error;
 
 		lwsl_ss_warn(m->ss, "SAIS_WS_WEBSRV_RX_TASKKILL: %s: received", ei->event_hash);
-		if (sais_task_stop_on_builders(m->vhd, ei->event_hash, 1))
+		if (sais_task_stop_on_builders(m->vhd, ei->event_hash,
+					       SAIS_STOP_KILLED))
 			lwsl_ss_err(m->ss, "taskkill failed");
 		break;
 

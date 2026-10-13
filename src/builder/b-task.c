@@ -1103,14 +1103,16 @@ saib_task_destroy(struct sai_nspawn *ns)
 		int last_step = ns->task->build_step ==
 					ns->task->build_step_count - 1;
 
-		if (step_ok && !last_step) {
+		if ((step_ok && !last_step) || ns->cancel_resumes) {
 			/*
 			 * More steps of this task are coming, but each step is
 			 * its own nspawn: from here until the next step is
 			 * offered there is no live nspawn pointing at the job
 			 * dir, and the deletion paths only spare dirs that
 			 * have one.  Hold it over the gap, or the next step
-			 * finds its src/ tree gone.
+			 * finds its src/ tree gone.  That includes a step we
+			 * stopped because the task was paused, or rewound to
+			 * run a step again: it goes on from there later.
 			 */
 			saib_jobdir_hold(ns->inp_vn);
 		} else {
@@ -1122,6 +1124,21 @@ saib_task_destroy(struct sai_nspawn *ns)
 			 */
 			saib_jobdir_release(ns->inp_vn);
 
+			if (ns->erase_on_destroy) {
+				/*
+				 * sai-server asked for the job dir to go, and
+				 * the step that was in it has stopped now
+				 */
+				lwsl_notice("%s: task %s stopped, requesting "
+					    "deletion of job dir %s\n", __func__,
+					    ns->task->uuid, ns->inp);
+#if defined(LWS_WITH_STUB)
+				if (builder.mgr_deletion &&
+				    saib_deletion_request(ns->inp_vn) < 0)
+					lwsl_err("%s: failed to queue deletion\n",
+						 __func__);
+#endif
+			} else
 			if (step_ok) {
 				/* Task succeeded completely, clean up the dir */
 
@@ -1504,6 +1521,10 @@ saib_sul_task_cancel(struct lws_sorted_usec_list *sul)
 	if (!ns->op || !ns->op->lsp)
 		return;
 
+	if (ns->user_killed && ns->erase_on_destroy)
+		n = lws_snprintf(s, sizeof(s), "\xe2\x96\xa0 >saib> sai-server "
+				 "stopped the build\n");
+	else
 	if (ns->user_killed)
 		n = lws_snprintf(s, sizeof(s), "\xe2\x96\xa0 >saib> Build was manually killed\n");
 	else

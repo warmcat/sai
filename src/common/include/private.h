@@ -322,6 +322,13 @@ typedef struct {
 	 * failed rather than retried forever.
 	 */
 	int				lost;
+	/*
+	 * While a builder has the task's job dir, the unix time until which it
+	 * may: set when a builder accepts each step, 0 once the task is over.
+	 * A step that has not finished by then fails the task, and the
+	 * builder is told to stop it and erase the job dir.
+	 */
+	uint64_t			occupied_until;
 } sai_task_t;
 
 struct saib_logproxy {
@@ -419,6 +426,8 @@ struct sai_nspawn {
 	uint8_t				state_changed:1;
 	uint8_t				user_cancel:1;
 	uint8_t				user_killed:1;
+	uint8_t				cancel_resumes:1; /* sai_cancel_t resume */
+	uint8_t				erase_on_destroy:1; /* sai_cancel_t erase */
 	uint8_t				reap_cb_called:1;
 	uint8_t				destroying:1;
 };
@@ -464,6 +473,11 @@ typedef struct sai_cancel {
 	char				task_uuid[65];
 	unsigned int			erase;
 	unsigned int			killed;
+	/*
+	 * The task isn't over: it will go on from a later step in the same
+	 * job dir (pause, rebuild last step), so the builder must keep it
+	 */
+	unsigned int			resume;
 } sai_cancel_t;
 
 /*
@@ -1112,13 +1126,13 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[16],
-	lsm_task[36],
+	lsm_task[37],
 	lsm_log[9],
 	lsm_artifact[9],
 	lsm_plat_list[1],
 	lsm_schema_map_plat[1],
 	lsm_task_rej[5],
-	lsm_task_cancel[3],
+	lsm_task_cancel[4],
 	lsm_schema_json_map_can[1],
 	lsm_schema_json_map_task[1],
 	lsm_schema_json_map_event[1],

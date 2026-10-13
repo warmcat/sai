@@ -260,9 +260,11 @@ sais_bind_task_to_builder(struct vhd *vhd, const char *builder_name,
 	 * Update the task by uuid, in the event-specific database
 	 */
 
+	/* a task bound to no builder occupies no builder's job dir */
 	lws_snprintf(update, sizeof(update),
-		"update tasks set builder='%s',builder_name='%s' where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
-		 esc1, esc, esc2, esc2);
+		"update tasks set builder='%s',builder_name='%s'%s where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
+		 esc1, esc, builder_name ? "" : ",occupied_until=0",
+		 esc2, esc2);
 
 	if (sqlite3_exec((sqlite3 *)e->pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
 		lwsl_err("%s: %s: %s: fail\n", __func__, update,
@@ -375,10 +377,17 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 	 * Update the task by uuid, in the event-specific database
 	 */
 
+	/*
+	 * A task that is over no longer occupies its job dir: a failed one's is
+	 * left for inspection, but that is for the builder's housekeeping
+	 */
 	lws_snprintf(update, sizeof(update),
-		"update tasks set state=%d%s%s%s where uuid='%s' and run=(select max(run) from tasks where uuid='%s')", state,
+		"update tasks set state=%d%s%s%s%s where uuid='%s' and run=(select max(run) from tasks where uuid='%s')", state,
 		esc3, esc4, state == SAIES_WAITING && started_orig == 1 ?
-						",build_step=0" : "", esc2, esc2);
+						",build_step=0" : "",
+		state == SAIES_SUCCESS || state == SAIES_FAIL ||
+		state == SAIES_CANCELLED ? ",occupied_until=0" : "",
+		esc2, esc2);
 
 	if (sqlite3_exec((sqlite3 *)e->pdb, update, NULL, NULL, NULL) != SQLITE_OK) {
 		lwsl_err("%s: %s: %s: fail\n", __func__, update,
@@ -573,7 +582,12 @@ sais_task_pause(struct vhd *vhd, const char *task_uuid)
 				     build_step, esc_uuid, esc_uuid);
 			sqlite3_exec(pdb, q, NULL, NULL, NULL);
 		}
-		sais_task_stop_on_builders(vhd, task_uuid, 0);
+		/*
+		 * If it resumes past its first step, it needs the earlier
+		 * steps' work in the builder's job dir
+		 */
+		sais_task_stop_on_builders(vhd, task_uuid,
+				build_step > 0 ? SAIS_STOP_RESUME : 0);
 	}
 
 	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
@@ -623,7 +637,8 @@ sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase, int killed)
 }
 
 int
-sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid, int killed)
+sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid,
+			   unsigned int flags)
 {
 	char event_uuid[33], builder_name[128], esc_uuid[129], q[128];
 	struct pss *pss_match = NULL;
@@ -663,10 +678,13 @@ sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid, int killed)
 	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 	/*
-	 * This frees the sqlite task from being bound to any builder
+	 * This frees the sqlite task from being bound to any builder... unless
+	 * it is going to carry on from where it is, which it can only do in
+	 * this builder's job dir
 	 */
 
-	sais_bind_task_to_builder(vhd, NULL, NULL, task_uuid);
+	if (!(flags & SAIS_STOP_RESUME))
+		sais_bind_task_to_builder(vhd, NULL, NULL, task_uuid);
 
 	sp = sais_builder_from_uuid(vhd, builder_name);
 	if (!sp)
@@ -692,8 +710,9 @@ sais_task_stop_on_builders(struct vhd *vhd, const char *task_uuid, int killed)
 	memset(can, 0, sizeof(*can));
 
 	lws_strncpy(can->task_uuid, task_uuid, sizeof(can->task_uuid));
-	can->erase = 0;
-	can->killed = (unsigned int)killed;
+	can->erase = !!(flags & SAIS_STOP_ERASE);
+	can->killed = !!(flags & SAIS_STOP_KILLED);
+	can->resume = !!(flags & SAIS_STOP_RESUME);
 
 	lws_dll2_add_tail(&can->list, &pss_match->task_cancel_owner);
 	lws_callback_on_writable(pss_match->wsi);
@@ -755,6 +774,8 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 		if (!from_rejection) {
 			/* the new run hasn't been lost to anything yet */
 			t->lost = 0;
+			/* ... nor does it have a job dir yet */
+			t->occupied_until = 0;
 			/* Reset builder bindings for the new run so it can be picked up by any suitable builder */
 			t->builder[0] = '\0';
 			t->builder_name[0] = '\0';
@@ -765,7 +786,7 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 		} else {
 			/* update the existing row if it's a rejection */
 			lws_snprintf(cmd, sizeof(cmd), 
-				"update tasks set state=%d,started=0,duration=0,build_step=0 where uuid='%s' and run=%d",
+				"update tasks set state=%d,started=0,duration=0,build_step=0,occupied_until=0 where uuid='%s' and run=%d",
 				-1, esc, t->run);
 			sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 		}
@@ -836,7 +857,7 @@ sais_task_remove_all_tries(struct vhd *vhd, const char *task_uuid)
 	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 
 	lws_snprintf(cmd, sizeof(cmd), 
-		"update tasks set state=%d,started=0,duration=0,build_step=0,lost=0,builder_name='',builder='',server_name='' where uuid='%s' and run=0",
+		"update tasks set state=%d,started=0,duration=0,build_step=0,lost=0,occupied_until=0,builder_name='',builder='',server_name='' where uuid='%s' and run=0",
 		-1, esc);
 	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 
@@ -894,7 +915,9 @@ sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 
 	lws_snprintf(cmd, sizeof(cmd),
 		     "update tasks set build_step=%d%s where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
-		     new_step, new_step == 0 ? ",builder_name='',builder=''" : "", esc, esc);
+		     new_step, new_step == 0 ?
+				",builder_name='',builder='',occupied_until=0" : "",
+		     esc, esc);
 
 	ret = sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 	if (ret != SQLITE_OK) {
@@ -913,7 +936,9 @@ sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 
 	sais_set_task_state(vhd, task_uuid, SAIES_WAITING, 0, 0);
 
-	sais_task_stop_on_builders(vhd, task_uuid, 0);
+	/* past the first step, it goes on in the builder's job dir */
+	sais_task_stop_on_builders(vhd, task_uuid,
+				   new_step > 0 ? SAIS_STOP_RESUME : 0);
 
 	lwsl_err("%s: scheduling sul_central to find a new task\n", __func__);
 	lws_sul_schedule(vhd->context, 0, &vhd->sul_central, sais_central_cb, 1);
