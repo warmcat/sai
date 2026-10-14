@@ -46,7 +46,9 @@ static const char * const default_ss_policy =
 			"\"metadata\": ["
 				"{\"url\": \"\"}"
 			"]"
-		"}}"
+		"}},"
+		/* ships our logs to the same server, see c-fleetlog.c */
+		SAI_FLEETLOG_SS_POLICY
 	"]}"
 ;
 
@@ -64,7 +66,7 @@ int main(int argc, const char **argv)
 	if ((p = lws_cmdline_option(argc, argv, "-d")))
 		logs = atoi(p);
 
-	lws_set_log_level(logs, NULL);
+	saicom_fleetlog_set_log_level(logs, NULL);
 
 	lwsl_user("Sai Virt - Copyright (C) 2019-2026 Andy Green <andy@warmcat.com>\n");
 
@@ -133,6 +135,17 @@ int main(int argc, const char **argv)
 
 	saiv_servers_start(&virt);
 
+	/* our logs go to the first server, see c-fleetlog.c */
+	if (virt.sai_server_owner.head) {
+		saiv_server_t *srv = lws_container_of(virt.sai_server_owner.head,
+						      saiv_server_t, list);
+
+		if (saicom_fleetlog_start(virt.context, "sai-virt",
+					  virt.hostname, srv->url,
+					  virt.link_key))
+			lwsl_warn("%s: our logs won't be shipped\n", __func__);
+	}
+
 	lws_sul_schedule(virt.context, 0, &virt.sul_watch, saiv_watch_cb,
 			 SAIV_WATCH_INTERVAL_US);
 
@@ -140,6 +153,7 @@ int main(int argc, const char **argv)
 		;
 
 	lws_sul_cancel(&virt.sul_watch);
+	saicom_fleetlog_stop();
 
 	lws_start_foreach_dll_safe(struct lws_dll2 *, d, d1, virt.sai_server_owner.head) {
 		saiv_server_t *s = lws_container_of(d, saiv_server_t, list);

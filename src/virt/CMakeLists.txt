@@ -12,6 +12,7 @@ if (VIRT_LIB_PATH)
 		v-http-api.c
 		v-conf.c
 		../common/c-utils.c
+		../common/c-fleetlog.c
 		../common/struct-metadata.c
 	)
 

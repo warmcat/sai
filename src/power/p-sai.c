@@ -54,7 +54,7 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-#if defined(__linux__)
+#if !defined(WIN32)
 #include <unistd.h>
 #endif
 
@@ -125,6 +125,10 @@ static const char * const default_ss_policy =
 				"{\"url\": \"\"}"
 			"]"
 		"}},"
+		/*
+		 * Ships our logs to the same server, see c-fleetlog.c
+		 */
+		SAI_FLEETLOG_SS_POLICY ","
 		/*
 		 * The ws server that builders on the local subnet
 		 * connect to for help with power operations
@@ -359,6 +363,23 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 
 		} lws_end_foreach_dll_safe(mp, mp1);
 
+		/* our logs go to the first server, see c-fleetlog.c */
+		if (power.sai_server_owner.head) {
+			saip_server_t *sps = lws_container_of(
+					power.sai_server_owner.head,
+					struct saip_server, list);
+			char host[65];
+
+			if (gethostname(host, sizeof(host) - 1))
+				lws_strncpy(host, "sai-power", sizeof(host));
+			host[sizeof(host) - 1] = '\0';
+
+			if (saicom_fleetlog_start(cx, "sai-power", host,
+						  sps->url, power.link_key))
+				lwsl_warn("%s: our logs won't be shipped\n",
+					  __func__);
+		}
+
 		/* Start PCON monitoring */
 		saip_pcon_start_check();
 
@@ -456,11 +477,11 @@ int main(int argc, const char **argv)
 	if (lws_cmdline_option(argc, argv, "-D")) {
 		if (lws_daemonize("/var/run/sai_power.pid"))
 			return 1;
-		lws_set_log_level(logs, lwsl_emit_syslog);
+		saicom_fleetlog_set_log_level(logs, lwsl_emit_syslog);
 	} else
 #endif
 
-	lws_set_log_level(logs, NULL);
+	saicom_fleetlog_set_log_level(logs, NULL);
 
 	lwsl_user("Sai Power - "
 		  "Copyright (C) 2019-2025 Andy Green <andy@warmcat.com>\n");
@@ -621,6 +642,7 @@ bail:
 
 	saip_config_destroy(&power);
 
+	saicom_fleetlog_stop();
 	lws_context_destroy(power.context);
 
 	return 0;

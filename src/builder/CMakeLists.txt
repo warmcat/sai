@@ -21,6 +21,7 @@ set(SRCS
 	b-whoami.c
 	../common/c-utils.c
 	../common/c-pool.c
+	../common/c-fleetlog.c
 	../common/struct-metadata.c
 )
 

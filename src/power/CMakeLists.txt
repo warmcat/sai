@@ -10,6 +10,7 @@ set(SRCS
 	p-ws-server.c
 	p-tasmota-monitor.c
 	../common/c-utils.c
+	../common/c-fleetlog.c
 	../common/struct-metadata.c
 	../common/c-sqlite3.c
 )

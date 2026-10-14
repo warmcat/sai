@@ -190,6 +190,10 @@ static const char * const default_ss_policy =
 			"]"
 		"}},"
 		/*
+		 * Ships our logs to the same server, see c-fleetlog.c
+		 */
+		SAI_FLEETLOG_SS_POLICY ","
+		/*
 		 * Used to connect to sai-power to ask for power-off
 		 */
 		"{\"sai_power\": {"
@@ -506,6 +510,22 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 			return 1;
 		}
 
+		/*
+		 * Our logs go to the first server we know, on a link of their
+		 * own, see c-fleetlog.c.  By now a sai-virt VM knows its name.
+		 */
+		if (builder.sai_plat_server_owner.head) {
+			struct sai_plat_server *spm = lws_container_of(
+					builder.sai_plat_server_owner.head,
+					struct sai_plat_server, list);
+
+			if (saicom_fleetlog_start(builder.context,
+						  "sai-builder", builder.host,
+						  spm->url, builder.link_key))
+				lwsl_warn("%s: our logs won't be shipped\n",
+					  __func__);
+		}
+
 		lwsl_notice("====== EXECUTING SAIB_POWER_INIT ======\n");
 		saib_power_init();
 		lwsl_notice("====== EXECUTED SAIB_POWER_INIT ======\n");
@@ -784,7 +804,7 @@ saib_app_run(int argc, const char **argv)
 	if (lws_cmdline_option(argc, argv, "-D")) {
 		if (lws_daemonize("/var/run/sai_builder.pid"))
 			return 1;
-		lws_set_log_level(logs, lwsl_emit_syslog);
+		saicom_fleetlog_set_log_level(logs, lwsl_emit_syslog);
 	} else
 #endif
 	{
@@ -802,7 +822,7 @@ saib_app_run(int argc, const char **argv)
 		signal(SIGFPE, win_crash_handler);
 #endif
 
-		lws_set_log_level(logs, NULL);
+		saicom_fleetlog_set_log_level(logs, NULL);
 	}
 
 #if defined(WIN32)
@@ -829,7 +849,8 @@ saib_app_run(int argc, const char **argv)
 			lws_snprintf(logpath, sizeof(logpath), "%s\\sai-builder-service.log", stg_config_dir);
 			log_fd = open(logpath, O_CREAT | O_TRUNC | O_WRONLY, 0600);
 			if (log_fd >= 0)
-				lws_set_log_level(logs, lwsl_emit_file);
+				saicom_fleetlog_set_log_level(logs,
+							      lwsl_emit_file);
 		}
 
 		config_dir = stg_config_dir;
@@ -1002,6 +1023,7 @@ saib_app_run(int argc, const char **argv)
 	saib_config_destroy(&builder);
 
 	saib_power_shutdown();
+	saicom_fleetlog_stop();
 
 	lws_context_destroy(builder.context);
 
