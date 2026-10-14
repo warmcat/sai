@@ -54,7 +54,9 @@ saib_get_free_ram_kib(void)
 #elif defined(__APPLE__)
 	mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
 	vm_statistics64_data_t vm_stats;
+	unsigned int total = saib_get_total_ram_kib();
 	vm_size_t page_size;
+	uint64_t pages, kib;
 
 	if (host_statistics64(mach_host_self(), HOST_VM_INFO64,
 			      (host_info64_t)&vm_stats, &count) != KERN_SUCCESS)
@@ -62,7 +64,20 @@ saib_get_free_ram_kib(void)
 
 	host_page_size(mach_host_self(), &page_size);
 
-	return (unsigned int)((uint64_t)vm_stats.free_count * page_size / 1024);
+	/*
+	 * macOS keeps very few pages actually free, it fills the rest with
+	 * file cache it drops as soon as anything wants the memory.  So
+	 * free_count alone is only a sliver of what's available, eg, 87MiB
+	 * on an Intel Mac Mini builder, and a budget made from it let the
+	 * builder run one step at a time.  Like Linux's MemAvailable, count what can
+	 * be had without swapping: free, speculative (read ahead), purgeable,
+	 * and file-backed pages.
+	 */
+	pages = (uint64_t)vm_stats.free_count + vm_stats.speculative_count +
+		vm_stats.purgeable_count + vm_stats.external_page_count;
+	kib = pages * page_size / 1024;
+
+	return (unsigned int)(total && kib > total ? total : kib);
 #elif defined(_WIN32)
 	MEMORYSTATUSEX statex;
 	statex.dwLength = sizeof(statex);
