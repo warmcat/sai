@@ -763,9 +763,27 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 	ret = lws_struct_sq3_deserialize(pdb, cmd, "run desc", lsm_schema_sq3_map_task, &o, &ac, 0, 1);
 	if (ret >= 0 && o.head) {
 		sai_task_t *t = lws_container_of(o.head, sai_task_t, list);
-		
-		if (!from_rejection)
+
+		if (!from_rejection) {
+			/*
+			 * The run being replaced has ended, if it hadn't
+			 * already: say so, rather than leave it looking like
+			 * it's still going, and holding a job dir.  Its log
+			 * just stops wherever it got to, and lost says if
+			 * that was its builder disconnecting.
+			 */
+			lws_snprintf(cmd, sizeof(cmd),
+				"update tasks set state=%d,occupied_until=0 "
+				"where uuid='%s' and run=%d and state not in "
+				"(%d,%d,%d,%d,%d)", SAIES_CANCELLED, esc, t->run,
+				SAIES_SUCCESS, SAIES_FAIL, SAIES_CANCELLED,
+				SAIES_DELETED, SAIES_YIELDED);
+			if (sqlite3_exec(pdb, cmd, NULL, NULL, NULL) != SQLITE_OK)
+				lwsl_err("%s: unable to end run %d of %s\n",
+					 __func__, t->run, task_uuid);
+
 			t->run++;
+		}
 			
 		t->started = 0;
 		t->duration = 0;

@@ -34,6 +34,11 @@
  * too long: the task fails, and its builder is told to kill the step and, once
  * it has stopped, erase the job dir.  A paused task is left alone, it is
  * waiting for someone to resume or cancel it.
+ *
+ * A run that was replaced by a newer one, eg, retried after its builder
+ * disconnected, has ended too, and is marked cancelled when that happens.
+ * Older servers left such runs looking like they were still going, so the
+ * check also ends any of those it finds.
  */
 
 #include <libwebsockets.h>
@@ -57,7 +62,7 @@ sais_occupation_until(void)
 	return (uint64_t)lws_now_secs() + SAIS_JOBDIR_OCCUPY_SECS;
 }
 
-/* collect the event's tasks whose occupation ran out */
+/* end superseded runs, and collect tasks whose occupation ran out */
 
 static void
 sais_occupation_event(struct vhd *vhd, const char *event_uuid,
@@ -71,6 +76,14 @@ sais_occupation_event(struct vhd *vhd, const char *event_uuid,
 				     vhd->sqlite3_path_lhs, event_uuid, 0,
 				     &pdb))
 		return;
+
+	lws_snprintf(q, sizeof(q),
+		     "UPDATE tasks SET state=%d, occupied_until=0 WHERE "
+		     "state NOT IN (%d, %d, %d, %d, %d) AND run < (SELECT "
+		     "max(run) FROM tasks t2 WHERE t2.uuid = tasks.uuid)",
+		     SAIES_CANCELLED, SAIES_SUCCESS, SAIES_FAIL,
+		     SAIES_CANCELLED, SAIES_DELETED, SAIES_YIELDED);
+	sai_sqlite3_statement(pdb, q, "end superseded runs");
 
 	lws_snprintf(q, sizeof(q),
 		     "SELECT uuid, builder_name, build_step, occupied_until "
