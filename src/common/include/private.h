@@ -745,6 +745,21 @@ typedef struct sai_plat_server {
 	uint8_t				inside_msg;
 	uint8_t				tx_corrupted;
 
+	/*
+	 * About the current connection to the server, for the [DISCON] log
+	 * line when it ends: why we dropped it, if we did, see
+	 * saib_spm_drop_why(), and how it was going until then
+	 */
+	char				drop_why[256];
+	lws_usec_t			us_connected;
+	lws_usec_t			us_last_rx;
+	lws_usec_t			us_last_tx;
+	uint64_t			rx_bytes;
+	uint64_t			tx_bytes;
+	uint32_t			rx_msgs;
+	uint32_t			tx_msgs;
+	uint32_t			illegal_som; /* tx'd SOM inside a msg */
+
 	struct lejp_ctx			ctx;
 	lws_struct_args_t		a;
 } sai_plat_server_t;

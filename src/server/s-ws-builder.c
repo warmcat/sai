@@ -678,6 +678,108 @@ sais_task_lost_by_builder(struct vhd *vhd, const char *task_uuid,
 }
 
 /*
+ * Note why we are dropping this connection, ahead of returning nonzero from
+ * its callback: the first reason given is the one that matters, the later
+ * ones are only the error making its way back up.
+ */
+void
+sais_pss_drop_why(struct pss *pss, const char *fmt, ...)
+{
+	va_list ap;
+
+	if (pss->drop_why[0])
+		return;
+
+	va_start(ap, fmt);
+	vsnprintf(pss->drop_why, sizeof(pss->drop_why), fmt, ap);
+	va_end(ap);
+}
+
+static void
+sais_ago(char *buf, size_t len, lws_usec_t now, lws_usec_t then)
+{
+	if (!then) {
+		lws_strncpy(buf, "never", len);
+		return;
+	}
+
+	lws_snprintf(buf, len, "%llds ago",
+		     (long long)((now - then) / LWS_US_PER_SEC));
+}
+
+/*
+ * Builders dropping their connection is costly, every task they had going
+ * is lost, so when any connection on the builder protocol closes, log all we
+ * know about why on one line tagged [DISCON], to grep for in a busy log.
+ *
+ * Called from LWS_CALLBACK_CLOSED before the builder's platforms are removed,
+ * so we can still tell which builder it was.
+ */
+void
+sais_conn_closed_log(struct vhd *vhd, struct pss *pss, struct lws *wsi)
+{
+	char kind[128], cause[96], up[24], rx[24], wr[24];
+	lws_usec_t now = lws_now_usecs();
+	const char *host = NULL;
+	int plats = 0;
+
+	lws_start_foreach_dll(struct lws_dll2 *, p,
+			      vhd->server.builder_owner.head) {
+		sai_plat_t *sp = lws_container_of(p, sai_plat_t, sai_plat_list);
+
+		if (sp->wsi == wsi) {
+			if (!host)
+				host = sp->name;
+			plats++;
+		}
+	} lws_end_foreach_dll(p);
+
+	if (pss->is_power)
+		lws_strncpy(kind, "power link", sizeof(kind));
+	else if (pss->pool)
+		lws_strncpy(kind, "pool sync", sizeof(kind));
+	else if (pss->pdb_artifact || pss->blob_artifact ||
+		 pss->artifact_length)
+		lws_strncpy(kind, "artifact upload", sizeof(kind));
+	else if (host) {
+		/* platform names are host.platform */
+		const char *dot = strchr(host, '.');
+
+		lws_snprintf(kind, sizeof(kind), "builder link %.*s (%d plat%s)",
+			     dot ? (int)(dot - host) : (int)strlen(host), host,
+			     plats, plats == 1 ? "" : "s");
+	} else if (pss->builder_host[0])
+		/*
+		 * Its plats are on a newer link from the same host, eg, an
+		 * ephemeral VM respawned with the same name, or a builder that
+		 * reconnected before we noticed this link was dead
+		 */
+		lws_snprintf(kind, sizeof(kind), "builder link %s (plats taken "
+			     "over by a newer link)", pss->builder_host);
+	else
+		lws_strncpy(kind, pss->link_authed ? "builder link, no plats" :
+				  "unauthenticated link", sizeof(kind));
+
+	/* eg, "peer sent ws close, status 1001", or "timed out, ..." */
+	lws_wsi_close_cause(wsi, cause, sizeof(cause));
+
+	lws_snprintf(up, sizeof(up), "%llds", pss->us_established ?
+		     (long long)((now - pss->us_established) /
+					 LWS_US_PER_SEC) : 0ll);
+	sais_ago(rx, sizeof(rx), now, pss->us_last_rx);
+	sais_ago(wr, sizeof(wr), now, pss->us_last_writeable);
+
+	lwsl_notice("[DISCON] %s from %s: up %s, last rx %s (%u msgs, %llu "
+		    "bytes), last writeable %s (%u), %s tx held back; we "
+		    "dropped it: %s; lws: %s\n", kind,
+		    pss->peer_ip[0] ? pss->peer_ip : "?", up, rx, pss->rx_msgs,
+		    (unsigned long long)pss->rx_bytes, wr, pss->writeables,
+		    lws_partial_buffered(wsi) ? "some" : "no",
+		    pss->drop_why[0] ? pss->drop_why : "no",
+		    cause[0] ? cause : "?");
+}
+
+/*
  * Called from the builder protocol LWS_CALLBACK_CLOSED handler
  */
 void
@@ -1214,6 +1316,11 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 			lwsl_err("%s: rx JSON decode failed '%s', %d, %s, %s, %d\n",
 				    __func__, lejp_error_to_string(m), m,
 				    pss->ctx.path, pss->ctx.buf, pss->ctx.npos);
+			sais_pss_drop_why(pss, "rx JSON decode failed: '%s' "
+				"(%d) at path '%s', schema %d, in a %d byte "
+				"%s fragment", lejp_error_to_string(m), m,
+				pss->ctx.path, pss->a.top_schema_index, (int)bl,
+				(ss_flags & LWSSS_FLAG_SOM) ? "first" : "later");
 			lwsac_free(&pss->a.ac);
 			return 1;
 		}
@@ -1256,6 +1363,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 						SAIS_LOADREPORT_REASSEMBLY_MAX)) {
 					lwsl_err("%s: loadreport reassembly over cap / OOM\n",
 						 __func__);
+					sais_pss_drop_why(pss, "loadreport "
+						"reassembly over cap / OOM");
 					return -1;
 				}
 			}
@@ -1267,6 +1376,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 		if (!pss->a.dest) {
 			lwsac_free(&pss->a.ac);
 			lwsl_err("%s: json decode didn't make an object\n", __func__);
+			sais_pss_drop_why(pss, "rx JSON made no object, "
+					  "schema %d", pss->a.top_schema_index);
 			return 1;
 		}
 
@@ -1447,6 +1558,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				if (dot) {
 					char host[128];
 					lws_strnncpy(host, build->name, dot - build->name, sizeof(host));
+					lws_strncpy(pss->builder_host, host,
+						    sizeof(pss->builder_host));
 					sais_set_builder_power_state(vhd, host, 0, 0);
 				}
 			} lws_end_foreach_dll(pb);
@@ -1463,8 +1576,12 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				sp = lws_container_of(p, sai_plat_t, sai_plat_list);
 				if (sp->wsi == pss->wsi) {
 					/* This platform belongs to the connection that sent the message */
-					if (sais_allocate_task(vhd, pss, sp, sp->platform) < 0)
+					if (sais_allocate_task(vhd, pss, sp, sp->platform) < 0) {
+						sais_pss_drop_why(pss,
+							"allocating a task to "
+							"%s failed", sp->name);
 						goto bail;
+					}
 				}
 			} lws_end_foreach_dll(p);
 			/*
@@ -1554,8 +1671,13 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				  __func__, sp->name, rej->reason, rej->task_uuid,
 				  sp->avail_slots, sp->avail_mem_kib, sp->avail_sto_kib);
 
-			if (sais_process_rej(vhd, pss, sp, rej))
+			if (sais_process_rej(vhd, pss, sp, rej)) {
+				sais_pss_drop_why(pss, "processing %s's task "
+						  "%s update (reason %d) failed",
+						  sp->name, rej->task_uuid,
+						  rej->reason);
 				goto bail;
+			}
 
 			lwsac_free(&pss->a.ac);
 			break;
@@ -1569,8 +1691,10 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 			n = sais_pool_hello(vhd, pss,
 					    (sai_pool_hello_t *)pss->a.dest);
 			lwsac_free(&pss->a.ac);
-			if (n)
+			if (n) {
+				sais_pss_drop_why(pss, "pool hello refused");
 				return -1;
+			}
 
 			return sais_pool_rx(vhd, pss, buf + bl - (unsigned int)m,
 					    (size_t)m);
@@ -1630,6 +1754,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					SAIS_LOADREPORT_REASSEMBLY_MAX)) {
 				lwsl_err("%s: loadreport reassembly over cap / OOM\n",
 					 __func__);
+				sais_pss_drop_why(pss, "loadreport reassembly "
+						  "over cap / OOM");
 				return -1;
 			}
 
@@ -1674,6 +1800,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					lwsl_wsi_err(pss->wsi,
 						"artifact upload with invalid "
 						"task_uuid");
+					sais_pss_drop_why(pss, "artifact upload "
+						"with invalid task_uuid");
 					lwsac_free(&pss->a.ac);
 
 					return -1;
@@ -1709,6 +1837,9 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				if (n < 0 || !o.head) {
 					sai_event_db_close(&vhd->sqlite3_cache, &pss->pdb_artifact);
 					lwsl_notice("%s: no task of that id\n", __func__);
+					sais_pss_drop_why(pss, "artifact upload "
+						"for unknown task %s",
+						ap->task_uuid);
 					lwsac_free(&pss->a.ac);
 					return -1;
 				}
@@ -1847,6 +1978,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 
 				lwsl_notice("%s: blob upload finished\n", __func__);
 				pss->bulk_binary_data = 0;
+				sais_pss_drop_why(pss, "artifact upload "
+						  "finished, as planned");
 
 				ap = (sai_artifact_t *)pss->a.dest;
 
@@ -2076,6 +2209,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 	return 0;
 
 afail:
+	/* if nothing more specific was said */
+	sais_pss_drop_why(pss, "artifact upload failed");
 	lwsac_free(&ac);
 	lwsac_free(&pss->a.ac);
 	sai_event_db_close(&vhd->sqlite3_cache, &pss->pdb_artifact);
@@ -2305,6 +2440,8 @@ send_json:
 	if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
 			(enum lws_write_protocol)flags) < 0) {
 		lwsl_err("%s: lws_write failed for task allocation\n", __func__);
+		sais_pss_drop_why(pss, "lws_write of %d failed",
+				  (int)lws_ptr_diff(p, start));
 		return -1;
 	}
 

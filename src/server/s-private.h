@@ -212,6 +212,24 @@ struct pss {
 
 	char			peer_ip[48];
 	char			last_power_report[8192];
+	/*
+	 * Why we decided to drop the connection, if we did: see
+	 * sais_pss_drop_why().  With the times and counts below, it's what the
+	 * [DISCON] log line says when the connection closes.
+	 */
+	char			drop_why[256];
+	/*
+	 * The builder host whose plats came on this link, so we can still say
+	 * which it was if a newer link from the same host took them over
+	 */
+	char			builder_host[128];
+
+	lws_usec_t		us_established;
+	lws_usec_t		us_last_rx;
+	lws_usec_t		us_last_writeable;
+	uint64_t		rx_bytes;
+	uint32_t		rx_msgs;
+	uint32_t		writeables;
 
 	int			task_index;
 	int			log_cache_index;
@@ -706,6 +724,12 @@ sais_task_remove_all_tries(struct vhd *vhd, const char *task_uuid);
 
 sai_db_result_t
 sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid);
+
+void
+sais_pss_drop_why(struct pss *pss, const char *fmt, ...) LWS_FORMAT(2);
+
+void
+sais_conn_closed_log(struct vhd *vhd, struct pss *pss, struct lws *wsi);
 
 int
 sais_power_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf,

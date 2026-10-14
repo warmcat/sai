@@ -119,6 +119,8 @@ sais_link_auth_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl,
 	n = lejp_parse(&pss->auth_ctx, buf, (int)bl);
 	if (n < 0 && n != LEJP_CONTINUE) {
 		lwsl_notice("%s: link auth JSON invalid, dropping\n", __func__);
+		sais_pss_drop_why(pss, "link auth JSON invalid: %s",
+				  lejp_error_to_string(n));
 		return -1;
 	}
 
@@ -128,6 +130,7 @@ sais_link_auth_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl,
 		if (ss_flags & LWSSS_FLAG_EOM) {
 			lwsl_notice("%s: link auth incomplete at EOM, dropping\n",
 				  __func__);
+			sais_pss_drop_why(pss, "link auth incomplete at EOM");
 			return -1;
 		}
 
@@ -138,6 +141,7 @@ sais_link_auth_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl,
 
 	if (!pss->auth_secret_ok) {
 		lwsl_notice("%s: link secret mismatch, dropping\n", __func__);
+		sais_pss_drop_why(pss, "link secret mismatch");
 		return -1;
 	}
 
@@ -748,6 +752,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (!strcmp((char *)start, "/builder")) {
 			lwsl_info("%s: ESTABLISHED: builder\n", __func__);
 			pss->wsi = wsi;
+			pss->us_established = lws_now_usecs();
 
 			lws_get_peer_simple(wsi, pss->peer_ip, sizeof(pss->peer_ip));
 
@@ -775,6 +780,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (!strcmp((char *)start, "/power")) {
 			lwsl_notice("%s: ESTABLISHED: power connection\n", __func__);
 			pss->is_power = 1;
+			pss->us_established = lws_now_usecs();
 			lws_dll2_add_head(&pss->same, &vhd->sai_powers);
 			sais_platforms_with_tasks_pending(vhd);
 			break;
@@ -803,20 +809,9 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		lws_buflist_destroy_all_segments(&pss->power_rx_cache);
 		lws_buflist_destroy_all_segments(&pss->onward_reassembly);
 
-		{
-			const unsigned char *cp = lws_get_close_payload(wsi);
-			int clen = lws_get_close_length(wsi);
+		/* before the builder's platforms go, so we can say who */
+		sais_conn_closed_log(vhd, pss, wsi);
 
-			/*
-			 * The payload starts with the 16-bit close code, any
-			 * reason text follows it
-			 */
-			if (clen > 2)
-				lwsl_wsi_info(wsi, "CLOSED builder conn (reason: %.*s)",
-					      clen - 2, cp + 2);
-			else
-				lwsl_wsi_info(wsi, "CLOSED builder conn");
-		}
 		sais_pool_session_destroy(pss);
 
 		/* remove pss from vhd->builders (active connection list) */
@@ -854,6 +849,11 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		lws_validity_confirmed(wsi);
 
+		pss->us_last_rx = lws_now_usecs();
+		pss->rx_bytes += len;
+		if (ssf & LWSSS_FLAG_EOM)
+			pss->rx_msgs++;
+
 		/*
 		 * A ws client sent us something... it could be a builder or
 		 * it could be sai-power. We can tell which by the `is_power`
@@ -873,6 +873,8 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			if (sais_power_rx(vhd, pss, in, len, ssf)) {
 				lwsl_err("%s: sais_power_rx returned error, dropping connection\n",
 					 __func__);
+				sais_pss_drop_why(pss, "power message rx "
+						  "failed");
 				return -1;
 			}
 			break;
@@ -886,6 +888,10 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		if (sais_ws_json_rx_builder(vhd, pss, in, len, ssf)) {
 			lwsl_err("%s: sais_ws_json_rx_builder returned error, dropping connection\n", __func__);
+			/* if nothing more specific was said */
+			sais_pss_drop_why(pss, "handling rx from it failed "
+					  "(schema %d, %d bytes)",
+					  pss->a.top_schema_index, (int)len);
 			return -1;
 		}
 
@@ -906,12 +912,22 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			break;
 		}
 
-		if (pss->is_power || pss->stay_owner.head)
-			return sais_power_tx(vhd, pss, buf, sizeof(buf));
+		pss->us_last_writeable = lws_now_usecs();
+		pss->writeables++;
+
+		if (pss->is_power || pss->stay_owner.head) {
+			if (sais_power_tx(vhd, pss, buf, sizeof(buf))) {
+				sais_pss_drop_why(pss, "power tx failed");
+				return -1;
+			}
+			break;
+		}
 
 		int ret = sais_ws_json_tx_builder(vhd, pss, buf, sizeof(buf));
 		if (ret != 0) {
 			lwsl_err("%s: sais_ws_json_tx_builder returned %d, dropping connection\n", __func__, ret);
+			/* if nothing more specific was said */
+			sais_pss_drop_why(pss, "tx to it failed (%d)", ret);
 		}
 		return ret;
 
@@ -923,6 +939,9 @@ passthru:
 	int dummy_ret = lws_callback_http_dummy(wsi, reason, user, in, len);
 	if (dummy_ret != 0 && reason != LWS_CALLBACK_CLOSED && reason != LWS_CALLBACK_WSI_DESTROY) {
 		lwsl_err("%s: dummy returned %d for reason %d, dropping connection\n", __func__, dummy_ret, reason);
+		if (pss)
+			sais_pss_drop_why(pss, "lws http dummy refused "
+					  "reason %d", reason);
 	}
 	return dummy_ret;
 }

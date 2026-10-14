@@ -95,6 +95,10 @@ saib_srv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len,
 	if (lws_buflist2_append_segment(&spm->bl_to_srv, (uint8_t *)buf - sizeof(int),
 					 len + sizeof(int)) < 0) {
 		lwsl_err("%s: failed to append\n", __func__);
+		saib_spm_drop_why(spm, "couldn't queue %d bytes for the "
+				  "server, %llu already queued", (int)len,
+				  (unsigned long long)
+				  lws_buflist2_total_len(&spm->bl_to_srv));
 		spm->tx_corrupted = 1; /* Mark the stream as permanently corrupted */
 		return -1;
 	}
@@ -135,6 +139,9 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 			lwsl_notice("TRAP: lws_struct_json_serialize returned ERROR\n");
 			{
 				struct sai_plat_server *spm = (struct sai_plat_server *)lws_ss_to_user_object(h);
+
+				saib_spm_drop_why(spm, "serializing a message "
+						  "for the server failed");
 				spm->tx_corrupted = 1;
 			}
 			return -1;
@@ -154,6 +161,65 @@ saib_srv_queue_json_fragments_helper(struct lws_ss_handle *h,
 	return 0;
 }
 
+/*
+ * Note why we are dropping our connection to the server: the first reason
+ * given is the one that matters, the later ones are only the error making its
+ * way back up
+ */
+void
+saib_spm_drop_why(struct sai_plat_server *spm, const char *fmt, ...)
+{
+	va_list ap;
+
+	if (spm->drop_why[0])
+		return;
+
+	va_start(ap, fmt);
+	vsnprintf(spm->drop_why, sizeof(spm->drop_why), fmt, ap);
+	va_end(ap);
+}
+
+static void
+saib_ago(char *buf, size_t len, lws_usec_t now, lws_usec_t then)
+{
+	if (!then) {
+		lws_strncpy(buf, "never", len);
+		return;
+	}
+
+	lws_snprintf(buf, len, "%llds ago",
+		     (long long)((now - then) / LWS_US_PER_SEC));
+}
+
+/*
+ * Losing the connection to the server loses every task we had going from it,
+ * so log all we know about why on one line tagged [DISCON], to grep for
+ */
+static void
+saib_spm_disconnected_log(struct sai_plat_server *spm)
+{
+	char cause[96], up[24], rx[24], tx[24];
+	lws_usec_t now = lws_now_usecs();
+
+	lws_ss_close_cause(spm->ss, cause, sizeof(cause));
+
+	lws_snprintf(up, sizeof(up), "%llds", spm->us_connected ?
+		     (long long)((now - spm->us_connected) /
+					 LWS_US_PER_SEC) : 0ll);
+	saib_ago(rx, sizeof(rx), now, spm->us_last_rx);
+	saib_ago(tx, sizeof(tx), now, spm->us_last_tx);
+
+	lwsl_notice("[DISCON] server link %s: up %s, last rx %s (%u msgs, %llu "
+		    "bytes), last tx %s (%u msgs, %llu bytes), %llu bytes "
+		    "queued to send, %u illegal SOMs; we dropped it: %s; lws: "
+		    "%s\n", spm->url ? spm->url : "?", up, rx, spm->rx_msgs,
+		    (unsigned long long)spm->rx_bytes, tx, spm->tx_msgs,
+		    (unsigned long long)spm->tx_bytes,
+		    (unsigned long long)lws_buflist2_total_len(&spm->bl_to_srv),
+		    spm->illegal_som, spm->drop_why[0] ? spm->drop_why : "no",
+		    cause[0] ? cause : "?");
+}
+
 static lws_ss_state_return_t
 saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 {
@@ -166,6 +232,11 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 	int m, running;
 
 	lws_ss_validity_confirmed(spm->ss);
+
+	spm->us_last_rx = lws_now_usecs();
+	spm->rx_bytes += len;
+	if (flags & LWSSS_FLAG_EOM)
+		spm->rx_msgs++;
 
 	if (flags & LWSSS_FLAG_SOM) {
 		memset(&spm->a, 0, sizeof(spm->a));
@@ -185,8 +256,15 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 		lwsl_hexdump_err(in, len);
 		lwsl_err("%s: builder rx JSON decode failed '%s'\n",
 			    __func__, lejp_error_to_string(m));
+		saib_spm_drop_why(spm, "rx JSON decode failed: '%s' (%d) at "
+				  "path '%s', schema %d, in a %d byte %s "
+				  "fragment", lejp_error_to_string(m), m,
+				  spm->ctx.path, spm->a.top_schema_index,
+				  (int)len, (flags & LWSSS_FLAG_SOM) ?
+						"first" : "later");
 		lwsac_free(&spm->a.ac);
-		return m;
+		/* not the lejp error: to us those are other ss returns */
+		return LWSSSSRET_DISCONNECT_ME;
 	}
 
 	if (!spm->a.dest) {
@@ -477,8 +555,14 @@ saib_m_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf, size_t *len,
 	*len = used;
 	*flags = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
 
+	spm->us_last_tx = lws_now_usecs();
+	spm->tx_bytes += *len;
+	if (*flags & LWSSS_FLAG_EOM)
+		spm->tx_msgs++;
+
 	if (*flags & LWSSS_FLAG_SOM) {
 		if (spm->inside_msg) {
+			spm->illegal_som++;
 			lwsl_err("%s: ILLEGAL SOM! Interrupted previous message starting with: %s\n",
 				 __func__, spm->last_msg_start);
 			lwsl_hexdump_err(buf, *len);
@@ -818,6 +902,13 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 	case LWSSSCS_CONNECTED:
 		lwsl_ss_user(spm->ss, "CONNECTED");
 
+		/* a new connection, nothing to say about it yet */
+		spm->drop_why[0] = '\0';
+		spm->us_connected = lws_now_usecs();
+		spm->us_last_rx = spm->us_last_tx = 0;
+		spm->rx_bytes = spm->tx_bytes = 0;
+		spm->rx_msgs = spm->tx_msgs = spm->illegal_som = 0;
+
 		/* Reset corruption flags and discard broken buflist on reconnect */
 		spm->tx_corrupted = 0;
 		spm->inside_msg = 0;
@@ -851,15 +942,20 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 			if (saib_srv_queue_tx(spm->ss, abuf + LWS_PRE, al,
 					      LWSSS_FLAG_SOM |
-					      LWSSS_FLAG_EOM))
+					      LWSSS_FLAG_EOM)) {
+				saib_spm_drop_why(spm, "queuing link auth "
+						  "failed");
 				return -1;
+			}
 		}
 
 		if (saib_srv_queue_json_fragments_helper(spm->ss,
 				lsm_schema_map_plat,
 				LWS_ARRAY_SIZE(lsm_schema_map_plat),
-				&builder.sai_plat_owner))
+				&builder.sai_plat_owner)) {
+			saib_spm_drop_why(spm, "queuing our platforms failed");
 			return -1;
+		}
 
 		{
 			sai_active_shells_t ash;
@@ -892,6 +988,7 @@ saib_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		 */
 
 		lwsl_ss_user(spm->ss, "DISCONNECTED");
+		saib_spm_disconnected_log(spm);
 		lws_sul_cancel(&spm->sul_load_report);
 		lws_dll2_foreach_safe(&builder.sai_plat_owner, spm,
 				      cleanup_on_ss_disconnect);

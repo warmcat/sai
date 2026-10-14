@@ -456,6 +456,9 @@ saib_create_listen_uds(struct lws_context *context, struct saib_logproxy *lp, st
 
 int
 saib_srv_queue_tx(struct lws_ss_handle *h, void *buf, size_t len, unsigned int ss_flags);
+void
+saib_spm_drop_why(struct sai_plat_server *spm, const char *fmt, ...)
+	LWS_FORMAT(2);
 
 /*
  * Queue a log chunk for a task that has no nspawn (yet, or ever): the task-
