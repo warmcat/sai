@@ -327,33 +327,54 @@ is_lhex8(const char *s)
 static int
 saiw_fleetlog_allowed(struct vhd *vhd, struct lws *wsi)
 {
+	const char *want = vhd->fleetlog_service ? vhd->fleetlog_service :
+						   SAIW_FLEETLOG_SERVICE_DEF;
 	char state[8], sub[128], service[64];
-	int n;
+	int n, st;
+
+	/*
+	 * Say why we refuse: the reason is decided in the front end, and
+	 * without this, telling them apart means guessing
+	 */
 
 	n = saiw_login_hdr(wsi, LWS_LOGIN_HDR_STATE ":", state, sizeof(state));
-	if (n != 1 || state[0] < '0' || state[0] > '9')
+	if (n != 1 || state[0] < '0' || state[0] > '9') {
+		lwsl_wsi_notice(wsi, "fleet log query refused: no trustworthy "
+				"%s (missing, more than one, or not from the "
+				"front end's unix socket)", LWS_LOGIN_HDR_STATE);
 		return 0;
-
-	if (atoi(state) != LWS_LOGIN_STATE_GLOBAL_ADMIN) {
-		if (atoi(state) < LWS_LOGIN_STATE_USER)
-			return 0;
-
-		/* no service stamped, eg an older lws-login: refuse */
-		if (saiw_login_hdr(wsi, LWS_LOGIN_HDR_SERVICE ":", service,
-				   sizeof(service)) <= 0 ||
-		    strcmp(service, vhd->fleetlog_service ?
-				    vhd->fleetlog_service :
-				    SAIW_FLEETLOG_SERVICE_DEF)) {
-			lwsl_wsi_notice(wsi, "fleet log query refused: judged "
-					"for another grant");
-			return 0;
-		}
 	}
+	st = state[0] - '0';
 
 	if (saiw_login_hdr(wsi, LWS_LOGIN_HDR_SUB ":", sub, sizeof(sub)) <= 0)
 		lws_strncpy(sub, "?", sizeof(sub));
 
-	lwsl_wsi_notice(wsi, "fleet log query by %s", sub);
+	if (st != LWS_LOGIN_STATE_GLOBAL_ADMIN) {
+		if (st < LWS_LOGIN_STATE_USER) {
+			lwsl_wsi_notice(wsi, "fleet log query by '%s' refused: "
+					"state %d, not a user of the grant",
+					sub, st);
+			return 0;
+		}
+
+		/* no service stamped, eg an older lws-login: refuse */
+		n = saiw_login_hdr(wsi, LWS_LOGIN_HDR_SERVICE ":", service,
+				   sizeof(service));
+		if (n <= 0) {
+			lwsl_wsi_notice(wsi, "fleet log query by '%s' refused: "
+					"state %d, but no trustworthy %s",
+					sub, st, LWS_LOGIN_HDR_SERVICE);
+			return 0;
+		}
+		if (strcmp(service, want)) {
+			lwsl_wsi_notice(wsi, "fleet log query by '%s' refused: "
+					"state %d is for grant '%s', not '%s'",
+					sub, st, service, want);
+			return 0;
+		}
+	}
+
+	lwsl_wsi_notice(wsi, "fleet log query by '%s', state %d", sub, st);
 
 	return 1;
 }
