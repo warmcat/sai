@@ -383,13 +383,18 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
  * only place that survives is the task's log.
  *
  * The log column holds base64 the browser decodes, and the timestamps are the
- * builder's monotonic clock, so borrow the newest one we have for this run of
- * the task rather than inventing a value from our own unrelated clock.
+ * builder's monotonic clock, in us, which the browser shows relative to the
+ * run's first row.  We can't read the builder's clock, but we know on our own
+ * when the run's first step was accepted, its started time, and the builder's
+ * first row came from the start of that step.  So we place what we say that
+ * long after its first row, eg, a step we give up on after 2h shows at +7200s,
+ * not next to the step's last output.  It's only as good as the seconds
+ * started has, so never put it before the newest row we already have.
  *
- * Only this run's: the browser times a run's log from its first row, and an
- * earlier run may have been on another builder, or the same sai-virt VM name
- * booted afresh, whose monotonic clock has nothing to do with this run's.  If
- * this run has no rows yet, eg, our note at the top of a retry, leave it 0:
+ * Only this run's rows: the browser times a run's log from its first row, and
+ * an earlier run may have been on another builder, or the same sai-virt VM
+ * name booted afresh, whose monotonic clock has nothing to do with this run's.
+ * If this run has no rows yet, eg, our note at the top of a retry, leave it 0:
  * the browser then takes its time base from the builder's first row instead.
  * Paging is by uid, so that's safe.
  */
@@ -398,7 +403,7 @@ int
 sais_task_logf(struct vhd *vhd, const char *task_uuid, const char *fmt, ...)
 {
 	char text[512], esc[132], q[320], event_uuid[33];
-	uint64_t ts = 0;
+	uint64_t ts = 0, first = 0, started = 0, now;
 	sqlite3 *pdb = NULL;
 	sai_log_t log;
 	va_list ap;
@@ -431,12 +436,34 @@ sais_task_logf(struct vhd *vhd, const char *task_uuid, const char *fmt, ...)
 			     "where task_uuid='%s' and run=(select max(run) "
 			     "from tasks where uuid='%s')", esc, esc);
 		sqlite3_exec(pdb, q, sai_sql3_get_uint64_cb, &ts, NULL);
+
+		/* our own rows of 0 aren't on the builder's clock */
+		lws_snprintf(q, sizeof(q),
+			     "select coalesce(min(timestamp), 0) from logs "
+			     "where task_uuid='%s' and timestamp != 0 and "
+			     "run=(select max(run) from tasks where uuid='%s')",
+			     esc, esc);
+		sqlite3_exec(pdb, q, sai_sql3_get_uint64_cb, &first, NULL);
+
+		lws_snprintf(q, sizeof(q),
+			     "select coalesce(started, 0) from tasks where "
+			     "uuid='%s' order by run desc limit 1", esc);
+		sqlite3_exec(pdb, q, sai_sql3_get_uint64_cb, &started, NULL);
+
 		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 	}
 
+	if (ts)
+		ts++;
+
+	now = (uint64_t)lws_now_secs();
+	if (first && started && now > started &&
+	    first + (now - started) * LWS_US_PER_SEC > ts)
+		ts = first + (now - started) * LWS_US_PER_SEC;
+
 	memset(&log, 0, sizeof(log));
 	lws_strncpy(log.task_uuid, task_uuid, sizeof(log.task_uuid));
-	log.timestamp	= ts ? ts + 1 : 0;
+	log.timestamp	= ts;
 	log.channel	= 3;
 	log.len		= (size_t)n;
 
