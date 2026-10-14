@@ -57,7 +57,9 @@ typedef enum {
 	SHMUT_RSS,
 	SHMUT_RSS_SAI,
 	SHMUT_RSS_JSON,
-	SHMUT_RSS_JSON_SAI
+	SHMUT_RSS_JSON_SAI,
+	SHMUT_LOGS,
+	SHMUT_LOGS_SAI
 } sai_http_murl_t;
 
 static const char * const well_known[] = {
@@ -70,7 +72,9 @@ static const char * const well_known[] = {
 	"/rss.xml", /* public RSS 2.0 feed of recent events, see w-rss.c */
 	"/sai/rss.xml",
 	"/rss.json", /* the same feed as JSON */
-	"/sai/rss.json"
+	"/sai/rss.json",
+	"/logs", /* fleet logs query, see w-fleetlog.c */
+	"/sai/logs"
 };
 
 /*
@@ -214,18 +218,8 @@ saiw_count_admin_hdr_cb(const char *name, int nlen, void *opaque)
 }
 
 static int
-saiw_admin_header_trusted(struct lws *wsi)
+saiw_peer_on_uds(struct lws *wsi)
 {
-	int count = 0;
-
-	if (lws_hdr_custom_name_foreach(wsi, saiw_count_admin_hdr_cb,
-					&count) || count > 1) {
-		lwsl_wsi_notice(wsi, "%d x-lws-login-admin headers, "
-				 "ignoring them", count);
-
-		return 0;
-	}
-
 #if defined(SO_PEERCRED)
 	{
 		/*
@@ -240,7 +234,7 @@ saiw_admin_header_trusted(struct lws *wsi)
 		if (lws_get_socket_fd(wsi) < 0 ||
 		    getsockopt(lws_get_socket_fd(wsi), SOL_SOCKET,
 			       SO_PEERCRED, cred, &cl)) {
-			lwsl_wsi_notice(wsi, "x-lws-login-admin ignored: peer "
+			lwsl_wsi_notice(wsi, "x-lws-login-* ignored: peer "
 					 "is not on the unix socket");
 
 			return 0;
@@ -249,6 +243,60 @@ saiw_admin_header_trusted(struct lws *wsi)
 #endif
 
 	return 1;
+}
+
+static int
+saiw_admin_header_trusted(struct lws *wsi)
+{
+	int count = 0;
+
+	if (lws_hdr_custom_name_foreach(wsi, saiw_count_admin_hdr_cb,
+					&count) || count > 1) {
+		lwsl_wsi_notice(wsi, "%d x-lws-login-admin headers, "
+				 "ignoring them", count);
+
+		return 0;
+	}
+
+	return saiw_peer_on_uds(wsi);
+}
+
+typedef struct {
+	const char	*name;
+	int		nlen;
+	int		count;
+} saiw_hdr_count_t;
+
+static void
+saiw_count_hdr_cb(const char *name, int nlen, void *opaque)
+{
+	saiw_hdr_count_t *c = (saiw_hdr_count_t *)opaque;
+
+	if (nlen == c->nlen && !strncmp(name, c->name, (size_t)nlen))
+		c->count++;
+}
+
+/*
+ * Copy one of the x-lws-login-* headers into buf, if we can trust that the
+ * lws-login interceptor put it there, the same way as for x-lws-login-admin
+ * above: exactly one of it, on the unix socket from the front-end.  name
+ * includes the ':'.  Returns the length copied, or <= 0 if none or untrusted.
+ */
+
+int
+saiw_login_hdr(struct lws *wsi, const char *name, char *buf, int len)
+{
+	saiw_hdr_count_t c;
+
+	c.name = name;
+	c.nlen = (int)strlen(name);
+	c.count = 0;
+
+	if (lws_hdr_custom_name_foreach(wsi, saiw_count_hdr_cb, &c) ||
+	    c.count != 1 || !saiw_peer_on_uds(wsi))
+		return -1;
+
+	return lws_hdr_custom_copy(wsi, buf, len, name, c.nlen);
 }
 
 static int
@@ -293,6 +341,11 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			lwsl_err("%s: database pvo required\n", __func__);
 			return -1;
 		}
+
+		/* the grant fleet log queries must be judged by, see w-fleetlog.c */
+		if (lws_pvo_get_str(in, "fleetlog-service",
+				    &vhd->fleetlog_service))
+			vhd->fleetlog_service = NULL;
 
 		/*
 		 * Where to find sai-server's control link... the same
@@ -449,6 +502,10 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		saiw_problems_destroy(vhd);
 		saiw_event_db_close_all_now(vhd);
 		lws_struct_sq3_close(&vhd->pdb);
+		if (vhd->pdb_fleetlog) {
+			sqlite3_close(vhd->pdb_fleetlog);
+			vhd->pdb_fleetlog = NULL;
+		}
 		saiw_visible_destroy(vhd);
 		goto passthru;
 
@@ -574,6 +631,16 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			resp = r;
 			goto http_resp;
 
+		case SHMUT_LOGS:
+		case SHMUT_LOGS_SAI:
+			r = saiw_fleetlog_http(vhd, pss, wsi);
+			if (r < 0)
+				goto bail;
+			if (!r)
+				return 0;
+			resp = r;
+			goto http_resp;
+
 		default:
 			lwsl_notice("%s: DEFAULT!!!\n", __func__);
 			return 0;
@@ -593,6 +660,9 @@ http_resp:
 
 		if (pss && pss->rss_state)
 			return saiw_rss_writeable(pss, wsi);
+
+		if (pss && pss->fleetlog_sending)
+			return saiw_fleetlog_writeable(pss, wsi);
 
 		if (!pss || !pss->blob_artifact)
 			break;
@@ -627,6 +697,7 @@ http_resp:
 
 		saiw_close_artifact(pss);
 		saiw_rss_close(pss);
+		saiw_fleetlog_close(pss);
 		break;
 
 	case LWS_CALLBACK_HTTP_DROP_PROTOCOL:
@@ -634,6 +705,7 @@ http_resp:
 
 		saiw_close_artifact(pss);
 		saiw_rss_close(pss);
+		saiw_fleetlog_close(pss);
 		break;
 
 	/*

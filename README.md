@@ -269,6 +269,16 @@ It's in the problems pane on the right of the tasks pane, where each one can be
 opened to see where it was seen and go to that place in the log.  See
 [READMEs/README-problems.md](READMEs/README-problems.md).
 
+## Fleet logs
+
+sai-server keeps the log lines of itself and of every builder, sai-power and
+sai-virt that connects to it, in UTC order, for a couple of weeks.  They can be
+queried at `/sai/logs` on sai-web, by a build's job dir name or a time window,
+by global admins and accounts holding the fleet log grant.
+That brings the logs of ephemeral VMs, gone with the VM otherwise, and of
+everything a build went through, into one place.  See
+[READMEs/README-logs.md](READMEs/README-logs.md).
+
 ## Showing only some projects on a sai-web vhost ("projects")
 
 By default a sai-web vhost shows every project sai-server has built.  The

@@ -7,6 +7,7 @@ set(SRCS
 	w-comms.c
 	w-artifact.c
 	w-rss.c
+	w-fleetlog.c
 	w-ws-server.c
 	w-ws-browser.c
 	w-findings.c

@@ -162,6 +162,10 @@ struct pss {	struct vhd		*vhd;
 	uint8_t			rss_json:1;
 	uint8_t			rss_ka:1;
 
+	/* a fleet log query's answer on its way, see w-fleetlog.c */
+	struct lws_buflist	*fleetlog_tx;
+	uint8_t			fleetlog_sending;
+
 	lws_dll2_owner_t	logs_owner;
 	lws_sorted_usec_list_t	sul_logcache;
 	lws_sorted_usec_list_t	sul_overview;
@@ -257,6 +261,10 @@ struct vhd {
 	struct lwsac			*ac_visible;
 
 	lws_dll2_owner_t		problems_cache; /* see w-problems.c */
+
+	/* fleet logs, see w-fleetlog.c */
+	sqlite3				*pdb_fleetlog; /* read-only */
+	const char			*fleetlog_service; /* pvo, the grant */
 };
 
 /* nonzero if a "projects" pvo limits the projects this vhost shows */
@@ -381,6 +389,22 @@ saiw_rss_writeable(struct pss *pss, struct lws *wsi);
 
 void
 saiw_rss_close(struct pss *pss);
+
+/* w-fleetlog.c */
+
+int
+saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi);
+
+int
+saiw_fleetlog_writeable(struct pss *pss, struct lws *wsi);
+
+void
+saiw_fleetlog_close(struct pss *pss);
+
+/* w-comms.c */
+
+int
+saiw_login_hdr(struct lws *wsi, const char *name, char *buf, int len);
 
 int
 saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss);

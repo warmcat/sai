@@ -93,6 +93,13 @@
 			#
 			#"projects":		"libwebsockets, sai",
 
+			# Optional: the grant lws-login must have judged a
+			# fleet log query at [/sai]/logs by, the "service-name"
+			# of the front-end's /sai/logs mount, default "sai-logs".
+			# See READMEs/README-logs.md
+			#
+			#"fleetlog-service":	"sai-logs",
+
 			# sai-web does NO auth of its own: no JWK, no JWT
 			# validation, no grant logic.  It learns the login
 			# state from the x-lws-login-* headers the lws-login
