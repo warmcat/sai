@@ -89,6 +89,9 @@ int main(int argc, const char **argv)
 	memset(&info, 0, sizeof(info));
 	lws_cmdline_option_handle_builtin(argc, argv, &info);
 
+	/* our log lines also go to the fleet logs, see s-fleetlog.c */
+	saicom_fleetlog_hook_current(NULL);
+
 	lwsl_user("Sai Server - Copyright (C) 2019-2026 Andy Green <andy@warmcat.com>\n");
 
 	if ((p = lws_cmdline_option(argc, argv, "-c")))

@@ -13,6 +13,7 @@ set(SRCS
 	s-task-helpers.c
 	s-idle.c
 	s-pool.c
+	s-fleetlog.c
 	s-findings.c
 	s-problems.c
 	s-central.c
@@ -24,6 +25,7 @@ set(SRCS
 	s-watcher.c
 	../common/c-utils.c
 	../common/c-pool.c
+	../common/c-fleetlog.c
 	../common/c-conf.c
 	../common/c-sqlite3.c
 	../common/c-problems.c

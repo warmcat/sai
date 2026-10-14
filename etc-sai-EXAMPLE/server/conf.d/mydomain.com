@@ -69,6 +69,13 @@
 			# in README.md
 			#
 			# "event-db-limit-mb":	"20000",
+			#
+			# Optional: how many days of the fleet logs, the log
+			# lines of sai-server and every daemon that ships them
+			# here, to keep in ...-fleetlog.sqlite3, default 14.
+			# See READMEs/README-logs.md
+			#
+			# "fleetlog-retention-days":	"14",
                         #
                         # the push hook notification script creates a JSON
                         # object and signs it with a secret... "notification-

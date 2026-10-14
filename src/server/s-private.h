@@ -248,6 +248,11 @@ struct pss {
 	uint64_t		artifact_offset;
 	uint64_t		artifact_length;
 
+	/* a fleet log connection, see s-fleetlog.c */
+	uint64_t		fleetlog_ack_seq; /* 0, or the ack to send */
+	size_t			fleetlog_msg_len;
+	char			fleetlog_ack_inst[17];
+
 	unsigned int		spa_failed:1;
 	unsigned int		subsequent:1; /* for individual JSON */
 	unsigned int		dry:1;
@@ -257,6 +262,8 @@ struct pss {
 	unsigned int		announced:1;
 	unsigned int		bulk_binary_data:1;
 	unsigned int		is_power:1;
+	unsigned int		is_fleetlog:1;
+	unsigned int		fleetlog_parsed:1;
 	unsigned int		link_authed:1;
 	unsigned int		auth_secret_ok:1;
 
@@ -365,6 +372,13 @@ struct vhd {
 	/* pools, see s-pool.c */
 	lws_dll2_owner_t	pool_dbs; /* sais_pool_db_t, open pool dbs */
 	lws_dll2_owner_t	pool_conns; /* pss of pool sync connections */
+
+	/* fleet logs, see s-fleetlog.c */
+	sqlite3			*pdb_fleetlog;
+	lws_dll2_owner_t	fleetlog_conns; /* pss of fleet log connections */
+	lws_dll2_owner_t	fleetlog_srcs; /* sais_fleetlog_src_t, MRU first */
+	lws_sorted_usec_list_t	sul_fleetlog_expire;
+	uint64_t		fleetlog_retention_us;
 
 	/* idle tasks, see s-idle.c */
 	lws_dll2_owner_t	idle_budgets; /* sais_idle_budget_t */
@@ -752,3 +766,22 @@ sais_metrics_db_prune(struct vhd *vhd, const char *key);
 
 int
 sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
+
+/* s-fleetlog.c */
+
+int
+sais_fleetlog_init(struct vhd *vhd,
+		   const struct lws_protocol_vhost_options *pvo);
+
+void
+sais_fleetlog_destroy(struct vhd *vhd);
+
+int
+sais_fleetlog_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t len,
+		 unsigned int ss_flags);
+
+int
+sais_fleetlog_tx(struct vhd *vhd, struct pss *pss);
+
+void
+sais_fleetlog_closed(struct vhd *vhd, struct pss *pss);
