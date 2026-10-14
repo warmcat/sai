@@ -952,6 +952,17 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *sp,
 	}
 
 	/*
+	 * It told us it's going to power off: a task given to it now is
+	 * lost with it, at whatever step it got to.  It tells us again if it
+	 * changes its mind.
+	 */
+	if (sp->powering_down) {
+		lwsl_wsi_info(pss->wsi, "not offering %s a task: it's powering "
+			      "down", sp->name);
+		return 1;
+	}
+
+	/*
 	 * Look for a task for this platform, on any event that needs building
 	 */
 

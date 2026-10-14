@@ -147,7 +147,8 @@ sais_link_auth_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl,
 
 	pss->link_authed = 1;
 	lwsl_notice("%s: peer authenticated on %s\n", __func__,
-		    pss->is_power ? "/power" : "/builder");
+		    pss->is_power ? "/power" :
+			(pss->is_fleetlog ? "/fleetlog" : "/builder"));
 
 	return 0;
 }

@@ -1513,6 +1513,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					live_sp->online				= 1;
 					live_sp->avail_mem_kib			= (unsigned int)-1;
 					live_sp->avail_sto_kib			= (unsigned int)-1;
+					live_sp->powering_down			= build->powering_down;
 					sais_plat_busy(live_sp, 0);
 				} else {
 					/* New builder, create a deep-copied, malloc'd object */
@@ -1539,6 +1540,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					live_sp->windows			= build->windows;
 					live_sp->avail_mem_kib			= (unsigned int)-1;
 					live_sp->avail_sto_kib			= (unsigned int)-1;
+					live_sp->powering_down			= build->powering_down;
 					live_sp->wsi				= pss->wsi;
 					live_sp->cx				= lws_get_context(pss->wsi);
 					live_sp->vhd				= vhd;
