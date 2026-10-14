@@ -168,8 +168,13 @@ int main(int argc, const char **argv)
 
 		lws_start_foreach_dll_safe(struct lws_dll2 *, v, v1, p->vm_owner.head) {
 			saiv_vm_t *vm = lws_container_of(v, saiv_vm_t, list);
-			if (virt.ops)
-				virt.ops->destroy(&virt, vm);
+
+			/*
+			 * Leave the VM running: we're usually exiting to be
+			 * restarted, eg, to update us, and its builder may be
+			 * in the middle of a task.  The sai-virt after us
+			 * carries on with it, see ops_libvirt_init().
+			 */
 			lws_dll2_remove(v);
 			lws_sul_cancel(&vm->sul_timeout);
 			lws_sul_cancel(&vm->sul_destroy);

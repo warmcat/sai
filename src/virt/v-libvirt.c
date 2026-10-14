@@ -162,10 +162,11 @@ saiv_libvirt_log_disk_sources(const char *xml)
 
 /*
  * Is this a domain name we would generate, ie, "sai-vm-<plat name>-<n>"?
+ * If so, return the platform, and its index in *idx.
  */
 
-static int
-saiv_libvirt_name_is_ours(struct sai_virt *virt, const char *name)
+static saiv_plat_t *
+saiv_libvirt_name_is_ours(struct sai_virt *virt, const char *name, int *idx)
 {
 	char pfx[96];
 	size_t n;
@@ -181,9 +182,52 @@ saiv_libvirt_name_is_ours(struct sai_virt *virt, const char *name)
 
 		for (q = name + n; *q >= '0' && *q <= '9'; q++)
 			;
-		if (!*q)
-			return 1;
+		if (!*q && q - (name + n) < 6) {
+			*idx = atoi(name + n);
+			return vp;
+		}
 	} lws_end_foreach_dll(d);
+
+	return NULL;
+}
+
+/*
+ * A VM of ours left running by the sai-virt before us, eg, it was restarted
+ * to update it, or it crashed.  Its builder may well be in the middle of a
+ * task: destroying the VM would lose it.  Its name says which of our
+ * platforms it's for and its index, so we can carry on with it as if we had
+ * spawned it.  It may still be booting, so it gets as long to contact us as
+ * a VM we just spawned; after that, its builder polling /stay keeps it alive
+ * like any other.
+ */
+
+static int
+saiv_libvirt_adopt(struct sai_virt *virt, saiv_plat_t *vp, const char *name,
+		   int idx)
+{
+	saiv_vm_t *vm;
+
+	lws_start_foreach_dll(struct lws_dll2 *, d, vp->vm_owner.head) {
+		vm = lws_container_of(d, saiv_vm_t, list);
+		if (vm->vm_index == idx)
+			return 1; /* can't happen: we just started */
+	} lws_end_foreach_dll(d);
+
+	vm = malloc(sizeof(*vm));
+	if (!vm)
+		return 1;
+
+	memset(vm, 0, sizeof(*vm));
+	vm->plat = vp;
+	vm->vm_index = idx;
+	lws_strncpy(vm->name, name, sizeof(vm->name));
+	lws_dll2_add_tail(&vm->list, &vp->vm_owner);
+	virt->running_vms++;
+
+	lws_sul_schedule(virt->context, 0, &vm->sul_timeout,
+			 saiv_vm_timeout_cb, SAIV_VM_FIRST_CONTACT_US);
+
+	lwsl_notice("%s: carrying on with running VM %s\n", __func__, name);
 
 	return 0;
 }
@@ -200,24 +244,36 @@ ops_libvirt_init(struct sai_virt *virt)
 		return 1;
 
 	/*
-	 * VMs left running by a previous sai-virt instance are unknown to us:
-	 * their /stay and /auto-power-off would be ignored, so they would run
-	 * forever, and their names would clash with what we spawn.
+	 * VMs left by a previous sai-virt instance: running ones we carry on
+	 * with, since they may be in the middle of a task.  Any other of ours,
+	 * eg, shut off or crashed, is no use, and its name would clash with
+	 * what we spawn.
 	 */
 
 	n = virConnectListAllDomains(c, &doms,
 				     VIR_CONNECT_LIST_DOMAINS_TRANSIENT);
 	for (i = 0; i < n; i++) {
 		const char *name = virDomainGetName(doms[i]);
+		saiv_plat_t *vp;
+		int idx, state, reason;
 
-		if (name && saiv_libvirt_name_is_ours(virt, name)) {
-			lwsl_warn("%s: destroying orphaned VM %s\n",
-				  __func__, name);
-			if (virDomainDestroy(doms[i]) < 0)
-				lwsl_err("%s: failed to destroy %s\n",
-					 __func__, name);
-			saiv_libvirt_delete_overlay(c, name);
+		vp = name ? saiv_libvirt_name_is_ours(virt, name, &idx) : NULL;
+		if (!vp) {
+			virDomainFree(doms[i]);
+			continue;
 		}
+
+		if (virDomainGetState(doms[i], &state, &reason, 0) == 0 &&
+		    state == VIR_DOMAIN_RUNNING &&
+		    !saiv_libvirt_adopt(virt, vp, name, idx)) {
+			virDomainFree(doms[i]);
+			continue;
+		}
+
+		lwsl_warn("%s: destroying orphaned VM %s\n", __func__, name);
+		if (virDomainDestroy(doms[i]) < 0)
+			lwsl_err("%s: failed to destroy %s\n", __func__, name);
+		saiv_libvirt_delete_overlay(c, name);
 		virDomainFree(doms[i]);
 	}
 	free(doms);
