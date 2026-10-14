@@ -161,6 +161,62 @@ saiv_libvirt_log_disk_sources(const char *xml)
 }
 
 /*
+ * The MACs of a VM's NICs are made from our host name, its VM name and which
+ * NIC it is, so a VM slot has the same MACs every time it's spawned.
+ *
+ * With new random ones each time, to the DHCP server every spawn was a
+ * client it had never seen: it had to find it an address, often checking
+ * first that nothing answered on it, and every spawn left another lease
+ * held until it expired, shrinking the pool.  A burst of spawns at once
+ * waited many seconds for their addresses.  A client it knows, it gives its
+ * address straight back.
+ *
+ * They're locally administered unicast, from a hash, so they don't clash
+ * with real NICs, or other virt hosts' VMs on the same network.
+ *
+ * The basis domain's MACs in xml are overwritten in place.  Returns nonzero
+ * if they couldn't be made, then the caller should remove them instead.
+ */
+
+static int
+saiv_libvirt_set_macs(struct sai_virt *virt, saiv_vm_t *vm, char *xml)
+{
+	struct lws_genhash_ctx ctx;
+	uint8_t h[LWS_GENHASH_LARGEST];
+	char *p = xml, seed[160];
+	int nic = 0, n;
+
+	while ((p = strstr(p, "<mac address='"))) {
+		p += 14;
+		if (strlen(p) < 18 || p[17] != '\'')
+			return 1;
+
+		n = lws_snprintf(seed, sizeof(seed), "%s/%s/%d", virt->hostname,
+				 vm->name, nic++);
+		if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256))
+			return 1;
+		if (lws_genhash_update(&ctx, seed, (size_t)n)) {
+			lws_genhash_destroy(&ctx, NULL);
+			return 1;
+		}
+		if (lws_genhash_destroy(&ctx, h))
+			return 1;
+
+		/* locally administered, unicast */
+		h[0] = (uint8_t)((h[0] & 0xfc) | 0x02);
+
+		/* exactly the 17 chars of the old one, without a NUL */
+		for (n = 0; n < 6; n++) {
+			p[n * 3] = "0123456789abcdef"[h[n] >> 4];
+			p[n * 3 + 1] = "0123456789abcdef"[h[n] & 15];
+		}
+		p += 17;
+	}
+
+	return 0;
+}
+
+/*
  * Is this a domain name we would generate, ie, "sai-vm-<plat name>-<n>"?
  * If so, return the platform, and its index in *idx.
  */
@@ -445,12 +501,14 @@ ops_libvirt_spawn(struct sai_virt *virt, struct saiv_vm *vm)
 	/* Remove UUID so libvirt generates a new one, avoiding conflicts with the base VM */
 	strip_xml_tags(xml3, "<uuid>", "</uuid>");
 	/*
-	 * Remove MAC addresses so libvirt generates new ones, avoiding network
-	 * conflicts.  The builder inside finds out which VM it is by asking
+	 * Each VM slot gets MACs of its own, the same every time it's
+	 * spawned.  The builder inside finds out which VM it is by asking
 	 * us, and we recognize it by the address that gets it, see
 	 * ops_libvirt_has_addr()
 	 */
-	strip_xml_tags(xml3, "<mac address=", "/>");
+	if (saiv_libvirt_set_macs(virt, vm, xml3))
+		/* libvirt makes up random ones */
+		strip_xml_tags(xml3, "<mac address=", "/>");
 
 	/* 4. Boot the transient domain */
 	dom = virDomainCreateXML(c, xml3, 0);

@@ -323,7 +323,7 @@ When `sai-virt` decides to spawn a VM for a platform:
 
 1. It creates a qcow2 overlay, `/dev/shm/sai-vm-<name>-<n>.qcow2`, of `overlay_size`, with `base_image` as its read-only backing file, in a libvirt storage pool `sai_shm` it creates on `/dev/shm`.
 2. It takes the basis domain's XML and changes the name to `sai-vm-<name>-<n>` and the disk source from `base_image` to the overlay.  The disk source is replaced by matching `file='<base_image>'` literally, so `base_image` in the conf must be the same path the basis domain uses.  If it isn't, eg because of a typo, `sai-virt` refuses to spawn the VM, which would otherwise boot writing to the basis image itself, and logs the disk paths the basis domain does have.  It also refuses while the basis domain is running.
-3. It removes the UUID and NIC MAC addresses so libvirt generates new ones.
+3. It removes the UUID so libvirt generates a new one, and gives the NICs MACs made from the virt host's name, the VM's name and the NIC's number: locally administered, so they can't clash with real NICs, and the same each time that VM slot is spawned.  So to the network's DHCP server, `sai-vm-<name>-<n>` is a client it knows, which it gives its address straight back, instead of a new client every spawn that it has to find an address for and hold a lease for until it expires.
 4. It boots the result as a transient domain.
 
 When the builder inside asks for `/whoami`, `sai-virt` finds which of its VMs the request came from by asking libvirt which one has that address, from its DHCP leases, or else the host's ARP table, and replies with that VM's name.  It also only acts on a `/stay` or `/auto-power-off` that comes from the VM it names.  Nothing in this depends on the guest's architecture, firmware or OS.
