@@ -780,9 +780,10 @@ sais_notify_all_sai_power(struct vhd *vhd)
  * Find out which platforms on this server have pending tasks
  */
 
-int
-sais_platforms_with_tasks_pending(struct vhd *vhd)
+static void
+sais_platforms_with_tasks_pending_cb(lws_sorted_usec_list_t *sul)
 {
+	struct vhd *vhd = lws_container_of(sul, struct vhd, sul_pending_plats);
 	struct lwsac *ac = NULL;
 	char pf[128];
 	lws_dll2_owner_t o;
@@ -925,14 +926,29 @@ sais_platforms_with_tasks_pending(struct vhd *vhd)
 
 	} lws_end_foreach_dll(p);
 
-	lwsac_free(&ac);
-
-	return 0;
-
 bail:
 	lwsac_free(&ac);
+}
 
-	return 1;
+/*
+ * The recompute above looks in the dbs of up to 20 events, tells every
+ * sai-power, and has every idle builder platform look for a task, but the
+ * answer is only ever a snapshot of how things are now.  Task changes come in
+ * bursts, eg, deleting an event cancels all its unfinished tasks at once, and
+ * the GC of a deleted event cancels its tasks one after another, so we don't
+ * recompute for each change, but at most once each
+ * SAIS_PENDING_PLATS_COALESCE_US, after the first change that wants it.
+ */
+
+#define SAIS_PENDING_PLATS_COALESCE_US	(250 * LWS_US_PER_MS)
+
+void
+sais_platforms_with_tasks_pending(struct vhd *vhd)
+{
+	if (!vhd->sul_pending_plats.list.owner)
+		lws_sul_schedule(vhd->context, 0, &vhd->sul_pending_plats,
+				 sais_platforms_with_tasks_pending_cb,
+				 SAIS_PENDING_PLATS_COALESCE_US);
 }
 
 /*

@@ -356,6 +356,7 @@ struct vhd {
 	lws_sorted_usec_list_t	sul_central; /* background task allocation sul */
 	lws_sorted_usec_list_t	sul_activity; /* activity broadcast sul */
 	lws_sorted_usec_list_t	sul_list_builders; /* see sais_list_builders() */
+	lws_sorted_usec_list_t	sul_pending_plats; /* see sais_platforms_with_tasks_pending() */
 	lws_sorted_usec_list_t	sul_occupation; /* see s-occupation.c */
 	lws_sorted_usec_list_t	sul_gc_events; /* incremental GC of deleted events */
 	char			gc_events_cursor[33]; /* last deleted event GC'd */
@@ -576,7 +577,7 @@ sais_resource_destroy_queued_by_cookie(sais_t *sais, const char *cookie);
 void
 sais_resource_rr_destroy(sai_resource_requisition_t *rr);
 
-int
+void
 sais_platforms_with_tasks_pending(struct vhd *vhd);
 
 void
