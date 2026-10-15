@@ -540,7 +540,9 @@ feature, it's still okay.
 ## Builder instances
 
 The config JSON for sai-builder can specify the number of build instances for
-each platform.  These instances do not have any relationship about what they
+each platform, with `"instances"` (or `"job-limit"`, the same): at most that
+many of its tasks run at once on it, 6 if it isn't given.  Each platform has
+its own, so a builder with several platforms can run their sum at once.  These instances do not have any relationship about what they
 are building, just they run in the same platform context (and are managed by
 the one `sai-builder` process).  They each check out their own build tree
 independently, so they can be engaged building different versions or different

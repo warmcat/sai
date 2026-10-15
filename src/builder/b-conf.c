@@ -80,6 +80,12 @@ static const char * const paths[] = {
 	"platforms[].env[].*",
 	"platforms[].env[]",
 	"platforms[].servers",
+	/*
+	 * How many tasks the platform runs at once.  "instances" is what the
+	 * docs and confs have always said; "job-limit" is the same, from when
+	 * instances stopped being fixed slots.  Neither given, it's 6.
+	 */
+	"platforms[].instances",
 	"platforms[].job-limit",
 	/*
 	 * Listed so the "idle" object itself matches this, rather than the
@@ -99,6 +105,7 @@ enum enum_paths {
 	LEJPM_PLATFORMS_ENV_ITEM,
 	LEJPM_PLATFORMS_ENV,
 	LEJPM_PLATFORMS_SERVERS,
+	LEJPM_PLATFORMS_INSTANCES,
 	LEJPM_PLATFORMS_JOB_LIMIT,
 	LEJPM_PLATFORMS_IDLE,
 	LEJPM_PLATFORMS_IDLE_SHARE,
@@ -162,9 +169,13 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 	if (!(reason & LEJP_FLAG_CB_IS_VALUE) || !ctx->path_match)
 		return 0;
 
-	if (ctx->path_match - 1 == LEJPM_PLATFORMS_JOB_LIMIT) {
-		a->sai_plat->job_limit = (unsigned int)atoi(ctx->buf);
-		lwsl_err("%s: LEJPM_PLATFORMS_JOB_LIMIT %u\n", __func__, a->sai_plat->job_limit);
+	if (ctx->path_match - 1 == LEJPM_PLATFORMS_INSTANCES ||
+	    ctx->path_match - 1 == LEJPM_PLATFORMS_JOB_LIMIT) {
+		n = atoi(ctx->buf);
+		a->sai_plat->job_limit = n < 1 ? 1 : (unsigned int)n;
+		lwsl_notice("%s: %s runs at most %u tasks at once\n", __func__,
+			    a->sai_plat->name ? a->sai_plat->name : "?",
+			    a->sai_plat->job_limit);
 	}
 
 	/*
