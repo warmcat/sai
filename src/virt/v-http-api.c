@@ -59,13 +59,22 @@ saiv_http_reply_text(struct lws *wsi, const char *text)
 /*
  * Which of our VMs did this request come from?  We remember the address each
  * VM's builder last used, and only ask the hypervisor when a peer doesn't
- * match any of them, ie, normally only on its /whoami.
+ * match any of them, or when fresh is set, ie, on a /whoami: a clone that
+ * came up with an address another VM had before must not be told it is that
+ * VM.
+ *
+ * Two of our VMs with one address is a misconfiguration, not something to
+ * guess around: usually the basis image still has its /etc/machine-id, so
+ * the clones send the same DHCP client id and share a lease, and their
+ * connections break as it moves between them.  Say so, loudly.
  */
 
 static saiv_vm_t *
-saiv_vm_from_peer(struct lws *wsi, char *peer, size_t len)
+saiv_vm_from_peer(struct lws *wsi, char *peer, size_t len, int fresh)
 {
+	saiv_vm_t *found = NULL;
 	const char *ip;
+	int matches = 0;
 
 	ip = lws_get_peer_simple(wsi, peer, len);
 	if (!ip) {
@@ -77,16 +86,20 @@ saiv_vm_from_peer(struct lws *wsi, char *peer, size_t len)
 	if (!strncmp(ip, "::ffff:", 7))
 		memmove(peer, ip + 7, strlen(ip + 7) + 1);
 
-	lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
-		saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
+	if (!fresh)
+		lws_start_foreach_dll(struct lws_dll2 *, d,
+				      virt.plat_owner.head) {
+			saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
 
-		lws_start_foreach_dll(struct lws_dll2 *, v, vp->vm_owner.head) {
-			saiv_vm_t *vm = lws_container_of(v, saiv_vm_t, list);
+			lws_start_foreach_dll(struct lws_dll2 *, v,
+					      vp->vm_owner.head) {
+				saiv_vm_t *vm = lws_container_of(v, saiv_vm_t,
+								 list);
 
-			if (!strcmp(vm->ip, peer))
-				return vm;
-		} lws_end_foreach_dll(v);
-	} lws_end_foreach_dll(d);
+				if (!strcmp(vm->ip, peer))
+					return vm;
+			} lws_end_foreach_dll(v);
+		} lws_end_foreach_dll(d);
 
 	if (!virt.ops || !virt.ops->has_addr)
 		return NULL;
@@ -98,13 +111,48 @@ saiv_vm_from_peer(struct lws *wsi, char *peer, size_t len)
 			saiv_vm_t *vm = lws_container_of(v, saiv_vm_t, list);
 
 			if (virt.ops->has_addr(&virt, vm, peer) == 1) {
-				lws_strncpy(vm->ip, peer, sizeof(vm->ip));
-				return vm;
+				if (!matches++)
+					found = vm;
+				else
+					lwsl_err("%s: %s is both %s and %s: "
+						 "our VMs share addresses, "
+						 "see the basis image's "
+						 "machine-id in "
+						 "README-sai-virt.md\n",
+						 __func__, peer, found->name,
+						 vm->name);
 			}
 		} lws_end_foreach_dll(v);
 	} lws_end_foreach_dll(d);
 
-	return NULL;
+	if (matches != 1)
+		return NULL;
+
+	/* did one of our other VMs have this address until now? */
+
+	lws_start_foreach_dll(struct lws_dll2 *, d, virt.plat_owner.head) {
+		saiv_plat_t *vp = lws_container_of(d, saiv_plat_t, list);
+
+		lws_start_foreach_dll(struct lws_dll2 *, v, vp->vm_owner.head) {
+			saiv_vm_t *vm = lws_container_of(v, saiv_vm_t, list);
+
+			if (vm != found && !strcmp(vm->ip, peer)) {
+				lwsl_err("%s: %s was %s's address, now %s "
+					 "has it: our VMs share addresses, "
+					 "their connections break as it moves "
+					 "between them.  Usually the basis "
+					 "image still has its /etc/machine-id, "
+					 "so the clones send one DHCP client "
+					 "id, see README-sai-virt.md\n",
+					 __func__, peer, vm->name, found->name);
+				vm->ip[0] = '\0';
+			}
+		} lws_end_foreach_dll(v);
+	} lws_end_foreach_dll(d);
+
+	lws_strncpy(found->ip, peer, sizeof(found->ip));
+
+	return found;
 }
 
 /*
@@ -123,7 +171,7 @@ saiv_vm_named_by_peer(struct lws *wsi, const char *name, const char *what)
 		return NULL;
 	}
 
-	from = saiv_vm_from_peer(wsi, peer, sizeof(peer));
+	from = saiv_vm_from_peer(wsi, peer, sizeof(peer), 0);
 	if (from != vm) {
 		lwsl_warn("%s: ignoring %s for %s from %s, which is %s\n",
 			  __func__, what, name, peer,
@@ -151,7 +199,7 @@ callback_virt_http(struct lws *wsi, enum lws_callback_reasons reason,
 			 * A builder in one of our VMs is a clone of the basis
 			 * image, it only learns which VM it is from us
 			 */
-			vm = saiv_vm_from_peer(wsi, peer, sizeof(peer));
+			vm = saiv_vm_from_peer(wsi, peer, sizeof(peer), 1);
 			if (!vm) {
 				lwsl_warn("%s: whoami from %s, which is not one "
 					  "of our VMs\n", __func__, peer);
