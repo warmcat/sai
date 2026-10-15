@@ -2898,7 +2898,8 @@ function sai_problems_group_html(g, now_ut)
 		icons.push("<img class=\"prob-icon\" src=\"/sai/warn.svg\" " +
 			   "title=\"It's a warning\" alt=\"\">");
 	if (sai_problems_chancy(g))
-		icons.push("<img class=\"prob-icon\" src=\"/sai/dice.svg\" " +
+		icons.push("<img class=\"prob-icon prob-dice\" " +
+			   "src=\"/sai/dice.svg\" " +
 			   "title=\"It only happens some of the time\" " +
 			   "alt=\"\">");
 

@@ -2898,12 +2898,23 @@ tr.tt-row.selected td {
 	top: 3px;
 	left: 4px;
 	display: flex;
+	align-items: flex-start;
 	gap: 2px;
 }
 
 img.prob-icon {
 	width: 21px;
 	height: auto;
+}
+
+/*
+ * dice.svg has room for its shadow around the dice, the dice is 21px wide
+ * and where the other icons are, the shadow overhangs it
+ */
+img.prob-icon.prob-dice {
+	width: 27.7px;
+	margin-left: -3.4px;
+	margin-right: -3.3px;
 }
 
 button.prob-copy {
