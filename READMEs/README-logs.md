@@ -93,8 +93,10 @@ lwsl_notice("[b:%.4s%s/r%d] %s: allocated to %s\n", uuid, uuid + 60, run,
 	    __func__, builder);
 ```
 
+The hash in a tag may be either case, it's kept in lowercase.
+
 As well, when sai-server stores a line with no tag, it looks for a task uuid,
-64 lowercase hex, in it and tags it from that.  sai-server already logs task
+64 hex of either case, in it and tags it from that.  sai-server already logs task
 uuids in many places, so this tags a lot without any logging changing.  It
 also remembers which task uuid each job dir name belongs to, which is how a
 query goes from a job dir name to the task's runs.
@@ -137,7 +139,7 @@ authenticated link:
  - `kind` must be one of the four; `host` is up to 64 of `[A-Za-z0-9._-]`;
    `inst` 16 lowercase hex
  - `l` must be a single real `LLL_` bit
- - `h` empty or 8 lowercase hex, `r` within -1..1000
+ - `h` empty or 8 hex of either case, kept in lowercase, `r` within -1..1000
  - `x` up to 1024 chars, `t` within a day of the server's own clock
  - a message is at most 256KiB, or the connection is dropped
  - each source may store 12000 lines a minute; past that its lines are dropped,
@@ -184,7 +186,7 @@ else sai-web shows from sai-server's dbs.  The answer is JSON.
 Arg|Meaning
 ---|---
 `from`, `to`|UTC, ISO 8601 (`2026-10-14T08:01:02Z`, optionally with fractional seconds) or epoch ms.  With `hash`, they default to the build's window; otherwise to the last 10 minutes
-`hash`|8 lowercase hex, the build
+`hash`|8 hex, the build, eg its job dir name; either case
 `view`|`window` (the default without `hash`), `focused` (the default with it) or `hash`
 `src`|comma-separated kinds or hosts, up to 8, `*` matches anything
 `lvl`|the least important level to include: `err`, `warn`, `notice`, `info` or `debug`; `notice` and below include user lines

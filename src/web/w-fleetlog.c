@@ -306,14 +306,23 @@ parse_time(const char *s, uint64_t *us)
 	return 0;
 }
 
+/*
+ * A build hash is 8 hex, of either case: sai's job dir names are uppercase.
+ * The fleet log keeps them in lowercase, so we make it lowercase in place.
+ */
+
 static int
-is_lhex8(const char *s)
+hex8_to_lower(char *s)
 {
 	int n;
 
-	for (n = 0; n < 8; n++)
-		if (!((s[n] >= '0' && s[n] <= '9') || (s[n] >= 'a' && s[n] <= 'f')))
+	for (n = 0; n < 8; n++) {
+		if (s[n] >= 'A' && s[n] <= 'F')
+			s[n] = (char)(s[n] + ('a' - 'A'));
+		else if (!((s[n] >= '0' && s[n] <= '9') ||
+			   (s[n] >= 'a' && s[n] <= 'f')))
 			return 0;
+	}
 
 	return !s[8];
 }
@@ -582,7 +591,7 @@ saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi)
 
 	if ((has_from && parse_time(a_from, &from)) ||
 	    (has_to && parse_time(a_to, &to)) ||
-	    (has_hash && !is_lhex8(a_hash)))
+	    (has_hash && !hex8_to_lower(a_hash)))
 		return HTTP_STATUS_BAD_REQUEST;
 
 	view = has_hash ? SAIW_FLV_FOCUSED : SAIW_FLV_WINDOW;

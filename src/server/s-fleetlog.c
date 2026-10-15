@@ -101,6 +101,24 @@ sais_fleetlog_is_lhex(char c)
 	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
 }
 
+/*
+ * Build hashes may come in either case: sai's own task uuids and job dir names
+ * are uppercase, but someone may write them in lowercase.  We keep them, and
+ * look them up, in lowercase.
+ */
+
+static int
+sais_fleetlog_is_hex(char c)
+{
+	return sais_fleetlog_is_lhex(c) || (c >= 'A' && c <= 'F');
+}
+
+static char
+sais_fleetlog_hex_lower(char c)
+{
+	return (c >= 'A' && c <= 'F') ? (char)(c + ('a' - 'A')) : c;
+}
+
 /* the sources keep printable ASCII only, so must anything claiming to be one */
 
 static int
@@ -131,30 +149,35 @@ sais_fleetlog_valid_name(const char *s, size_t max, int dots)
 }
 
 /*
- * A task uuid is 64 lowercase hex: the event's 32, then the task's.  Find one
- * that stands alone in the line, and make its job dir name from it.
+ * A task uuid is 64 hex: the event's 32, then the task's.  sai makes them
+ * uppercase, but we take either case.  Find one that stands alone in the line,
+ * and make its job dir name from it, in lowercase; the uuid keeps its case,
+ * since it names the event's db.
  */
 
 static int
 sais_fleetlog_find_task_uuid(const char *line, char *uuid, char *hash)
 {
 	const char *p = line, *s;
+	int n;
 
 	while (*p) {
-		if (!sais_fleetlog_is_lhex(*p)) {
+		if (!sais_fleetlog_is_hex(*p)) {
 			p++;
 			continue;
 		}
 
 		s = p;
-		while (sais_fleetlog_is_lhex(*p))
+		while (sais_fleetlog_is_hex(*p))
 			p++;
 
 		if (p - s == 64) {
 			memcpy(uuid, s, 64);
 			uuid[64] = '\0';
-			memcpy(hash, s, 4);
-			memcpy(hash + 4, s + 60, 4);
+			for (n = 0; n < 4; n++) {
+				hash[n] = sais_fleetlog_hex_lower(s[n]);
+				hash[4 + n] = sais_fleetlog_hex_lower(s[60 + n]);
+			}
 			hash[8] = '\0';
 
 			return 0;
@@ -337,6 +360,7 @@ sais_fleetlog_ingest(struct vhd *vhd, const sai_fleetlog_batch_t *b)
 		const sai_fleetlog_line_t *l = lws_container_of(d,
 						sai_fleetlog_line_t, list);
 		const char *h = NULL;
+		char lh[9];
 		size_t xl;
 		int r = -1;
 
@@ -358,14 +382,17 @@ sais_fleetlog_ingest(struct vhd *vhd, const sai_fleetlog_batch_t *b)
 		}
 
 		if (l->h[0]) {
-			for (n = 0; n < 8; n++)
-				if (!sais_fleetlog_is_lhex(l->h[n]))
+			for (n = 0; n < 8; n++) {
+				if (!sais_fleetlog_is_hex(l->h[n]))
 					break;
+				lh[n] = sais_fleetlog_hex_lower(l->h[n]);
+			}
 			if (n != 8 || l->h[8]) {
 				bad++;
 				continue;
 			}
-			h = l->h;
+			lh[8] = '\0';
+			h = lh;
 			r = l->r;
 		}
 

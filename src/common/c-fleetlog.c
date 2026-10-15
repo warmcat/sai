@@ -110,10 +110,13 @@ saicom_fleetlog_utc_us(void)
 #endif
 }
 
+/* hex of either case: sai's own uuids and job dir names are uppercase */
+
 static int
-saicom_fleetlog_is_lhex(char c)
+saicom_fleetlog_is_hex(char c)
 {
-	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+	return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+	       (c >= 'A' && c <= 'F');
 }
 
 int
@@ -132,7 +135,7 @@ saicom_fleetlog_parse_tag(const char *line, size_t len, char *hash, int *run)
 			continue;
 
 		for (m = 0; m < 8; m++)
-			if (!saicom_fleetlog_is_lhex(p[3 + m]))
+			if (!saicom_fleetlog_is_hex(p[3 + m]))
 				break;
 		if (m != 8)
 			continue;
@@ -156,7 +159,9 @@ saicom_fleetlog_parse_tag(const char *line, size_t len, char *hash, int *run)
 			continue;
 
 found:
-		memcpy(hash, p + 3, 8);
+		/* the hash is kept lowercase, whatever case the tag used */
+		for (m = 0; m < 8; m++)
+			hash[m] = (char)(p[3 + m] | (p[3 + m] >= 'A' ? 0x20 : 0));
 		hash[8] = '\0';
 		*run = r;
 
