@@ -355,6 +355,7 @@ struct vhd {
 	lws_sorted_usec_list_t	sul_logcache;
 	lws_sorted_usec_list_t	sul_central; /* background task allocation sul */
 	lws_sorted_usec_list_t	sul_activity; /* activity broadcast sul */
+	lws_sorted_usec_list_t	sul_list_builders; /* see sais_list_builders() */
 	lws_sorted_usec_list_t	sul_occupation; /* see s-occupation.c */
 	lws_sorted_usec_list_t	sul_gc_events; /* incremental GC of deleted events */
 	char			gc_events_cursor[33]; /* last deleted event GC'd */
@@ -459,7 +460,7 @@ saiw_ws_json_tx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 int
 sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl, unsigned int ss_flags);
 
-int
+void
 sais_list_builders(struct vhd *vhd);
 
 void

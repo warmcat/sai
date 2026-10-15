@@ -539,6 +539,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			sais_link_vhost = NULL;
 		lws_sul_cancel(&vhd->sul_event_db_limit);
 		lws_sul_cancel(&vhd->sul_occupation);
+		lws_sul_cancel(&vhd->sul_list_builders);
 		sais_problems_destroy(vhd);
 		sais_server_destroy(vhd, &vhd->server);
 		sais_idle_destroy(vhd);

@@ -278,9 +278,25 @@ bail:
 	return 1;
 }
 
-int
-sais_list_builders(struct vhd *vhd)
+/*
+ * The builder list sent to sai-web is a snapshot of the whole builders table,
+ * so only the newest one matters.  Things that change it come in bursts, eg,
+ * the first offers of a new event's hundreds of tasks, so we don't send one
+ * for each, but at most one each SAIS_LIST_BUILDERS_COALESCE_US.
+ */
+
+#define SAIS_LIST_BUILDERS_COALESCE_US	(500 * LWS_US_PER_MS)
+
+/*
+ * A fragment is sent once it fills to within this much of the end of the
+ * buffer, so a row always has room to start in
+ */
+#define SAIS_LIST_BUILDERS_ROW_ROOM	1024
+
+static void
+sais_list_builders_cb(lws_sorted_usec_list_t *sul)
 {
+	struct vhd *vhd = lws_container_of(sul, struct vhd, sul_list_builders);
 	char json_builders[LWS_PRE + 8192], *start = json_builders + LWS_PRE,
 	     *p = start, *end = p + sizeof(json_builders) - LWS_PRE,
 	     subsequent = 0;
@@ -302,7 +318,7 @@ sais_list_builders(struct vhd *vhd)
 				       lsm_schema_sq3_map_plat,
 				       &db_builders_owner, &ac, 0, 100)) {
 		lwsl_err("%s: Failed to query builders from DB\n", __func__);
-		return 1;
+		return;
 	}
 
 	// lwsl_warn("%s: count deserialized %d\n", __func__, (int)db_builders_owner.count);
@@ -374,6 +390,13 @@ sais_list_builders(struct vhd *vhd)
 
 			switch (r) {
 			case LSJS_RESULT_FINISH:
+				/*
+				 * Rows go out packed into full fragments,
+				 * not a fragment each
+				 */
+				if (lws_ptr_diff_size_t(end, p) >
+						SAIS_LIST_BUILDERS_ROW_ROOM)
+					break;
 				/* fallthru */
 			case LSJS_RESULT_CONTINUE:
 				memset(&info, 0, sizeof(info));
@@ -415,11 +438,19 @@ sais_list_builders(struct vhd *vhd)
 
 	// lwsl_notice("%s: Broadcasting builder list: %s\n", __func__, start);
 	lwsac_free(&ac);
-	return 0;
+	return;
 
 bail:
 	lwsac_free(&ac);
-	return 1;
+}
+
+void
+sais_list_builders(struct vhd *vhd)
+{
+	if (!vhd->sul_list_builders.list.owner)
+		lws_sul_schedule(vhd->context, 0, &vhd->sul_list_builders,
+				 sais_list_builders_cb,
+				 SAIS_LIST_BUILDERS_COALESCE_US);
 }
 
 
