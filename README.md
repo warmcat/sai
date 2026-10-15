@@ -276,7 +276,9 @@ sai-virt that connects to it, in UTC order, for a couple of weeks.  They can be
 queried at `/sai/logs` on sai-web, by a build's job dir name or a time window,
 by global admins and accounts holding the fleet log grant.
 That brings the logs of ephemeral VMs, gone with the VM otherwise, and of
-everything a build went through, into one place.  See
+everything a build went through, into one place.  In the web UI, those
+accounts can right-click a line of a task's log to see it beside the fleet's
+logs, all at that moment.  See
 [READMEs/README-logs.md](READMEs/README-logs.md).
 
 ## Showing only some projects on a sai-web vhost ("projects")

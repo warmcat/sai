@@ -94,6 +94,7 @@ add_dependencies(${SUB} sai_git_hash)
 		      ../../assets/sai.js
 		      ../../assets/terminal-core.js
 		      ../../assets/sai-terminal.js
+		      ../../assets/sai-sync.js
 		      ../../assets/sai.svg
 		      ../../assets/sai-icon.svg
 		      ../../assets/builder-instance.svg

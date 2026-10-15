@@ -2614,6 +2614,14 @@ function sai_split_begin(rz)
 		};
 	}
 
+	if (rz.id === "sai_sync_resizer")
+		/* the synchronised logs, under everything */
+		return sai_sync ? sai_sync.resize_begin() : null;
+
+	if (rz.classList.contains("sync-split"))
+		/* between the synchronised logs' panes */
+		return sai_sync ? sai_sync.split_begin(rz) : null;
+
 	if (rz.id === "resizer_h") {
 		/* the tasks pane over the logs */
 		el = rz.previousElementSibling;
@@ -2726,7 +2734,8 @@ function sai_split_touch(rz, x0, y0)
 function sai_split_handle(e)
 {
 	return e.target.closest ?
-		e.target.closest('.resizer, .resizer-h, .resizer-v') : null;
+		e.target.closest('.resizer, .resizer-h, .resizer-v, .sync-split') :
+		null;
 }
 
 /*
@@ -2739,6 +2748,84 @@ function sai_split_handle(e)
  * said there, which is fetched when it's opened.  Clicking one of those opens
  * that task's log at the line it starts.
  */
+/*
+ * Synchronised logs, see sai-sync.js.  We note the builder's timestamp of each
+ * line of the task log we show, and which run it is, so a line can be opened
+ * there.
+ */
+var sai_sync = null, sai_log_line_ts = [], sai_log_run = -1;
+
+function sai_sync_auth_changed()
+{
+	if (!sai_sync)
+		return;
+
+	/* only a login can have the grant, and sai-web says if it does */
+	if (auth_state === SaiAuthState.NOT_LOGGED_IN) {
+		sai_sync.set_allowed(false);
+		document.body.classList.remove("sync-allowed");
+		return;
+	}
+
+	sai_sync.probe().then(function() {
+		document.body.classList.toggle("sync-allowed", sai_sync.allowed);
+	});
+}
+
+/*
+ * The line of the task log at a click, anywhere across it: its number is in the
+ * innermost line number column at that height, folded steps having their own
+ */
+function sai_log_line_at(e)
+{
+	var col = null, ch = 0, as, lo, hi, m, a = null, line;
+
+	if (!e.target.closest || !e.target.closest("#sai_overview"))
+		return null;
+
+	document.querySelectorAll("#sai_overview .dlogsn").forEach(function(c) {
+		var r = c.getBoundingClientRect();
+
+		if (r.height && e.clientY >= r.top && e.clientY < r.bottom &&
+		    (!col || r.height < ch)) {
+			col = c;
+			ch = r.height;
+		}
+	});
+	if (!col)
+		return null;
+
+	as = col.querySelectorAll("a");
+	lo = 0;
+	hi = as.length - 1;
+	while (lo <= hi) {
+		m = (lo + hi) >> 1;
+		if (as[m].getBoundingClientRect().top <= e.clientY) {
+			a = as[m];
+			lo = m + 1;
+		} else
+			hi = m - 1;
+	}
+	/* not past its line, eg, on the header of a step */
+	if (!a || e.clientY >= a.getBoundingClientRect().bottom)
+		return null;
+
+	line = parseInt(a.textContent, 10);
+	if (!(line > 0) || sai_log_line_ts[line] === undefined)
+		return null;
+
+	return { line: line, ts: sai_log_line_ts[line] };
+}
+
+function sai_sync_open_at(l)
+{
+	var run = sai_log_run >= 0 ? sai_log_run :
+				parseInt(window.current_task_run, 10);
+
+	if (sai_sync && selected_task_uuid)
+		sai_sync.open(selected_task_uuid, run >= 0 ? run : -1, l.ts);
+}
+
 var sai_problems = {
 	event: null,	/* the event we asked about */
 	o: null,	/* its summary */
@@ -3601,6 +3688,8 @@ function sai_reset_log_pane(rebuild_dom) {
 	lli = 1;
 	last_log_timestamp = 0;
 	last_log_uid = 0;
+	sai_log_line_ts = [];
+	sai_log_run = -1;
 
 	if (rebuild_dom) {
 		init_task_logs_dom();
@@ -5990,6 +6079,7 @@ function ws_open_sai()
 				auth_is_admin = 0;
 			}
 				sai_findings_auth_changed();
+				sai_sync_auth_changed();
 				const statusContainer = document.getElementById('lws-login-status-container');
 				if (statusContainer) {
 					statusContainer.classList.remove('grant-admin', 'grant-user', 'grant-none');
@@ -6088,6 +6178,8 @@ function ws_open_sai()
 
 				if (!tfirst) tfirst = jso.timestamp;
 				last_log_timestamp = jso.timestamp;
+				if (typeof jso.run === "number")
+					sai_log_run = jso.run;
 				if (jso.uid > last_log_uid)
 					last_log_uid = jso.uid;
 
@@ -6119,6 +6211,8 @@ function ws_open_sai()
 					var temp_li = li;
 					var temp_lli = lli;
 					while (temp_li > 0) {
+						/* the row that ended the line */
+						sai_log_line_ts[temp_lli] = jso.timestamp;
 						en += "<a id=\"#sn" + temp_lli + "\" href=\"#sn" + temp_lli + "\">" + temp_lli + "</a><br>";
 						tn += "<br>";
 						temp_lli++;
@@ -6336,6 +6430,35 @@ window.addEventListener("load", function() {
 	if (fbtn)
 		fbtn.addEventListener("click", sai_findings_dialog_open);
 
+	sai_sync = new SaiSync({ ansi: ansiToHtml, san: hsanitize });
+
+	/*
+	 * A line of the task log opens the synchronised logs at it: from the
+	 * menu of a right-click anywhere on it, or a click on its time
+	 */
+	document.addEventListener("contextmenu", function(e) {
+		var l, when;
+
+		if (!sai_sync.allowed || !(l = sai_log_line_at(e)))
+			return;
+
+		when = l.ts && tfirst ? "+" + ((l.ts - tfirst) / 1000000).toFixed(4) +
+					"s" : "the start";
+		createContextMenu(e, [{
+			label: "Synchronised logs at line " + l.line + ", " +
+			       when,
+			callback: function() { sai_sync_open_at(l); }
+		}]);
+	});
+	document.addEventListener("click", function(e) {
+		var l;
+
+		if (!sai_sync.allowed || !e.target.closest ||
+		    !e.target.closest(".dlogst") || !(l = sai_log_line_at(e)))
+			return;
+		sai_sync_open_at(l);
+	});
+
 	var nbtn = document.getElementById("sai_notice_close");
 
 	if (nbtn)
@@ -6546,6 +6669,7 @@ window.addEventListener("load", function() {
 			}
 
 			sai_findings_auth_changed();
+			sai_sync_auth_changed();
 
 			const container = document.getElementById('lws-login-status-container');
 			if (container) {

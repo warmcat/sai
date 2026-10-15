@@ -309,6 +309,44 @@ password and the current TOTP code to the auth server's `/api/login`, keeping
 the session cookie it gets for its queries, and logging in again when it
 expires.
 
+## The synchronised log view
+
+The sai web UI shows a run's task log beside the fleet logs of the hosts
+involved, all at the same instant, for an account that may query the fleet
+logs.  It's a bar along the bottom of the page that opens into a pane, pushing
+the rest of the page up; dragging the splitter above it sizes it.
+
+It's opened at a line of a task's log, by right-clicking anywhere on the line,
+or clicking its time.  It shows that try of the task, at the UTC that line
+was, by the run's `started_us`.
+
+There's a pane for the task log, and one for each host that logged anything
+in the run's window, side by side, scrolling sideways if there are more than
+fit.  Each has its name at the top: drag it onto another pane to move it
+there, or double-click it to fold the pane into a narrow strip and back.  The
+splitter after a pane sizes it, and folds it if it's made narrow enough.
+Where the panes go and how wide they are is remembered by what they are, eg,
+"the run's builder", not which host it was this time.
+
+The line across the middle of every pane is the instant, which the bar at the
+top gives in UTC to the us, and how far into the run it is.  Each pane has the
+last of its lines at or before the instant on that line, and the lines that
+came at the same time, eg, parts of what a builder read at once, are marked;
+if its nearest line is earlier, its header says by how much.
+
+The instant moves by:
+
+ - the wheel or arrow keys over a pane, a line of that pane at a time; the
+   other panes follow it in time
+ - a finger dragged over a pane, the same
+ - the time bar on the right, which is the run's window, padded by 60s: the
+   run is the shaded part, and dragging or clicking goes anywhere in it
+
+Panes fetch their lines either side of the instant as they need them, see
+"Around an instant" above: left to right, only those that can be seen, and
+after a jump, once it's stopped.  While the run is going, its window grows
+as it goes on.
+
 ## Deploying
 
 sai-server first: until it has this, it refuses connections to `/fleetlog`,
@@ -322,7 +360,6 @@ Add the `/sai/logs` mount to the front-end lwsws, see above.
  - ephemeral VMs waiting for their queued lines to be acked before they power
    off, so the last moments of a VM, often the interesting ones, aren't lost
  - a journald follower for coredumps, OOM kills and service restarts
- - a web view, with a column per source, all in UTC order, jumping to a
-   build's window and highlighting its tagged lines, with its JS / CSS in
-   `./assets/`
+ - opening the synchronised log view at a fleet log line or a time, and
+   panes for other runs' task logs at the same time
  - moving the emit hook and queue into lws, once settled

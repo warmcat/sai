@@ -1320,15 +1320,25 @@ table.comp.adhoc {
   background-color: #f2f2f2;
 }
 
+/*
+ * The page is the main panes over the synchronised logs, which push them up
+ * when they're opened, see sai-sync.js
+ */
+.sai-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
 .main-container {
   display: flex;
-  height: 100vh;
+  flex: 1 1 0;
+  min-height: 0;
 }
 .left-pane {
   flex: 1;
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  min-height: 0;
   overflow: hidden;
 }
 .right-pane {
@@ -2051,7 +2061,7 @@ div.ibuil.vm-builder {
 .right-pane {
 	display: flex;
 	flex-direction: column;
-	height: 100vh;
+	min-height: 0;
 	overflow: hidden;
 }
 
@@ -3075,5 +3085,285 @@ pre.prob-ex {
 		width: 19px;
 		background: linear-gradient(to right, transparent 7px, #ccc 7px,
 					    #ccc 12px, transparent 12px);
+	}
+}
+
+/*
+ * Synchronised logs, see sai-sync.js: a bar at the bottom of the page, that
+ * opens into panes side by side, one per log, all at the same instant
+ */
+.sync {
+	flex: 0 0 auto;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	background: #fff;
+	border-top: 1px solid #ccc;
+	font-size: 8pt;
+}
+
+.sync.hidden, .sync-resizer.hidden {
+	display: none;
+}
+
+.sync-bar {
+	flex: 0 0 auto;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 2px 6px;
+	background: #f1f5f9;
+	white-space: nowrap;
+	overflow: hidden;
+}
+
+.sync-toggle {
+	border: none;
+	background: none;
+	cursor: pointer;
+	font-size: 9pt;
+	padding: 0 4px;
+	color: #475569;
+}
+
+.sync-title {
+	font-weight: bold;
+	cursor: pointer;
+	color: #334155;
+}
+
+.sync-run {
+	color: #475569;
+}
+
+.sync-instant {
+	font-family: "Iosevka", monospace;
+	color: #1d4ed8;
+	-webkit-user-select: all;
+	user-select: all;
+}
+
+.sync-hint {
+	color: #64748b;
+	font-style: italic;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.sync-body {
+	display: none;
+	flex: 1 1 0;
+	min-height: 0;
+}
+
+.sync.open .sync-body {
+	display: flex;
+}
+
+.sync-panes {
+	flex: 1 1 0;
+	min-width: 0;
+	display: flex;
+	overflow-x: auto;
+	overflow-y: hidden;
+}
+
+.sync-pane {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	min-width: 0;
+	border-right: 1px solid #e2e8f0;
+}
+
+.sync-pane.drop-before {
+	box-shadow: inset 3px 0 0 #3b82f6;
+}
+
+.sync-pane.drop-after {
+	box-shadow: inset -3px 0 0 #3b82f6;
+}
+
+.sync-pane-head {
+	flex: 0 0 auto;
+	display: flex;
+	gap: 6px;
+	padding: 2px 4px;
+	background: #e2e8f0;
+	color: #1e293b;
+	cursor: grab;
+	white-space: nowrap;
+	overflow: hidden;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+.sync-pane-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.sync-pane-delta {
+	margin-left: auto;
+	font-family: "Iosevka", monospace;
+	color: #64748b;
+}
+
+.sync-kind-task .sync-pane-head {
+	background: #dbeafe;
+}
+
+/* folded out of the way: a strip with its name down it */
+.sync-pane.folded .sync-pane-head {
+	flex: 1 1 auto;
+	writing-mode: vertical-rl;
+	padding: 4px 0;
+}
+
+.sync-pane.folded .sync-pane-view, .sync-pane.folded .sync-pane-delta {
+	display: none;
+}
+
+.sync-pane-view {
+	position: relative;
+	flex: 1 1 0;
+	min-height: 0;
+	outline: none;
+}
+
+.sync-pane-view:focus-visible {
+	box-shadow: inset 0 0 0 1px #93c5fd;
+}
+
+.sync-pane-scroll {
+	position: absolute;
+	inset: 0;
+	overflow: hidden;
+}
+
+.sync-pane-text {
+	font-family: "Iosevka", monospace;
+	font-size: 11px;
+	line-height: 14px;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	padding-left: 3px;
+	padding-right: 3px;
+}
+
+/* the instant: the line across the middle */
+.sync-pane-cursor {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 50%;
+	border-top: 1px solid rgba(29, 78, 216, 0.5);
+	pointer-events: none;
+}
+
+.sync-pane-state {
+	position: absolute;
+	top: 4px;
+	right: 6px;
+	color: #64748b;
+	font-style: italic;
+	pointer-events: none;
+}
+
+.sync-t {
+	color: #94a3b8;
+}
+
+div.sync-row.sync-err {
+	color: #b91c1c;
+}
+
+div.sync-row.sync-warn {
+	color: #a16207;
+}
+
+div.sync-row.sync-ours {
+	background: #f0f9ff;
+}
+
+.sync-inst {
+	color: #64748b;
+	font-style: italic;
+	border-top: 1px dashed #cbd5e1;
+	margin: 2px 0;
+}
+
+/* what was logged at the instant, in every pane */
+.sync-row.sync-now, div.sync-row.sync-ours.sync-now {
+	background: #fde68a;
+}
+
+.sync-split {
+	flex: 0 0 7px;
+	cursor: ew-resize;
+	background: linear-gradient(to right, transparent 2px, #ccc 2px,
+				    #ccc 5px, transparent 5px);
+	touch-action: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+.sync-split.holding {
+	background: #93c5fd;
+}
+
+.sync-split.dragging {
+	background: #3b82f6;
+}
+
+/* the run's window, top to bottom, and where the instant is in it */
+.sync-time {
+	position: relative;
+	flex: 0 0 16px;
+	background: #f1f5f9;
+	border-left: 1px solid #cbd5e1;
+	cursor: ns-resize;
+	touch-action: none;
+}
+
+.sync-time-run {
+	position: absolute;
+	left: 3px;
+	right: 3px;
+	background: #93c5fd;
+	border-radius: 2px;
+}
+
+.sync-time-run.running {
+	background: #86efac;
+}
+
+.sync-time-thumb {
+	position: absolute;
+	left: 0;
+	right: 0;
+	height: 3px;
+	background: #1d4ed8;
+	pointer-events: none;
+}
+
+.sync-time.dragging .sync-time-thumb {
+	background: #f59e0b;
+}
+
+/* a task log's time column can be clicked, to see the fleet's logs then */
+.sync-allowed #sai_task_logs_container div.dlogst {
+	cursor: pointer;
+}
+
+@media (pointer: coarse) {
+	.sync-split {
+		flex-basis: 15px;
+		background: linear-gradient(to right, transparent 5px, #ccc 5px,
+					    #ccc 10px, transparent 10px);
+	}
+
+	.sync-time {
+		flex-basis: 24px;
 	}
 }

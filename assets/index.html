@@ -2,10 +2,11 @@
 <html lang="en">
  <head>
   <meta charset=utf-8 http-equiv="Content-Language" content="en"/>
-   <link rel="stylesheet" type="text/css" href="sai.css?v=23"/>
+   <link rel="stylesheet" type="text/css" href="sai.css?v=24"/>
    <link rel="icon" href="sai-icon.svg" sizes="any" type="image/svg+xml"/>
    <link rel="alternate" type="application/rss+xml" title="Sai build events" href="rss.xml"/>
-    <script type='text/javascript' src='sai.js?v=22'></script>
+    <script type='text/javascript' src='sai.js?v=23'></script>
+    <script type='text/javascript' src='sai-sync.js?v=1'></script>
     <script type='text/javascript' src='terminal-core.js'></script>
     <script type='text/javascript' src='sai-terminal.js'></script>
     <script type='text/javascript' src='lws-login.js'></script>
@@ -14,6 +15,7 @@
  </head>
 	<body class="overlay-active">
 		<div class="overlay"></div>
+		<div class="sai-page">
 		<div class="main-container">
 			<div class="left-pane">
 				<div class="sidebar-pane" id="sai_sidebar">
@@ -58,6 +60,9 @@
 				</div>
 				<div id="sai_builders"></div>
 			</div>
+		</div>
+		<div class="resizer-h sync-resizer hidden" id="sai_sync_resizer"></div>
+		<div class="sync hidden" id="sai_sync"></div>
 		</div>
 	</body>
 </html>
