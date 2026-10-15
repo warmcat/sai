@@ -599,6 +599,13 @@ sais_set_builder_power_state(struct vhd *vhd, const char *name, int up, int down
  * retrying forever just burns the builder: after a few runs in a row are lost
  * like that, fail the task instead, and say why.  Rebuilding it starts the
  * count again.
+ *
+ * A task the builder hadn't accepted yet, at step 0, wasn't being run: it was
+ * only offered, and the offer was lost with the connection.  That's not a run
+ * lost, it just goes back to waiting for a builder.  Otherwise, a builder
+ * whose connection drops for reasons that have nothing to do with the task,
+ * eg, a sai-server too busy to answer its pings, uses up the task's runs
+ * without ever starting it.
  */
 
 typedef struct {
@@ -615,6 +622,18 @@ sais_task_lost_by_builder(struct vhd *vhd, const char *task_uuid,
 	uint64_t started = 0;
 	sqlite3 *pdb = NULL;
 	int lost = 0;
+
+	if (!step) {
+		lwsl_notice("%s: task %s was only offered to disconnected "
+			    "builder %s, offering it again\n", __func__,
+			    task_uuid, builder_name);
+		sais_bind_task_to_builder(vhd, NULL, NULL, task_uuid);
+		sais_set_task_state(vhd, task_uuid, SAIES_WAITING, 0, 0);
+		sais_task_logf(vhd, task_uuid,
+			"builder %s disconnected before it took this task, "
+			"offering it again", builder_name);
+		return;
+	}
 
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 	lws_sql_purify(esc, task_uuid, sizeof(esc));
