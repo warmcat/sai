@@ -215,6 +215,62 @@ user.  An answer stops at `limit` lines or 8MiB, with `truncated` true and the
 
 A `hash` sai-server has never seen a line about is 404, unless `from` is given.
 
+### Around an instant
+
+Two more queries are for looking at one run's task log beside the fleet logs,
+all at the same instant, see "The synchronised log view" below.  They go
+anywhere in the run's window, a pane at a time, so they don't fetch the
+window whole.  Times in them are UTC us, as numbers.
+
+A task log's timestamps are its builder's monotonic clock.  The run's
+`started_us`, when sai-server accepted its first step, is taken as the UTC of
+its first row, so a row is placed `started_us` + how long after the first row
+it is.  That's only as good as the builder's clock running steadily from
+then, and runs from before `started_us` only have their start to the second.
+
+`GET /sai/logs/sync?task=<uuid>[&run=<n>][&ts=<us>]` says what there is to
+look at for a run, the latest one without `run`:
+
+```
+{"task":"C871...B0B1","run":0,"hash":"c871b0b1","taskname":"build-x",
+ "builder":"bld1.linux-debian","start_us":1791900000000000,
+ "end_us":1791900119500000,"running":false,
+ "from_us":1791899940000000,"to_us":1791900179500000,
+ "at_us":1791900010000000,
+ "panes":[{"pane":"task","kind":"task"},
+          {"pane":"sai-builder/bld1","kind":"sai-builder","host":"bld1",
+           "lag_ms":7,"insts":2}, ...]}
+```
+
+`start_us` to `end_us` is the run, to its last row or, while it's going, now;
+`from_us` to `to_us` is that padded by 60s.  `ts` is a timestamp from the task
+log, and `at_us` is it in UTC, or the run's start without it.  The panes are
+its task log, and each host with fleet log lines in the window: the run's
+builder first, then sai-server, sai-virt, sai-power and other builders.  A
+host's `insts` says how many instances of its daemon there were in the
+window, eg, it restarted, and `lag_ms` is the latest one's.
+
+Without `task`, it answers `{"allowed":true}` to anyone who may query, so a
+page can tell whether to offer the view.
+
+`GET /sai/logs/pane?pane=<pane>&at=<us>[&before=<n>][&after=<n>]` gives one
+pane's lines either side of `at`: up to `before` at or before it and `after`
+after it, 150 each by default and at most 500.  For the task log `pane` is
+`task`, with the `task` and `run` of the sync query.
+
+```
+{"at_us":1791900030000000,
+ "before":[{"i":581,"t":1791900030000000,"s":4,"l":1,"h":null,"r":null,
+            "x":"..."}],
+ "after":[...],"more_before":true,"more_after":true}
+```
+
+Both are in time order.  Fleet log lines have the source `s`, the level `l`,
+the build `h` and run `r` they're tagged with, and the text `x`.  Task log
+rows instead have the channel `c` and the base64 `b` of what the builder sent,
+which can be part of a line or several.  `i` tells rows of the same time
+apart.
+
 ### Who can query
 
 It's decided by a grant of its own, eg `sai-logs`, which lws-login checks.

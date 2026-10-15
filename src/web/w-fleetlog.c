@@ -553,12 +553,753 @@ done:
 }
 
 /*
- * Start the answer to GET [/sai]/logs.  Returns <0 to drop the connection, 0
- * if the answer is on its way, or an http status to reply with instead.
+ * The synchronised log view, see READMEs/README-logs.md
+ *
+ * The browser shows a run's task log beside the fleet log of each host that
+ * said anything around then, all at one instant: each pane shows its lines
+ * either side of it.  The instant can be anywhere in the run's window, so the
+ * browser asks for a pane's lines around it as it needs them.
+ *
+ * GET .../logs/sync says what the run's window is, and its panes, and
+ * GET .../logs/pane gives one pane's lines either side of an instant.
+ *
+ * A task log's timestamps are the builder's monotonic clock.  The run's
+ * started_us is the UTC of its first row, see sai_task_t, so we place a row in
+ * UTC by how long after the first row it is.
+ */
+
+#define SAIW_SYNC_LINES_DEF		150
+#define SAIW_SYNC_LINES_MAX		500
+#define SAIW_SYNC_PANES_MAX		64
+/* sai-server refuses lines more than a day from its own clock */
+#define SAIW_SYNC_SKEW_US		(24ll * 3600ll * 1000000ll)
+
+typedef struct {
+	char		task_uuid[65];
+	char		taskname[96];
+	char		builder[96];
+	char		hash[9];
+	uint64_t	start_us;	/* UTC of the run's first row */
+	uint64_t	end_us;		/* or now, if it's still going */
+	uint64_t	first_ts;	/* the builder's clock at its first row */
+	int		run;
+	char		running;
+	char		have_first;
+} saiw_sync_run_t;
+
+typedef struct {
+	char		kind[16];
+	char		host[65];
+	int64_t		lag_ms;
+	int		insts;
+	int		rank;
+} saiw_sync_pane_t;
+
+typedef struct {
+	int64_t		id;
+	uint64_t	t;	/* UTC us */
+	int64_t		src;	/* fleet: its source */
+	const char	*x;	/* fleet: the line, task: its base64 */
+	const char	*h;	/* fleet: its build, or NULL */
+	int		l;	/* fleet: its LLL_ level, task: its channel */
+	int		r;	/* fleet: its run, or -1 */
+} saiw_sync_row_t;
+
+/*
+ * One side of the instant: the rows nearest it, the newest first before it,
+ * the oldest first after it.  We keep one more than we want, to say there's
+ * more.
+ */
+
+typedef struct {
+	struct lwsac		**ac;
+	saiw_sync_row_t		*rows;
+	int			count;
+	int			want;
+	char			later;
+} saiw_sync_side_t;
+
+static const char * const sync_kinds[] = {
+	"sai-server", "sai-builder", "sai-power", "sai-virt"
+};
+
+static uint64_t
+saiw_sync_utc(const saiw_sync_run_t *r, uint64_t ts)
+{
+	/* our own rows of 0 come before the builder's first */
+	if (!ts || !r->have_first)
+		return r->start_us;
+
+	return (uint64_t)((int64_t)r->start_us +
+			  ((int64_t)ts - (int64_t)r->first_ts));
+}
+
+static int
+parse_u64(const char *s, uint64_t *v)
+{
+	const char *p = s;
+
+	for (*v = 0; *p >= '0' && *p <= '9' && p - s < 19; p++)
+		*v = (*v * 10) + (uint64_t)(*p - '0');
+
+	return p == s || *p;
+}
+
+static int
+parse_count(const char *s, int *v)
+{
+	uint64_t u;
+
+	if (parse_u64(s, &u) || u > SAIW_SYNC_LINES_MAX)
+		return 1;
+	*v = (int)u;
+
+	return 0;
+}
+
+/* task=, and optionally run=, of a sync or a task pane query */
+
+static int
+saiw_sync_args_task(struct lws *wsi, char *task, size_t tl, int *run)
+{
+	char a_run[12];
+	uint64_t u;
+	int n;
+
+	if (lws_get_urlarg_by_name_safe(wsi, "task=", task, (int)tl) != 64)
+		return 1;
+	for (n = 0; n < 64; n++)
+		if (!((task[n] >= '0' && task[n] <= '9') ||
+		      (task[n] >= 'a' && task[n] <= 'f') ||
+		      (task[n] >= 'A' && task[n] <= 'F')))
+			return 1;
+
+	*run = -1; /* the latest */
+	if (lws_get_urlarg_by_name_safe(wsi, "run=", a_run,
+					sizeof(a_run)) > 0 &&
+	    strcmp(a_run, "-1")) {
+		if (parse_u64(a_run, &u) || u > 1000)
+			return 1;
+		*run = (int)u;
+	}
+
+	return 0;
+}
+
+/*
+ * The run from its event db: when it started, by our clock, and when it ended
+ * or now; and the builder's clock at its first row
+ */
+
+static int
+saiw_sync_run(struct vhd *vhd, const char *task_uuid, int run,
+	      saiw_sync_run_t *r)
+{
+	char event_uuid[33];
+	sqlite3 *pdb = NULL;
+	uint64_t last_ts = 0;
+	sqlite3_stmt *sm;
+	int n, ret = 1;
+
+	memset(r, 0, sizeof(*r));
+	lws_strncpy(r->task_uuid, task_uuid, sizeof(r->task_uuid));
+
+	/* its job dir name: the first and last 4 of the uuid */
+	for (n = 0; n < 8; n++) {
+		char c = task_uuid[n < 4 ? n : 56 + n];
+
+		r->hash[n] = (char)(c >= 'A' && c <= 'F' ? c + ('a' - 'A') : c);
+	}
+
+	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+				     vhd->sqlite3_path_lhs, event_uuid, 0,
+				     &pdb))
+		return 1;
+
+	/* a run from before started_us only has started, in seconds */
+	if (sqlite3_prepare_v2(pdb, "SELECT run, coalesce(nullif(started_us, "
+			"0), started * 1000000), duration, state, builder_name, "
+			"taskname FROM tasks WHERE uuid = ?1 AND (?2 < 0 OR "
+			"run = ?2) ORDER BY run DESC LIMIT 1", -1, &sm, NULL) !=
+								SQLITE_OK)
+		goto bail;
+
+	sqlite3_bind_text(sm, 1, task_uuid, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_int(sm, 2, run);
+	if (sqlite3_step(sm) == SQLITE_ROW) {
+		const char *bn = (const char *)sqlite3_column_text(sm, 4),
+			   *tn = (const char *)sqlite3_column_text(sm, 5);
+		int st = sqlite3_column_int(sm, 3);
+
+		r->run = sqlite3_column_int(sm, 0);
+		r->start_us = (uint64_t)sqlite3_column_int64(sm, 1);
+		r->end_us = r->start_us +
+			    (uint64_t)sqlite3_column_int64(sm, 2) * 1000000ull;
+		r->running = st == SAIES_PASSED_TO_BUILDER ||
+			     st == SAIES_BEING_BUILT ||
+			     st == SAIES_BEING_BUILT_HAS_FAILURES ||
+			     st == SAIES_STEP_SUCCESS || st == SAIES_PAUSED;
+		lws_strncpy(r->builder, bn ? bn : "", sizeof(r->builder));
+		lws_strncpy(r->taskname, tn ? tn : "", sizeof(r->taskname));
+		ret = !r->start_us; /* it never started */
+	}
+	sqlite3_finalize(sm);
+	if (ret)
+		goto bail;
+
+	/* our own rows of 0 aren't on the builder's clock */
+	if (sqlite3_prepare_v2(pdb, "SELECT min(timestamp), max(timestamp) "
+			"FROM logs WHERE task_uuid = ? AND run = ? AND "
+			"timestamp != 0", -1, &sm, NULL) == SQLITE_OK) {
+		sqlite3_bind_text(sm, 1, task_uuid, -1, SQLITE_TRANSIENT);
+		sqlite3_bind_int(sm, 2, r->run);
+		if (sqlite3_step(sm) == SQLITE_ROW &&
+		    sqlite3_column_type(sm, 0) != SQLITE_NULL) {
+			r->first_ts = (uint64_t)sqlite3_column_int64(sm, 0);
+			last_ts = (uint64_t)sqlite3_column_int64(sm, 1);
+			r->have_first = 1;
+		}
+		sqlite3_finalize(sm);
+	}
+
+	/* its log may go on after its duration, eg, our own last words */
+	if (r->have_first && saiw_sync_utc(r, last_ts) > r->end_us)
+		r->end_us = saiw_sync_utc(r, last_ts);
+	if (r->running)
+		r->end_us = saiw_fleetlog_utc_us();
+
+bail:
+	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+
+	return ret;
+}
+
+static int
+saiw_sync_pane_rank(const saiw_sync_run_t *r, const saiw_sync_pane_t *p)
+{
+	size_t hl = strlen(p->host);
+
+	/* the run's builder first, the fleet's own daemons after */
+	if (!strcmp(p->kind, "sai-builder"))
+		return !strncmp(r->builder, p->host, hl) &&
+		       r->builder[hl] == '.' ? 1 : 5;
+	if (!strcmp(p->kind, "sai-server"))
+		return 2;
+	if (!strcmp(p->kind, "sai-virt"))
+		return 3;
+
+	return 4;
+}
+
+static int
+saiw_sync_pane_cmp(const void *a, const void *b)
+{
+	const saiw_sync_pane_t *pa = a, *pb = b;
+	int n;
+
+	if (pa->rank != pb->rank)
+		return pa->rank - pb->rank;
+	n = strcmp(pa->kind, pb->kind);
+
+	return n ? n : strcmp(pa->host, pb->host);
+}
+
+/*
+ * GET .../logs/sync?task=<uuid>[&run=<n>][&ts=<builder us>]
+ *
+ * The run's window, and its panes: its task log, and each host that has fleet
+ * log lines in the window.  ts is a time in its task log, which we give in
+ * UTC.  Without a task, it only says the query is allowed, so the browser
+ * knows whether to offer the view.
+ */
+
+static int
+saiw_fleetlog_sync(struct vhd *vhd, struct lws *wsi, saiw_fl_out_t *o)
+{
+	saiw_sync_pane_t panes[SAIW_SYNC_PANES_MAX];
+	uint64_t from, to, at, ts;
+	char task[72], a_ts[24];
+	int run, n, np = 0;
+	saiw_sync_run_t r;
+	sqlite3_stmt *sm;
+
+	if (lws_get_urlarg_by_name_safe(wsi, "task=", task, sizeof(task)) < 0) {
+		out_printf(o, "{\"allowed\":true}");
+		return 0;
+	}
+
+	if (saiw_sync_args_task(wsi, task, sizeof(task), &run))
+		return HTTP_STATUS_BAD_REQUEST;
+
+	if (saiw_sync_run(vhd, task, run, &r))
+		return HTTP_STATUS_NOT_FOUND;
+
+	from = r.start_us > (uint64_t)SAIW_FLEETLOG_PAD_US ?
+			r.start_us - (uint64_t)SAIW_FLEETLOG_PAD_US : 0;
+	to = r.end_us + (uint64_t)SAIW_FLEETLOG_PAD_US;
+
+	at = r.start_us;
+	if (lws_get_urlarg_by_name_safe(wsi, "ts=", a_ts, sizeof(a_ts)) > 0) {
+		if (parse_u64(a_ts, &ts))
+			return HTTP_STATUS_BAD_REQUEST;
+		at = saiw_sync_utc(&r, ts);
+	}
+
+	/*
+	 * The hosts with lines in the window.  A source's lines are within a
+	 * day of when sai-server had them, which its first_us and last_us are,
+	 * and newer instances come first so we keep the latest lag.
+	 */
+
+	if (sqlite3_prepare_v2(vhd->pdb_fleetlog, "SELECT kind, host, lag_us "
+			"FROM sources s WHERE last_us >= ?1 AND first_us <= ?2 "
+			"AND EXISTS (SELECT 1 FROM lines l WHERE l.src_id = "
+			"s.src_id AND l.t_us >= ?3 AND l.t_us <= ?4) ORDER BY "
+			"src_id DESC", -1, &sm, NULL) != SQLITE_OK)
+		return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+
+	sqlite3_bind_int64(sm, 1, (sqlite3_int64)from - SAIW_SYNC_SKEW_US);
+	sqlite3_bind_int64(sm, 2, (sqlite3_int64)to + SAIW_SYNC_SKEW_US);
+	sqlite3_bind_int64(sm, 3, (sqlite3_int64)from);
+	sqlite3_bind_int64(sm, 4, (sqlite3_int64)to);
+
+	while (sqlite3_step(sm) == SQLITE_ROW) {
+		const char *k = (const char *)sqlite3_column_text(sm, 0),
+			   *h = (const char *)sqlite3_column_text(sm, 1);
+
+		if (!k || !h)
+			continue;
+
+		for (n = 0; n < np; n++)
+			if (!strcmp(panes[n].kind, k) &&
+			    !strcmp(panes[n].host, h))
+				break;
+		if (n < np) {
+			panes[n].insts++;
+			continue;
+		}
+		if (np == SAIW_SYNC_PANES_MAX)
+			continue;
+
+		lws_strncpy(panes[np].kind, k, sizeof(panes[np].kind));
+		lws_strncpy(panes[np].host, h, sizeof(panes[np].host));
+		panes[np].lag_ms = sqlite3_column_int64(sm, 2) / 1000;
+		panes[np].insts = 1;
+		panes[np].rank = saiw_sync_pane_rank(&r, &panes[np]);
+		np++;
+	}
+	sqlite3_finalize(sm);
+
+	qsort(panes, (size_t)np, sizeof(panes[0]), saiw_sync_pane_cmp);
+
+	out_printf(o, "{\"task\":");
+	out_str(o, r.task_uuid);
+	out_printf(o, ",\"run\":%d,\"hash\":\"%s\",\"taskname\":", r.run,
+		   r.hash);
+	out_str(o, r.taskname);
+	out_printf(o, ",\"builder\":");
+	out_str(o, r.builder);
+	out_printf(o, ",\"start_us\":%llu,\"end_us\":%llu,\"running\":%s,"
+		   "\"from_us\":%llu,\"to_us\":%llu,\"at_us\":%llu,"
+		   "\"panes\":[{\"pane\":\"task\",\"kind\":\"task\"}",
+		   (unsigned long long)r.start_us,
+		   (unsigned long long)r.end_us, r.running ? "true" : "false",
+		   (unsigned long long)from, (unsigned long long)to,
+		   (unsigned long long)at);
+
+	for (n = 0; n < np; n++) {
+		char pid[96];
+
+		lws_snprintf(pid, sizeof(pid), "%s/%s", panes[n].kind,
+			     panes[n].host);
+		out_printf(o, ",{\"pane\":");
+		out_str(o, pid);
+		out_printf(o, ",\"kind\":\"%s\",\"host\":", panes[n].kind);
+		out_str(o, panes[n].host);
+		out_printf(o, ",\"lag_ms\":%lld,\"insts\":%d}",
+			   (long long)panes[n].lag_ms, panes[n].insts);
+	}
+
+	out_printf(o, "]}");
+
+	return 0;
+}
+
+static int
+saiw_sync_row_cmp_before(const void *a, const void *b)
+{
+	const saiw_sync_row_t *ra = a, *rb = b;
+
+	/* the newest first */
+	if (ra->t != rb->t)
+		return ra->t < rb->t ? 1 : -1;
+
+	return ra->id < rb->id ? 1 : (ra->id > rb->id ? -1 : 0);
+}
+
+static int
+saiw_sync_row_cmp_after(const void *a, const void *b)
+{
+	return saiw_sync_row_cmp_before(b, a);
+}
+
+static const char *
+saiw_sync_strdup(struct lwsac **ac, const char *s)
+{
+	size_t n;
+	char *p;
+
+	if (!s)
+		return NULL;
+
+	n = strlen(s) + 1;
+	p = lwsac_use(ac, n, n > 4096 ? n : 4096);
+	if (p)
+		memcpy(p, s, n);
+
+	return p;
+}
+
+/* nearest the instant first, and only one more than we want */
+
+static void
+saiw_sync_side_settle(saiw_sync_side_t *sd)
+{
+	qsort(sd->rows, (size_t)sd->count, sizeof(sd->rows[0]),
+	      sd->later ? saiw_sync_row_cmp_after : saiw_sync_row_cmp_before);
+	if (sd->count > sd->want + 1)
+		sd->count = sd->want + 1;
+}
+
+/*
+ * The task log's rows either side of the instant, by the builder's clock.
+ * idx_log_task_time finds them, and the run's other rows, on other clocks,
+ * are passed over.
+ */
+
+static int
+saiw_sync_side_task(struct vhd *vhd, const saiw_sync_run_t *r, uint64_t at,
+		    saiw_sync_side_t *sd)
+{
+	int64_t ts = (int64_t)r->first_ts + ((int64_t)at - (int64_t)r->start_us);
+	char event_uuid[33];
+	sqlite3 *pdb = NULL;
+	sqlite3_stmt *sm;
+
+	if (!r->have_first || !sd->want)
+		return 0;
+
+	/*
+	 * Before the first row, nothing of the log came before the instant,
+	 * and all of it, our own rows of 0 first, comes after
+	 */
+	if (ts < (int64_t)r->first_ts) {
+		if (!sd->later)
+			return 0;
+		ts = -1;
+	}
+
+	sai_task_uuid_to_event_uuid(event_uuid, r->task_uuid);
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+				     vhd->sqlite3_path_lhs, event_uuid, 0,
+				     &pdb))
+		return 1;
+
+	if (sqlite3_prepare_v2(pdb, sd->later ?
+			"SELECT uid, timestamp, channel, log FROM logs WHERE "
+			"task_uuid = ? AND run = ? AND timestamp > ? ORDER BY "
+			"timestamp, uid LIMIT ?" :
+			"SELECT uid, timestamp, channel, log FROM logs WHERE "
+			"task_uuid = ? AND run = ? AND timestamp <= ? ORDER BY "
+			"timestamp DESC, uid DESC LIMIT ?", -1, &sm, NULL) !=
+								SQLITE_OK) {
+		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+		return 1;
+	}
+
+	sqlite3_bind_text(sm, 1, r->task_uuid, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_int(sm, 2, r->run);
+	sqlite3_bind_int64(sm, 3, ts);
+	sqlite3_bind_int(sm, 4, sd->want + 1);
+
+	while (sqlite3_step(sm) == SQLITE_ROW) {
+		saiw_sync_row_t *row = &sd->rows[sd->count++];
+
+		row->id = sqlite3_column_int64(sm, 0);
+		row->t = saiw_sync_utc(r,
+				(uint64_t)sqlite3_column_int64(sm, 1));
+		row->l = sqlite3_column_int(sm, 2);
+		row->x = saiw_sync_strdup(sd->ac,
+				(const char *)sqlite3_column_text(sm, 3));
+		if (!row->x)
+			sd->count--;
+	}
+	sqlite3_finalize(sm);
+	sai_event_db_close(&vhd->sqlite3_cache, &pdb);
+
+	saiw_sync_side_settle(sd);
+
+	return 0;
+}
+
+/*
+ * A host's fleet log lines either side of the instant.  A host may have had
+ * several instances, eg, sai-virt reuses VM names, so we go through them from
+ * the one with a line nearest the instant, and stop once the next one's
+ * nearest line is further away than the furthest one we're keeping.
+ */
+
+static int
+saiw_sync_side_fleet(struct vhd *vhd, const char *kind, const char *host,
+		     uint64_t at, saiw_sync_side_t *sd)
+{
+	sqlite3_stmt *ss, *sl;
+	int ret = 0;
+
+	if (!sd->want)
+		return 0;
+
+	if (sqlite3_prepare_v2(vhd->pdb_fleetlog, sd->later ?
+			"SELECT src_id, edge FROM (SELECT src_id, (SELECT "
+			"min(t_us) FROM lines l WHERE l.src_id = s.src_id AND "
+			"l.t_us > ?1) AS edge FROM sources s WHERE kind = ?2 "
+			"AND host = ?3) WHERE edge IS NOT NULL ORDER BY edge" :
+			"SELECT src_id, edge FROM (SELECT src_id, (SELECT "
+			"max(t_us) FROM lines l WHERE l.src_id = s.src_id AND "
+			"l.t_us <= ?1) AS edge FROM sources s WHERE kind = ?2 "
+			"AND host = ?3) WHERE edge IS NOT NULL ORDER BY edge "
+			"DESC", -1, &ss, NULL) != SQLITE_OK)
+		return 1;
+
+	if (sqlite3_prepare_v2(vhd->pdb_fleetlog, sd->later ?
+			"SELECT id, t_us, lvl, hash, run, line FROM lines "
+			"WHERE src_id = ? AND t_us > ? ORDER BY t_us, id "
+			"LIMIT ?" :
+			"SELECT id, t_us, lvl, hash, run, line FROM lines "
+			"WHERE src_id = ? AND t_us <= ? ORDER BY t_us DESC, "
+			"id DESC LIMIT ?", -1, &sl, NULL) != SQLITE_OK) {
+		sqlite3_finalize(ss);
+		return 1;
+	}
+
+	sqlite3_bind_int64(ss, 1, (sqlite3_int64)at);
+	sqlite3_bind_text(ss, 2, kind, -1, SQLITE_TRANSIENT);
+	sqlite3_bind_text(ss, 3, host, -1, SQLITE_TRANSIENT);
+
+	while (sqlite3_step(ss) == SQLITE_ROW) {
+		int64_t src = sqlite3_column_int64(ss, 0);
+		uint64_t edge = (uint64_t)sqlite3_column_int64(ss, 1);
+
+		if (sd->count > sd->want &&
+		    (sd->later ? edge > sd->rows[sd->want].t :
+				 edge < sd->rows[sd->want].t))
+			break;
+
+		sqlite3_reset(sl);
+		sqlite3_bind_int64(sl, 1, src);
+		sqlite3_bind_int64(sl, 2, (sqlite3_int64)at);
+		sqlite3_bind_int(sl, 3, sd->want + 1);
+
+		while (sqlite3_step(sl) == SQLITE_ROW) {
+			saiw_sync_row_t *row = &sd->rows[sd->count++];
+
+			row->id = sqlite3_column_int64(sl, 0);
+			row->t = (uint64_t)sqlite3_column_int64(sl, 1);
+			row->src = src;
+			row->l = sqlite3_column_int(sl, 2);
+			row->h = saiw_sync_strdup(sd->ac,
+				   (const char *)sqlite3_column_text(sl, 3));
+			row->r = sqlite3_column_type(sl, 4) == SQLITE_NULL ?
+					-1 : sqlite3_column_int(sl, 4);
+			row->x = saiw_sync_strdup(sd->ac,
+				   (const char *)sqlite3_column_text(sl, 5));
+			if (!row->x) {
+				sd->count--;
+				ret = 1;
+				break;
+			}
+		}
+
+		saiw_sync_side_settle(sd);
+	}
+
+	sqlite3_finalize(sl);
+	sqlite3_finalize(ss);
+
+	return ret;
+}
+
+static void
+saiw_sync_side_out(saiw_fl_out_t *o, const saiw_sync_side_t *sd, int task)
+{
+	int n, i, c = sd->count < sd->want ? sd->count : sd->want;
+
+	/* in time order, so the rows before come reversed */
+	for (i = 0; i < c; i++) {
+		const saiw_sync_row_t *row = &sd->rows[sd->later ? i : c - 1 - i];
+
+		out_printf(o, "%s{\"i\":%lld,\"t\":%llu,", i ? "," : "",
+			   (long long)row->id, (unsigned long long)row->t);
+		if (task) {
+			out_printf(o, "\"c\":%d,\"b\":", row->l);
+			out_str(o, row->x);
+			out_printf(o, "}");
+			continue;
+		}
+
+		out_printf(o, "\"s\":%lld,\"l\":%d,\"h\":", (long long)row->src,
+			   row->l);
+		out_str(o, row->h);
+		out_printf(o, ",\"r\":");
+		n = row->r;
+		if (n < 0)
+			out_printf(o, "null");
+		else
+			out_printf(o, "%d", n);
+		out_printf(o, ",\"x\":");
+		out_str(o, row->x);
+		out_printf(o, "}");
+	}
+}
+
+/*
+ * GET .../logs/pane?pane=<pane>&at=<UTC us>[&before=<n>][&after=<n>]
+ *
+ * pane is "task", with the task= and run= of the sync query, or a fleet log
+ * host, "<kind>/<host>".  We give up to before lines at or before at, and up
+ * to after lines after it, in time order, and whether there are more.
+ */
+
+static int
+saiw_fleetlog_pane(struct vhd *vhd, struct lws *wsi, saiw_fl_out_t *o)
+{
+	char a_pane[96], a_at[24], a_n[12], task[72], *host = NULL;
+	saiw_sync_side_t sd[2];
+	struct lwsac *ac = NULL;
+	saiw_sync_run_t r;
+	int n, is_task, run, ret = 0;
+	uint64_t at;
+
+	memset(sd, 0, sizeof(sd));
+	memset(&r, 0, sizeof(r));
+	sd[0].want = sd[1].want = SAIW_SYNC_LINES_DEF;
+	sd[1].later = 1;
+
+	if (lws_get_urlarg_by_name_safe(wsi, "pane=", a_pane,
+					sizeof(a_pane)) <= 0 ||
+	    lws_get_urlarg_by_name_safe(wsi, "at=", a_at, sizeof(a_at)) <= 0 ||
+	    parse_u64(a_at, &at))
+		return HTTP_STATUS_BAD_REQUEST;
+
+	if (lws_get_urlarg_by_name_safe(wsi, "before=", a_n, sizeof(a_n)) > 0 &&
+	    parse_count(a_n, &sd[0].want))
+		return HTTP_STATUS_BAD_REQUEST;
+	if (lws_get_urlarg_by_name_safe(wsi, "after=", a_n, sizeof(a_n)) > 0 &&
+	    parse_count(a_n, &sd[1].want))
+		return HTTP_STATUS_BAD_REQUEST;
+
+	is_task = !strcmp(a_pane, "task");
+	if (is_task) {
+		if (saiw_sync_args_task(wsi, task, sizeof(task), &run))
+			return HTTP_STATUS_BAD_REQUEST;
+		if (saiw_sync_run(vhd, task, run, &r))
+			return HTTP_STATUS_NOT_FOUND;
+	} else {
+		/* "<kind>/<host>", the host as sai-server checked it */
+		host = strchr(a_pane, '/');
+		if (!host)
+			return HTTP_STATUS_BAD_REQUEST;
+		*host++ = '\0';
+		for (n = 0; n < (int)LWS_ARRAY_SIZE(sync_kinds); n++)
+			if (!strcmp(a_pane, sync_kinds[n]))
+				break;
+		if (n == (int)LWS_ARRAY_SIZE(sync_kinds) || !*host ||
+		    strlen(host) > 64)
+			return HTTP_STATUS_BAD_REQUEST;
+		for (n = 0; host[n]; n++)
+			if (!((host[n] >= 'a' && host[n] <= 'z') ||
+			      (host[n] >= 'A' && host[n] <= 'Z') ||
+			      (host[n] >= '0' && host[n] <= '9') ||
+			      host[n] == '.' || host[n] == '_' ||
+			      host[n] == '-'))
+				return HTTP_STATUS_BAD_REQUEST;
+	}
+
+	/* each side may hold a source's worth more while it's merged */
+	for (n = 0; n < 2; n++) {
+		sd[n].ac = &ac;
+		sd[n].rows = lwsac_use_zero(&ac, sizeof(saiw_sync_row_t) *
+					    (size_t)(2 * (sd[n].want + 1)), 0);
+		if (!sd[n].rows) {
+			ret = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+			goto bail;
+		}
+
+		if (is_task ? saiw_sync_side_task(vhd, &r, at, &sd[n]) :
+			      saiw_sync_side_fleet(vhd, a_pane, host, at,
+						   &sd[n])) {
+			ret = HTTP_STATUS_INTERNAL_SERVER_ERROR;
+			goto bail;
+		}
+	}
+
+	out_printf(o, "{\"at_us\":%llu,\"before\":[", (unsigned long long)at);
+	saiw_sync_side_out(o, &sd[0], is_task);
+	out_printf(o, "],\"after\":[");
+	saiw_sync_side_out(o, &sd[1], is_task);
+	out_printf(o, "],\"more_before\":%s,\"more_after\":%s}",
+		   sd[0].count > sd[0].want ? "true" : "false",
+		   sd[1].count > sd[1].want ? "true" : "false");
+
+bail:
+	lwsac_free(&ac);
+
+	return ret;
+}
+
+/*
+ * Send the answer we built on pss->fleetlog_tx
+ */
+
+static int
+saiw_fleetlog_answer(struct pss *pss, struct lws *wsi, saiw_fl_out_t *o)
+{
+	uint8_t hb[LWS_PRE + 512], *start = hb + LWS_PRE, *p = start,
+		*end = hb + sizeof(hb) - 1;
+
+	out_flush(o);
+	if (o->oom) {
+		lws_buflist_destroy_all_segments(&pss->fleetlog_tx);
+		return HTTP_STATUS_INTERNAL_SERVER_ERROR;
+	}
+
+	if (lws_add_http_header_status(wsi, HTTP_STATUS_OK, &p, end) ||
+	    lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_TYPE,
+				(uint8_t *)"application/json", 16, &p, end) ||
+	    lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CACHE_CONTROL,
+				(uint8_t *)"no-store", 8, &p, end) ||
+	    lws_add_http_header_content_length(wsi, o->total, &p, end) ||
+	    lws_finalize_write_http_header(wsi, start, &p, end)) {
+		lws_buflist_destroy_all_segments(&pss->fleetlog_tx);
+		return -1;
+	}
+
+	pss->fleetlog_sending = 1;
+	lws_callback_on_writable(wsi);
+
+	return 0;
+}
+
+/*
+ * Start the answer to GET [/sai]/logs, or /logs/sync or /logs/pane, path being
+ * what's after /logs.  Returns <0 to drop the connection, 0 if the answer is
+ * on its way, or an http status to reply with instead.
  */
 
 int
-saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi)
+saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi,
+		   const char *path)
 {
 	char a_from[40], a_to[40], a_hash[12], a_view[12], a_src[200],
 	     a_lvl[12], a_grep[132], a_limit[12], a_after[48],
@@ -568,8 +1309,6 @@ saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi)
 	int view, nsrc = 0, limit = SAIW_FLEETLOG_LIMIT_DEF, lvlmask = 0, n,
 	    lines = 0, truncated = 0, has_hash, has_from, has_to, has_after,
 	    known = 0;
-	uint8_t hb[LWS_PRE + 512], *start = hb + LWS_PRE, *p = start,
-		*end = hb + sizeof(hb) - 1;
 	saiw_fl_out_t o;
 	saiw_fl_build_t b;
 	saiw_fl_q_t q;
@@ -580,6 +1319,24 @@ saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi)
 
 	if (saiw_fleetlog_db(vhd))
 		return HTTP_STATUS_SERVICE_UNAVAILABLE;
+
+	if (!strcmp(path, "/sync") || !strcmp(path, "/pane")) {
+		lws_buflist_destroy_all_segments(&pss->fleetlog_tx);
+		memset(&o, 0, sizeof(o));
+		o.bl = &pss->fleetlog_tx;
+
+		n = path[1] == 's' ? saiw_fleetlog_sync(vhd, wsi, &o) :
+				     saiw_fleetlog_pane(vhd, wsi, &o);
+		if (n) {
+			lws_buflist_destroy_all_segments(&pss->fleetlog_tx);
+			return n;
+		}
+
+		return saiw_fleetlog_answer(pss, wsi, &o);
+	}
+
+	if (*path && strcmp(path, "/"))
+		return HTTP_STATUS_NOT_FOUND;
 
 	has_from = lws_get_urlarg_by_name_safe(wsi, "from=", a_from,
 					       sizeof(a_from)) > 0;
@@ -846,27 +1603,7 @@ saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi)
 		out_printf(&o, "}");
 	}
 
-	out_flush(&o);
-	if (o.oom) {
-		lws_buflist_destroy_all_segments(&pss->fleetlog_tx);
-		return HTTP_STATUS_INTERNAL_SERVER_ERROR;
-	}
-
-	if (lws_add_http_header_status(wsi, HTTP_STATUS_OK, &p, end) ||
-	    lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CONTENT_TYPE,
-				(uint8_t *)"application/json", 16, &p, end) ||
-	    lws_add_http_header_by_token(wsi, WSI_TOKEN_HTTP_CACHE_CONTROL,
-				(uint8_t *)"no-store", 8, &p, end) ||
-	    lws_add_http_header_content_length(wsi, o.total, &p, end) ||
-	    lws_finalize_write_http_header(wsi, start, &p, end)) {
-		lws_buflist_destroy_all_segments(&pss->fleetlog_tx);
-		return -1;
-	}
-
-	pss->fleetlog_sending = 1;
-	lws_callback_on_writable(wsi);
-
-	return 0;
+	return saiw_fleetlog_answer(pss, wsi, &o);
 }
 
 int

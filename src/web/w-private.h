@@ -393,7 +393,8 @@ saiw_rss_close(struct pss *pss);
 /* w-fleetlog.c */
 
 int
-saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi);
+saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi,
+		   const char *path);
 
 int
 saiw_fleetlog_writeable(struct pss *pss, struct lws *wsi);

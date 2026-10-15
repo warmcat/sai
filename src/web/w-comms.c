@@ -633,7 +633,9 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		case SHMUT_LOGS:
 		case SHMUT_LOGS_SAI:
-			r = saiw_fleetlog_http(vhd, pss, wsi);
+			/* what's after .../logs says which query it is */
+			r = saiw_fleetlog_http(vhd, pss, wsi, (const char *)in +
+					       strlen(well_known[mu]));
 			if (r < 0)
 				goto bail;
 			if (!r)
