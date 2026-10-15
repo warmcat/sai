@@ -22,7 +22,11 @@
 #include <libwebsockets.h>
 #include "b-private.h"
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__NetBSD__) || defined(__OpenBSD__)
+#include <sys/statvfs.h>
+#elif defined(__FreeBSD__)
+#include <sys/types.h>
+#include <sys/sysctl.h>
 #include <sys/statvfs.h>
 #elif defined(__APPLE__)
 #include <sys/mount.h>
@@ -30,6 +34,25 @@
 #include <sys/sysctl.h>
 #include <mach/mach.h>
 #include <mach/vm_statistics.h>
+#endif
+
+#if defined(__FreeBSD__)
+/* a numeric sysctl, whether the kernel keeps it as 32 or 64 bits; 0 if none */
+static uint64_t
+saib_sysctl_u64(const char *name)
+{
+	union {
+		uint32_t	u32;
+		uint64_t	u64;
+	} v;
+	size_t len = sizeof(v);
+
+	memset(&v, 0, sizeof(v));
+	if (sysctlbyname(name, &v, &len, NULL, 0))
+		return 0;
+
+	return len == sizeof(v.u32) ? v.u32 : v.u64;
+}
 #endif
 
 unsigned int
@@ -78,6 +101,14 @@ saib_get_free_ram_kib(void)
 	kib = pages * page_size / 1024;
 
 	return (unsigned int)(total && kib > total ? total : kib);
+#elif defined(__FreeBSD__)
+	/*
+	 * Like Linux's MemAvailable: what can be had without swapping, the
+	 * free pages and the inactive ones the VM takes back when asked
+	 */
+	return (unsigned int)((saib_sysctl_u64("vm.stats.vm.v_free_count") +
+			       saib_sysctl_u64("vm.stats.vm.v_inactive_count")) *
+			      saib_sysctl_u64("vm.stats.vm.v_page_size") / 1024);
 #elif defined(_WIN32)
 	MEMORYSTATUSEX statex;
 	statex.dwLength = sizeof(statex);
@@ -118,6 +149,8 @@ saib_get_total_ram_kib(void)
 	sysctl(mib, 2, &total_mem, &len, NULL, 0);
 
 	return (unsigned int)(total_mem / 1024);
+#elif defined(__FreeBSD__)
+	return (unsigned int)(saib_sysctl_u64("hw.physmem") / 1024);
 #elif defined(_WIN32)
 	MEMORYSTATUSEX statex;
 	statex.dwLength = sizeof(statex);
@@ -131,7 +164,8 @@ saib_get_total_ram_kib(void)
 unsigned int
 saib_get_total_disk_kib(const char *path)
 {
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
+    defined(__OpenBSD__)
 	struct statvfs s;
 
 	if (statvfs(path, &s))
@@ -160,7 +194,8 @@ saib_get_total_disk_kib(const char *path)
 unsigned int
 saib_get_free_disk_kib(const char *path)
 {
-#if defined(__linux__)
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__NetBSD__) || \
+    defined(__OpenBSD__)
 	struct statvfs s;
 
 	if (statvfs(path, &s))
