@@ -77,6 +77,8 @@ static const char * const fleetlog_schema[] = {
 		"line TEXT NOT NULL)",
 	"CREATE UNIQUE INDEX IF NOT EXISTS lines_src_seq ON lines (src_id, seq)",
 	"CREATE INDEX IF NOT EXISTS lines_t ON lines (t_us)",
+	/* a source's lines either side of a time, see sai-web's sync view */
+	"CREATE INDEX IF NOT EXISTS lines_src_t ON lines (src_id, t_us)",
 	"CREATE INDEX IF NOT EXISTS lines_hash ON lines (hash, t_us)",
 	"CREATE TABLE IF NOT EXISTS builds ("
 		"hash TEXT PRIMARY KEY, "

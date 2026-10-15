@@ -162,6 +162,7 @@ CREATE TABLE lines (id INTEGER PRIMARY KEY, src_id INTEGER, seq INTEGER,
 		    run INTEGER, line TEXT);
 CREATE UNIQUE INDEX lines_src_seq ON lines (src_id, seq);
 CREATE INDEX lines_t ON lines (t_us);
+CREATE INDEX lines_src_t ON lines (src_id, t_us);
 CREATE INDEX lines_hash ON lines (hash, t_us);
 CREATE TABLE builds (hash TEXT PRIMARY KEY, task_uuid TEXT,
 		     first_us INTEGER, last_us INTEGER);
