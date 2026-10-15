@@ -93,6 +93,13 @@ typedef struct sai_platform {
  */
 #define SAIS_WEBSRV_BACKLOG_MAX		(5u * 1024u * 1024u)
 
+/*
+ * How old an event must be before its tasks are offered to builders, so the
+ * git server has the pushed refs available by the time a builder fetches.
+ * Tasks put in as NOT_READY_FOR_BUILD are let go after the same time.
+ */
+#define SAIS_NOTIFICATION_GRACE_SECS	1
+
 typedef struct websrvss_srv {
 	struct lws_ss_handle 		*ss;
 	struct vhd			*vhd;

@@ -101,7 +101,8 @@ sais_central_clean_abandoned(struct vhd *vhd)
 				     "update tasks set state=0 where "
 				     "(state=%u) and last_updated < %llu",
 				     SAIES_NOT_READY_FOR_BUILD, (unsigned long long)
-					     (lws_now_secs() - 5));
+					     (lws_now_secs() -
+					      SAIS_NOTIFICATION_GRACE_SECS));
 
 			if (sqlite3_exec(pdb, s, NULL, NULL, &err) !=
 					 SQLITE_OK) {
@@ -400,8 +401,8 @@ sais_central_cb(lws_sorted_usec_list_t *sul)
 	}
 
 	/*
-	 * Wake up builders if there are new tasks that just became mature enough
-	 * (older than 10s)
+	 * Wake up builders if there are new tasks whose events just became
+	 * old enough (SAIS_NOTIFICATION_GRACE_SECS)
 	 */
 	sais_prune_inflight_list(vhd);
 	sais_platforms_with_tasks_pending(vhd);

@@ -1221,10 +1221,9 @@ sai_notification_file_upload_cb(void *data, const char *name,
 				 SAIES_WAITING);
 
 		/*
-		 * The tasks are all in there but set to state
-		 * NOT_READY_FOR_BUILD, the periodic central scan
-		 * switch them over to WAITING when they have been like that
-		 * for a short grace time (eg, 10s)
+		 * The tasks are all in there, but they're only offered to
+		 * builders once the event is SAIS_NOTIFICATION_GRACE_SECS
+		 * old, which the periodic central scan notices
 		 */
 
 		lws_sul_schedule(pss->vhd->context, 0, &pss->vhd->sul_central,
