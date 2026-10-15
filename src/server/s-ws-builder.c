@@ -848,13 +848,24 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 						 * writes to this db
 						 */
 
+						/*
+						 * A task between two of its steps is lost
+						 * with the builder too: the tree its next
+						 * step builds on was in that builder's job
+						 * dir, eg, a sai-virt VM that has been
+						 * destroyed, and a builder coming back by
+						 * the same name may not have it.
+						 */
+
 						lws_dll2_owner_clear(&lost);
 						lws_snprintf(q, sizeof(q),
 							"SELECT uuid, build_step FROM tasks WHERE "
-							"builder_name=? AND (state = 0 OR state = %d OR state = %d) "
+							"builder_name=? AND state IN (%d, %d, %d, %d) "
 							"AND run=(SELECT max(run) FROM tasks t2 WHERE t2.uuid = tasks.uuid)",
+							SAIES_WAITING,
 							SAIES_PASSED_TO_BUILDER,
-							SAIES_BEING_BUILT);
+							SAIES_BEING_BUILT,
+							SAIES_STEP_SUCCESS);
 
 						if (sqlite3_prepare_v2(pdb, q, -1, &sm, NULL) == SQLITE_OK) {
 							sqlite3_bind_text(sm, 1, sp->name, -1, SQLITE_TRANSIENT);
