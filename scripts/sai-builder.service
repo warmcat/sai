@@ -5,6 +5,15 @@ After=network-online.target ntp.service
 [Service]
 Environment="LWS_NTP_SERVER=192.168.4.1"
 ExecStart=/usr/local/bin/sai-builder
+#
+# A builder that dies, eg, the OOM killer picked it while a build took all
+# the memory, is gone until someone notices: its platforms go off the
+# server, and their pending tasks sit there waiting for it.  A builder that
+# means to stop, eg, a one-shot sai-virt VM done with its task, exits
+# cleanly and isn't restarted.
+#
+Restart=on-failure
+RestartSec=10
 
 [Install]
 WantedBy=multi-user.target
