@@ -484,14 +484,11 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	memset(&du, 0, sizeof(du));
 	lws_dir(ns->inp, &du, lws_dir_du_cb);
 
-	peak_mem_bytes = res->peak_mem_rss;
-#if defined(__APPLE__)
 	/*
-	 * lws seems to be multiplying OSX ru_maxrss by 1024 when it's already
-	 * in bytes. Let's divide it back to bytes.
+	 * lws gives it in bytes on every platform, and for the whole tree the
+	 * step ran, eg, all the compilers of a make -j at once
 	 */
-	peak_mem_bytes /= 1024;
-#endif
+	peak_mem_bytes = res->peak_mem_rss;
 
 	ns->us_cpu_user		+= res->us_cpu_user;
 	ns->us_cpu_sys		+= res->us_cpu_sys;
