@@ -361,7 +361,7 @@ sais_set_task_state(struct vhd *vhd, const char *task_uuid,
 
 	if (started) {
 		if (started == 1)
-			lws_snprintf(esc3, sizeof(esc3), ",started=0");
+			lws_snprintf(esc3, sizeof(esc3), ",started=0,started_us=0");
 		else
 			lws_snprintf(esc3, sizeof(esc3), ",started=%llu",
 			     (unsigned long long)started);
@@ -786,6 +786,7 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 		}
 			
 		t->started = 0;
+		t->started_us = 0;
 		t->duration = 0;
 		t->build_step = 0;
 		
@@ -804,7 +805,7 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 		} else {
 			/* update the existing row if it's a rejection */
 			lws_snprintf(cmd, sizeof(cmd), 
-				"update tasks set state=%d,started=0,duration=0,build_step=0,occupied_until=0 where uuid='%s' and run=%d",
+				"update tasks set state=%d,started=0,started_us=0,duration=0,build_step=0,occupied_until=0 where uuid='%s' and run=%d",
 				-1, esc, t->run);
 			sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 		}
@@ -875,7 +876,7 @@ sais_task_remove_all_tries(struct vhd *vhd, const char *task_uuid)
 	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 
 	lws_snprintf(cmd, sizeof(cmd), 
-		"update tasks set state=%d,started=0,duration=0,build_step=0,lost=0,occupied_until=0,builder_name='',builder='',server_name='' where uuid='%s' and run=0",
+		"update tasks set state=%d,started=0,started_us=0,duration=0,build_step=0,lost=0,occupied_until=0,builder_name='',builder='',server_name='' where uuid='%s' and run=0",
 		-1, esc);
 	sqlite3_exec(pdb, cmd, NULL, NULL, NULL);
 

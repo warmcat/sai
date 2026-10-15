@@ -85,8 +85,10 @@ static const char * const fleetlog_schema[] = {
 		"last_us INTEGER)",
 };
 
-static uint64_t
-sais_fleetlog_utc_us(void)
+/* UTC now in us: the fleet log's time base, and a run's log datum */
+
+uint64_t
+sais_utc_us(void)
 {
 	struct timeval tv;
 
@@ -286,7 +288,7 @@ static uint64_t
 sais_fleetlog_ingest(struct vhd *vhd, const sai_fleetlog_batch_t *b)
 {
 	sqlite3_stmt *sm_line = NULL, *sm_build = NULL, *sm_seen = NULL;
-	uint64_t now = sais_fleetlog_utc_us(), max_seq = 0;
+	uint64_t now = sais_utc_us(), max_seq = 0;
 	int64_t lag = INT64_MAX;
 	unsigned int bad = 0;
 	sais_fleetlog_src_t *src;
@@ -608,7 +610,7 @@ sais_fleetlog_expire_cb(lws_sorted_usec_list_t *sul)
 {
 	struct vhd *vhd = lws_container_of(sul, struct vhd,
 					   sul_fleetlog_expire);
-	uint64_t before = sais_fleetlog_utc_us() - vhd->fleetlog_retention_us;
+	uint64_t before = sais_utc_us() - vhd->fleetlog_retention_us;
 	lws_usec_t next = SAIS_FLEETLOG_EXPIRE_US;
 	sqlite3_stmt *sm;
 

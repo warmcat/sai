@@ -203,6 +203,7 @@ const lws_struct_map_t lsm_task[] = {
 	LSM_UNSIGNED	(sai_task_t, state,		"state"),
 	LSM_UNSIGNED	(sai_task_t, last_updated,	"last_updated"),
 	LSM_UNSIGNED	(sai_task_t, started,		"started"),
+	LSM_UNSIGNED	(sai_task_t, started_us,	"started_us"),
 	LSM_UNSIGNED	(sai_task_t, duration,		"duration"),
 	LSM_CARRAY	(sai_task_t, platform,		"platform"),
 	LSM_CARRAY	(sai_task_t, build,		"build"),

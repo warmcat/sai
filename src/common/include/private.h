@@ -280,6 +280,12 @@ typedef struct {
 	const char			*git_repo_url;		/* used in offer */
 	uint64_t			last_updated;
 	uint64_t			started;
+	/*
+	 * started, in UTC us, the datum for the run's log: the builder's
+	 * first row for the run comes from then, so a row's UTC is this plus
+	 * how long after the first row it is
+	 */
+	uint64_t			started_us;
 	uint64_t			duration;
 	int				state;
 	int				uid;
@@ -1141,7 +1147,7 @@ extern const lws_struct_map_t
 	lsm_schema_map_ta[1],
 	lsm_schema_map_plat_simple[1],
 	lsm_event[16],
-	lsm_task[37],
+	lsm_task[38],
 	lsm_log[9],
 	lsm_artifact[9],
 	lsm_plat_list[1],

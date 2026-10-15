@@ -385,11 +385,12 @@ sais_log_to_db(struct vhd *vhd, sai_log_t *log)
  * The log column holds base64 the browser decodes, and the timestamps are the
  * builder's monotonic clock, in us, which the browser shows relative to the
  * run's first row.  We can't read the builder's clock, but we know on our own
- * when the run's first step was accepted, its started time, and the builder's
+ * when the run's first step was accepted, its started_us, and the builder's
  * first row came from the start of that step.  So we place what we say that
  * long after its first row, eg, a step we give up on after 2h shows at +7200s,
- * not next to the step's last output.  It's only as good as the seconds
- * started has, so never put it before the newest row we already have.
+ * not next to the step's last output.  It's only as good as that datum, and a
+ * run from before started_us only has it in seconds, so never put it before
+ * the newest row we already have.
  *
  * Only this run's rows: the browser times a run's log from its first row, and
  * an earlier run may have been on another builder, or the same sai-virt VM
@@ -403,7 +404,7 @@ int
 sais_task_logf(struct vhd *vhd, const char *task_uuid, const char *fmt, ...)
 {
 	char text[512], esc[132], q[320], event_uuid[33];
-	uint64_t ts = 0, first = 0, started = 0, now;
+	uint64_t ts = 0, first = 0, started_us = 0, now_us;
 	sqlite3 *pdb = NULL;
 	sai_log_t log;
 	va_list ap;
@@ -445,10 +446,13 @@ sais_task_logf(struct vhd *vhd, const char *task_uuid, const char *fmt, ...)
 			     esc, esc);
 		sqlite3_exec(pdb, q, sai_sql3_get_uint64_cb, &first, NULL);
 
+		/* a run from before started_us only has it in seconds */
 		lws_snprintf(q, sizeof(q),
-			     "select coalesce(started, 0) from tasks where "
+			     "select coalesce(nullif(started_us, 0), "
+			     "started * 1000000, 0) from tasks where "
 			     "uuid='%s' order by run desc limit 1", esc);
-		sqlite3_exec(pdb, q, sai_sql3_get_uint64_cb, &started, NULL);
+		sqlite3_exec(pdb, q, sai_sql3_get_uint64_cb, &started_us,
+			     NULL);
 
 		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 	}
@@ -456,10 +460,10 @@ sais_task_logf(struct vhd *vhd, const char *task_uuid, const char *fmt, ...)
 	if (ts)
 		ts++;
 
-	now = (uint64_t)lws_now_secs();
-	if (first && started && now > started &&
-	    first + (now - started) * LWS_US_PER_SEC > ts)
-		ts = first + (now - started) * LWS_US_PER_SEC;
+	now_us = sais_utc_us();
+	if (first && started_us && now_us > started_us &&
+	    first + (now_us - started_us) > ts)
+		ts = first + (now_us - started_us);
 
 	memset(&log, 0, sizeof(log));
 	lws_strncpy(log.task_uuid, task_uuid, sizeof(log.task_uuid));
@@ -1068,10 +1072,18 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 			  rej->task_uuid, build_step);
 
 		if (build_step == 1) {
-			pss->first_log_timestamp = (uint64_t)lws_now_secs();
+			uint64_t now_us = sais_utc_us();
+
+			/*
+			 * The builder's first row for the run comes from the
+			 * step it has just accepted, so now is the datum that
+			 * places the run's log in UTC, see sai_task_t
+			 */
+			pss->first_log_timestamp = now_us / LWS_US_PER_SEC;
 			lws_snprintf(q, sizeof(q),
-			     "update tasks set started=%llu where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
-			     (unsigned long long)pss->first_log_timestamp, esc_uuid, esc_uuid);
+			     "update tasks set started=%llu,started_us=%llu where uuid='%s' and run=(select max(run) from tasks where uuid='%s')",
+			     (unsigned long long)pss->first_log_timestamp,
+			     (unsigned long long)now_us, esc_uuid, esc_uuid);
 
 			lwsl_info("%s: setting task %s started to %llu\n",
 				  __func__, esc_uuid, (unsigned long long)pss->first_log_timestamp);

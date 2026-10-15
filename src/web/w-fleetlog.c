@@ -476,15 +476,16 @@ saiw_fleetlog_build(struct vhd *vhd, const char *hash, saiw_fl_build_t *b,
 				     &pdb))
 		goto done;
 
-	if (sqlite3_prepare_v2(pdb, "SELECT run, builder_name, started, "
+	/* a run from before started_us only has started, in seconds */
+	if (sqlite3_prepare_v2(pdb, "SELECT run, builder_name, "
+			"coalesce(nullif(started_us, 0), started * 1000000), "
 			"duration FROM tasks WHERE uuid = ? ORDER BY run", -1,
 			&sm, NULL) == SQLITE_OK) {
 		sqlite3_bind_text(sm, 1, b->task_uuid, -1, SQLITE_TRANSIENT);
 
 		while (sqlite3_step(sm) == SQLITE_ROW) {
 			const char *bn = (const char *)sqlite3_column_text(sm, 1);
-			uint64_t st = (uint64_t)sqlite3_column_int64(sm, 2) *
-								1000000ull,
+			uint64_t st = (uint64_t)sqlite3_column_int64(sm, 2),
 				 du = (uint64_t)sqlite3_column_int64(sm, 3) *
 								1000000ull,
 				 en = du ? st + du : saiw_fleetlog_utc_us();

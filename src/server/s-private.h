@@ -786,6 +786,9 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
 
 /* s-fleetlog.c */
 
+uint64_t
+sais_utc_us(void);
+
 int
 sais_fleetlog_init(struct vhd *vhd,
 		   const struct lws_protocol_vhost_options *pvo);
