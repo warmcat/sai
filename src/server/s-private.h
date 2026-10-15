@@ -87,12 +87,18 @@ typedef struct sai_platform {
 	/* build and name over-allocated here */
 } sai_platform_t;
 
+/*
+ * The most a sai-web connection may have queued for it before we decide it
+ * can't keep up and drop it
+ */
+#define SAIS_WEBSRV_BACKLOG_MAX		(5u * 1024u * 1024u)
+
 typedef struct websrvss_srv {
 	struct lws_ss_handle 		*ss;
 	struct vhd			*vhd;
 
 	struct lejp_ctx			ctx;
-	struct lws_buflist		*bl_srv_to_web;
+	struct lws_buflist2_owner	bl_srv_to_web;
 	/*
 	 * Reassembly of fragmented web -> server messages (eg, a taskclone
 	 * carrying an edited build script), see websrvss_ws_rx()
@@ -100,7 +106,9 @@ typedef struct websrvss_srv {
 	struct lws_buflist		*rx_reasm;
 	unsigned int			viewers;
 
-	struct lws_buflist		*private_heads[SAI_WEBSRV_PB__COUNT];
+	struct lws_buflist2_owner	private_owners[SAI_WEBSRV_PB__COUNT];
+
+	char				backlog_warned;
 } websrvss_srv_t;
 
 typedef struct sai_powering_up_plat {

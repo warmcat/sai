@@ -999,8 +999,8 @@ websrvss_ws_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 {
 	websrvss_srv_t *m = (websrvss_srv_t *)userobj;
 
-	return sai_ss_tx_from_buflist_helper(m->ss, &m->bl_srv_to_web,
-					     buf, len, flags);
+	return sai_ss_tx_from_buflist2_helper(m->ss, &m->bl_srv_to_web,
+					      buf, len, flags);
 }
 
 
@@ -1017,9 +1017,11 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 	case LWSSSCS_DISCONNECTED: {
 		unsigned int total_viewers = 0;
 
-		lws_buflist_destroy_all_segments(&m->bl_srv_to_web);
+		lws_buflist2_destroy_all_segments(&m->bl_srv_to_web);
 		lws_buflist_destroy_all_segments(&m->rx_reasm);
-		lws_wsmsg_destroy(m->private_heads, LWS_ARRAY_SIZE(m->private_heads));
+		lws_wsmsg_destroy(m->private_owners,
+				  LWS_ARRAY_SIZE(m->private_owners));
+		m->backlog_warned = 0;
 
 		m->viewers = 0;
 
@@ -1052,6 +1054,7 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 	}
 	case LWSSSCS_CREATING:
 		m->viewers = 0;
+		m->bl_srv_to_web.limit = SAIS_WEBSRV_BACKLOG_MAX;
 		return lws_ss_request_tx(m->ss);
 
 	case LWSSSCS_CONNECTED:

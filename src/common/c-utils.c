@@ -329,11 +329,36 @@ sai_ss_serialize_queue_helper(struct lws_ss_handle *h,
 	return 0;
 }
 
+/*
+ * The tx helpers send what was queued with the message's SS flags saved as an
+ * int at the start of its first fragment.  Check the flags they came to make
+ * sense after the last frame we sent.
+ */
+
+static void
+sai_ss_tx_check_flags(struct lws_ss_handle *ss, int fl, int *flags)
+{
+	if ((fl & LWSSS_FLAG_SOM) && (((*flags) & 3) == 2)) {
+		lwsl_ss_err(ss, "TX: Illegal LWSSS_FLAG_SOM after previous frame without LWSSS_FLAG_EOM");
+		assert(0);
+	}
+	if (!(fl & LWSSS_FLAG_SOM) && ((*flags) & 3) == 3) {
+		lwsl_ss_err(ss, "TX: Missing LWSSS_FLAG_SOM after previous frame with LWSSS_FLAG_EOM");
+		assert(0);
+	}
+	if (!(fl & LWSSS_FLAG_SOM) && !((*flags) & 2)) {
+		lwsl_ss_err(ss, "TX: Missing LWSSS_FLAG_SOM on first frame");
+		assert(0);
+	}
+
+	*flags = fl;
+}
+
 lws_ss_state_return_t
 sai_ss_tx_from_buflist_helper(struct lws_ss_handle *ss, struct lws_buflist **buflist,
 			      uint8_t *buf, size_t *len, int *flags)
 {
-	int *pi = (int *)lws_buflist_get_frag_start_or_NULL(buflist), depi, fl;
+	int *pi = (int *)lws_buflist_get_frag_start_or_NULL(buflist), depi;
 	char som, som1, eom, final = 1;
 	size_t fsl, used;
 
@@ -363,25 +388,59 @@ sai_ss_tx_from_buflist_helper(struct lws_ss_handle *ss, struct lws_buflist **buf
 		final = 0;
 
 	*len = used;
-	fl = (som ? LWSSS_FLAG_SOM : 0) | (final ? LWSSS_FLAG_EOM : 0);
-
-	if ((fl & LWSSS_FLAG_SOM) && (((*flags) & 3) == 2)) {
-		lwsl_ss_err(ss, "TX: Illegal LWSSS_FLAG_SOM after previous frame without LWSSS_FLAG_EOM");
-		assert(0);
-	}
-	if (!(fl & LWSSS_FLAG_SOM) && ((*flags) & 3) == 3) {
-		lwsl_ss_err(ss, "TX: Missing LWSSS_FLAG_SOM after previous frame with LWSSS_FLAG_EOM");
-		assert(0);
-	}
-	if (!(fl & LWSSS_FLAG_SOM) && !((*flags) & 2)) {
-		lwsl_ss_err(ss, "TX: Missing LWSSS_FLAG_SOM on first frame");
-		assert(0);
-	}
-
-	*flags = fl;
+	sai_ss_tx_check_flags(ss, (som ? LWSSS_FLAG_SOM : 0) |
+				  (final ? LWSSS_FLAG_EOM : 0), flags);
 
 	/* If there are more to send, request another writable callback */
 	if (*buflist && lws_ss_request_tx(ss))
+		lwsl_ss_warn(ss, "tx request failed");
+
+	return LWSSSSRET_OK;
+}
+
+/* the same, from a buflist2 */
+
+lws_ss_state_return_t
+sai_ss_tx_from_buflist2_helper(struct lws_ss_handle *ss,
+			       struct lws_buflist2_owner *bl, uint8_t *buf,
+			       size_t *len, int *flags)
+{
+	int *pi = (int *)lws_buflist2_get_frag_start_or_NULL(bl), depi;
+	char som, som1, eom, final = 1;
+	size_t fsl, used;
+
+	if (!pi)
+		return LWSSSSRET_TX_DONT_SEND;
+
+	depi = *pi;
+
+	fsl = lws_buflist2_next_segment_len(bl, NULL);
+
+	lws_buflist2_fragment_use(bl, NULL, 0, &som, &eom);
+	if (som) {
+		fsl -= sizeof(int);
+		lws_buflist2_fragment_use(bl, buf, sizeof(int), &som1, &eom);
+	}
+	if (!(depi & LWSSS_FLAG_SOM))
+		som = 0;
+
+	if (*len > fsl)
+		*len = fsl;
+
+	used = (size_t)lws_buflist2_fragment_use(bl, (uint8_t *)buf, *len,
+						 &som1, &eom);
+	if (!used)
+		return LWSSSSRET_TX_DONT_SEND;
+
+	if (used < fsl || !(depi & LWSSS_FLAG_EOM)) /* we saved SS flags at the start of the buf */
+		final = 0;
+
+	*len = used;
+	sai_ss_tx_check_flags(ss, (som ? LWSSS_FLAG_SOM : 0) |
+				  (final ? LWSSS_FLAG_EOM : 0), flags);
+
+	/* If there are more to send, request another writable callback */
+	if (lws_buflist2_total_len(bl) && lws_ss_request_tx(ss))
 		lwsl_ss_warn(ss, "tx request failed");
 
 	return LWSSSSRET_OK;

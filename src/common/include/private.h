@@ -1275,6 +1275,11 @@ lws_ss_state_return_t
 sai_ss_tx_from_buflist_helper(struct lws_ss_handle *ss, struct lws_buflist **buflist,
 			      uint8_t *buf, size_t *len, int *flags);
 
+lws_ss_state_return_t
+sai_ss_tx_from_buflist2_helper(struct lws_ss_handle *ss,
+			       struct lws_buflist2_owner *bl, uint8_t *buf,
+			       size_t *len, int *flags);
+
 int
 sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache,
 			 const char *sqlite3_path_lhs, const char *event_uuid,

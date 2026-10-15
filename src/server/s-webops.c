@@ -58,18 +58,28 @@ _sais_websrv_broadcast(struct lws_ss_handle *h, void *arg)
 	lws_wsmsg_info_t info	   = *info_in;
 	unsigned int *pi	   = (unsigned int *)((const char *)info.buf - sizeof(int));
 
-	info.head_upstream		= &m->bl_srv_to_web;
-	info.private_heads		= m->private_heads;
+	info.upstream			= &m->bl_srv_to_web;
+	info.private_owners		= m->private_owners;
 
-	// lwsl_ss_notice(h, "Queueing %u bytes, ridx %d, ff_flags: %u",
-	//	       (unsigned int)info.len, info.private_source_idx, info.ss_flags);
+	/*
+	 * sai-web might not be taking it... then it has fallen too far behind
+	 * to catch up, so drop the connection: it gets everything afresh when
+	 * it reconnects.  Say so once, not for each message that follows
+	 * while the connection goes.
+	 */
 
-	/* sai-web might not be taking it.. */
-
-	if (lws_buflist_total_len(&m->bl_srv_to_web) > (5u * 1024u * 1024u)) {
-		lwsl_ss_warn(h, "server->web buflist reached 5MB");
-		/* close the connection to the client then */
-		lws_ss_start_timeout(h, 1);
+	if (lws_buflist2_total_len(&m->bl_srv_to_web) + sizeof(int) +
+					info.len > SAIS_WEBSRV_BACKLOG_MAX) {
+		if (!m->backlog_warned) {
+			lwsl_ss_warn(h, "server->web backlog reached %uKiB in "
+				     "%u msgs, dropping the connection",
+				     (unsigned int)(lws_buflist2_total_len(
+					     &m->bl_srv_to_web) / 1024),
+				     (unsigned int)lws_dll2_count(
+					     &m->bl_srv_to_web.owner));
+			m->backlog_warned = 1;
+			lws_ss_start_timeout(h, 1);
+		}
 
 		return;
 	}
