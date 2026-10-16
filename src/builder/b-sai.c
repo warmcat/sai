@@ -478,6 +478,22 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 		if (saib_suspender_fork(argv0))
 			return 1;
 #endif
+
+		/*
+		 * Our logs go to the first server in the conf, on a link of
+		 * their own, see c-fleetlog.c, from here: so what goes wrong
+		 * before we are operational, eg, a sai-virt VM that can't
+		 * reach sai-virt or resolve its name, is in the fleet logs
+		 * too, where before nothing of a builder stuck there was.
+		 *
+		 * A sai-virt VM ships under the host name in its conf until
+		 * sai-virt tells it which VM it is, see b-whoami.c, then
+		 * under the VM's name.
+		 */
+		if (saicom_fleetlog_start(builder.context, "sai-builder",
+					  builder.host, builder.fleetlog_url,
+					  builder.link_key))
+			lwsl_warn("%s: our logs won't be shipped\n", __func__);
 		break;
 	}
 
@@ -511,20 +527,10 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 		}
 
 		/*
-		 * Our logs go to the first server we know, on a link of their
-		 * own, see c-fleetlog.c.  By now a sai-virt VM knows its name.
+		 * By now a sai-virt VM knows its name: our logs, shipping
+		 * since the context was created, go by it from here
 		 */
-		if (builder.sai_plat_server_owner.head) {
-			struct sai_plat_server *spm = lws_container_of(
-					builder.sai_plat_server_owner.head,
-					struct sai_plat_server, list);
-
-			if (saicom_fleetlog_start(builder.context,
-						  "sai-builder", builder.host,
-						  spm->url, builder.link_key))
-				lwsl_warn("%s: our logs won't be shipped\n",
-					  __func__);
-		}
+		saicom_fleetlog_set_host(builder.host);
 
 		lwsl_notice("====== EXECUTING SAIB_POWER_INIT ======\n");
 		saib_power_init();

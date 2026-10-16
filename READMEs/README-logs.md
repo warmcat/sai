@@ -51,6 +51,14 @@ for.  A source is identified by
 the same machine as `sai-vm-...-2` an hour ago, and a restarted daemon starts
 its sequence numbers again.
 
+A source's `host` can change.  A builder starts shipping as soon as it has an
+lws context, before it is operational, so what goes wrong before then, eg, a
+sai-virt VM that can't reach sai-virt or resolve its name, is here too.  In a
+sai-virt VM that is before it knows which VM it is, so it ships under the host
+name in its conf, and takes the VM's name once sai-virt has told it.  The
+lines it shipped before are the same daemon's, so sai-server renames the
+source, and they are found under the VM's name too.
+
 The lines kept are the ones the daemon logs at its configured level (`-d`);
 raising a daemon's level is how to get more detail into the fleet logs.  What
 isn't an lws log line, like coredumps, OOM kills, systemd restarts, isn't here

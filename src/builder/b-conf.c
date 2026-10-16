@@ -48,7 +48,9 @@ static const char * const paths_global[] = {
 	"power-monitor.url",
 	"rebuild_script_user",
 	"rebuild_script_root",
-	"build-timeout-secs"
+	"build-timeout-secs",
+	/* seen in this pass too, for the first server to ship our logs to */
+	"platforms[].servers",
 };
 
 enum enum_paths_global {
@@ -69,7 +71,8 @@ enum enum_paths_global {
 	LEJPM_POWER_MONITOR_URL,
 	LEJPM_REBUILD_SCRIPT_USER,
 	LEJPM_REBUILD_SCRIPT_ROOT,
-	LEJPM_BUILD_TIMEOUT_SECS
+	LEJPM_BUILD_TIMEOUT_SECS,
+	LEJPM_GLOBAL_FIRST_SERVER,
 };
 
 /* platform-related part */
@@ -400,6 +403,13 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 
 	case LEJPM_REBUILD_SCRIPT_ROOT:
 		pp = &a->builder->rebuild_script_root;
+		break;
+
+	case LEJPM_GLOBAL_FIRST_SERVER:
+		/* the first platform's first server */
+		if (a->builder->fleetlog_url)
+			return 0;
+		pp = &a->builder->fleetlog_url;
 		break;
 
 	default:
