@@ -371,18 +371,67 @@ saib_create_resproxy_listen_uds(struct lws_context *context,
 }
 
 /*
- * A builder VM often boots with a nonsense wall clock and has ntp correct it a
- * moment later.  We should not start work before then: everything we create
- * gets an mtime from the bad clock, and once the step lands those mtimes make
- * the job dirs look as old as the step was big, so the deletion paths remove
- * dirs whose task is still building.  TLS certificate validity is decided by
- * the same clock.
+ * A builder VM often boots with a wrong wall clock and has the system's ntp
+ * correct it a moment later.  We should not start work before then: everything
+ * we create gets an mtime from the bad clock, and once the step lands those
+ * mtimes make the job dirs look as old as the step was big, so the deletion
+ * paths remove dirs whose task is still building.  TLS certificate validity is
+ * decided by the same clock, and a fedora VM's clock, an hour slow when it
+ * boots, was stepped while its first task was fetching.
  *
- * So hold the system state below TIME_VALID until the clock is at least
- * plausible.  We rejected the transition, so we own retrying it.
+ * So hold the system state below TIME_VALID, and so everything that goes on
+ * the network once we're OPERATIONAL, until the clock agrees with ntp.  We
+ * don't set the clock, the system's time daemon does that, we ask lws' ntp
+ * client what the time is and wait for the system clock to agree.  Without an
+ * ntp client in lws, a clock that is at least plausible has to do.  We
+ * rejected the transition, so we own retrying it.
  */
 
 static lws_usec_t clock_wait_started;
+static int64_t ntp_off_secs;	/* ntp's time less our clock's, last answer */
+static char ntp_answered;
+
+/* lws' ntp client got an answer: we only want to know how far we are out */
+
+static int
+saib_ntp_set_clock(lws_usec_t us)
+{
+	ntp_off_secs = (int64_t)(us / LWS_US_PER_SEC) - (int64_t)lws_now_secs();
+	ntp_answered = 1;
+
+	return 0;
+}
+
+static const lws_system_ops_t saib_system_ops = {
+	.set_clock	= saib_ntp_set_clock,
+};
+
+/* is the wall clock right, as far as we can tell? */
+
+static int
+saib_clock_good(struct lws_context *cx)
+{
+	if ((uint64_t)lws_now_secs() < SAI_CLOCK_PLAUSIBLE_AFTER)
+		return 0;
+
+	if (!ntp_answered) {
+		/* nonzero means there's no ntp client to ask */
+		return !!lws_ntpc_trigger(cx);
+	}
+
+	ntp_answered = 0;
+	if (ntp_off_secs <= SAI_CLOCK_NTP_AGREE_SECS &&
+	    ntp_off_secs >= -SAI_CLOCK_NTP_AGREE_SECS)
+		return 1;
+
+	lwsl_notice("%s: wall clock is %llds from ntp, waiting for the system "
+		    "to correct it\n", __func__, (long long)ntp_off_secs);
+
+	/* ask again, the system may have corrected it by the answer */
+	lws_ntpc_trigger(cx);
+
+	return 0;
+}
 
 static void
 sul_clock_wait_cb(lws_sorted_usec_list_t *sul)
@@ -407,25 +456,24 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 		if (current >= LWS_SYSTATE_TIME_VALID)
 			break;
 
-		if ((uint64_t)lws_now_secs() >= SAI_CLOCK_PLAUSIBLE_AFTER) {
+		if (saib_clock_good(mgr->context)) {
 			if (clock_wait_started)
 				lwsl_notice("%s: wall clock now reads %llu, "
 					    "starting work\n", __func__,
 					    (unsigned long long)lws_now_secs());
 
-			/* the clock is believable, this is where we start from */
+			/* the clock is right, this is where we start from */
 			saib_clock_baseline();
 			break;
 		}
 
 		if (!clock_wait_started) {
 			clock_wait_started = lws_now_usecs();
-			lwsl_warn("%s: wall clock reads %llu, before %llu: it has "
-				  "not been set yet, holding off starting work "
-				  "for up to %ds\n", __func__,
-				  (unsigned long long)lws_now_secs(),
-				  (unsigned long long)SAI_CLOCK_PLAUSIBLE_AFTER,
-				  SAI_CLOCK_WAIT_MAX_SECS);
+			lwsl_notice("%s: wall clock reads %llu, holding off "
+				    "starting work until it agrees with ntp, for "
+				    "up to %ds\n", __func__,
+				    (unsigned long long)lws_now_secs(),
+				    SAI_CLOCK_WAIT_MAX_SECS);
 		} else
 			if (lws_now_usecs() - clock_wait_started >
 			    (lws_usec_t)SAI_CLOCK_WAIT_MAX_SECS * LWS_US_PER_SEC) {
@@ -962,6 +1010,8 @@ saib_app_run(int argc, const char **argv)
 	signal(SIGINT, sigint_handler);
 
 	info.pss_policies_json = default_ss_policy;
+	/* we hear what ntp says the time is, see saib_clock_good() */
+	info.system_ops = &saib_system_ops;
 	info.fd_limit_per_thread = 1 + 256 + 1;
 
 	/* hook up our lws_system state notifier */

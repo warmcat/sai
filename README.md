@@ -651,6 +651,12 @@ lws cmake option|Meaning
 You can also define `-DLWS_WITH_SYS_METRICS=1` on lws to enable build of
 openmetrics pieces in sai when built against lws.
 
+For sai-builder, define `-DLWS_WITH_SYS_NTPCLIENT=1` on lws too.  The builder
+then won't start work until the wall clock agrees with ntp, which matters on
+VMs that boot with a wrong clock and have it stepped a moment later.  It only
+asks ntp what the time is, setting the clock is left to the system.  Without
+it, the builder can only wait for the clock to look plausible.
+
 Similarly the two daemons bring in different dependencies
 
 Feature|dependency

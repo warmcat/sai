@@ -160,6 +160,12 @@ struct saib_opaque_spawn {
  * detection above stops a late correction eating the job dirs regardless.
  */
 #define SAI_CLOCK_WAIT_MAX_SECS			(5 * 60)
+/*
+ * How far the wall clock may be from what ntp says before we wait for the
+ * system to correct it.  We only read it to the second, and ntp's answer took a
+ * moment to arrive.
+ */
+#define SAI_CLOCK_NTP_AGREE_SECS		5
 
 
 /*
