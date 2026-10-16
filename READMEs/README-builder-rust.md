@@ -44,9 +44,7 @@ finds the installed libwebsockets).  Then lws from its main branch, and sai:
 ```
 $ git clone https://libwebsockets.org/repo/libwebsockets
 $ cd libwebsockets && mkdir build && cd build && \
-  cmake .. -DLWS_LOGS_TIMESTAMP=0 -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 \
-   -DLWS_WITH_JOSE=1 -DLWS_WITH_STRUCT_SQLITE3=1 -DLWS_WITH_GENCRYPTO=1 \
-   -DLWS_WITH_SPAWN=1 -DLWS_WITH_SECURE_STREAMS=1
+  cmake .. -DLWS_FOR_SAI=1 -DLWS_LOGS_TIMESTAMP=0
 $ make -j && sudo make install && sudo ldconfig
 $ cd ../..
 $ git clone https://warmcat.com/repo/sai

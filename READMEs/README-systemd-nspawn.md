@@ -349,9 +349,7 @@ For redhat type distros, you probably need to add /usr/local/lib to the
 ```
 Container # git clone https://libwebsockets.org/repo/libwebsockets
 Container # cd libwebsockets && mkdir build && cd build && \
-  cmake .. -DLWS_WITH_JOSE=1 -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 \
-   -DLWS_WITH_STRUCT_SQLITE3=1 -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1 \
-   -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1 \
+  cmake .. -DLWS_FOR_SAI=1 -DLWS_WITH_THREADPOOL=1 \
    -DLWS_WITH_PLUGINS_BUILTIN=1 -DLWS_WITHOUT_DAEMONIZE=0 \
    -DLWS_WITH_SYS_METRICS=1
 Container # make -j && make -j install && ldconfig
@@ -365,10 +363,8 @@ For OSX, you'll need to add something like `-DLWS_OPENSSL_INCLUDE_DIRS=/usr/loca
 For newer M1 based OSX
 
 ```
-cmake .. -DLWS_OPENSSL_INCLUDE_DIRS=/opt/homebrew/Cellar/openssl@1.1/1.1.1h/include '-DLWS_OPENSSL_LIBRARIES=/opt/homebrew/Cellar/openssl@1.1/1.1.1h/lib/libssl.dylib;/opt/homebrew/Cellar/openssl@1.1/1.1.1h/lib/libcrypto.dylib' -DLWS_WITH_MINIMAL_EXAMPLES=0 -DLWS_WITH_JOSE=1 -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 \
-    -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1 \
-   -DLWS_WITH_SECURE_STREAMS=1 -DLWS_WITH_THREADPOOL=1 -DLWS_WITH_JOSE=1 \
-   -DLWS_WITH_PLUGINS_BUILTIN=1
+cmake .. -DLWS_OPENSSL_INCLUDE_DIRS=/opt/homebrew/Cellar/openssl@1.1/1.1.1h/include '-DLWS_OPENSSL_LIBRARIES=/opt/homebrew/Cellar/openssl@1.1/1.1.1h/lib/libssl.dylib;/opt/homebrew/Cellar/openssl@1.1/1.1.1h/lib/libcrypto.dylib' -DLWS_WITH_MINIMAL_EXAMPLES=0 -DLWS_FOR_SAI=1 \
+   -DLWS_WITH_THREADPOOL=1 -DLWS_WITH_PLUGINS_BUILTIN=1
 ```
 
 ### Solaris loader paths

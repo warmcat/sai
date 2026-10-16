@@ -52,7 +52,7 @@ Sai dependencies:
  - libwebsockets from main branch
     - libssl-dev
     - libsqlite3
-    - Build lws:  `git init && git fetch https://github.com/warmcat/libwebsockets +main:main && cd libwebsockets && mkdir -p build && cd build && cmake .. -DLWS_UNIX_SOCK=1 -DLWS_WITH_STRUCT_JSON=1 -DLWS_WITH_JOSE=1 -DLWS_WITH_STRUCT_SQLITE3=1 -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1 -DLWS_WITH_SECURE_STREAMS=1 && make && sudo make install && sudo ldconfig`
+    - Build lws:  `git init && git fetch https://github.com/warmcat/libwebsockets +main:main && cd libwebsockets && mkdir -p build && cd build && cmake .. -DLWS_FOR_SAI=1 && make && sudo make install && sudo ldconfig`
 
  - sai (main branch shown)
     - Build sai:  `git init && git fetch https://github.com/warmcat/sai +main:m && cd libwebsockets && mkdir -p build && cd build && cmake .. && make && sudo make install && sudo ldconfig`

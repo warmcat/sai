@@ -631,31 +631,29 @@ For redhat type distros, you probably need to add /usr/local/lib to the
 ```
 $ git clone https://libwebsockets.org/repo/libwebsockets
 $ cd libwebsockets && mkdir build && cd build && \
-  cmake .. -DLWS_LOGS_TIMESTAMP=0 -DLWS_WITH_STRUCT_JSON=1 -DLWS_WITH_JOSE=1 \
-   -DLWS_WITH_STRUCT_SQLITE3=1 -DLWS_WITH_GENCRYPTO=1 -DLWS_WITH_SPAWN=1
+  cmake .. -DLWS_FOR_SAI=1 -DLWS_LOGS_TIMESTAMP=0
 $ make -j && sudo make -j install && sudo ldconfig
 ```
 
-The actual cmake options needed depends on if you are building sai-server and / or
-sai-builder.
+`-DLWS_FOR_SAI=1` turns on everything any of the sai daemons need from lws, in
+one place in lws' `CMakeLists-implied-options.txt`: structs to and from JSON
+and sqlite3, secure streams, spawn, the stub api, generic crypto and JOSE, unix
+sockets, wake on lan, the smtp client, the system info snapshot and the ntp
+client.
 
 lws cmake option|Meaning
 ---|---
+`-DLWS_FOR_SAI=1` | Everything the sai daemons need from lws
 `-DLWS_LOGS_TIMESTAMP=0` | Avoids duplicating log timestamp in syslog
-`-DLWS_WITH_STRUCT_JSON=1` | Support for struct -> JSON -> struct
-`-DLWS_WITH_STRUCT_SQLITE3=1` | Support for struct -> sqlite3 -> struct
-`-DLWS_WITH_SPAWN=1` | Support for crossplatform process spawning
-`-DLWS_WITH_GENCRYPTO=1` | Supoort for cross-tls library crypto
-`-DLWS_WITH_JOSE=1` | Support for JOSE web tokens
 
 You can also define `-DLWS_WITH_SYS_METRICS=1` on lws to enable build of
 openmetrics pieces in sai when built against lws.
 
-For sai-builder, define `-DLWS_WITH_SYS_NTPCLIENT=1` on lws too.  The builder
-then won't start work until the wall clock agrees with ntp, which matters on
-VMs that boot with a wrong clock and have it stepped a moment later.  It only
-asks ntp what the time is, setting the clock is left to the system.  Without
-it, the builder can only wait for the clock to look plausible.
+The ntp client it brings in lets sai-builder wait to start work until the wall
+clock agrees with ntp, which matters on VMs that boot with a wrong clock and
+have it stepped a moment later.  It only asks ntp what the time is, setting the
+clock is left to the system.  With an lws built without it, the builder can
+only wait for the clock to look plausible.
 
 Similarly the two daemons bring in different dependencies
 
