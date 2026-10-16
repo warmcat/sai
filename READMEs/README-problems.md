@@ -145,6 +145,39 @@ opens that task's log at the lines of the stanza.  As with the other panes, the
 splitters between them can be dragged, and are remembered in the browser; on a
 touch screen, hold one for a moment before dragging it.
 
+## From the command line
+
+`scripts/sai-problems.py` asks a sai-web for the same things the problems pane
+shows, over the same websocket, so it's handy for looking into an event from a
+shell, or for an agent.  What it shows is public, so it needs no account.
+
+```
+$ scripts/sai-problems.py libwebsockets.org events libwebsockets main-dev
+$ scripts/sai-problems.py libwebsockets.org problems latest:libwebsockets:main-dev
+$ scripts/sai-problems.py libwebsockets.org excerpts <event uuid> 1,2,3
+$ scripts/sai-problems.py libwebsockets.org tasks <event uuid>
+$ scripts/sai-problems.py libwebsockets.org log <task uuid> [<try>]
+```
+
+`problems` lists each group with its id, severity, phase, test or file, which
+builds and how often, its history in other events, then where it was seen:
+the occurrence's `uid`, the task uuid and try, and the line in the task's log
+it starts at.  `excerpts` gives the start of what the log said there, for the
+uids given; `log` gives the whole log of the task's try, as the builder sent
+it, eg, to see what came before.  `--json` prints sai-web's own JSON instead.
+
+The browser sends, and the tool sends the same:
+
+|schema|asks for|
+|---|---|
+|`com.warmcat.sai.problems`, `event_hash`|the event's summary, answered with the same schema|
+|`com.warmcat.sai.problem_excerpts`, `event_hash`, `uids` ("1,2,3")|the occurrences' excerpts, answered with the same schema|
+|`com.warmcat.sai.eventinfo`, `event_hash`|the event and its tasks, as `sai.warmcat.com.overview`|
+|`com.warmcat.sai.taskinfo`, `task_hash`, `logs`: 1, `run`|the task, then its log as `com-warmcat-sai-logs` rows|
+
+In the summary, `sev` is 0 for a warning, 1 for flaky and 2 for an error, and
+`phase` is 0 to 4 for configuring, building, linking, testing and other.
+
 ## Testing the parser
 
 `tests/problems` has logs from each of the tools with what should be found in
