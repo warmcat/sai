@@ -317,6 +317,18 @@ password and the current TOTP code to the auth server's `/api/login`, keeping
 the session cookie it gets for its queries, and logging in again when it
 expires.
 
+`scripts/sai-logs.py` is such a client:
+
+```
+$ scripts/sai-logs.py --creds ~/my-sai-creds libwebsockets.org 'hash=4b9f390f'
+$ scripts/sai-logs.py libwebsockets.org 'lvl=warn&src=sai-virt&from=2026-10-14T08:00:00Z&to=2026-10-14T09:00:00Z'
+$ scripts/sai-logs.py libwebsockets.org 'sync?task=<uuid>'
+```
+
+It prints the JSON answer.  The credentials file holds the username, the
+password and the TOTP secret, a line each; it logs in only when it has no
+session cookie that still works, see its `--help`.
+
 ## The synchronised log view
 
 The sai web UI shows a run's task log beside the fleet logs of the hosts
