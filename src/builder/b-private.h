@@ -259,8 +259,9 @@ struct sai_builder {
 	const char		*link_key;
 
 	const char		*url_sai_power;
-	/* the first server in the conf: our logs go there from startup */
+	/* the first server in the conf: our logs go there once operational */
 	const char		*fleetlog_url;
+	char			fleetlog_started;
 	const char		*power_controller_name;
 
 	const char		*power_off_type;

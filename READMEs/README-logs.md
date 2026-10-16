@@ -58,11 +58,12 @@ search list (`lws_sysinfo`, see lws' README.sysinfo.md).  So the fleet logs
 say where each source's lines came from, and for a sai-virt VM that can't
 reach anything, what addresses and resolver it came up with.
 
-A source's `host` can change.  A builder starts shipping as soon as it has an
-lws context, before it is operational, so what goes wrong before then, eg, a
-sai-virt VM that can't reach sai-virt or resolve its name, is here too.  In a
-sai-virt VM that is before it knows which VM it is, so it ships under the host
-name in its conf, and takes the VM's name once sai-virt has told it.  The
+A source's `host` can change.  A builder keeps what it logs from when it
+starts, and ships it once it's operational, that is, once its clock is right
+and it has an address, but before sai-virt has told a VM which VM it is: so
+what goes wrong before then, eg, a sai-virt VM that can't reach sai-virt or
+resolve its name, is here too.  Until then it ships under the host name in its
+conf, and takes the VM's name once sai-virt has told it.  The
 lines it shipped before are the same daemon's, so sai-server renames the
 source, and they are found under the VM's name too.
 

@@ -478,34 +478,39 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 		if (saib_suspender_fork(argv0))
 			return 1;
 #endif
-
-		/*
-		 * Our logs go to the first server in the conf, on a link of
-		 * their own, see c-fleetlog.c, from here: so what goes wrong
-		 * before we are operational, eg, a sai-virt VM that can't
-		 * reach sai-virt or resolve its name, is in the fleet logs
-		 * too, where before nothing of a builder stuck there was.
-		 *
-		 * A sai-virt VM ships under the host name in its conf until
-		 * sai-virt tells it which VM it is, see b-whoami.c, then
-		 * under the VM's name.
-		 */
-		if (saicom_fleetlog_start(builder.context, "sai-builder",
-					  builder.host, builder.fleetlog_url,
-					  builder.link_key))
-			lwsl_warn("%s: our logs won't be shipped\n", __func__);
-
-		/*
-		 * ... starting with what this system looks like: in a
-		 * sai-virt VM, the addresses and resolver it came up with
-		 * are the first thing to look at when it can't reach anything
-		 */
-		saicom_sysinfo_log(builder.context);
 		break;
 	}
 
 	case LWS_SYSTATE_OPERATIONAL:
 		if (current != LWS_SYSTATE_OPERATIONAL) {
+			/*
+			 * The network is ours from here, the clock is right and
+			 * we have an address.  Our logs go to the first server
+			 * in the conf, on a link of their own, see c-fleetlog.c,
+			 * with everything we logged since we started: so what
+			 * goes wrong before sai-virt has told a VM which it is,
+			 * eg, it can't reach sai-virt or resolve its name, is in
+			 * the fleet logs too.  Until then, a sai-virt VM ships
+			 * under the host name in its conf, see b-whoami.c.
+			 */
+			if (!builder.fleetlog_started) {
+				builder.fleetlog_started = 1;
+				if (saicom_fleetlog_start(builder.context,
+						"sai-builder", builder.host,
+						builder.fleetlog_url,
+						builder.link_key))
+					lwsl_warn("%s: our logs won't be "
+						  "shipped\n", __func__);
+
+				/*
+				 * ... starting with what this system looks
+				 * like: in a sai-virt VM, the addresses and
+				 * resolver it came up with are the first thing
+				 * to look at when it can't reach anything
+				 */
+				saicom_sysinfo_log(builder.context);
+			}
+
 			/*
 			 * In a sai-virt VM, we can't do anything until it has
 			 * told us which VM we are, see b-whoami.c
