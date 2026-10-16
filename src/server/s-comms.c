@@ -831,6 +831,8 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		/* a conn closed mid-message must not leak its reassembly */
 		lws_buflist_destroy_all_segments(&pss->power_rx_cache);
 		lws_buflist_destroy_all_segments(&pss->onward_reassembly);
+		free(pss->last_power_report);
+		pss->last_power_report = NULL;
 
 		/* before the builder's platforms go, so we can say who */
 		sais_conn_closed_log(vhd, pss, wsi);
@@ -955,7 +957,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			break;
 		}
 
-		int ret = sais_ws_json_tx_builder(vhd, pss, buf, sizeof(buf));
+		int ret = sais_ws_json_tx_builder(vhd, pss);
 		if (ret != 0) {
 			lwsl_err("%s: sais_ws_json_tx_builder returned %d, dropping connection\n", __func__, ret);
 			/* if nothing more specific was said */

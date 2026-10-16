@@ -226,7 +226,8 @@ struct pss {
 	char			alloc_repo[65]; /* repo_name of alloc_task */
 
 	char			peer_ip[48];
-	char			last_power_report[8192];
+	/* the pending platforms report we last sent, heap, NUL-terminated */
+	char			*last_power_report;
 	/*
 	 * Why we decided to drop the connection, if we did: see
 	 * sais_pss_drop_why().  With the times and counts below, it's what the
@@ -484,7 +485,7 @@ void
 sai_task_uuid_to_event_uuid(char *event_uuid33, const char *task_uuid65);
 
 int
-sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);
+sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss);
 
 int
 sais_subs_request_writeable(struct vhd *vhd, const char *task_uuid);

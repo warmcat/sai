@@ -363,7 +363,7 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 	uint8_t *start = buf + LWS_PRE, *p = start, *end = buf + bl - 1;
 	enum lws_write_protocol flags;
 	size_t w;
-	int n, diff = 0;
+	int n;
 
 	if (pss->stay_owner.head) {
 		/*
@@ -467,11 +467,12 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 
 	{
 		sai_platform_pending_tasks_t pt;
-		lws_struct_serialize_t *js;
 		struct lwsac *ac = NULL;
+		sai_json_buf_t jb;
 
 		memset(&pt, 0, sizeof(pt));
-		
+		memset(&jb, 0, sizeof(jb));
+
 		/* copy the pcon list into the struct */
 		if (lws_ptr_diff_size_t(p, start) < sizeof(pt.pcons))
 			lws_strncpy(pt.pcons, (const char *)start, lws_ptr_diff_size_t(p, start) + 1);
@@ -506,46 +507,52 @@ sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl)
 			}
 		} lws_end_foreach_dll(px1);
 
-		js = lws_struct_json_serialize_create(lsm_schema_pending_tasks,
-				LWS_ARRAY_SIZE(lsm_schema_pending_tasks), 0, &pt);
-		if (!js) {
+		/*
+		 * The report grows with the backlog, an entry for each
+		 * platform with pending tasks and every builder busy with
+		 * one, so it's composed in a buffer sized to fit it: cut
+		 * off, every sai-power and sai-virt would reject it
+		 */
+		if (sai_json_buf_serialize(&jb, lsm_schema_pending_tasks,
+					   LWS_ARRAY_SIZE(lsm_schema_pending_tasks),
+					   &pt)) {
 			lwsl_err("%s: failed to serialize pending tasks\n", __func__);
+			sai_json_buf_free(&jb);
 			lwsac_free(&ac);
 			return -1;
 		}
-
-		n = (int)lws_struct_json_serialize(js, start, lws_ptr_diff_size_t(end, start), &w);
-		lws_struct_json_serialize_destroy(&js);
 		lwsac_free(&ac);
 
-		p = start + w;
+		lwsl_info("%s: final json: '%s'\n", __func__, (const char *)jb.json);
+
+		/*
+		 * Don't resend the same status over and over
+		 */
+
+		if (pss->last_power_report &&
+		    !strcmp(pss->last_power_report, (const char *)jb.json)) {
+			sai_json_buf_free(&jb);
+			return 0;
+		}
+
+		lwsl_info("%s: pending plats changed: '%s' -> '%s'\n", __func__,
+			  pss->last_power_report ? pss->last_power_report : "",
+			  (const char *)jb.json);
+
+		free(pss->last_power_report);
+		pss->last_power_report = strdup((const char *)jb.json);
+
+		lwsl_info("%s: ************* detected jobs for %s\n", __func__,
+			  (const char *)jb.json);
+
+		if (lws_write(pss->wsi, jb.json, jb.len, LWS_WRITE_TEXT) < 0) {
+			sai_json_buf_free(&jb);
+			return -1;
+		}
+
+		sai_json_buf_free(&jb);
+		lws_callback_on_writable(pss->wsi);
 	}
-
-	lwsl_info("%s: final json: '%.*s'\n", __func__,
-		    (int)lws_ptr_diff_size_t(p, start), start);
-
-	/*
-	 * Don't resend the same status over and over
-	 */
-
-	if (strncmp(pss->last_power_report, (const char *)start, lws_ptr_diff_size_t(p, start) + 1)) {
-		lwsl_info("%s: pending plats changed: '%s' -> '%.*s'\n", __func__,
-			  pss->last_power_report, (int)lws_ptr_diff_size_t(p, start), start);
-
-		memcpy(pss->last_power_report, start, lws_ptr_diff_size_t(p, start) + 1);
-                diff = 1;
-        }
-
-        if (diff) {
-                lwsl_info("%s: ************* detected jobs for %.*s\n", __func__,
-                                (int)lws_ptr_diff_size_t(p, start), start);
-
-                if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
-                                LWS_WRITE_TEXT) < 0)
-                        return -1;
-
-                lws_callback_on_writable(pss->wsi);
-        }
 
 	return 0;
 }

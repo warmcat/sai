@@ -2263,21 +2263,24 @@ afail:
 }
 
 /*
- * We're sending something on a builder ws connection
+ * We're sending something on a builder ws connection.
+ *
+ * Each message is composed in a heap buffer sized to fit it: a task issue
+ * carries the task's build script, and nothing bounds a resource reply, so
+ * neither is safe in a fixed one.
  */
 
 int
-sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
-			size_t bl)
+sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss)
 {
-	uint8_t *start = buf + LWS_PRE, *p = start, *end = buf + bl - 1;
-	int n, flags = LWS_WRITE_TEXT, first = 1;
-	lws_struct_serialize_t *js;
+	sai_json_buf_t jb;
 	sai_task_t *task;
-	size_t w;
+	int n;
 
 	if (pss->pool)
 		return sais_pool_tx(vhd, pss);
+
+	memset(&jb, 0, sizeof(jb));
 
 	if (pss->viewer_state_owner.head) {
 		/*
@@ -2298,27 +2301,14 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		lwsl_wsi_info(pss->wsi, "++++ Sending viewerstate (count: %u) to builder\n",
 			    vs->viewers);
 
-		js = lws_struct_json_serialize_create(lsm_schema_viewerstate,
-				LWS_ARRAY_SIZE(lsm_schema_viewerstate), 0, vs);
-		if (!js) {
-			lwsl_err("%s: lws_struct_json_serialize_create failed for viewerstate\n", __func__);
-			return 1;
-		}
-
-		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
-		lws_struct_json_serialize_destroy(&js);
+		n = sai_json_buf_serialize(&jb, lsm_schema_viewerstate,
+					   LWS_ARRAY_SIZE(lsm_schema_viewerstate),
+					   vs);
 
 		/* Dequeue the message we just sent */
 		lws_dll2_remove(&vs->list);
 		/* And free the memory */
 		free(vs);
-
-		/*
-		 * If there are more viewer state messages, or other messages,
-		 * * request another writeable callback.
-		 */
-		if (pss->viewer_state_owner.head)
-			lws_callback_on_writable(pss->wsi);
 
 		goto send_json;
 	}
@@ -2330,15 +2320,8 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		sai_rebuild_t *r = lws_container_of(pss->rebuild_owner.head,
 						   sai_rebuild_t, list);
 
-		js = lws_struct_json_serialize_create(lsm_schema_rebuild,
-				LWS_ARRAY_SIZE(lsm_schema_rebuild), 0, r);
-		if (!js) {
-			lwsl_err("%s: lws_struct_json_serialize_create failed for rebuild\n", __func__);
-			return 1;
-		}
-
-		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
-		lws_struct_json_serialize_destroy(&js);
+		n = sai_json_buf_serialize(&jb, lsm_schema_rebuild,
+					   LWS_ARRAY_SIZE(lsm_schema_rebuild), r);
 
 		lws_dll2_remove(&r->list);
 		free(r);
@@ -2353,15 +2336,9 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		sai_cancel_t *c = lws_container_of(pss->task_cancel_owner.head,
 						   sai_cancel_t, list);
 
-		js = lws_struct_json_serialize_create(lsm_schema_json_map_can,
-				LWS_ARRAY_SIZE(lsm_schema_json_map_can), 0, c);
-		if (!js) {
-			lwsl_err("%s: lws_struct_json_serialize_create failed for task_cancel\n", __func__);
-			return 1;
-		}
-
-		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
-		lws_struct_json_serialize_destroy(&js);
+		n = sai_json_buf_serialize(&jb, lsm_schema_json_map_can,
+					   LWS_ARRAY_SIZE(lsm_schema_json_map_can),
+					   c);
 
 		lws_dll2_remove(&c->list);
 		free(c);
@@ -2373,15 +2350,9 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		sai_openshell_t *os = lws_container_of(pss->openshell_owner.head,
 						       sai_openshell_t, list);
 
-		js = lws_struct_json_serialize_create(lsm_schema_openshell,
-				LWS_ARRAY_SIZE(lsm_schema_openshell), 0, os);
-		if (!js) {
-			lwsl_err("%s: lws_struct_json_serialize_create failed for openshell\n", __func__);
-			return 1;
-		}
-
-		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
-		lws_struct_json_serialize_destroy(&js);
+		n = sai_json_buf_serialize(&jb, lsm_schema_openshell,
+					   LWS_ARRAY_SIZE(lsm_schema_openshell),
+					   os);
 
 		lws_dll2_remove(&os->list);
 		free(os);
@@ -2393,15 +2364,8 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		sai_ptydata_t *pd = lws_container_of(pss->ptydata_owner.head,
 						     sai_ptydata_t, list);
 
-		js = lws_struct_json_serialize_create(lsm_schema_ptydata,
-				LWS_ARRAY_SIZE(lsm_schema_ptydata), 0, pd);
-		if (!js) {
-			lwsl_err("%s: lws_struct_json_serialize_create failed for ptydata\n", __func__);
-			return 1;
-		}
-
-		n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
-		lws_struct_json_serialize_destroy(&js);
+		n = sai_json_buf_serialize(&jb, lsm_schema_ptydata,
+					   LWS_ARRAY_SIZE(lsm_schema_ptydata), pd);
 
 		lws_dll2_remove(&pd->list);
 		if (pd->data)
@@ -2419,14 +2383,10 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		sai_resource_msg_t *rm = lws_container_of(pss->res_pending_reply_owner.head,
 				sai_resource_msg_t, list);
 
-		n = (int)rm->len;
-		if (n > lws_ptr_diff(end, p))
-			n = lws_ptr_diff(end, p);
+		lwsl_info("%s: issuing pending resouce reply %.*s\n", __func__,
+			  (int)rm->len, (const char *)rm->msg);
 
-		memcpy(p, rm->msg, (unsigned int)n);
-		w = (size_t)n;
-
-		lwsl_info("%s: issuing pending resouce reply %.*s\n", __func__, (int)n, (const char *)start);
+		n = sai_json_buf_append(&jb, rm->msg, rm->len);
 
 		lws_dll2_remove(&rm->list);
 		free(rm);
@@ -2434,7 +2394,7 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 		goto send_json;
 	}
 
-       if (!pss->issue_task_owner.head)
+	if (!pss->issue_task_owner.head)
 		return 0; /* nothing to send */
 
 	/*
@@ -2448,60 +2408,43 @@ sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 	task = lws_container_of(pss->issue_task_owner.head, sai_task_t, pending_assign_list);
 	lws_dll2_remove(&task->pending_assign_list);
 
-	js = lws_struct_json_serialize_create(lsm_schema_map_ta,
-					      LWS_ARRAY_SIZE(lsm_schema_map_ta),
-					      0, task);
-	if (!js)
-		goto bail;
-
-	n = (int)lws_struct_json_serialize(js, p, lws_ptr_diff_size_t(end, p), &w);
-	lws_struct_json_serialize_destroy(&js);
+	n = sai_json_buf_serialize(&jb, lsm_schema_map_ta,
+				   LWS_ARRAY_SIZE(lsm_schema_map_ta), task);
 	pss->one_event = NULL;
 	lwsac_free(&task->ac_task_container);
 	free(task);
 
-	// sai_dump_stderr(start, w);
+	// sai_dump_stderr(jb.json, jb.len);
 	// lwsl_info("%s: ########## ATTACH TASK --^\n", __func__);
 
-	first = 1;
-
 send_json:
-	p += w;
-	if (n == LSJS_RESULT_ERROR) {
-		lwsl_notice("%s: taskinfo: error generating json\n",
-			    __func__);
+	if (n) {
+		lwsl_err("%s: error generating json\n", __func__);
+		sai_json_buf_free(&jb);
 		return 1;
 	}
-	if (!lws_ptr_diff(p, start)) {
-		lwsl_notice("%s: taskinfo: empty json\n", __func__);
+	if (!jb.len) {
+		lwsl_notice("%s: empty json\n", __func__);
+		sai_json_buf_free(&jb);
 		return 0;
 	}
 
-	flags = lws_write_ws_flags(LWS_WRITE_TEXT, first, 1);
+	// lwsl_hexdump_notice(jb.json, jb.len);
 
-	// lwsl_hexdump_notice(start, p - start);
-
-	if (lws_write(pss->wsi, start, lws_ptr_diff_size_t(p, start),
-			(enum lws_write_protocol)flags) < 0) {
-		lwsl_err("%s: lws_write failed for task allocation\n", __func__);
-		sais_pss_drop_why(pss, "lws_write of %d failed",
-				  (int)lws_ptr_diff(p, start));
+	if (lws_write(pss->wsi, jb.json, jb.len, LWS_WRITE_TEXT) < 0) {
+		lwsl_err("%s: lws_write failed for builder message\n", __func__);
+		sais_pss_drop_why(pss, "lws_write of %d failed", (int)jb.len);
+		sai_json_buf_free(&jb);
 		return -1;
 	}
 
-	if (pss->viewer_state_owner.head || pss->task_cancel_owner.head ||
-	    pss->res_pending_reply_owner.count ||
+	sai_json_buf_free(&jb);
+
+	if (pss->viewer_state_owner.head || pss->rebuild_owner.head ||
+	    pss->task_cancel_owner.head || pss->res_pending_reply_owner.count ||
 	    pss->issue_task_owner.count || pss->openshell_owner.head ||
 	    pss->ptydata_owner.head)
 		lws_callback_on_writable(pss->wsi);
 
 	return 0;
-
-bail:
-	lwsl_err("%s: bailing, returning 1\n", __func__);
-	lwsac_free(&task->ac_task_container);
-	free(task);
-
-	return 1;
-
 }
