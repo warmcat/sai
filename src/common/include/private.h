@@ -1534,6 +1534,14 @@ saicom_fleetlog_start_local(struct lws_context *cx, const char *kind,
 			    const char *host, saicom_fleetlog_store_cb_t store,
 			    void *opaque);
 
+/*
+ * Ship as host from now on: a sai-virt VM's builder starts shipping under
+ * the host name in its conf, so what happens before sai-virt tells it which
+ * VM it is isn't lost, and takes the VM's name once it knows it
+ */
+void
+saicom_fleetlog_set_host(const char *host);
+
 void
 saicom_fleetlog_stop(void);
 

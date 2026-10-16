@@ -51,6 +51,7 @@ typedef struct sais_fleetlog_src {
 	unsigned int		window_lines;
 	unsigned int		over_rate;	/* dropped in this window */
 	char			inst[17];
+	char			host[65];
 } sais_fleetlog_src_t;
 
 static const char * const fleetlog_schema[] = {
@@ -207,6 +208,31 @@ sais_fleetlog_src(struct vhd *vhd, const sai_fleetlog_batch_t *b,
 			lws_dll2_remove(&src->list);
 			lws_dll2_add_head(&src->list, &vhd->fleetlog_srcs);
 
+			/*
+			 * A source goes by a new name: a sai-virt VM's
+			 * builder ships under its conf's host name until
+			 * sai-virt tells it which VM it is.  It's the same
+			 * daemon, so its lines so far are the new name's too
+			 */
+			if (strcmp(src->host, b->host)) {
+				lwsl_notice("%s: %s %s is now %s\n", __func__,
+					    b->kind, src->host, b->host);
+
+				if (sqlite3_prepare_v2(vhd->pdb_fleetlog,
+						"UPDATE sources SET host = ? "
+						"WHERE src_id = ?", -1, &sm,
+						NULL) == SQLITE_OK) {
+					sqlite3_bind_text(sm, 1, b->host, -1,
+							  SQLITE_TRANSIENT);
+					sqlite3_bind_int64(sm, 2,
+						(sqlite3_int64)src->src_id);
+					sqlite3_step(sm);
+					sqlite3_finalize(sm);
+				}
+				lws_strncpy(src->host, b->host,
+					    sizeof(src->host));
+			}
+
 			return src;
 		}
 	} lws_end_foreach_dll(d);
@@ -254,6 +280,20 @@ sais_fleetlog_src(struct vhd *vhd, const sai_fleetlog_batch_t *b,
 	src->src_id = src_id;
 	src->window_start_us = now;
 	lws_strncpy(src->inst, b->inst, sizeof(src->inst));
+	/* what the db has for it: a source we last heard from before a
+	 * restart may have been renamed since it was first seen */
+	if (sqlite3_prepare_v2(vhd->pdb_fleetlog,
+			"SELECT host FROM sources WHERE src_id = ?", -1, &sm,
+			NULL) == SQLITE_OK) {
+		sqlite3_bind_int64(sm, 1, (sqlite3_int64)src_id);
+		if (sqlite3_step(sm) == SQLITE_ROW)
+			lws_strncpy(src->host,
+				    (const char *)sqlite3_column_text(sm, 0),
+				    sizeof(src->host));
+		sqlite3_finalize(sm);
+	}
+	if (!src->host[0])
+		lws_strncpy(src->host, b->host, sizeof(src->host));
 	lws_dll2_add_head(&src->list, &vhd->fleetlog_srcs);
 
 	return src;

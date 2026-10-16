@@ -600,6 +600,23 @@ saicom_fleetlog_start_local(struct lws_context *cx, const char *kind,
 }
 
 void
+saicom_fleetlog_set_host(const char *host)
+{
+	if (!host || !host[0] || !strcmp(fl.batch.host, host))
+		return;
+
+	/*
+	 * The batch in flight still says the old name; sai-server renames
+	 * the source, with everything it already has from it, when the next
+	 * one arrives
+	 */
+	lwsl_notice("%s: our logs now ship as %s, were %s\n", __func__, host,
+		    fl.batch.host);
+
+	lws_strncpy(fl.batch.host, host, sizeof(fl.batch.host));
+}
+
+void
 saicom_fleetlog_stop(void)
 {
 	fl.stopped = 1;
