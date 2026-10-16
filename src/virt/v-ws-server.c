@@ -276,34 +276,58 @@ saiv_try_spawn(void)
 static lws_ss_state_return_t
 saiv_server_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
-	struct lejp_ctx ctx;
-	lws_struct_args_t a;
+	saiv_server_link_t *g = (saiv_server_link_t *)userobj;
 	int m;
 
 	/*
-	 * We receive JSON from sai-server, usually com.warmcat.sai.power.pending_tasks
+	 * sai-server sends each JSON message, usually
+	 * com.warmcat.sai.power.pending_tasks, as one ws message.  lws hands
+	 * it to us in pieces of at most the context's pt_serv_buf_size, so
+	 * the parse carries on across the pieces, like the builder's does.
 	 */
-	memset(&a, 0, sizeof(a));
-	a.map_st[0]		= lsm_schema_pending_tasks;
-	a.map_entries_st[0]	= LWS_ARRAY_SIZE(lsm_schema_pending_tasks);
-	a.map_st[1]		= lsm_schema_stay;
-	a.map_entries_st[1]	= LWS_ARRAY_SIZE(lsm_schema_stay);
-	a.ac_block_size		= 512;
 
-	lws_struct_json_init_parse(&ctx, NULL, &a);
-	m = lejp_parse(&ctx, (uint8_t *)buf, (int)len);
+	if (flags & LWSSS_FLAG_SOM) {
+		lwsac_free(&g->a.ac);
+		memset(&g->a, 0, sizeof(g->a));
+		g->a.map_st[0]		= lsm_schema_pending_tasks;
+		g->a.map_entries_st[0]	= LWS_ARRAY_SIZE(lsm_schema_pending_tasks);
+		g->a.map_st[1]		= lsm_schema_stay;
+		g->a.map_entries_st[1]	= LWS_ARRAY_SIZE(lsm_schema_stay);
+		g->a.ac_block_size	= 512;
+
+		lws_struct_json_init_parse(&g->ctx, NULL, &g->a);
+		g->parsing = 1;
+	}
+
+	if (!g->parsing)
+		/* the rest of a message we already gave up on */
+		return LWSSSSRET_OK;
+
+	m = lejp_parse(&g->ctx, buf, (int)len);
+	if (m == LEJP_CONTINUE) {
+		if (!(flags & LWSSS_FLAG_EOM))
+			return LWSSSSRET_OK;
+
+		lwsl_err("%s: JSON incomplete at end of message\n", __func__);
+		m = LEJP_REJECT_UNKNOWN;
+	}
+
+	g->parsing = 0;
+
 	if (m < 0) {
-		lwsl_err("%s: JSON decode failed '%s'\n", __func__, lejp_error_to_string(m));
+		lwsl_err("%s: JSON decode failed '%s'\n", __func__,
+			 lejp_error_to_string(m));
+		lwsac_free(&g->a.ac);
 		return LWSSSSRET_OK;
 	}
 
-	if (!a.dest) {
-		lwsac_free(&a.ac);
+	if (!g->a.dest) {
+		lwsac_free(&g->a.ac);
 		return LWSSSSRET_OK;
 	}
 
-	if (a.top_schema_index == 1) {
-		sai_stay_t *stay = (sai_stay_t *)a.dest;
+	if (g->a.top_schema_index == 1) {
+		sai_stay_t *stay = (sai_stay_t *)g->a.dest;
 		lwsl_notice("%s: Received stay request for platform %s (stay_on=%d)\n", 
 			    __func__, stay->builder_name, stay->stay_on);
 		/* In Maintenance Mode, we boot the template RW instead of a transient clone */
@@ -311,22 +335,23 @@ saiv_server_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		lwsl_notice("%s: Maintenance Mode %s for %s\n", __func__, 
 			    stay->stay_on ? "ENABLED (booting RW)" : "DISABLED (destroying)", 
 			    stay->builder_name);
-	} else if (a.top_schema_index == 0) {
-		sai_platform_pending_tasks_t *pt = (sai_platform_pending_tasks_t *)a.dest;
+	} else if (g->a.top_schema_index == 0) {
+		sai_platform_pending_tasks_t *pt = (sai_platform_pending_tasks_t *)g->a.dest;
 		// lwsl_notice("%s: Pending tasks for pcons: %s\n", __func__, pt->pcons);
 
 		if (virt.pending_tasks_ac)
 			lwsac_free(&virt.pending_tasks_ac);
 
-		virt.pending_tasks_ac = a.ac;
+		/* the report lives in the parse's ac until the next one */
+		virt.pending_tasks_ac = g->a.ac;
 		virt.pending_tasks = pt;
-		a.ac = NULL;
+		g->a.ac = NULL;
 
 		saiv_try_spawn();
 	}
 
-	if (a.ac)
-		lwsac_free(&a.ac);
+	lwsac_free(&g->a.ac);
+
 	return LWSSSSRET_OK;
 }
 
@@ -407,6 +432,14 @@ saiv_server_state(void *userobj, void *sh, lws_ss_constate_t state,
 	case LWSSSCS_DISCONNECTED:
 		lwsl_notice("%s: Disconnected\n", __func__);
 		lws_buflist_destroy_all_segments(&g->bl_tx);
+		/* a message cut off by the disconnection is not coming back */
+		lwsac_free(&g->a.ac);
+		g->parsing = 0;
+		break;
+
+	case LWSSSCS_DESTROYING:
+		lws_buflist_destroy_all_segments(&g->bl_tx);
+		lwsac_free(&g->a.ac);
 		break;
 
 	default:
