@@ -1873,7 +1873,11 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 		goto ebail;
 	}
 
-	saib_task_jobdir_vn(ns->inp_vn, sizeof(ns->inp_vn), ns->fsm.ovname);
+	/*
+	 * From the uuid itself, as everything else naming the job dir does:
+	 * ovname has room for only 63 of its 64 chars
+	 */
+	saib_task_jobdir_vn(ns->inp_vn, sizeof(ns->inp_vn), task->uuid);
 
 	/*
 	 * Renew the hold on the job dir for as long as this task has steps
