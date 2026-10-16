@@ -93,6 +93,9 @@ int main(int argc, const char **argv)
 		return 1;
 	}
 
+	/* what this system looks like, at the top of our log */
+	saicom_sysinfo_log(context);
+
 	while (!lws_service(context, 0) && !interrupted)
 		;
 

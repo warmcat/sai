@@ -1265,6 +1265,15 @@ sai_artifacts_list_safe(const char *list);
 void
 sai_dump_stderr(const uint8_t *buf, size_t w);
 
+/*
+ * Log what the system we're on looks like, a line per item: the lws build,
+ * hostname, OS, RAM, time, every address on every interface, the resolver.
+ * Called once the fleet log link is up, so the lines are in the fleet logs
+ * and say where a daemon's logs came from.
+ */
+void
+saicom_sysinfo_log(struct lws_context *cx);
+
 int
 sai_ss_queue_frag_on_buflist_REQUIRES_LWS_PRE(struct lws_ss_handle *h,
 					      struct lws_buflist **buflist,

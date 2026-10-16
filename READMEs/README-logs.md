@@ -51,6 +51,13 @@ for.  A source is identified by
 the same machine as `sai-vm-...-2` an hour ago, and a restarted daemon starts
 its sequence numbers again.
 
+Each daemon logs what its system looks like once its shipping is up, a line
+per item prefixed `sysinfo:`: the lws build, hostname, OS, cpus and RAM, the
+time, every address on every interface, and the resolver's nameservers and
+search list (`lws_sysinfo`, see lws' README.sysinfo.md).  So the fleet logs
+say where each source's lines came from, and for a sai-virt VM that can't
+reach anything, what addresses and resolver it came up with.
+
 A source's `host` can change.  A builder starts shipping as soon as it has an
 lws context, before it is operational, so what goes wrong before then, eg, a
 sai-virt VM that can't reach sai-virt or resolve its name, is here too.  In a

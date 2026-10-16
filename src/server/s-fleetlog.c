@@ -738,6 +738,9 @@ sais_fleetlog_init(struct vhd *vhd, const struct lws_protocol_vhost_options *pvo
 					sais_fleetlog_store_own, vhd))
 		lwsl_warn("%s: our own logs won't be kept\n", __func__);
 
+	/* ... starting with what this system looks like */
+	saicom_sysinfo_log(vhd->context);
+
 	lwsl_notice("%s: fleet logs in %s, kept %llu days\n", __func__, path,
 		    (unsigned long long)(vhd->fleetlog_retention_us /
 					 (SAIS_US_PER_DAY)));

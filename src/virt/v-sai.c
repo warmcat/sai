@@ -146,6 +146,9 @@ int main(int argc, const char **argv)
 			lwsl_warn("%s: our logs won't be shipped\n", __func__);
 	}
 
+	/* what this system looks like, for the fleet logs */
+	saicom_sysinfo_log(virt.context);
+
 	lws_sul_schedule(virt.context, 0, &virt.sul_watch, saiv_watch_cb,
 			 SAIV_WATCH_INTERVAL_US);
 

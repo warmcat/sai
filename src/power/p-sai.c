@@ -378,6 +378,9 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 						  sps->url, power.link_key))
 				lwsl_warn("%s: our logs won't be shipped\n",
 					  __func__);
+
+			/* ... starting with what this system looks like */
+			saicom_sysinfo_log(cx);
 		}
 
 		/* Start PCON monitoring */

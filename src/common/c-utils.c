@@ -267,6 +267,32 @@ sai_task_describe(sai_task_t *task, char *buf, size_t len)
 }
 
 void
+saicom_sysinfo_log(struct lws_context *cx)
+{
+#if defined(LWS_WITH_SYS_INFO)
+	const lws_sysinfo_item_t *it = NULL;
+	struct lws_sysinfo *si;
+	char line[256];
+
+	si = lws_sysinfo_create(cx);
+	if (!si) {
+		lwsl_warn("%s: unable to take the system snapshot\n", __func__);
+		return;
+	}
+
+	while ((it = lws_sysinfo_next(si, it))) {
+		lws_sysinfo_describe(it, line, sizeof(line));
+		lwsl_notice("sysinfo: %s\n", line);
+	}
+
+	lws_sysinfo_destroy(&si);
+#else
+	(void)cx;
+	lwsl_notice("sysinfo: lws built without LWS_WITH_SYS_INFO\n");
+#endif
+}
+
+void
 sai_dump_stderr(const uint8_t *buf, size_t w)
 {
 	if ((ssize_t)write(2, "\n", 1) != (ssize_t)1 ||

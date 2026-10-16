@@ -494,6 +494,13 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 					  builder.host, builder.fleetlog_url,
 					  builder.link_key))
 			lwsl_warn("%s: our logs won't be shipped\n", __func__);
+
+		/*
+		 * ... starting with what this system looks like: in a
+		 * sai-virt VM, the addresses and resolver it came up with
+		 * are the first thing to look at when it can't reach anything
+		 */
+		saicom_sysinfo_log(builder.context);
 		break;
 	}
 
