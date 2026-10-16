@@ -2500,76 +2500,39 @@ so_finish:
 	return 0;
 }
 
-struct sai_dyn_buf {
-	char *buf;
-	size_t len;
-	size_t alloc;
-};
-
 static int
-sai_dyn_buf_ensure(struct sai_dyn_buf *d, size_t needed)
-{
-	if (d->len + needed <= d->alloc)
-		return 0;
-	size_t na = d->alloc ? d->alloc * 2 : 4096;
-	while (d->len + needed > na)
-		na *= 2;
-	char *nb = realloc(d->buf, na);
-	if (!nb)
-		return 1;
-	d->buf = nb;
-	d->alloc = na;
-	return 0;
-}
-
-static inline int
-sai_dyn_buf_append(struct sai_dyn_buf *d, const void *p, size_t len)
-{
-	if (sai_dyn_buf_ensure(d, len))
-		return 1;
-	memcpy(d->buf + d->len, p, len);
-	d->len += len;
-	return 0;
-}
-
-static int
-saiw_dedup_and_queue(struct pss *pss, int idx, struct sai_dyn_buf *d)
+saiw_dedup_and_queue(struct pss *pss, int idx, sai_json_buf_t *jb)
 {
 	int changed = 1;
 
 	/* check if we changed versus last payload */
-	if (pss->last_bps[idx] && pss->last_bps_len[idx] == d->len - LWS_PRE &&
-	    !memcmp(pss->last_bps[idx], d->buf + LWS_PRE, d->len - LWS_PRE)) {
+	if (pss->last_bps[idx] && pss->last_bps_len[idx] == jb->len &&
+	    !memcmp(pss->last_bps[idx], jb->json, jb->len)) {
 		changed = 0;
 	} else {
 		free(pss->last_bps[idx]);
 		pss->last_bps[idx] = NULL;
 		pss->last_bps_len[idx] = 0;
-		pss->last_bps[idx] = malloc(d->len - LWS_PRE);
+		pss->last_bps[idx] = malloc(jb->len);
 		if (pss->last_bps[idx]) {
-			memcpy(pss->last_bps[idx], d->buf + LWS_PRE, d->len - LWS_PRE);
-			pss->last_bps_len[idx] = d->len - LWS_PRE;
+			memcpy(pss->last_bps[idx], jb->json, jb->len);
+			pss->last_bps_len[idx] = jb->len;
 		}
 	}
 
 	if (changed)
-		saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, d->buf + LWS_PRE,
-						       d->len - LWS_PRE,
+		saiw_ws_browser_queue_REQUIRES_LWS_PRE(pss, jb->json, jb->len,
 						       lws_write_ws_flags(LWS_WRITE_TEXT, 1, 1));
 
-	free(d->buf);
-	d->buf = NULL;
+	sai_json_buf_free(jb);
+
 	return 0;
 }
 
 int
 saiw_browser_broadcast_queue_pcon_energy(struct vhd *vhd, struct pss *pss, sai_pcon_energy_report_t *energy)
 {
-	struct sai_dyn_buf d;
-	char buf[1024];
-	lws_struct_serialize_t *js;
-	lws_struct_json_serialize_result_t r;
-	size_t w;
+	sai_json_buf_t jb;
 
 	if (pss && !pss->wants_builder_info)
 		return 0;
@@ -2577,52 +2540,23 @@ saiw_browser_broadcast_queue_pcon_energy(struct vhd *vhd, struct pss *pss, sai_p
 	if (!vhd || !energy || !pss)
 		return 0;
 
-	memset(&d, 0, sizeof(d));
+	memset(&jb, 0, sizeof(jb));
 
-	/* Reserve LWS_PRE header space */
-	memset(buf, 0, LWS_PRE);
-	if (sai_dyn_buf_append(&d, buf, LWS_PRE))
-		return 1;
-
-	js = lws_struct_json_serialize_create(
-		lsm_schema_pcon_energy,
-		LWS_ARRAY_SIZE(lsm_schema_pcon_energy),
-		0, energy);
-	if (!js) {
-		free(d.buf);
+	if (sai_json_buf_serialize(&jb, lsm_schema_pcon_energy,
+				   LWS_ARRAY_SIZE(lsm_schema_pcon_energy),
+				   energy)) {
+		sai_json_buf_free(&jb);
 		return 1;
 	}
 
-	do {
-		r = lws_struct_json_serialize(js, (uint8_t *)buf, sizeof(buf), &w);
-
-		if (w && sai_dyn_buf_append(&d, buf, w)) {
-			lws_struct_json_serialize_destroy(&js);
-			free(d.buf);
-			return 1;
-		}
-
-		if (r == LSJS_RESULT_ERROR) {
-			lws_struct_json_serialize_destroy(&js);
-			free(d.buf);
-			return 1;
-		}
-	} while (r == LSJS_RESULT_CONTINUE);
-
-	lws_struct_json_serialize_destroy(&js);
-
-	return saiw_dedup_and_queue(pss, 2, &d);
+	return saiw_dedup_and_queue(pss, 2, &jb);
 }
 
 int
 saiw_browser_broadcast_queue_pcons(struct vhd *vhd, struct pss *pss)
 {
-	struct sai_dyn_buf d;
-	char buf[1024]; /* temp buffer for serialization before append */
-	lws_struct_serialize_t *js;
 	sai_power_managed_builders_t pmb;
-	lws_struct_json_serialize_result_t r;
-	size_t w;
+	sai_json_buf_t jb;
 
 	if (pss && !pss->wants_builder_info)
 		return 0;
@@ -2630,56 +2564,27 @@ saiw_browser_broadcast_queue_pcons(struct vhd *vhd, struct pss *pss)
 	if (!vhd || !vhd->pcons || !pss)
 		return 0;
 
-	memset(&d, 0, sizeof(d));
-
-	/* Reserve LWS_PRE header space */
-	memset(buf, 0, LWS_PRE);
-	if (sai_dyn_buf_append(&d, buf, LWS_PRE))
-		return 1;
-
+	memset(&jb, 0, sizeof(jb));
 	memset(&pmb, 0, sizeof(pmb));
 	pmb.power_controllers = vhd->pcons_owner;
 
-	js = lws_struct_json_serialize_create(
-		lsm_schema_power_managed_builders,
-		LWS_ARRAY_SIZE(lsm_schema_power_managed_builders),
-		0, &pmb);
-	if (!js) {
-		free(d.buf);
+	if (sai_json_buf_serialize(&jb, lsm_schema_power_managed_builders,
+				   LWS_ARRAY_SIZE(lsm_schema_power_managed_builders),
+				   &pmb)) {
+		sai_json_buf_free(&jb);
 		return 1;
 	}
 
-	do {
-		r = lws_struct_json_serialize(js, (uint8_t *)buf, sizeof(buf), &w);
-
-		if (sai_dyn_buf_append(&d, buf, w)) {
-			lws_struct_json_serialize_destroy(&js);
-			free(d.buf);
-			return 1;
-		}
-
-		if (r == LSJS_RESULT_ERROR) {
-			lws_struct_json_serialize_destroy(&js);
-			free(d.buf);
-			return 1;
-		}
-	} while (r == LSJS_RESULT_CONTINUE);
-
-	lws_struct_json_serialize_destroy(&js);
-
-	return saiw_dedup_and_queue(pss, 1, &d);
+	return saiw_dedup_and_queue(pss, 1, &jb);
 }
 
 int
 saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 {
-	struct sai_dyn_buf d;
-	char buf[1024]; /* temp buffer for serialization before append */
-	lws_struct_serialize_t *js;
-	char esc[256];
 	lws_dll2_t *walk = NULL;
+	sai_json_buf_t jb;
+	char buf[1024], esc[256];
 	char subsequent;
-	size_t w;
 	int n;
 
 	if (pss && !pss->wants_builder_info)
@@ -2690,12 +2595,7 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 
 	saiw_browser_broadcast_queue_pcons(vhd, pss);
 
-	memset(&d, 0, sizeof(d));
-
-	/* Reserve LWS_PRE header space */
-	memset(buf, 0, LWS_PRE);
-	if (sai_dyn_buf_append(&d, buf, LWS_PRE))
-		return 1;
+	memset(&jb, 0, sizeof(jb));
 
 	n = lws_snprintf(buf, sizeof(buf),
 			  "{\"schema\":\"com.warmcat.sai.builders\","
@@ -2703,10 +2603,8 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 			  " \"builders\":[",
 			  lws_json_purify(esc, pss->alang, sizeof(esc) - 1,
 					  NULL));
-	if (sai_dyn_buf_append(&d, buf, (size_t)n)) {
-		free(d.buf);
-		return 1;
-	}
+	if (sai_json_buf_append(&jb, buf, (size_t)n))
+		goto bail;
 
 	if (vhd && vhd->builders)
 		walk = lws_dll2_get_head(&vhd->builders_owner);
@@ -2715,65 +2613,32 @@ saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss)
 
 	while (walk) {
 		sai_plat_t *b = lws_container_of(walk, sai_plat_t, sai_plat_list);
-		lws_struct_json_serialize_result_t r;
-		char start_of_this_builder = 1;
 
 		lwsl_info("%s: processing builder '%s' (online %d)\n", __func__, b->name, b->online);
 
-		js = lws_struct_json_serialize_create(
-			lsm_schema_map_plat_simple,
-			LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),
-			0, b);
-		if (!js) {
-			free(d.buf);
-			return 1;
-		}
+		if (subsequent && sai_json_buf_append(&jb, ",", 1))
+			goto bail;
 
-		do {
-			if (subsequent && start_of_this_builder) {
-				if (sai_dyn_buf_append(&d, ",", 1)) {
-					lws_struct_json_serialize_destroy(&js);
-					free(d.buf);
-					return 1;
-				}
-				start_of_this_builder = 0;
-			}
-
-			r = lws_struct_json_serialize(js, (uint8_t *)buf, sizeof(buf), &w);
-
-			if (w && sai_dyn_buf_append(&d, buf, w)) {
-				lws_struct_json_serialize_destroy(&js);
-				free(d.buf);
-				return 1;
-			}
-
-			switch (r) {
-			case LSJS_RESULT_ERROR:
-				lws_struct_json_serialize_destroy(&js);
-				free(d.buf);
-				return 1;
-			case LSJS_RESULT_CONTINUE:
-			case LSJS_RESULT_FINISH:
-				break;
-			}
-		} while (r == LSJS_RESULT_CONTINUE);
-
-		lws_struct_json_serialize_destroy(&js);
+		if (sai_json_buf_serialize(&jb, lsm_schema_map_plat_simple,
+					   LWS_ARRAY_SIZE(lsm_schema_map_plat_simple),
+					   b))
+			goto bail;
 
 		subsequent = 1;
 		walk = walk->next;
 	}
 
-	n = lws_snprintf(buf, sizeof(buf), " \n]}");
-	if (sai_dyn_buf_append(&d, buf, (size_t)n)) {
-		free(d.buf);
-		return 1;
-	}
+	if (sai_json_buf_append(&jb, " \n]}", 4))
+		goto bail;
 
-	
 	saiw_browser_broadcast_queue_power_history(vhd, pss);
 
-	return saiw_dedup_and_queue(pss, 0, &d);
+	return saiw_dedup_and_queue(pss, 0, &jb);
+
+bail:
+	sai_json_buf_free(&jb);
+
+	return 1;
 }
 
 /*
@@ -2925,8 +2790,8 @@ saiw_update_global_power_history(struct vhd *vhd, sai_pcon_energy_report_t *ener
 int
 saiw_browser_broadcast_queue_power_history(struct vhd *vhd, struct pss *pss)
 {
-	struct sai_dyn_buf d;
-	char buf[2048];
+	sai_json_buf_t jb;
+	char buf[128];
 	int n, i;
 
 	if (pss && !pss->wants_builder_info)
@@ -2935,38 +2800,31 @@ saiw_browser_broadcast_queue_power_history(struct vhd *vhd, struct pss *pss)
 	if (!vhd || !pss)
 		return 0;
 
-	memset(&d, 0, sizeof(d));
-
-	/* Reserve LWS_PRE header space */
-	memset(buf, 0, LWS_PRE);
-	if (sai_dyn_buf_append(&d, buf, LWS_PRE))
-		return 1;
+	memset(&jb, 0, sizeof(jb));
 
 	n = lws_snprintf(buf, sizeof(buf),
 		"{\"schema\":\"com.warmcat.sai.power_history\","
 		" \"max_w\":%u,"
 		" \"samples\":[", vhd->max_total_power_w);
 
-	if (sai_dyn_buf_append(&d, buf, (size_t)n)) {
-		free(d.buf);
-		return 1;
-	}
+	if (sai_json_buf_append(&jb, buf, (size_t)n))
+		goto bail;
 
 	for (i = 0; i < vhd->power_history_count; i++) {
 		n = lws_snprintf(buf, sizeof(buf), "%s%u",
 				 i ? "," : "",
 				 vhd->power_history[i]);
-		if (sai_dyn_buf_append(&d, buf, (size_t)n)) {
-			free(d.buf);
-			return 1;
-		}
+		if (sai_json_buf_append(&jb, buf, (size_t)n))
+			goto bail;
 	}
 
-	n = lws_snprintf(buf, sizeof(buf), "]}");
-	if (sai_dyn_buf_append(&d, buf, (size_t)n)) {
-		free(d.buf);
-		return 1;
-	}
+	if (sai_json_buf_append(&jb, "]}", 2))
+		goto bail;
 
-	return saiw_dedup_and_queue(pss, 3, &d);
+	return saiw_dedup_and_queue(pss, 3, &jb);
+
+bail:
+	sai_json_buf_free(&jb);
+
+	return 1;
 }
