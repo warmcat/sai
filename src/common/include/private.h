@@ -1277,6 +1277,31 @@ sai_ss_serialize_queue_helper(struct lws_ss_handle *h,
 			      const lws_struct_map_t *map,
 			      size_t map_len, void *root);
 
+/*
+ * A JSON message composed in a heap buffer grown to fit it, for the messages
+ * nothing bounds, eg, ones listing the fleet or carrying a build script.
+ * There are LWS_PRE bytes before the JSON, so it can go straight to
+ * lws_write(), and a NUL after it.  Zero one to start, and
+ * sai_json_buf_free() it when done with it, however the composing went.
+ */
+typedef struct sai_json_buf {
+	uint8_t			*json;	/* LWS_PRE into the allocation */
+	size_t			len;	/* of the JSON, not counting the NUL */
+	size_t			room;	/* allocated for the JSON and NUL */
+} sai_json_buf_t;
+
+/* append the JSON for an lws_struct object, returns 0 if it went OK */
+int
+sai_json_buf_serialize(sai_json_buf_t *jb, const lws_struct_map_t *map,
+		       size_t map_len, void *root);
+
+/* append bytes, eg, the fixed parts of a composed message, 0 if OK */
+int
+sai_json_buf_append(sai_json_buf_t *jb, const void *p, size_t len);
+
+void
+sai_json_buf_free(sai_json_buf_t *jb);
+
 lws_ss_state_return_t
 sai_ss_tx_from_buflist_helper(struct lws_ss_handle *ss, struct lws_buflist **buflist,
 			      uint8_t *buf, size_t *len, int *flags);

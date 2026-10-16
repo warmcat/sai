@@ -354,6 +354,87 @@ sai_ss_tx_check_flags(struct lws_ss_handle *ss, int fl, int *flags)
 	*flags = fl;
 }
 
+/*
+ * The lws_struct serializer writes nothing into less than about 100 bytes of
+ * room, so this is the least we give it per call
+ */
+#define SAI_JSON_BUF_STEP	1024
+
+static int
+sai_json_buf_reserve(sai_json_buf_t *jb, size_t needed)
+{
+	size_t room = jb->room ? jb->room : 4096;
+	uint8_t *alloc;
+
+	if (jb->len + needed + 1 <= jb->room)
+		return 0;
+
+	while (jb->len + needed + 1 > room)
+		room *= 2;
+
+	alloc = realloc(jb->json ? jb->json - LWS_PRE : NULL, LWS_PRE + room);
+	if (!alloc)
+		return 1;
+
+	jb->json = alloc + LWS_PRE;
+	jb->room = room;
+
+	return 0;
+}
+
+int
+sai_json_buf_append(sai_json_buf_t *jb, const void *p, size_t len)
+{
+	if (sai_json_buf_reserve(jb, len))
+		return 1;
+
+	memcpy(jb->json + jb->len, p, len);
+	jb->len += len;
+	jb->json[jb->len] = '\0';
+
+	return 0;
+}
+
+int
+sai_json_buf_serialize(sai_json_buf_t *jb, const lws_struct_map_t *map,
+		       size_t map_len, void *root)
+{
+	lws_struct_json_serialize_result_t r;
+	lws_struct_serialize_t *js;
+
+	js = lws_struct_json_serialize_create(map, map_len, 0, root);
+	if (!js)
+		return 1;
+
+	do {
+		size_t w;
+
+		if (sai_json_buf_reserve(jb, SAI_JSON_BUF_STEP)) {
+			lws_struct_json_serialize_destroy(&js);
+			return 1;
+		}
+
+		/* the room less the byte for our NUL */
+		r = lws_struct_json_serialize(js, jb->json + jb->len,
+					      jb->room - jb->len - 1, &w);
+		jb->len += w;
+	} while (r == LSJS_RESULT_CONTINUE);
+
+	lws_struct_json_serialize_destroy(&js);
+	jb->json[jb->len] = '\0';
+
+	return r != LSJS_RESULT_FINISH;
+}
+
+void
+sai_json_buf_free(sai_json_buf_t *jb)
+{
+	if (jb->json)
+		free(jb->json - LWS_PRE);
+
+	memset(jb, 0, sizeof(*jb));
+}
+
 lws_ss_state_return_t
 sai_ss_tx_from_buflist_helper(struct lws_ss_handle *ss, struct lws_buflist **buflist,
 			      uint8_t *buf, size_t *len, int *flags)
