@@ -174,6 +174,11 @@ LWS_SS_USER_TYPEDEF
         size_t                  pos;
 
 	struct lws_buflist	*bl_pwr_to_srv;
+
+	/* a message from sai-server, parsed as its pieces arrive */
+	struct lejp_ctx		ctx;
+	lws_struct_args_t	a;
+	char			parsing;
 } saip_server_link_t;
 
 

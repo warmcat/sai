@@ -199,23 +199,44 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 {
 	saip_server_link_t *pss = (saip_server_link_t *)userobj;
 	saip_server_t *sps = (saip_server_t *)lws_ss_opaque_from_user(pss);
-	lws_struct_args_t a;
-	struct lejp_ctx ctx;
+	int m;
 
 	// lwsl_notice("%s: PPPPPPPP len %d, flags: %d (saip_server_t %p)\n", __func__, (int)len, flags, (void *)sps);
 	// lwsl_hexdump_notice(buf, len);
 
-	memset(&a, 0, sizeof(a));
-	a.map_st[0] = lsm_saip_rx_map;
-	a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_saip_rx_map);
-	a.ac_block_size = 512;
+	/*
+	 * sai-server sends each message as one ws message, and nothing bounds
+	 * its pending platforms report.  lws hands a message to us in pieces
+	 * of at most the context's pt_serv_buf_size, so the parse carries on
+	 * across them.
+	 */
 
-	lws_struct_json_init_parse(&ctx, NULL, &a);
-	if (lejp_parse(&ctx, (uint8_t *)buf, (int)len) >= 0 && a.dest) {
+	if (flags & LWSSS_FLAG_SOM) {
+		lwsac_free(&pss->a.ac);
+		memset(&pss->a, 0, sizeof(pss->a));
+		pss->a.map_st[0] = lsm_saip_rx_map;
+		pss->a.map_entries_st[0] = LWS_ARRAY_SIZE(lsm_saip_rx_map);
+		pss->a.ac_block_size = 512;
 
-		if (a.top_schema_index == 1) {
+		lws_struct_json_init_parse(&pss->ctx, NULL, &pss->a);
+		pss->parsing = 1;
+	}
+
+	if (!pss->parsing)
+		/* the rest of a message we already gave up on */
+		return 0;
+
+	m = lejp_parse(&pss->ctx, buf, (int)len);
+	if (m == LEJP_CONTINUE && !(flags & LWSSS_FLAG_EOM))
+		return 0;
+
+	pss->parsing = 0;
+
+	if (m >= 0 && pss->a.dest) {
+
+		if (pss->a.top_schema_index == 1) {
 			/* PCON Control */
-			sai_pcon_control_t *ctl = (sai_pcon_control_t *)a.dest;
+			sai_pcon_control_t *ctl = (sai_pcon_control_t *)pss->a.dest;
 			saip_pcon_t *pc = saip_pcon_by_name(&power, ctl->pcon_name);
 
 			lwsl_warn("%s: RX PCON Control '%s' -> %d\n", __func__, ctl->pcon_name, ctl->on);
@@ -237,9 +258,9 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 			} else {
 				lwsl_warn("%s: Unknown PCON '%s'\n", __func__, ctl->pcon_name);
 			}
-		} else if (a.top_schema_index == 0) {
+		} else if (pss->a.top_schema_index == 0) {
 			/* Stay */
-			sai_stay_t *stay = (sai_stay_t *)a.dest;
+			sai_stay_t *stay = (sai_stay_t *)pss->a.dest;
 			saip_pcon_t *pc;
 
 			// {"schema":"com.warmcat.sai.power.stay","builder_name":"ubuntu_rpi4","stay_on":1}
@@ -300,9 +321,9 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 					}
 				} lws_end_foreach_dll(b_node);
 			} lws_end_foreach_dll(p);
-		} else if (a.top_schema_index == 2) {
+		} else if (pss->a.top_schema_index == 2) {
 			/* Pending tasks JSON */
-			sai_platform_pending_tasks_t *pt = (sai_platform_pending_tasks_t *)a.dest;
+			sai_platform_pending_tasks_t *pt = (sai_platform_pending_tasks_t *)pss->a.dest;
 
 			lwsl_info("%s: received pending tasks pcons: %s\n", __func__, pt->pcons);
 
@@ -381,13 +402,14 @@ saip_m_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		}
 
 found:
-		lwsac_free(&a.ac);
+		lwsac_free(&pss->a.ac);
 		return 0;
 	}
-	lwsac_free(&a.ac);
+	lwsac_free(&pss->a.ac);
 
 	lwsl_err("%s: ************* Received unknown non-JSON message\n", __func__);
-	sai_dump_stderr(buf, len);
+	if (flags & LWSSS_FLAG_SOM)
+		sai_dump_stderr(buf, len);
 
 	return 0;
 }
@@ -469,6 +491,7 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 		break;
 
 	case LWSSSCS_DESTROYING:
+		lwsac_free(&pss->a.ac);
 		lws_dll2_foreach_safe(&power.sai_server_owner, sps,
 				      cleanup_on_ss_destroy);
 		break;
@@ -507,6 +530,9 @@ saip_m_state(void *userobj, void *sh, lws_ss_constate_t state,
 
 	case LWSSSCS_DISCONNECTED:
 		lws_buflist_destroy_all_segments(&pss->bl_pwr_to_srv);
+		/* a message cut off by the disconnection is not coming back */
+		lwsac_free(&pss->a.ac);
+		pss->parsing = 0;
 		lwsl_info("%s: DISCONNECTED\n", __func__);
 		lws_dll2_foreach_safe(&power.sai_server_owner, sps,
 				      cleanup_on_ss_disconnect);
