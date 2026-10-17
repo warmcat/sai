@@ -1383,8 +1383,9 @@ saib_start_artifact_upload(struct sai_nspawn *ns)
 	 * whatever may contain substrings like git commit hash
 	 * without having to know it in the saifile.
 	 *
-	 * The file search context is ns->inp, which is where
-	 * the instance and platform-specific build takes place.
+	 * The file search context is the src/ dir under ns->inp,
+	 * where the build steps run, so the globs are relative to
+	 * the same dir the saifile's build commands are.
 	 *
 	 * We get a comma-separated list of globs possibly each
 	 * with a path offset like "build/\*.rpm".  Let's parse
@@ -1441,8 +1442,8 @@ scan:
 			continue;
 		}
 
-		lws_strncpy(scandir, ns->inp, sizeof(scandir));
-		m = (int)strlen(scandir);
+		m = lws_snprintf(scandir, sizeof(scandir), "%ssrc%c",
+				 ns->inp, csep);
 
 		/*
 		 * if the filter has a fully-defined subdir,
