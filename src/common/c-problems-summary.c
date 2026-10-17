@@ -38,7 +38,7 @@
  * platform's OS, architecture and toolchain, eg, "all noclient builds",
  * "every build on freebsd", "every msvc build", or else "2 of 8 platforms on
  * default: ...".  And how often: in how many of the tries of those builds,
- * and for a test, how many of the times it ran.
+ * and for a test, how many of the times it ran in them.
  *
  * It's all said against the builds that finished so far, it's done again as
  * each run finishes.
@@ -874,9 +874,13 @@ ps_group_json(ps_ctx_t *c, ps_group_t *g)
 	}
 
 	/*
-	 * What it could have been in: for a test, the builds it ran in, and
-	 * the times it passed in runs where it never failed count as its
-	 * attempts too.  For the rest, the builds that finished.
+	 * What it could have been in: for a test, the builds it ran in.  For
+	 * the rest, the builds that finished.
+	 *
+	 * How often a test failed is said of the builds it failed in, so the
+	 * times it passed in their runs where it never failed count as its
+	 * attempts too, but not the times it passed in other builds: those
+	 * are told by which builds it was in, not by chance.
 	 */
 
 	for (m = 0; m < c->nruns; m++) {
@@ -890,7 +894,8 @@ ps_group_json(ps_ctx_t *c, ps_group_t *g)
 			if (ps_passed_in(c->runs[m],
 					 c->occs[g->occ[0]].p->code)) {
 				of[t / 8] = (uint8_t)(of[t / 8] | (1 << (t % 8)));
-				att++;
+				if (ps_has(g->tasks, t))
+					att++;
 			}
 			continue;
 		}

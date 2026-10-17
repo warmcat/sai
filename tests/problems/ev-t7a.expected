@@ -4,3 +4,4 @@ test flaky ctest :0:0 code='mss-lws-minimal-ss-hello_world' subject='mss-lws-min
   | [2026/10/11 12:30:06:1234] E: myss_state: CONNECTION_FAILED
 passed:
 api-test-lws_tokenize
+api-test-h2-client-queue

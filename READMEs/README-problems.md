@@ -68,8 +68,10 @@ tries`.
 Tests may be run more than once in a try too, eg, with ctest's
 `--repeat until-pass:3`.  Every attempt is counted, so a test that failed and
 then passed is known to be flaky the first time it happens.  How often it fails
-is counted over all its attempts in every try of every task that ran it, eg,
-`failed 2 of 61 runs (3%), passing on retry`.
+is counted over all its attempts in every try of the builds it failed in, eg,
+`failed 2 of 61 runs (3%), passing on retry`, or `failed all 42 times it ran`.
+The times it passed in other builds aren't counted: that it only fails on some
+platforms or configurations is said by which builds it was in, it's not chance.
 
 ## Grouping
 
@@ -136,8 +138,8 @@ slow anything else down.
 
 Icons in the top left corner of a group say it's an error or a warning, or,
 with a dice, that it only happens some of the time: a test that failed and then
-passed, or failed in only some of the times it ran, or a problem seen in only
-some of the tries of the same builds.
+passed, or failed in only some of the times it ran in the builds it failed in,
+or a problem seen in only some of the tries of the same builds.
 
 Clicking a group opens it: each place it was seen, with the build, try, builder
 and when, and the start of what the log said there.  Clicking one of those

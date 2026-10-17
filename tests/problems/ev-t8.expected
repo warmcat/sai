@@ -1,0 +1,6 @@
+test error ctest :0:0 code='api-test-h2-client-queue' subject='api-test-h2-client-queue' msg='Failed' log=3+2 count=1 tests=3/3
+  hkey='t:api-test-h2-client-queue'
+  |  2/2 Test  #2: api-test-h2-client-queue .........***Failed    2.01 sec
+  | [2026/10/11 12:30:06:1234] E: h2 client queue: stream 3 never completed
+passed:
+api-test-lws_tokenize

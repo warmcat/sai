@@ -2901,13 +2901,16 @@ function sai_problems_where(g)
 	return w;
 }
 
-/* how often it went wrong */
+/* how often it went wrong, in the builds it went wrong in */
 function sai_problems_often(g)
 {
 	var s = [];
 
 	if (g.phase === 3 && g.att)
-		s.push("failed " + g.fails + " of " + g.att + " runs (" +
+		s.push(g.fails === g.att ?
+		       (g.att === 1 ? "failed the one time it ran" :
+				      "failed all " + g.att + " times it ran") :
+		       "failed " + g.fails + " of " + g.att + " runs (" +
 		       sai_problems_pct(g.fails, g.att) + ")" +
 		       (g.sev === 1 ? ", passing on retry" : ""));
 
@@ -2919,8 +2922,9 @@ function sai_problems_often(g)
 
 /*
  * Did it come and go by chance: a test that failed then passed, or one that
- * failed only some of the times it ran, or a problem in only some of the
- * tries of the same builds
+ * failed only some of the times it ran in the builds it failed in, or a
+ * problem in only some of the tries of the same builds.  Which builds it was
+ * in isn't chance, the scope says those.
  */
 function sai_problems_chancy(g)
 {
