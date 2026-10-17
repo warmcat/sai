@@ -1726,9 +1726,16 @@ typedef struct sai_problem_hist {
 	unsigned int			of;	/* events looked at */
 	uint64_t			first;
 	uint64_t			last;
+	/*
+	 * Of the events of the same branch before this one, newest first, how
+	 * many in a row it was in too.  It's fresh if it was in none of the
+	 * ones before those, and there were some it wasn't in: it's new.
+	 */
+	unsigned int			recent;
+	char				fresh;
 } sai_problem_hist_t;
 
-/* returns 0 and fills *h if it was seen before */
+/* returns 0 and fills *h if what's in the history is known, even nothing */
 typedef int (*sai_problem_hist_cb)(void *opaque, const char *hkey,
 				   sai_problem_hist_t *h);
 

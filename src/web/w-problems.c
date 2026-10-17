@@ -41,6 +41,8 @@
 #define SAIW_PROBLEMS_CACHE		8
 /* how far back we look in the history */
 #define SAIW_PROBLEMS_HIST_SECS		(180ll * 24 * 3600)
+/* how many of the branch's events before this one say if a problem is new */
+#define SAIW_PROBLEMS_EARLIER		100
 /* runs often end together, tell browsers once about all of them */
 #define SAIW_PROBLEMS_DEBOUNCE_US	(500 * LWS_US_PER_MS)
 #define SAIW_PROBLEMS_EXCERPTS_MAX	50
@@ -59,20 +61,30 @@ typedef struct saiw_problems_hist {
 	sqlite3_stmt		*sm;
 	char			repo[65];
 	char			event_uuid[33];
+	/* the events of the same branch before this one, newest first */
+	char			earlier[SAIW_PROBLEMS_EARLIER][33];
+	int			nearlier;
 	unsigned int		of;
 	int64_t			since;
 } saiw_problems_hist_t;
 
-/* how many of the repo's other events a problem was in, and when */
+/*
+ * How many of the repo's other events a problem was in, and when.  And if
+ * it's new: it was in the branch's events just before this one in a row, if
+ * any, but not in the ones before those
+ */
 
 static int
 saiw_problems_hist_cb(void *opaque, const char *hkey, sai_problem_hist_t *h)
 {
 	saiw_problems_hist_t *sh = (saiw_problems_hist_t *)opaque;
-	int r = 1;
+	uint8_t in[SAIW_PROBLEMS_EARLIER];
+	int n, r;
 
 	if (!sh->sm || !sh->of)
 		return 1;
+
+	memset(in, 0, sizeof(in));
 
 	sqlite3_reset(sh->sm);
 	sqlite3_bind_text(sh->sm, 1, sh->repo, -1, SQLITE_TRANSIENT);
@@ -80,41 +92,72 @@ saiw_problems_hist_cb(void *opaque, const char *hkey, sai_problem_hist_t *h)
 	sqlite3_bind_text(sh->sm, 3, sh->event_uuid, -1, SQLITE_TRANSIENT);
 	sqlite3_bind_int64(sh->sm, 4, sh->since);
 
-	if (sqlite3_step(sh->sm) == SQLITE_ROW &&
-	    sqlite3_column_int(sh->sm, 0) > 0) {
-		h->events	= (unsigned int)sqlite3_column_int(sh->sm, 0);
-		h->of		= sh->of;
-		h->first	= (uint64_t)sqlite3_column_int64(sh->sm, 1);
-		h->last		= (uint64_t)sqlite3_column_int64(sh->sm, 2);
-		r = 0;
-	}
+	while ((r = sqlite3_step(sh->sm)) == SQLITE_ROW) {
+		const char *u = (const char *)sqlite3_column_text(sh->sm, 0);
+		uint64_t t = (uint64_t)sqlite3_column_int64(sh->sm, 1);
 
-	return r;
+		if (!h->events || t < h->first)
+			h->first = t;
+		if (t > h->last)
+			h->last = t;
+		h->events++;
+
+		for (n = 0; u && n < sh->nearlier; n++)
+			if (!strcmp(sh->earlier[n], u)) {
+				in[n] = 1;
+				break;
+			}
+	}
+	if (r != SQLITE_DONE)
+		return 1;
+
+	h->of = sh->of;
+
+	for (n = 0; n < sh->nearlier && in[n]; n++)
+		;
+	h->recent	= (unsigned int)n;
+	h->fresh	= n < sh->nearlier;
+	for (; n < sh->nearlier; n++)
+		if (in[n])
+			h->fresh = 0;
+
+	return 0;
 }
 
 /*
  * The other events of the repo looked at for problems in the time we look
- * back over, and get ready to look up each problem in them
+ * back over, and the ones of the event's branch before it, and get ready to
+ * look up each problem in them
  */
 
 static void
 saiw_problems_hist_init(struct vhd *vhd, saiw_problems_hist_t *sh,
 			const char *event_uuid)
 {
+	char ref[65];
+	int64_t created = 0;
 	sqlite3_stmt *sm;
 
 	memset(sh, 0, sizeof(*sh));
 	sh->vhd		= vhd;
 	sh->since	= (int64_t)lws_now_secs() - SAIW_PROBLEMS_HIST_SECS;
 	lws_strncpy(sh->event_uuid, event_uuid, sizeof(sh->event_uuid));
+	ref[0] = '\0';
 
-	if (sqlite3_prepare_v2(vhd->pdb, "SELECT repo_name FROM events WHERE "
-			       "uuid = ?", -1, &sm, NULL) != SQLITE_OK)
+	if (sqlite3_prepare_v2(vhd->pdb, "SELECT repo_name, ref, created FROM "
+			       "events WHERE uuid = ?", -1, &sm, NULL) !=
+								SQLITE_OK)
 		return;
 	sqlite3_bind_text(sm, 1, event_uuid, -1, SQLITE_TRANSIENT);
-	if (sqlite3_step(sm) == SQLITE_ROW && sqlite3_column_text(sm, 0))
+	if (sqlite3_step(sm) == SQLITE_ROW && sqlite3_column_text(sm, 0)) {
 		lws_strncpy(sh->repo, (const char *)sqlite3_column_text(sm, 0),
 			    sizeof(sh->repo));
+		if (sqlite3_column_text(sm, 1))
+			lws_strncpy(ref, (const char *)
+					 sqlite3_column_text(sm, 1),
+				    sizeof(ref));
+		created = sqlite3_column_int64(sm, 2);
+	}
 	sqlite3_finalize(sm);
 	if (!sh->repo[0])
 		return;
@@ -132,10 +175,40 @@ saiw_problems_hist_init(struct vhd *vhd, saiw_problems_hist_t *sh,
 		sh->of = (unsigned int)sqlite3_column_int(sm, 0);
 	sqlite3_finalize(sm);
 
-	if (sqlite3_prepare_v2(vhd->pdb, "SELECT count(DISTINCT event_uuid), "
-			       "min(created), max(created) FROM problem_history "
-			       "WHERE repo_name = ? AND hkey = ? AND "
-			       "event_uuid != ? AND created >= ?", -1, &sh->sm,
+	/*
+	 * The branch's events before this one that were looked at, newest
+	 * first.  The events' rows stay when their dbs are pruned, and a
+	 * deleted one isn't in the history.
+	 */
+	if (ref[0] && sqlite3_prepare_v2(vhd->pdb, "SELECT h.event_uuid FROM "
+			       "problem_history h JOIN events e ON "
+			       "e.uuid = h.event_uuid WHERE h.repo_name = ? AND "
+			       "h.hkey = '' AND e.ref = ? AND h.created >= ? AND "
+			       "(h.created < ? OR (h.created = ? AND "
+			       "h.event_uuid < ?)) GROUP BY h.event_uuid "
+			       "ORDER BY h.created DESC, h.event_uuid DESC "
+			       "LIMIT ?", -1, &sm, NULL) == SQLITE_OK) {
+		sqlite3_bind_text(sm, 1, sh->repo, -1, SQLITE_TRANSIENT);
+		sqlite3_bind_text(sm, 2, ref, -1, SQLITE_TRANSIENT);
+		sqlite3_bind_int64(sm, 3, sh->since);
+		sqlite3_bind_int64(sm, 4, created);
+		sqlite3_bind_int64(sm, 5, created);
+		sqlite3_bind_text(sm, 6, event_uuid, -1, SQLITE_TRANSIENT);
+		sqlite3_bind_int(sm, 7, SAIW_PROBLEMS_EARLIER);
+		while (sqlite3_step(sm) == SQLITE_ROW &&
+		       sh->nearlier < SAIW_PROBLEMS_EARLIER)
+			if (sqlite3_column_text(sm, 0))
+				lws_strncpy(sh->earlier[sh->nearlier++],
+					    (const char *)
+						sqlite3_column_text(sm, 0),
+					    sizeof(sh->earlier[0]));
+		sqlite3_finalize(sm);
+	}
+
+	if (sqlite3_prepare_v2(vhd->pdb, "SELECT event_uuid, min(created) "
+			       "FROM problem_history WHERE repo_name = ? AND "
+			       "hkey = ? AND event_uuid != ? AND created >= ? "
+			       "GROUP BY event_uuid", -1, &sh->sm,
 			       NULL) != SQLITE_OK)
 		sh->sm = NULL;
 }

@@ -40,6 +40,10 @@
  * default: ...".  And how often: in how many of the tries of those builds,
  * and for a test, how many of the times it ran in them.
  *
+ * And whether it's new: it was in this event, and the branch's events
+ * just before it in a row, if any, but in none of its events before those.
+ * A new one isn't flaky, even if it passed on retry, it's an error.
+ *
  * It's all said against the builds that finished so far, it's done again as
  * each run finishes.
  */
@@ -91,7 +95,12 @@ typedef struct ps_group {
 	const char		*path;
 	const char		*code;
 	uint32_t		taskhash;
+	sai_problem_hist_t	hist;		/* the most of any of its keys */
+	unsigned int		recent;
 	char			merged;		/* into another */
+	char			hist_done;
+	char			have_hist;
+	char			fresh;		/* it's new */
 } ps_group_t;
 
 typedef struct ps_ctx {
@@ -804,6 +813,62 @@ ps_passed_in(const sai_problem_run_t *r, const char *name)
 	return 0;
 }
 
+/*
+ * Before, in other events: the most of any of its keys.  It's new if it's new
+ * by all of them, and was in the most events in a row of any of them up to
+ * this one.
+ *
+ * A new problem isn't flaky, even if it passed on retry: it's only just
+ * appeared, there's nothing yet to say it will come and go, it may be here to
+ * stay.  So it's an error, and that has to be known before the groups are
+ * counted and put in order.
+ */
+
+static void
+ps_group_hist(ps_ctx_t *c, ps_group_t *g)
+{
+	const char *hkeys[SAI_PS_HKEYS];
+	sai_problem_hist_t h;
+	int n, m, nh = 0;
+
+	if (g->hist_done)
+		return;
+	g->hist_done = 1;
+
+	if (!c->i->hist)
+		return;
+
+	for (n = 0; n < g->nocc; n++) {
+		const char *k = c->occs[g->occ[n]].p->hkey;
+
+		for (m = 0; m < nh; m++)
+			if (!strcmp(hkeys[m], k))
+				break;
+		if (m == nh && nh < SAI_PS_HKEYS)
+			hkeys[nh++] = k;
+	}
+
+	g->fresh = nh > 0;
+	for (n = 0; n < nh; n++) {
+		memset(&h, 0, sizeof(h));
+		if (c->i->hist(c->i->hist_opaque, hkeys[n], &h)) {
+			g->fresh = 0;
+			continue;
+		}
+		if (!h.fresh)
+			g->fresh = 0;
+		if (h.recent > g->recent)
+			g->recent = h.recent;
+		if (h.events <= g->hist.events)
+			continue;
+		g->hist = h;
+		g->have_hist = 1;
+	}
+
+	if (g->fresh && g->sev == SAI_PROB_SEV_FLAKY)
+		g->sev = SAI_PROB_SEV_ERROR;
+}
+
 static void
 ps_group_json(ps_ctx_t *c, ps_group_t *g)
 {
@@ -811,10 +876,9 @@ ps_group_json(ps_ctx_t *c, ps_group_t *g)
 	uint8_t *of = calloc(1, bm + 1), *hit = calloc(1, (size_t)c->nruns + 1);
 	int n, m, runs_hit = 0, runs_of = 0, att = 0, fails = 0, lines[8],
 	    nlines = 0, is_test = g->phase == SAI_PROB_PHASE_TEST;
-	const char *hkeys[SAI_PS_HKEYS], *msgs[SAI_PS_MSGS];
-	sai_problem_hist_t hist, h;
+	const char *msgs[SAI_PS_MSGS];
 	char scope[512], tcs[256];
-	int nh = 0, nm = 0, have_hist = 0;
+	int nm = 0;
 	uint32_t id;
 	size_t tl = 0;
 
@@ -847,12 +911,6 @@ ps_group_json(ps_ctx_t *c, ps_group_t *g)
 				break;
 		if (m == nlines && p->line && nlines < (int)LWS_ARRAY_SIZE(lines))
 			lines[nlines++] = p->line;
-
-		for (m = 0; m < nh; m++)
-			if (!strcmp(hkeys[m], p->hkey))
-				break;
-		if (m == nh && nh < SAI_PS_HKEYS)
-			hkeys[nh++] = p->hkey;
 
 		for (m = 0; m < nm; m++)
 			if (!strcmp(msgs[m], p->msg))
@@ -924,17 +982,7 @@ ps_group_json(ps_ctx_t *c, ps_group_t *g)
 						   "%s%s", tl ? ", " : "", tc);
 	}
 
-	/* before, in other events: the most of any of its keys */
-	memset(&hist, 0, sizeof(hist));
-	if (c->i->hist)
-		for (n = 0; n < nh; n++) {
-			memset(&h, 0, sizeof(h));
-			if (c->i->hist(c->i->hist_opaque, hkeys[n], &h) ||
-			    h.events <= hist.events)
-				continue;
-			hist = h;
-			have_hist = 1;
-		}
+	ps_group_hist(c, g);
 
 	id = ps_fnv(2166136261u, c->occs[g->occ[0]].p->hkey,
 		    strlen(c->occs[g->occ[0]].p->hkey));
@@ -970,11 +1018,13 @@ ps_group_json(ps_ctx_t *c, ps_group_t *g)
 	}
 	ps_addf(c, "],\"nt\":%d,\"hit\":%d,\"runs\":%d,\"att\":%d,"
 		   "\"fails\":%d", g->ntasks, runs_hit, runs_of, att, fails);
-	if (have_hist)
+	if (g->have_hist)
 		ps_addf(c, ",\"hist\":{\"ev\":%u,\"of\":%u,\"first\":%llu,"
-			   "\"last\":%llu}", hist.events, hist.of,
-			(unsigned long long)hist.first,
-			(unsigned long long)hist.last);
+			   "\"last\":%llu}", g->hist.events, g->hist.of,
+			(unsigned long long)g->hist.first,
+			(unsigned long long)g->hist.last);
+	if (g->fresh)
+		ps_addf(c, ",\"new\":%u", g->recent + 1);
 
 	ps_add(c, ",\"occ\":[", 8);
 	for (n = 0; n < g->nocc && n < SAI_PS_GROUP_OCCS; n++) {
@@ -1106,6 +1156,9 @@ sai_problems_summary_json(const sai_problems_summary_info_t *i, char **out,
 	m = 0;
 	for (n = 0; n < c.ngroups; n++)
 		if (!c.groups[n].merged) {
+			/* only a flaky one may be something else if it's new */
+			if (c.groups[n].sev == SAI_PROB_SEV_FLAKY)
+				ps_group_hist(&c, &c.groups[n]);
 			order[m++] = &c.groups[n];
 			cnt[c.groups[n].sev]++;
 		}

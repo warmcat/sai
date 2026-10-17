@@ -2890,8 +2890,11 @@ tr.tt-row.selected td {
 	cursor: pointer;
 }
 
-/* icons in the top left corner, eg, it's an error, it happens by chance */
-.prob-icons1 .prob-head, .prob-icons2 .prob-head {
+/*
+ * icons in the top left corner, eg, it's an error, it happens by chance,
+ * it's new
+ */
+.prob-icons1 .prob-head, .prob-icons2 .prob-head, .prob-icons3 .prob-head {
 	position: relative;
 }
 
@@ -2901,6 +2904,10 @@ tr.tt-row.selected td {
 
 .prob-icons2 .prob-head {
 	padding-left: 52px;
+}
+
+.prob-icons3 .prob-head {
+	padding-left: 75px;
 }
 
 .prob-corner {
@@ -2922,6 +2929,13 @@ img.prob-icon {
  * and where the other icons are, the shadow overhangs it
  */
 img.prob-icon.prob-dice {
+	width: 27.7px;
+	margin-left: -3.4px;
+	margin-right: -3.3px;
+}
+
+/* newbug.svg is about the same shape as dice.svg, it goes where it would */
+img.prob-icon.prob-newbug {
 	width: 27.7px;
 	margin-left: -3.4px;
 	margin-right: -3.3px;
