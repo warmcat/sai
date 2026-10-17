@@ -118,6 +118,19 @@ many, out of the events looked at for problems in that time, and when it was
 first and last seen: eg, a test that has been failing once a week and passing
 when it's run again, for months.
 
+A problem is new if, of the events of the same branch before this one that
+were looked at for problems, up to 100 of them in the last 180 days, it was in
+none, or only in the latest ones, one after another.  It must have not been in
+at least one of them, so nothing is new when there's no history to tell.  If
+it was in an earlier event, then not in one after that, it's not new, it comes
+and goes.  The summary's `new` says how many events in a row, with this one,
+it's been in.  A new problem isn't flaky, even if it passed on retry: it's
+only just appeared, there's nothing yet to say it comes and goes, it may be
+here to stay.  So it's counted as an error.  But if it didn't happen every
+time here, eg, it failed in only some of the times the test ran, chance is in
+it too and it's still given the dice.  Any event that was looked at counts,
+even if it didn't get to run the builds the problem is in.
+
 ## Storage
 
 In the event's db, `problems` has a row for each different problem found in
@@ -139,7 +152,8 @@ slow anything else down.
 Icons in the top left corner of a group say it's an error or a warning, or,
 with a dice, that it only happens some of the time: a test that failed and then
 passed, or failed in only some of the times it ran in the builds it failed in,
-or a problem seen in only some of the tries of the same builds.
+or a problem seen in only some of the tries of the same builds.  A new bug says
+it's new.
 
 Clicking a group opens it: each place it was seen, with the build, try, builder
 and when, and the start of what the log said there.  Clicking one of those

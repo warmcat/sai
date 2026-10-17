@@ -290,7 +290,27 @@ typedef struct tp_run {
 static int
 tp_hist(void *opaque, const char *hkey, sai_problem_hist_t *h)
 {
-	/* pretend a flaky test was seen before */
+	/* pretend a test only started failing in the last two events */
+	if (!strcmp(hkey, "t:api-test-h2-client-queue")) {
+		h->events	= 2;
+		h->of		= 40;
+		h->first	= 1760400000;
+		h->last		= 1760500000;
+		h->recent	= 2;
+		h->fresh	= 1;
+
+		return 0;
+	}
+
+	/* and one that failed then passed is only in this event */
+	if (!strcmp(hkey, "t:api-test-lws_stub")) {
+		h->of		= 40;
+		h->fresh	= 1;
+
+		return 0;
+	}
+
+	/* pretend a flaky test was seen before, on and off */
 	if (strncmp(hkey, "t:", 2))
 		return 1;
 

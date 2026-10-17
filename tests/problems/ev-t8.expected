@@ -2,5 +2,9 @@ test error ctest :0:0 code='api-test-h2-client-queue' subject='api-test-h2-clien
   hkey='t:api-test-h2-client-queue'
   |  2/2 Test  #2: api-test-h2-client-queue .........***Failed    2.01 sec
   | [2026/10/11 12:30:06:1234] E: h2 client queue: stream 3 never completed
+test flaky ctest :0:0 code='api-test-lws_stub' subject='api-test-lws_stub' msg='Failed' log=11+2 count=1 tests=1/2
+  hkey='t:api-test-lws_stub'
+  |  3/3 Test  #3: api-test-lws_stub ................***Failed    0.51 sec
+  | [2026/10/11 12:30:12:1234] E: stub: unexpected close
 passed:
 api-test-lws_tokenize

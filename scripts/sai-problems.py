@@ -212,6 +212,9 @@ def print_problems(j):
         if g.get("att"):
             s += ", failed %d of %d runs" % (g.get("fails", 0), g["att"])
         print(s)
+        if g.get("new"):
+            print("    new: in the last %d events of the branch in a row, "
+                  "none before" % g["new"])
         h = g.get("hist")
         if h:
             print("    also in %d of the last %d events, %s to %s" % (

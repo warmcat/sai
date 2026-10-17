@@ -2924,7 +2924,9 @@ function sai_problems_often(g)
  * Did it come and go by chance: a test that failed then passed, or one that
  * failed only some of the times it ran in the builds it failed in, or a
  * problem in only some of the tries of the same builds.  Which builds it was
- * in isn't chance, the scope says those.
+ * in isn't chance, the scope says those.  A new one can still be chance: it's
+ * counted as an error, since it may be here to stay, but if it didn't happen
+ * every time here, chance is in it.
  */
 function sai_problems_chancy(g)
 {
@@ -2941,6 +2943,14 @@ function sai_problems_hist(g, now_ut)
 	return "Also in " + g.hist.ev + " of the last " + g.hist.of +
 	       " events, since " + sai_problems_date(g.hist.first) +
 	       ", last " + agify(now_ut, g.hist.last) + " ago";
+}
+
+/* it's new: in the branch's last events in a row up to this one, not before */
+function sai_problems_new_title(g)
+{
+	return g.new > 1 ? "It's new: in the last " + g.new + " events of " +
+			   "this branch in a row, and none before them" :
+			   "It's new: first seen in this event of this branch";
 }
 
 function sai_problems_occ_html(g, oc, now_ut)
@@ -2993,6 +3003,11 @@ function sai_problems_group_html(g, now_ut)
 			   "src=\"/sai/dice.svg\" " +
 			   "title=\"It only happens some of the time\" " +
 			   "alt=\"\">");
+	if (g.new)
+		icons.push("<img class=\"prob-icon prob-newbug\" " +
+			   "src=\"/sai/newbug.svg\" " +
+			   "title=\"" + san(sai_problems_new_title(g)) +
+			   "\" alt=\"\">");
 
 	s = "<div class=\"prob-group prob-sev" + g.sev + (open ? " open" : "") +
 	    (icons.length ? " prob-icons" + icons.length : "") +
@@ -3128,6 +3143,8 @@ function sai_problems_text(g)
 		t += "  Also in " + g.hist.ev + " of the last " + g.hist.of +
 		     " events, since " + sai_problems_date(g.hist.first) +
 		     ", last " + sai_problems_date(g.hist.last) + "\n";
+	if (g.new)
+		t += "  " + sai_problems_new_title(g) + "\n";
 
 	for (n = 0; n < g.occ.length; n++) {
 		oc = g.occ[n];

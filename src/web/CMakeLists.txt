@@ -130,6 +130,7 @@ add_dependencies(${SUB} sai_git_hash)
 			../../assets/decal-6.svg
 			../../assets/dice.svg
 			../../assets/error.svg
+			../../assets/newbug.svg
 			../../assets/warn.svg
 			../../assets/freertos-espidf.svg
 			../../assets/freertos-linkit.svg
