@@ -149,6 +149,9 @@ slow anything else down.
 
 ## The problems pane
 
+The pane is green if nothing went wrong in the builds that finished, red if
+there are errors, and yellow if there are only warnings or flaky tests.
+
 Icons in the top left corner of a group say it's an error or a warning, or,
 with a dice, that it only happens some of the time: a test that failed and then
 passed, or failed in only some of the times it ran in the builds it failed in,

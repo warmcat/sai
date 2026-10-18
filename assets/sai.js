@@ -3098,12 +3098,36 @@ function sai_problems_html()
 	return s;
 }
 
+/*
+ * The pane's colour says how it went at a glance: green if nothing went
+ * wrong in what finished, red if there are errors, yellow if there are only
+ * warnings or flaky tests.  None until there's something to say.
+ */
+function sai_problems_tint()
+{
+	var o = sai_problems.o;
+
+	if (!o || !o.runs)
+		return null;
+	if (o.errors)
+		return "prob-pane-bad";
+	if (o.groups.length || o.more)
+		return "prob-pane-warn";
+
+	return "prob-pane-good";
+}
+
 function sai_problems_render()
 {
-	var el = document.getElementById("sai_problems"), top;
+	var el = document.getElementById("sai_problems"), top, tint;
 
 	if (!el)
 		return;
+
+	tint = sai_problems_tint();
+	el.classList.remove("prob-pane-good", "prob-pane-warn", "prob-pane-bad");
+	if (tint)
+		el.classList.add(tint);
 
 	top = el.scrollTop;
 	el.innerHTML = sai_problems_html();

@@ -2847,6 +2847,19 @@ tr.tt-row.selected td {
 	padding: 0 4px;
 }
 
+/* how it went, see sai_problems_tint(), light enough for the text on it */
+.tasks-split-problems.prob-pane-good {
+	background: #8fdf8f;
+}
+
+.tasks-split-problems.prob-pane-warn {
+	background: #ffef80;
+}
+
+.tasks-split-problems.prob-pane-bad {
+	background: #ff8f8f;
+}
+
 .prob-hdr {
 	position: sticky;
 	top: 0;
