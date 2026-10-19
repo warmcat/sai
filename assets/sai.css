@@ -2860,6 +2860,27 @@ tr.tt-row.selected td {
 	background: #ff8f8f;
 }
 
+/* the rosette goes in the middle of what's left of the pane */
+.tasks-split-problems.prob-pane-rosette {
+	display: flex;
+	flex-direction: column;
+}
+
+.prob-rosette {
+	flex: 1 1 auto;
+	min-height: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 4px;
+}
+
+.prob-rosette img {
+	max-width: 100%;
+	max-height: 100%;
+	object-fit: contain;
+}
+
 .prob-hdr {
 	position: sticky;
 	top: 0;

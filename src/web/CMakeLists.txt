@@ -86,6 +86,7 @@ add_dependencies(${SUB} sai_git_hash)
 		      ../../assets/rebuild.png
 		      ../../assets/delete.png
 		      ../../assets/rss.png
+		      ../../assets/rosette.png
 		      ../../assets/passed.svg
 		      ../../assets/failed.svg
 		      ../../assets/locked.svg

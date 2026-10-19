@@ -2828,6 +2828,7 @@ function sai_sync_open_at(l)
 
 var sai_problems = {
 	event: null,	/* the event we asked about */
+	ev_state: -1,	/* its state, as the tasks pane last drew it */
 	o: null,	/* its summary */
 	open: {},	/* the groups that are open, by id */
 	ex: {},		/* excerpts we have, by problem uid */
@@ -2860,8 +2861,9 @@ function sai_problems_request(uuid)
 }
 
 /* the tasks pane was drawn again for this event */
-function sai_problems_attach(uuid)
+function sai_problems_attach(uuid, ev_state)
 {
+	sai_problems.ev_state = ev_state;
 	if (sai_problems.event !== uuid) {
 		sai_problems.open = {};
 		sai_problems_request(uuid);
@@ -3083,7 +3085,13 @@ function sai_problems_html()
 		s += "All " + o.builds + " builds finished";
 	s += ", " + o.clean + " of their " + o.runs + " tries were clean</div>";
 
-	if (!o.groups.length)
+	if (sai_problems_rosette())
+		s += "<div class=\"prob-rosette\">" +
+		     "<img src=\"/sai/rosette.png\" " +
+			"title=\"Every build succeeded and nothing went wrong\" " +
+			"alt=\"Every build succeeded and nothing went wrong\">" +
+		     "</div>";
+	else if (!o.groups.length)
 		s += "<div class=\"prob-none\">" +
 		     (o.runs ? "Nothing went wrong" : "Nothing finished yet") +
 		     "</div>";
@@ -3096,6 +3104,19 @@ function sai_problems_html()
 		     " more problems</div>";
 
 	return s;
+}
+
+/*
+ * A rosette when it all went well: the event finished with every build
+ * succeeding, and reading all of them found nothing
+ */
+function sai_problems_rosette()
+{
+	var o = sai_problems.o;
+
+	return !!o && sai_problems.ev_state === 3 /* SAIES_SUCCESS */ &&
+	       o.runs > 0 && o.parsed === o.builds &&
+	       !o.groups.length && !o.more;
 }
 
 /*
@@ -3128,6 +3149,7 @@ function sai_problems_render()
 	el.classList.remove("prob-pane-good", "prob-pane-warn", "prob-pane-bad");
 	if (tint)
 		el.classList.add(tint);
+	el.classList.toggle("prob-pane-rosette", sai_problems_rosette());
 
 	top = el.scrollTop;
 	el.innerHTML = sai_problems_html();
@@ -3496,7 +3518,7 @@ function render_selected_event_tasks(o) {
 
 		container.innerHTML = s;
 
-		sai_problems_attach(e.uuid);
+		sai_problems_attach(e.uuid, e.state);
 		pp = document.getElementById("sai_problems");
 		if (pp)
 			pp.scrollTop = p_top;
