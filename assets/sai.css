@@ -2938,7 +2938,7 @@ img.prob-icon {
 }
 
 /*
- * dice.svg has room for its shadow around the dice, the dice is 21px wide
+ * dice.png has room for its shadow around the dice, the dice is 21px wide
  * and where the other icons are, the shadow overhangs it
  */
 img.prob-icon.prob-dice {
@@ -2947,7 +2947,7 @@ img.prob-icon.prob-dice {
 	margin-right: -3.3px;
 }
 
-/* newbug.svg is about the same shape as dice.svg, it goes where it would */
+/* newbug.svg is about the same shape as dice.png, it goes where it would */
 img.prob-icon.prob-newbug {
 	width: 27.7px;
 	margin-left: -3.4px;

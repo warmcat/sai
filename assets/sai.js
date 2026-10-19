@@ -3000,7 +3000,7 @@ function sai_problems_group_html(g, now_ut)
 			   "title=\"It's a warning\" alt=\"\">");
 	if (sai_problems_chancy(g))
 		icons.push("<img class=\"prob-icon prob-dice\" " +
-			   "src=\"/sai/dice.svg\" " +
+			   "src=\"/sai/dice.png\" " +
 			   "title=\"It only happens some of the time\" " +
 			   "alt=\"\">");
 	if (g.new)
