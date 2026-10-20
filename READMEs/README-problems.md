@@ -153,6 +153,9 @@ The pane is green if nothing went wrong in the builds that finished, red if
 there are errors, and yellow if there are only warnings or flaky tests.
 When the event finished with every build succeeding, and all of them were read
 and nothing went wrong in any of them, a rosette is shown in the middle of it.
+Its header says the same more strongly, except it's only green then, when the
+event finished and nothing went wrong.  The header of the table of the event's
+tasks beside it is green if every build succeeded, and red if any failed.
 
 Icons in the top left corner of a group say it's an error or a warning, or,
 with a dice, that it only happens some of the time: a test that failed and then

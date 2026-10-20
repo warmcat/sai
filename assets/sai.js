@@ -2326,6 +2326,22 @@ function sai_tt_row_html(t, e, now_ut, trouble)
 }
 
 /*
+ * The header of the table says how the event went, like the event's header:
+ * green if every build succeeded, red if any failed.  The pane is drawn again
+ * when the event's state changes.
+ */
+function sai_tt_tint(e)
+{
+	if (e.state == 3 /* SAIES_SUCCESS */)
+		return " tt-pass";
+	if (e.state == 4 /* SAIES_FAIL */ ||
+	    e.state == 6 /* SAIES_BEING_BUILT_HAS_FAILURES */)
+		return " tt-fail";
+
+	return "";
+}
+
+/*
  * Build the table HTML for an event's tasks.  Rows come out in task-list
  * order; the caller runs sai_tt_resort() once the table is in the DOM so
  * there's exactly one comparator.
@@ -2333,8 +2349,8 @@ function sai_tt_row_html(t, e, now_ut, trouble)
 function sai_tt_render(o, now_ut)
 {
 	var so = sai_tt_sort_get();
-	var s = "<table class=\"tt\" data-event-uuid=\"" + san(o.e.uuid) +
-		"\"><thead><tr>";
+	var s = "<table class=\"tt" + sai_tt_tint(o.e) +
+		"\" data-event-uuid=\"" + san(o.e.uuid) + "\"><thead><tr>";
 
 	sai_tt_columns.forEach(function(c) {
 		s += "<th class=\"tt-th" +
@@ -3073,7 +3089,7 @@ function sai_problems_html()
 		c.push(o.warnings + " warning" + (o.warnings === 1 ? "" : "s"));
 
 	/* a build is one of the event's tasks, a try is one run of it */
-	s = "<div class=\"prob-hdr\">Problems" +
+	s = "<div class=\"prob-hdr" + sai_problems_hdr_tint() + "\">Problems" +
 	    (c.length ? " <span class=\"prob-counts\">" + c.join(", ") +
 			"</span>" : "") + "</div>" +
 	    "<div class=\"prob-status\" title=\"A build is one of the " +
@@ -3136,6 +3152,26 @@ function sai_problems_tint()
 		return "prob-pane-warn";
 
 	return "prob-pane-good";
+}
+
+/*
+ * The header says it more strongly: green only when the event finished and
+ * nothing went wrong in any of it, as for the rosette, red if there are
+ * errors, yellow if there are only warnings or flaky tests
+ */
+function sai_problems_hdr_tint()
+{
+	if (sai_problems_rosette())
+		return " prob-hdr-good";
+
+	switch (sai_problems_tint()) {
+	case "prob-pane-bad":
+		return " prob-hdr-bad";
+	case "prob-pane-warn":
+		return " prob-hdr-warn";
+	}
+
+	return "";
 }
 
 function sai_problems_render()

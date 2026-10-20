@@ -2669,6 +2669,23 @@ table.tt th.tt-th:hover {
 	background: #e2e8f0;
 }
 
+/* how the event went, see sai_tt_tint(), the same as its header */
+table.tt.tt-pass th.tt-th {
+	background: #01ff70;
+	color: #003000;
+	border-bottom-color: #2ecc40;
+}
+
+table.tt.tt-fail th.tt-th {
+	background: #ff4136;
+	color: #ffffff;
+	border-bottom-color: #df3030;
+}
+
+table.tt.tt-pass th.tt-th:hover, table.tt.tt-fail th.tt-th:hover {
+	box-shadow: inset 0 0 0 100px rgba(0, 0, 0, 0.1);
+}
+
 table.tt th.tt-th.sort-asc::after {
 	content: " \25B2";
 	font-size: 6pt;
@@ -2891,9 +2908,36 @@ tr.tt-row.selected td {
 	border-bottom: 1px solid #cbd5e1;
 }
 
+/* how it went, see sai_problems_hdr_tint() */
+.prob-hdr.prob-hdr-good {
+	background: #01ff70;
+	color: #003000;
+	border-bottom-color: #2ecc40;
+}
+
+.prob-hdr.prob-hdr-warn {
+	background: #ffdc00;
+	color: #302000;
+	border-bottom-color: #d4b600;
+}
+
+.prob-hdr.prob-hdr-bad {
+	background: #ff4136;
+	color: #ffffff;
+	border-bottom-color: #df3030;
+}
+
 .prob-counts {
 	font-weight: 400;
 	color: #475569;
+}
+
+.prob-hdr-good .prob-counts, .prob-hdr-warn .prob-counts {
+	color: inherit;
+}
+
+.prob-hdr-bad .prob-counts {
+	color: #ffe4e4;
 }
 
 .prob-status, .prob-none, .prob-more {
