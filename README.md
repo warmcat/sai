@@ -269,6 +269,10 @@ It's in the problems pane on the right of the tasks pane, where each one can be
 opened to see where it was seen and go to that place in the log.  See
 [READMEs/README-problems.md](READMEs/README-problems.md).
 
+A plan for letting coding agents use sai as their own CI, pushing to a branch
+whose tasks wait to be started, and being told what they found, is in
+[READMEs/README-agent-ci.md](READMEs/README-agent-ci.md).
+
 ## Fleet logs
 
 sai-server keeps the log lines of itself and of every builder, sai-power and
