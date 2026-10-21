@@ -190,10 +190,6 @@ static const char * const default_ss_policy =
 			"]"
 		"}},"
 		/*
-		 * Ships our logs to the same server, see c-fleetlog.c
-		 */
-		SAI_FLEETLOG_SS_POLICY ","
-		/*
 		 * Used to connect to sai-power to ask for power-off
 		 */
 		"{\"sai_power\": {"
@@ -535,18 +531,17 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 			 * The network is ours from here, the clock is right and
 			 * we have an address.  Our logs go to the first server
 			 * in the conf, on a link of their own, see c-fleetlog.c,
-			 * with everything we logged since we started: so what
-			 * goes wrong before sai-virt has told a VM which it is,
-			 * eg, it can't reach sai-virt or resolve its name, is in
-			 * the fleet logs too.  Until then, a sai-virt VM ships
-			 * under the host name in its conf, see b-whoami.c.
+			 * with everything we logged since the context was
+			 * made: so what goes wrong before sai-virt has told a
+			 * VM which it is, eg, it can't reach sai-virt or resolve
+			 * its name, is in the fleet logs too.  Until then, a
+			 * sai-virt VM ships under the host name in its conf,
+			 * see b-whoami.c.
 			 */
 			if (!builder.fleetlog_started) {
 				builder.fleetlog_started = 1;
-				if (saicom_fleetlog_start(builder.context,
-						"sai-builder", builder.host,
-						builder.fleetlog_url,
-						builder.link_key))
+				if (saicom_fleetlog_link(builder.fleetlog_url,
+							 builder.link_key))
 					lwsl_warn("%s: our logs won't be "
 						  "shipped\n", __func__);
 
@@ -870,7 +865,7 @@ saib_app_run(int argc, const char **argv)
 	if (lws_cmdline_option(argc, argv, "-D")) {
 		if (lws_daemonize("/var/run/sai_builder.pid"))
 			return 1;
-		saicom_fleetlog_set_log_level(logs, lwsl_emit_syslog);
+		lws_set_log_level(logs, lwsl_emit_syslog);
 	} else
 #endif
 	{
@@ -888,7 +883,7 @@ saib_app_run(int argc, const char **argv)
 		signal(SIGFPE, win_crash_handler);
 #endif
 
-		saicom_fleetlog_set_log_level(logs, NULL);
+		lws_set_log_level(logs, NULL);
 	}
 
 #if defined(WIN32)
@@ -915,8 +910,7 @@ saib_app_run(int argc, const char **argv)
 			lws_snprintf(logpath, sizeof(logpath), "%s\\sai-builder-service.log", stg_config_dir);
 			log_fd = open(logpath, O_CREAT | O_TRUNC | O_WRONLY, 0600);
 			if (log_fd >= 0)
-				saicom_fleetlog_set_log_level(logs,
-							      lwsl_emit_file);
+				lws_set_log_level(logs, lwsl_emit_file);
 		}
 
 		config_dir = stg_config_dir;
@@ -1039,6 +1033,14 @@ saib_app_run(int argc, const char **argv)
 		return 1;
 	}
 
+	/*
+	 * Keep our log lines from here, until we can send them to sai-server,
+	 * see c-fleetlog.c.  Until sai-virt tells a VM which it is, we go by
+	 * the host name in our conf.
+	 */
+	if (saicom_fleetlog_create(builder.vhost, "sai-builder", builder.host))
+		lwsl_warn("%s: our logs won't be shipped\n", __func__);
+
 	while (lws_service(builder.context, 0) >= 0 && !interrupted)
 		;
 
@@ -1091,7 +1093,7 @@ saib_app_run(int argc, const char **argv)
 	saib_config_destroy(&builder);
 
 	saib_power_shutdown();
-	saicom_fleetlog_stop();
+	saicom_fleetlog_destroy();
 
 	lws_context_destroy(builder.context);
 

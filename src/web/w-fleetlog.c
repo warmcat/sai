@@ -20,9 +20,12 @@
  *
  * Fleet logs, the query: GET [/sai]/logs, see READMEs/README-logs.md
  *
- * sai-server keeps the log lines of the whole fleet in its fleetlog db; like
- * everything else we show, we read it directly.  The answer is JSON, built
- * whole before it is sent, since it's bounded by the query's limit.
+ * sai-server keeps the log lines of the whole fleet with lws's lws-log-ingest
+ * plugin, in its db; like everything else we show, we read it directly.  The
+ * lines a build is about are tagged with its job dir name, see
+ * saicom_fleetlog_tagger(), and the tags table says when each was seen.  The
+ * answer is JSON, built whole before it is sent, since it's bounded by the
+ * query's limit.
  *
  * Who may ask is decided in front of us: the front-end lwsws mounts
  * [/sai]/logs on its own, with lws-login checking for the fleet log grant,
@@ -396,8 +399,12 @@ saiw_fleetlog_db(struct vhd *vhd)
 	if (vhd->pdb_fleetlog)
 		return 0;
 
-	lws_snprintf(path, sizeof(path), "%s-fleetlog.sqlite3",
-		     vhd->sqlite3_path_lhs);
+	/* where sai-server's lws-log-ingest keeps them, see w-comms.c */
+	if (vhd->fleetlog_db)
+		lws_strncpy(path, vhd->fleetlog_db, sizeof(path));
+	else
+		lws_snprintf(path, sizeof(path), "%s-logs.sqlite3",
+			     vhd->sqlite3_path_lhs);
 
 	if (sqlite3_open_v2(path, &vhd->pdb_fleetlog, SQLITE_OPEN_READONLY,
 			    NULL) != SQLITE_OK) {
@@ -433,32 +440,50 @@ saiw_fleetlog_build(struct vhd *vhd, const char *hash, saiw_fl_build_t *b,
 		    saiw_fl_out_t *o)
 {
 	uint64_t first = 0, last = 0, rs_min = 0, rs_max = 0;
-	char event_uuid[33];
+	char event_uuid[33], sub[12], h[9];
 	sqlite3 *pdb = NULL;
 	sqlite3_stmt *sm;
 	int runs = 0;
 
 	memset(b, 0, sizeof(*b));
+	lws_snprintf(sub, sizeof(sub), "%s/*", hash);
 
-	if (sqlite3_prepare_v2(vhd->pdb_fleetlog, "SELECT task_uuid, first_us, "
-			"last_us FROM builds WHERE hash = ?", -1, &sm, NULL) !=
-								SQLITE_OK)
+	/* when lines about it were seen, its runs' tags too */
+	if (sqlite3_prepare_v2(vhd->pdb_fleetlog, "SELECT min(first_us), "
+			"max(last_us), count(*) FROM tags WHERE tag = ? OR "
+			"tag GLOB ?", -1, &sm, NULL) != SQLITE_OK)
 		return 1;
 	sqlite3_bind_text(sm, 1, hash, -1, SQLITE_TRANSIENT);
-	if (sqlite3_step(sm) == SQLITE_ROW) {
-		const char *u = (const char *)sqlite3_column_text(sm, 0);
-
-		if (u && strlen(u) == 64) {
-			lws_strncpy(b->task_uuid, u, sizeof(b->task_uuid));
-			b->have_task = 1;
-		}
-		first = (uint64_t)sqlite3_column_int64(sm, 1);
-		last = (uint64_t)sqlite3_column_int64(sm, 2);
+	sqlite3_bind_text(sm, 2, sub, -1, SQLITE_TRANSIENT);
+	if (sqlite3_step(sm) == SQLITE_ROW && sqlite3_column_int(sm, 2)) {
+		first = (uint64_t)sqlite3_column_int64(sm, 0);
+		last = (uint64_t)sqlite3_column_int64(sm, 1);
 	}
 	sqlite3_finalize(sm);
 
-	if (!b->have_task && !first)
+	if (!first)
 		return 1; /* we know nothing about it */
+
+	/*
+	 * Which task it is: lines tagged with it because they mention its
+	 * uuid say.  A line tagged otherwise may not, so we look at a few.
+	 */
+	if (sqlite3_prepare_v2(vhd->pdb_fleetlog, "SELECT line FROM lines "
+			"WHERE tag = ? AND t_us >= ? AND t_us <= ? LIMIT 64",
+			-1, &sm, NULL) == SQLITE_OK) {
+		sqlite3_bind_text(sm, 1, hash, -1, SQLITE_TRANSIENT);
+		sqlite3_bind_int64(sm, 2, (sqlite3_int64)first);
+		sqlite3_bind_int64(sm, 3, (sqlite3_int64)last);
+		while (!b->have_task && sqlite3_step(sm) == SQLITE_ROW) {
+			const char *l = (const char *)sqlite3_column_text(sm, 0);
+
+			if (l && !saicom_fleetlog_find_task_uuid(l, strlen(l),
+							b->task_uuid, h) &&
+			    !strcmp(h, hash))
+				b->have_task = 1;
+		}
+		sqlite3_finalize(sm);
+	}
 
 	b->from = first;
 	b->to = last;
@@ -1073,10 +1098,10 @@ saiw_sync_side_fleet(struct vhd *vhd, const char *kind, const char *host,
 		return 1;
 
 	if (sqlite3_prepare_v2(vhd->pdb_fleetlog, sd->later ?
-			"SELECT id, t_us, lvl, hash, run, line FROM lines "
+			"SELECT id, t_us, lvl, tag, line FROM lines "
 			"WHERE src_id = ? AND t_us > ? ORDER BY t_us, id "
 			"LIMIT ?" :
-			"SELECT id, t_us, lvl, hash, run, line FROM lines "
+			"SELECT id, t_us, lvl, tag, line FROM lines "
 			"WHERE src_id = ? AND t_us <= ? ORDER BY t_us DESC, "
 			"id DESC LIMIT ?", -1, &sl, NULL) != SQLITE_OK) {
 		sqlite3_finalize(ss);
@@ -1103,17 +1128,21 @@ saiw_sync_side_fleet(struct vhd *vhd, const char *kind, const char *host,
 
 		while (sqlite3_step(sl) == SQLITE_ROW) {
 			saiw_sync_row_t *row = &sd->rows[sd->count++];
+			const char *g = (const char *)
+						sqlite3_column_text(sl, 3);
+			char h[9];
 
 			row->id = sqlite3_column_int64(sl, 0);
 			row->t = (uint64_t)sqlite3_column_int64(sl, 1);
 			row->src = src;
 			row->l = sqlite3_column_int(sl, 2);
-			row->h = saiw_sync_strdup(sd->ac,
-				   (const char *)sqlite3_column_text(sl, 3));
-			row->r = sqlite3_column_type(sl, 4) == SQLITE_NULL ?
-					-1 : sqlite3_column_int(sl, 4);
+			/* its build, from its tag */
+			row->h = NULL;
+			row->r = -1;
+			if (g && !saicom_fleetlog_split_tag(g, h, &row->r))
+				row->h = saiw_sync_strdup(sd->ac, h);
 			row->x = saiw_sync_strdup(sd->ac,
-				   (const char *)sqlite3_column_text(sl, 5));
+				   (const char *)sqlite3_column_text(sl, 4));
 			if (!row->x) {
 				sd->count--;
 				ret = 1;
@@ -1301,8 +1330,8 @@ int
 saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi,
 		   const char *path)
 {
-	char a_from[40], a_to[40], a_hash[12], a_view[12], a_src[200],
-	     a_lvl[12], a_grep[132], a_limit[12], a_after[48],
+	char a_from[40], a_to[40], a_hash[12], a_hash_sub[14], a_view[12],
+	     a_src[200], a_lvl[12], a_grep[132], a_limit[12], a_after[48],
 	     srcs[SAIW_FLEETLOG_SRC_MAX][65];
 	uint64_t from = 0, to = 0, after_t = 0;
 	int64_t after_id = 0;
@@ -1497,15 +1526,20 @@ saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi,
 
 	memset(&q, 0, sizeof(q));
 	q.p = q.sql;
-	q_add(&q, "SELECT l.id, l.t_us, l.src_id, l.seq, l.lvl, l.hash, "
-		  "l.run, l.line FROM lines l JOIN sources s ON "
+	q_add(&q, "SELECT l.id, l.t_us, l.src_id, l.seq, l.lvl, l.tag, "
+		  "l.line FROM lines l JOIN sources s ON "
 		  "s.src_id = l.src_id WHERE l.t_us >= ? AND l.t_us <= ?");
 	q_bind_int(&q, (int64_t)from);
 	q_bind_int(&q, (int64_t)to);
 
+	/* a build's lines are tagged with it, or with one of its runs */
+	if (has_hash)
+		lws_snprintf(a_hash_sub, sizeof(a_hash_sub), "%s/*", a_hash);
+
 	if (view == SAIW_FLV_HASH) {
-		q_add(&q, " AND l.hash = ?");
+		q_add(&q, " AND (l.tag = ? OR l.tag GLOB ?)");
 		q_bind_text(&q, a_hash);
+		q_bind_text(&q, a_hash_sub);
 	}
 
 	if (view == SAIW_FLV_FOCUSED) {
@@ -1513,10 +1547,11 @@ saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi,
 		 * the build's own lines, anything going wrong anywhere, and
 		 * the untagged lines of the hosts involved in it
 		 */
-		q_add(&q, " AND (l.hash = ? OR l.lvl IN (1, 2) OR "
-			  "(l.hash IS NULL AND (s.kind IN ('sai-server', "
+		q_add(&q, " AND (l.tag = ? OR l.tag GLOB ? OR l.lvl IN (1, 2) "
+			  "OR (l.tag IS NULL AND (s.kind IN ('sai-server', "
 			  "'sai-power', 'sai-virt')");
 		q_bind_text(&q, a_hash);
+		q_bind_text(&q, a_hash_sub);
 		for (n = 0; n < b.nhosts; n++) {
 			q_add(&q, " OR s.host = ?");
 			q_bind_text(&q, b.hosts[n]);
@@ -1562,6 +1597,9 @@ saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi,
 
 	{
 		int64_t last_t = 0, last_id = 0;
+		const char *g;
+		char gh[9];
+		int gr;
 
 		while (sqlite3_step(sm) == SQLITE_ROW) {
 			if (lines == limit ||
@@ -1582,16 +1620,20 @@ saiw_fleetlog_http(struct vhd *vhd, struct pss *pss, struct lws *wsi,
 			else
 				out_printf(&o, "%lld", (long long)
 					   sqlite3_column_int64(sm, 3));
+			/* its build and run, from its tag */
+			g = (const char *)sqlite3_column_text(sm, 5);
+			if (!g || saicom_fleetlog_split_tag(g, gh, &gr))
+				gh[0] = '\0';
 			out_printf(&o, ",\"l\":%d,\"h\":",
 				   sqlite3_column_int(sm, 4));
-			out_str(&o, (const char *)sqlite3_column_text(sm, 5));
+			out_str(&o, gh[0] ? gh : NULL);
 			out_printf(&o, ",\"r\":");
-			if (sqlite3_column_type(sm, 6) == SQLITE_NULL)
+			if (!gh[0] || gr < 0)
 				out_printf(&o, "null");
 			else
-				out_printf(&o, "%d", sqlite3_column_int(sm, 6));
+				out_printf(&o, "%d", gr);
 			out_printf(&o, ",\"x\":");
-			out_str(&o, (const char *)sqlite3_column_text(sm, 7));
+			out_str(&o, (const char *)sqlite3_column_text(sm, 6));
 			out_printf(&o, "}");
 		}
 		sqlite3_finalize(sm);

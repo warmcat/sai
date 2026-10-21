@@ -13,7 +13,6 @@ set(SRCS
 	s-task-helpers.c
 	s-idle.c
 	s-pool.c
-	s-fleetlog.c
 	s-findings.c
 	s-problems.c
 	s-central.c
@@ -69,7 +68,15 @@ add_dependencies(${SUB} sai_git_hash)
 		message(FATAL_ERROR " Unable to find sqlite3")
 	endif()
 
-	target_link_libraries(${SUB} websockets ${SQLITE3_LIB_PATH})
+	#
+	# We load lws plugins, eg, lws-log-ingest for the fleet logs, and
+	# they're linked to the shared lws: so must we be, or there are two
+	# lws in the process, each with its own logging and log shipper
+	#
+	if (NOT TARGET websockets_shared)
+		message(FATAL_ERROR "sai-server needs lws built with LWS_WITH_SHARED")
+	endif()
+	target_link_libraries(${SUB} websockets_shared ${SQLITE3_LIB_PATH})
 
        	include_directories(BEFORE "${SAI_LWS_INC_PATH}")
 

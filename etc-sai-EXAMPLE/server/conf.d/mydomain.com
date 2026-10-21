@@ -69,13 +69,6 @@
 			# in README.md
 			#
 			# "event-db-limit-mb":	"20000",
-			#
-			# Optional: how many days of the fleet logs, the log
-			# lines of sai-server and every daemon that ships them
-			# here, to keep in ...-fleetlog.sqlite3, default 14.
-			# See READMEs/README-logs.md
-			#
-			# "fleetlog-retention-days":	"14",
                         #
                         # the push hook notification script creates a JSON
                         # object and signs it with a secret... "notification-
@@ -186,6 +179,23 @@
 			# this dir is served via avatar-proxy
 			#
 			"cache-dir": "/var/cache/libjsongit2"
+		},
+		#
+		# The fleet logs: the log lines of sai-server and every sai
+		# daemon, kept by lws's lws-log-ingest plugin, see
+		# READMEs/README-logs.md
+		#
+		"lws-log-ingest": {
+			# what sai-web reads: <its database>-logs.sqlite3
+			"database":	"/srv/sai/sai-master-logs.sqlite3",
+			# the daemons ship their logs with the link key
+			"secret":	"34c8e17b90d2a6f5c1e8430b76af2915e0d4cbf68a27e19dd5b0f3c6e48a71d2",
+			"own-kind":	"sai-server",
+			# sai's daemons always send every line
+			"always":	"sai-*",
+			"service":	"sai-logs"
+			# Optional: how many days to keep, default 14
+			# "retention-days":	"14"
 		}
 		}
 		]

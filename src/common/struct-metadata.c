@@ -746,39 +746,3 @@ const lws_struct_map_t lsm_schema_sq3_map_problem_run[] = {
 	LSM_SCHEMA_DLL2	(sai_problem_run_t, list, NULL, lsm_problem_run,
 								"problem_runs"),
 };
-
-/* fleet logs, any sai daemon -> sai-server, see c-fleetlog.c */
-
-const lws_struct_map_t lsm_fleetlog_line[] = {
-	LSM_UNSIGNED	(sai_fleetlog_line_t, seq,	"seq"),
-	LSM_UNSIGNED	(sai_fleetlog_line_t, t,	"t"),
-	LSM_SIGNED	(sai_fleetlog_line_t, l,	"l"),
-	LSM_CARRAY	(sai_fleetlog_line_t, h,	"h"),
-	LSM_SIGNED	(sai_fleetlog_line_t, r,	"r"),
-	LSM_STRING_PTR	(sai_fleetlog_line_t, x,	"x"),
-};
-
-const lws_struct_map_t lsm_fleetlog_batch[] = {
-	LSM_CARRAY	(sai_fleetlog_batch_t, kind,	"kind"),
-	LSM_CARRAY	(sai_fleetlog_batch_t, host,	"host"),
-	LSM_CARRAY	(sai_fleetlog_batch_t, inst,	"inst"),
-	LSM_LIST	(sai_fleetlog_batch_t, lines, sai_fleetlog_line_t, list,
-			 NULL, lsm_fleetlog_line,	"lines"),
-};
-
-const lws_struct_map_t lsm_schema_fleetlog[] = {
-	LSM_SCHEMA	(sai_fleetlog_batch_t, NULL, lsm_fleetlog_batch,
-			 SAI_FLEETLOG_SCHEMA),
-};
-
-/* sai-server -> the daemon, the highest seq it stored */
-
-const lws_struct_map_t lsm_fleetlog_ack[] = {
-	LSM_UNSIGNED	(sai_fleetlog_ack_t, seq,	"seq"),
-	LSM_CARRAY	(sai_fleetlog_ack_t, inst,	"inst"),
-};
-
-const lws_struct_map_t lsm_schema_fleetlog_ack[] = {
-	LSM_SCHEMA	(sai_fleetlog_ack_t, NULL, lsm_fleetlog_ack,
-			 SAI_FLEETLOG_ACK_SCHEMA),
-};

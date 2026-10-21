@@ -126,10 +126,6 @@ static const char * const default_ss_policy =
 			"]"
 		"}},"
 		/*
-		 * Ships our logs to the same server, see c-fleetlog.c
-		 */
-		SAI_FLEETLOG_SS_POLICY ","
-		/*
 		 * The ws server that builders on the local subnet
 		 * connect to for help with power operations
 		 */
@@ -368,14 +364,8 @@ app_system_state_nf(lws_state_manager_t *mgr, lws_state_notify_link_t *link,
 			saip_server_t *sps = lws_container_of(
 					power.sai_server_owner.head,
 					struct saip_server, list);
-			char host[65];
 
-			if (gethostname(host, sizeof(host) - 1))
-				lws_strncpy(host, "sai-power", sizeof(host));
-			host[sizeof(host) - 1] = '\0';
-
-			if (saicom_fleetlog_start(cx, "sai-power", host,
-						  sps->url, power.link_key))
+			if (saicom_fleetlog_link(sps->url, power.link_key))
 				lwsl_warn("%s: our logs won't be shipped\n",
 					  __func__);
 
@@ -480,11 +470,11 @@ int main(int argc, const char **argv)
 	if (lws_cmdline_option(argc, argv, "-D")) {
 		if (lws_daemonize("/var/run/sai_power.pid"))
 			return 1;
-		saicom_fleetlog_set_log_level(logs, lwsl_emit_syslog);
+		lws_set_log_level(logs, lwsl_emit_syslog);
 	} else
 #endif
 
-	saicom_fleetlog_set_log_level(logs, NULL);
+	lws_set_log_level(logs, NULL);
 
 	lwsl_user("Sai Power - "
 		  "Copyright (C) 2019-2025 Andy Green <andy@warmcat.com>\n");
@@ -559,6 +549,10 @@ int main(int argc, const char **argv)
 		lwsl_err("Failed to create tls vhost\n");
 		goto bail;
 	}
+
+	/* keep our log lines until we can send them, see c-fleetlog.c */
+	if (saicom_fleetlog_create(power.vhost, "sai-power", NULL))
+		lwsl_warn("%s: our logs won't be shipped\n", __func__);
 
 	if (power.database) {
 		if (lws_struct_sq3_open(power.context, power.database, 1, &power.pdb)) {
@@ -645,7 +639,7 @@ bail:
 
 	saip_config_destroy(&power);
 
-	saicom_fleetlog_stop();
+	saicom_fleetlog_destroy();
 	lws_context_destroy(power.context);
 
 	return 0;

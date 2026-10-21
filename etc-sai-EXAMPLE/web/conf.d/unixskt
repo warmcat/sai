@@ -99,6 +99,11 @@
 			# See READMEs/README-logs.md
 			#
 			#"fleetlog-service":	"sai-logs",
+			#
+			# Optional: the fleet log db sai-server's lws-log-ingest
+			# keeps, if it isn't <database>-logs.sqlite3
+			#
+			#"fleetlog-db":	"/srv/sai/sai-master-logs.sqlite3",
 
 			# sai-web does NO auth of its own: no JWK, no JWT
 			# validation, no grant logic.  It learns the login

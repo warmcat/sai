@@ -37,9 +37,23 @@ View|What's in it
 For a build, the window defaults to its first run's start to its last run's
 end (or now, if it's still going), padded by 60s each side.
 
+## How it's done
+
+This uses lws's log shipping, see lws' READMEs/README.log-ship.md: every
+daemon ships its lines with an lws log shipper, and sai-server keeps them, its
+own too, with lws's `lws-log-ingest` plugin on its vhost, in a db of their
+own beside the events db.  sai-web reads that db for the queries below, like
+everything else it shows from sai-server's dbs.
+
+The ingestor's `always` keeps sai's daemons always shipping, so, unlike a DHT
+debugging session, there's nothing to start: every line goes to sai-server as
+it's logged.  The ingestor's own api and viewer can be used on the same db,
+eg, to raise the daemons' log level for a while with a session, but sai
+doesn't need them.
+
 ## Sources
 
-sai-server, sai-builder, sai-power and sai-virt each keep the lws log lines
+sai-server, sai-builder, sai-power and sai-virt each ship the lws log lines
 they emit.  sai-web isn't a source, its logs don't bear on the problems this is
 for.  A source is identified by
 
@@ -51,20 +65,20 @@ for.  A source is identified by
 the same machine as `sai-vm-...-2` an hour ago, and a restarted daemon starts
 its sequence numbers again.
 
-Each daemon logs what its system looks like once its shipping is up, a line
-per item prefixed `sysinfo:`: the lws build, hostname, OS, cpus and RAM, the
-time, every address on every interface, and the resolver's nameservers and
-search list (`lws_sysinfo`, see lws' README.sysinfo.md).  So the fleet logs
-say where each source's lines came from, and for a sai-virt VM that can't
-reach anything, what addresses and resolver it came up with.
+Each daemon logs what its system looks like when it starts, a line per item
+prefixed `sysinfo:`: the lws build, hostname, OS, cpus and RAM, the time,
+every address on every interface, and the resolver's nameservers and search
+list (`lws_sysinfo`, see lws' README.sysinfo.md).  So the fleet logs say
+where each source's lines came from, and for a sai-virt VM that can't reach
+anything, what addresses and resolver it came up with.
 
-A source's `host` can change.  A builder keeps what it logs from when it
-starts, and ships it once it's operational, that is, once its clock is right
-and it has an address, but before sai-virt has told a VM which VM it is: so
-what goes wrong before then, eg, a sai-virt VM that can't reach sai-virt or
-resolve its name, is here too.  Until then it ships under the host name in its
-conf, and takes the VM's name once sai-virt has told it.  The
-lines it shipped before are the same daemon's, so sai-server renames the
+A source's `host` can change.  A builder keeps what it logs from when its lws
+context is made, and ships it once it's operational, that is, once its clock
+is right and it has an address, but before sai-virt has told a VM which VM it
+is: so what goes wrong before then, eg, a sai-virt VM that can't reach
+sai-virt or resolve its name, is here too.  Until then it ships under the host
+name in its conf, and takes the VM's name once sai-virt has told it.  The
+lines it shipped before are the same daemon's, so the ingestor renames the
 source, and they are found under the VM's name too.
 
 The lines kept are the ones the daemon logs at its configured level (`-d`);
@@ -72,128 +86,62 @@ raising a daemon's level is how to get more detail into the fleet logs.  What
 isn't an lws log line, like coredumps, OOM kills, systemd restarts, isn't here
 yet.
 
-## Capture
-
-Each daemon sets its lws log level with `saicom_fleetlog_set_log_level()` (or,
-where the level came from `-d` already, `saicom_fleetlog_hook_current()`)
-instead of `lws_set_log_level()`.  That installs an emit function that still
-writes each line where it went before (stderr / syslog / a file), and also
-copies it into a queue in memory, with:
-
- - its UTC time in microseconds
- - its level, its `LLL_` bit
- - a per-source sequence number, from 1
- - its tag, if it has one, see below
-
-lws's own local time and level prefix is taken off the line, and anything
-that's not printable ASCII is replaced with `?`, so whatever was logged is
-harmless in JSON and in a browser.  Lines are cut at 1024 chars.
-
-The hook does nothing else: no networking, no logging, so it can't recurse or
-stall whatever was logging.  A sul looks at the queue every 500ms.
-
-The queue holds up to 4MiB of lines not yet stored by sai-server.  Past that,
-the oldest lines not yet sent are dropped, and a line saying how many takes
-their place.  It's in memory, so lines not yet sent are lost if the daemon
-dies, but not if the connection to sai-server does.
-
-Lines the lws log spew handling swallowed never reach the hook; its
-"swallowed N logs" summary line does, so the gap is visible.
+Each line is kept with its UTC time to the us, its level, and a sequence
+number per source.  lws's local time and level prefix is taken off, and
+anything not printable ASCII is replaced with `?`, so whatever was logged is
+harmless in JSON and in a browser.  Lines are cut at 1024 chars.  A daemon
+keeps up to 4MiB of lines sai-server hasn't stored yet; past that the oldest
+go, and a line says how many.  They're in memory, so lines not yet stored are
+lost if the daemon dies, but not if its connection to sai-server does.
 
 ### Tagging
 
-A line is tagged by having `[b:xxxxxxxx]` or `[b:xxxxxxxx/rN]` in it, eg
+As each line is sent, sai's tagger, `saicom_fleetlog_tagger()`, tags it with
+the build it's about, its job dir name, `xxxxxxxx`: the first 4 and last 4
+characters of the task uuid (`saib_task_jobdir_vn()`).  A line is about a
+build if it has `[b:xxxxxxxx]` or `[b:xxxxxxxx/rN]` in it, eg
 
 ```
 lwsl_notice("[b:%.4s%s/r%d] %s: allocated to %s\n", uuid, uuid + 60, run,
 	    __func__, builder);
 ```
 
-The hash in a tag may be either case, it's kept in lowercase.
+which tags it `xxxxxxxx/rN`, or if it mentions a task uuid, 64 hex of either
+case, which tags it `xxxxxxxx`.  sai-server already logs task uuids in many
+places, so this tags a lot without any logging changing.  The hash is kept in
+lowercase.
 
-As well, when sai-server stores a line with no tag, it looks for a task uuid,
-64 hex of either case, in it and tags it from that.  sai-server already logs task
-uuids in many places, so this tags a lot without any logging changing.  It
-also remembers which task uuid each job dir name belongs to, which is how a
-query goes from a job dir name to the task's runs.
+The ingestor keeps when each tag was first and last seen, which is a build's
+window when only its job dir name is known; and the lines tagged because they
+mention its uuid say which task it is.
 
 ## Shipping
 
-sai-builder, sai-power and sai-virt each open a Secure Streams ws connection
-of its own to the first sai-server in their conf, stream type `sai_fleetlog`,
-separate from their task / power link.  So a big upload doesn't hold up task
-traffic, and a problem on the task link doesn't take its own log with it.  Its
-url is the daemon's link to that server, with the last path part changed to
-`fleetlog`, eg `wss://sai.example.com:4444/sai/fleetlog`.  As on the other
-links, the first message is the link key (`com.warmcat.sai.linkauth`).
+Each daemon connects to the first sai-server in its conf, at its link's url
+with the last path part changed to `logship`, eg
+`wss://sai.example.com:4444/sai/logship`, with ws subprotocol
+`lws-log-ingest`; the path doesn't matter to sai-server.  The link key is the
+secret the shippers and the ingestor share.  sai-server's own lines are stored
+directly.
 
-Then, a batch at a time, up to about 48KiB of JSON:
-
-```
-{"schema":"com.warmcat.sai.fleetlog",
- "kind":"sai-builder","host":"sai-vm-debian-13-nocloud-amd64-BASIS-2",
- "inst":"9f2c1e0a7b3d4c55",
- "lines":[{"seq":1041,"t":1791876551123456,"l":4,"h":"4d4fedab","r":2,
-           "x":"[b:4d4fedab/r2] reject task ...: powering down"}, ...]}
-```
-
-and sai-server acks the highest seq in the batch once it has stored it:
-
-```
-{"schema":"com.warmcat.sai.fleetlog.ack","inst":"9f2c1e0a7b3d4c55","seq":1041}
-```
-
-Only then are the batch's lines freed.  One batch is outstanding at a time.  A
-batch sent on a connection that went away, or not acked within 30s, is sent
-again; sai-server ignores lines it already has, so nothing is stored twice.
-
-sai-server's own lines are stored directly, without a connection.
-
-sai-server checks every batch as if it came from anywhere, even over an
-authenticated link:
-
- - `kind` must be one of the four; `host` is up to 64 of `[A-Za-z0-9._-]`;
-   `inst` 16 lowercase hex
- - `l` must be a single real `LLL_` bit
- - `h` empty or 8 hex of either case, kept in lowercase, `r` within -1..1000
- - `x` up to 1024 chars, `t` within a day of the server's own clock
- - a message is at most 256KiB, or the connection is dropped
- - each source may store 12000 lines a minute; past that its lines are dropped,
-   and a line saying how many is stored
-
-A malformed line is refused, and a line saying how many were stored instead.
+See lws' README.log-ship.md for what's said on the connection, and what the
+ingestor checks of it: whatever a source sends is checked as if it came from
+anywhere, and each source may store 12000 lines a minute.
 
 ## Storage at sai-server
 
-Next to the events db, in `<database>-fleetlog.sqlite3`, eg
-`/srv/sai/sai-master-fleetlog.sqlite3`, in WAL mode so sai-web can read it while
-sai-server writes:
-
-```
-CREATE TABLE sources (src_id INTEGER PRIMARY KEY, kind TEXT, host TEXT,
-		      inst TEXT UNIQUE, first_us INTEGER, last_us INTEGER,
-		      lag_us INTEGER);
-CREATE TABLE lines (id INTEGER PRIMARY KEY, src_id INTEGER, seq INTEGER,
-		    t_us INTEGER, rx_us INTEGER, lvl INTEGER, hash TEXT,
-		    run INTEGER, line TEXT);
-CREATE UNIQUE INDEX lines_src_seq ON lines (src_id, seq);
-CREATE INDEX lines_t ON lines (t_us);
-CREATE INDEX lines_src_t ON lines (src_id, t_us);
-CREATE INDEX lines_hash ON lines (hash, t_us);
-CREATE TABLE builds (hash TEXT PRIMARY KEY, task_uuid TEXT,
-		     first_us INTEGER, last_us INTEGER);
-```
-
-Lines sai-server adds itself, eg to say some were dropped, have no `seq`.
+The ingestor's db, by default `<database>-logs.sqlite3`, eg
+`/srv/sai/sai-master-logs.sqlite3`, in WAL mode so sai-web can read it while
+sai-server writes.  Its tables are lws-log-ingest's, see lws'
+README.log-ship.md: `sources`, `lines`, `tags`, and `sessions`.
 
 Clocks: each line keeps its source's own timestamp, and `rx_us` says when
 sai-server stored it.  A source's `lag_us` is the smallest `rx_us - t_us` of
 its latest batch: its clock's skew plus how long its lines waited to go, up to
-the 500ms the queue is looked at.  Read a source's times with that in mind.
+the 500ms the backlog is looked at.  Read a source's times with that in mind.
 
-Lines and builds older than 14 days are deleted, hourly.  The
-`fleetlog-retention-days` pvo of sai-server's `com-warmcat-sai` protocol
-changes how long.
+Lines older than 14 days are deleted, hourly; the ingestor's `retention-days`
+pvo changes how long.
 
 ## Query
 
@@ -377,10 +325,46 @@ as it goes on.
 
 ## Deploying
 
-sai-server first: until it has this, it refuses connections to `/fleetlog`,
-and the other daemons keep retrying.  Then the builders, sai-power and
-sai-virt, in any order; each starts shipping its lines when it next starts.
-Add the `/sai/logs` mount to the front-end lwsws, see above.
+lws needs `LWS_WITH_LOG_SHIP` for every daemon, and `LWS_WITH_PLUGINS` with
+`LWS_WITH_STRUCT_SQLITE3` for sai-server; `-DLWS_FOR_SAI=1` has them all.
+
+sai-server's conf loads lws's plugins, and has the ingestor on its vhost,
+beside `com-warmcat-sai`, eg
+
+```
+"global": {
+	...
+	"plugin-dir": "/usr/local/share/libwebsockets-test-server/plugins"
+}
+...
+"ws-protocols": [{
+	"com-warmcat-sai": {
+		"database": "/srv/sai/sai-master",
+		"link-key": "<the link key>",
+		...
+	},
+	"lws-log-ingest": {
+		"database": "/srv/sai/sai-master-logs.sqlite3",
+		"secret": "<the link key>",
+		"own-kind": "sai-server",
+		"always": "sai-*",
+		"service": "sai-logs"
+	}
+}]
+```
+
+`database` must be what sai-web reads: `<database>-logs.sqlite3` of sai-web's
+`database`, unless sai-web's `fleetlog-db` pvo says otherwise.  `secret` is
+the link key.  sai-server's old `fleetlog-retention-days` is now the
+ingestor's `retention-days`.
+
+sai-server first: the other daemons' old fleet log connections are refused
+until they're updated, and the new ones until sai-server has the ingestor.
+Then the builders, sai-power and sai-virt, in any order; each starts shipping
+its lines when it next starts.  Nothing changes in their confs.  Add the
+`/sai/logs` mount to the front-end lwsws, see above.
+
+The old `<database>-fleetlog.sqlite3` isn't used any more, and can be deleted.
 
 ## Later
 
@@ -390,4 +374,3 @@ Add the `/sai/logs` mount to the front-end lwsws, see above.
  - a journald follower for coredumps, OOM kills and service restarts
  - opening the synchronised log view at a fleet log line or a time, and
    panes for other runs' task logs at the same time
- - moving the emit hook and queue into lws, once settled

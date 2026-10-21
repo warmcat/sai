@@ -1445,103 +1445,30 @@ extern const lws_struct_map_t lsm_pool_hello[2], lsm_schema_pool_hello[1],
 /*
  * Fleet logs, see READMEs/README-logs.md.
  *
- * Each sai daemon keeps the lws log lines it emits in a bounded queue in
- * memory, and ships them to sai-server on a connection of their own, to
- * sai-server's /fleetlog: the link key first, as on /builder and /power, then
- * batches of lines, which sai-server acks by the highest seq it has stored.
+ * Each sai daemon ships the lws log lines it emits to sai-server with an lws
+ * log shipper (lws-log-ship.h), and sai-server keeps them, its own too, with
+ * the lws-log-ingest plugin, which keeps sai's daemons always in a window.
+ * sai-web reads the plugin's db.  Lines are tagged with the job dir name of
+ * the build they're about, see saicom_fleetlog_tagger().
  */
-
-#define SAI_FLEETLOG_SCHEMA		"com.warmcat.sai.fleetlog"
-#define SAI_FLEETLOG_ACK_SCHEMA		"com.warmcat.sai.fleetlog.ack"
-
-/* the most of a log line we keep, without its lws timestamp prefix */
-#define SAI_FLEETLOG_LINE_MAX		1024
-/* the most JSON a batch may come to */
-#define SAI_FLEETLOG_BATCH_MAX		(48 * 1024)
-/* a source holding more than this unacked drops its oldest lines */
-#define SAI_FLEETLOG_QUEUE_MAX		(4 * 1024 * 1024)
-
-/*
- * The SS policy entry for the fleet log link, for each daemon's policy.  Its
- * url is the daemon's own link to sai-server with the last path part replaced
- * with "fleetlog", eg, wss://sai.example.com:4444/sai/fleetlog
- */
-#define SAI_FLEETLOG_SS_POLICY \
-		"{\"sai_fleetlog\": {" \
-			"\"endpoint\":"		"\"${url}\"," \
-			"\"port\":"		"443," \
-			"\"protocol\":"		"\"ws\"," \
-			"\"ws_subprotocol\":"	"\"com-warmcat-sai\"," \
-			"\"http_url\":"		"\"\"," \
-			"\"nailed_up\":"	"true," \
-			"\"tls\":"		"true," \
-			"\"retry\":"		"\"default\"," \
-			"\"metadata\": [" \
-				"{\"url\": \"\"}" \
-			"]" \
-		"}}"
-
-typedef struct sai_fleetlog_line {
-	lws_dll2_t			list;
-	uint64_t			seq;	/* per-source, from 1 */
-	uint64_t			t;	/* UTC us at the source */
-	char				*x;	/* the line */
-	int				l;	/* its LLL_ bit */
-	int				r;	/* the run, or -1 */
-	char				h[9];	/* "" or the job dir name */
-} sai_fleetlog_line_t;
-
-typedef struct sai_fleetlog_batch {
-	lws_dll2_owner_t		lines;	/* sai_fleetlog_line_t */
-	char				kind[16];
-	char				host[65];
-	char				inst[17];
-} sai_fleetlog_batch_t;
-
-typedef struct sai_fleetlog_ack {
-	uint64_t			seq;
-	char				inst[17];
-} sai_fleetlog_ack_t;
-
-extern const lws_struct_map_t lsm_fleetlog_line[6], lsm_fleetlog_batch[4],
-			lsm_schema_fleetlog[1], lsm_fleetlog_ack[2],
-			lsm_schema_fleetlog_ack[1];
 
 /* src/common/c-fleetlog.c */
 
 /*
- * For sai-server, which stores its own lines rather than shipping them: the
- * batch's lines are valid only during the call
- */
-typedef void (*saicom_fleetlog_store_cb_t)(void *opaque,
-					   const sai_fleetlog_batch_t *b);
-
-/*
- * Use instead of lws_set_log_level(): lines still go to emit (NULL means
- * stderr) as before, and are also queued for shipping
- */
-void
-saicom_fleetlog_set_log_level(int level, lws_log_emit_t emit);
-
-/* ... keeping the level something else already set, eg from -d */
-void
-saicom_fleetlog_hook_current(lws_log_emit_t emit);
-
-/*
- * Start shipping the queued lines, and those to come, to the sai-server that
- * link_url is our existing link to.  kind is eg "sai-builder" and host is the
- * name the source goes by, eg a sai-virt VM's name.
+ * Start keeping our log lines, from now until they're linked somewhere with
+ * saicom_fleetlog_link().  kind is eg "sai-builder" and host the name the
+ * source goes by, eg a sai-virt VM's name.  The vhost's client tls is used.
  */
 int
-saicom_fleetlog_start(struct lws_context *cx, const char *kind,
-		      const char *host, const char *link_url,
-		      const char *link_key);
+saicom_fleetlog_create(struct lws_vhost *vh, const char *kind,
+		       const char *host);
 
-/* ... or, for sai-server, hand them to store instead */
+/*
+ * Send them, and those to come, to the sai-server that link_url is our
+ * existing link to, authenticated by the link key
+ */
 int
-saicom_fleetlog_start_local(struct lws_context *cx, const char *kind,
-			    const char *host, saicom_fleetlog_store_cb_t store,
-			    void *opaque);
+saicom_fleetlog_link(const char *link_url, const char *link_key);
 
 /*
  * Ship as host from now on: a sai-virt VM's builder starts shipping under
@@ -1552,7 +1479,17 @@ void
 saicom_fleetlog_set_host(const char *host);
 
 void
-saicom_fleetlog_stop(void);
+saicom_fleetlog_destroy(void);
+
+/*
+ * The lws log shipper tagger for sai: a line is about the build whose job dir
+ * name, "xxxxxxxx", is in its "[b:xxxxxxxx]" or "[b:xxxxxxxx/rN]" tag, or
+ * the first and last 4 of whose task uuid it mentions.  Every sai process
+ * that ships lines, or hosts the ingestor, sets it.
+ */
+int
+saicom_fleetlog_tagger(const char *line, size_t len, char *tag,
+		       size_t tag_len);
 
 /*
  * The job dir name a log line is about, from its "[b:xxxxxxxx]" or
@@ -1561,6 +1498,22 @@ saicom_fleetlog_stop(void);
  */
 int
 saicom_fleetlog_parse_tag(const char *line, size_t len, char *hash, int *run);
+
+/*
+ * The first task uuid, 64 hex of either case, in a log line: returns 0 and
+ * sets uuid (65 chars, as it was) and hash, its job dir name in lowercase (9
+ * chars) if there is one
+ */
+int
+saicom_fleetlog_find_task_uuid(const char *line, size_t len, char *uuid,
+			       char *hash);
+
+/*
+ * A fleet log line's tag, "xxxxxxxx" or "xxxxxxxx/rN", as the job dir name
+ * (9 chars) and run (or -1).  Returns 0 if it's a sai build tag.
+ */
+int
+saicom_fleetlog_split_tag(const char *tag, char *hash, int *run);
 
 /* src/common/c-pool.c */
 

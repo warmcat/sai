@@ -14,6 +14,7 @@ set(SRCS
 	w-problems.c
 	w-visible.c
 	../common/c-utils.c
+	../common/c-fleetlog.c
 	../common/c-pool.c
 	../common/c-conf.c
 	../common/c-sqlite3.c

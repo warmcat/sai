@@ -37,6 +37,22 @@
 
 #include "s-private.h"
 
+#if !defined(WIN32)
+#include <sys/time.h>
+#endif
+
+/* UTC now in us: a run's log datum */
+
+uint64_t
+sais_utc_us(void)
+{
+	struct timeval tv;
+
+	gettimeofday(&tv, NULL);
+
+	return ((uint64_t)tv.tv_sec * 1000000ull) + (uint64_t)tv.tv_usec;
+}
+
 /*
  * Ids that came in from outside (browser or builder link) must be exactly
  * the length of the server-minted id kind and purely alnum, before they are

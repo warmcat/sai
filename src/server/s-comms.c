@@ -147,8 +147,7 @@ sais_link_auth_rx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl,
 
 	pss->link_authed = 1;
 	lwsl_notice("%s: peer authenticated on %s\n", __func__,
-		    pss->is_power ? "/power" :
-			(pss->is_fleetlog ? "/fleetlog" : "/builder"));
+		    pss->is_power ? "/power" : "/builder");
 
 	return 0;
 }
@@ -462,10 +461,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		sqlite3_busy_timeout(vhd->server.pdb, SAI_SQLITE3_BUSY_TIMEOUT_MS);
 
-		/* sai keeps working without them, they're for looking into it */
-		if (sais_fleetlog_init(vhd, in))
-			lwsl_warn("%s: fleet logs unavailable\n", __func__);
-
 		/*
 		 * Where we serve the websrv control link for sai-web... it is
 		 * admin-equivalent, so it wants to be a path-based unix
@@ -545,7 +540,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		sais_server_destroy(vhd, &vhd->server);
 		sais_idle_destroy(vhd);
 		sais_repo_turns_destroy(vhd);
-		sais_fleetlog_destroy(vhd);
 		goto passthru;
 
 	/*
@@ -785,15 +779,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			break;
 		}
 
-		if (!strcmp((char *)start, "/fleetlog")) {
-			/* a sai daemon shipping its logs, see s-fleetlog.c */
-			pss->is_fleetlog = 1;
-			pss->us_established = lws_now_usecs();
-			lws_get_peer_simple(wsi, pss->peer_ip, sizeof(pss->peer_ip));
-			lws_dll2_add_head(&pss->same, &vhd->fleetlog_conns);
-			break;
-		}
-
 		if (!strcmp((char *)start, "/power")) {
 			lwsl_notice("%s: ESTABLISHED: power connection\n", __func__);
 			pss->is_power = 1;
@@ -819,12 +804,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		 */
 		if (!pss || lws_dll2_is_detached(&pss->same))
 			break;
-
-		if (pss->is_fleetlog) {
-			/* none of the builder or power teardown applies */
-			sais_fleetlog_closed(vhd, pss);
-			break;
-		}
 
 		lwsac_free(&pss->query_ac);
 
@@ -894,12 +873,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			break;
 		}
 
-		if (pss->is_fleetlog) {
-			if (sais_fleetlog_rx(vhd, pss, in, len, ssf))
-				return -1;
-			break;
-		}
-
 		if (pss->is_power) {
 			if (sais_power_rx(vhd, pss, in, len, ssf)) {
 				lwsl_err("%s: sais_power_rx returned error, dropping connection\n",
@@ -945,9 +918,6 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 
 		pss->us_last_writeable = lws_now_usecs();
 		pss->writeables++;
-
-		if (pss->is_fleetlog)
-			return sais_fleetlog_tx(vhd, pss);
 
 		if (pss->is_power || pss->stay_owner.head) {
 			if (sais_power_tx(vhd, pss, buf, sizeof(buf))) {

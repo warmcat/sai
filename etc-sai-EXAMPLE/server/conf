@@ -8,7 +8,9 @@
    "uid": "48", # after init, run as apache user
    "gid": "48", # after init, run as apache group
    "server-string": "sai",
-   "init-ssl": "yes"
+   "init-ssl": "yes",
+   # lws's plugins, for lws-log-ingest, which keeps the fleet logs
+   "plugin-dir": "/usr/local/share/libwebsockets-test-server/plugins"
  }
 }
 

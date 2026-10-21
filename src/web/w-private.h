@@ -265,6 +265,7 @@ struct vhd {
 	/* fleet logs, see w-fleetlog.c */
 	sqlite3				*pdb_fleetlog; /* read-only */
 	const char			*fleetlog_service; /* pvo, the grant */
+	const char			*fleetlog_db; /* pvo, or NULL */
 };
 
 /* nonzero if a "projects" pvo limits the projects this vhost shows */

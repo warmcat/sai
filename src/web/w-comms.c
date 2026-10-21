@@ -346,6 +346,9 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		if (lws_pvo_get_str(in, "fleetlog-service",
 				    &vhd->fleetlog_service))
 			vhd->fleetlog_service = NULL;
+		/* sai-server's lws-log-ingest db, if not <database>-logs */
+		if (lws_pvo_get_str(in, "fleetlog-db", &vhd->fleetlog_db))
+			vhd->fleetlog_db = NULL;
 
 		/*
 		 * Where to find sai-server's control link... the same
