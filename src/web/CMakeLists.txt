@@ -5,6 +5,7 @@ set(CPACK_DEBIAN_SERVER_PACKAGE_NAME ${SUB})
 set(SRCS
 	w-sai.c
 	w-comms.c
+	w-auth.c
 	w-artifact.c
 	w-rss.c
 	w-fleetlog.c

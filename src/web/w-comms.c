@@ -85,6 +85,8 @@ static const char * const well_known[] = {
  * frees.
  */
 #define SAIW_BROWSER_MAX_CONNS 100
+/* the grant lws-login judges sai's users and admins by, unless the pvo says */
+#define SAIW_SERVICE_DEF	"lws-sai"
 
 /*
  * Cap on a reassembled browser -> sai-web message.  The largest legitimate
@@ -191,15 +193,13 @@ saiw_close_artifact(struct pss *pss)
 }
 
 /*
- * The admin grant comes from the x-lws-login-admin header the lws-login
- * interceptor stamps in the front-end proxy.  Before honouring it, fail
- * closed on the ways that header can be anything but the interceptor's
- * verdict:
+ * The login state comes from the x-lws-login-* headers the lws-login
+ * interceptor stamps in the front-end proxy.  Before honouring one, fail
+ * closed on the ways it can be anything but the interceptor's verdict:
  *
  *  - more than one header of that name is ambiguous: the lws accessors
- *    return the first match, and the interceptor's anti-spoof zap only
- *    removes the first client-supplied copy, so a duplicate can survive
- *    to us with the client's value first.  Treat it as a spoof.
+ *    return the first match, so a client-supplied duplicate surviving to
+ *    us could win.  Treat it as a spoof.
  *
  *  - the connection must have reached us on the unix socket the front-end
  *    proxy connects to (the documented deployment); SO_PEERCRED only
@@ -208,15 +208,6 @@ saiw_close_artifact(struct pss *pss)
  *    Where SO_PEERCRED doesn't exist, this check isn't available and we
  *    fall back to the duplicate check alone.
  */
-static void
-saiw_count_admin_hdr_cb(const char *name, int nlen, void *opaque)
-{
-	int *count = (int *)opaque;
-
-	if (nlen == 18 && !strncmp(name, "x-lws-login-admin:", 18))
-		(*count)++;
-}
-
 static int
 saiw_peer_on_uds(struct lws *wsi)
 {
@@ -245,22 +236,6 @@ saiw_peer_on_uds(struct lws *wsi)
 	return 1;
 }
 
-static int
-saiw_admin_header_trusted(struct lws *wsi)
-{
-	int count = 0;
-
-	if (lws_hdr_custom_name_foreach(wsi, saiw_count_admin_hdr_cb,
-					&count) || count > 1) {
-		lwsl_wsi_notice(wsi, "%d x-lws-login-admin headers, "
-				 "ignoring them", count);
-
-		return 0;
-	}
-
-	return saiw_peer_on_uds(wsi);
-}
-
 typedef struct {
 	const char	*name;
 	int		nlen;
@@ -278,9 +253,9 @@ saiw_count_hdr_cb(const char *name, int nlen, void *opaque)
 
 /*
  * Copy one of the x-lws-login-* headers into buf, if we can trust that the
- * lws-login interceptor put it there, the same way as for x-lws-login-admin
- * above: exactly one of it, on the unix socket from the front-end.  name
- * includes the ':'.  Returns the length copied, or <= 0 if none or untrusted.
+ * lws-login interceptor put it there, as above: exactly one of it, on the
+ * unix socket from the front-end.  name includes the ':'.  Returns the
+ * length copied, or <= 0 if none or untrusted.
  */
 
 int
@@ -297,6 +272,33 @@ saiw_login_hdr(struct lws *wsi, const char *name, char *buf, int len)
 		return -1;
 
 	return lws_hdr_custom_copy(wsi, buf, len, name, c.nlen);
+}
+
+/*
+ * Fetch the x-lws-login-* headers the auth state is cooked from, only if
+ * we can trust them, see saiw_auth_state_cook()
+ */
+
+static sai_auth_state_t
+saiw_auth_state(struct vhd *vhd, struct lws *wsi)
+{
+	const char *want = vhd->service ? vhd->service : SAIW_SERVICE_DEF;
+	char state[8], service[64];
+	sai_auth_state_t as;
+	int ns, nv;
+
+	ns = saiw_login_hdr(wsi, LWS_LOGIN_HDR_STATE ":", state, sizeof(state));
+	nv = saiw_login_hdr(wsi, LWS_LOGIN_HDR_SERVICE ":", service,
+			    sizeof(service));
+
+	as = saiw_auth_state_cook(ns > 0 ? state : NULL,
+				  nv > 0 ? service : NULL, want);
+
+	lwsl_wsi_notice(wsi, "ESTABLISHED WS: login state %s, service '%s' "
+			"(want '%s'): auth_state %d", ns > 0 ? state : "-",
+			nv > 0 ? service : "-", want, (int)as);
+
+	return as;
 }
 
 static int
@@ -341,6 +343,10 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			lwsl_err("%s: database pvo required\n", __func__);
 			return -1;
 		}
+
+		/* the grant sai's own users and admins hold, default lws-sai */
+		if (lws_pvo_get_str(in, "service", &vhd->service))
+			vhd->service = NULL;
 
 		/* the grant fleet log queries must be judged by, see w-fleetlog.c */
 		if (lws_pvo_get_str(in, "fleetlog-service",
@@ -907,31 +913,10 @@ http_resp:
 		 * sai does no JWT/grant validation of its own.  The lws-login
 		 * interceptor (in the front-end lwsws process) authenticated
 		 * this WS upgrade and stamped the cooked result as trusted
-		 * headers (x-lws-login-admin: 0/1) which the proxy forwarded
-		 * to us.  Read the admin flag; everything else (the action gate
-		 * at w-ws-browser.c) keys off auth_state.  If the header is
-		 * absent (no interceptor configured) we fail closed: not admin,
-		 * and if it could be a client-supplied copy rather than the
-		 * interceptor's verdict, we ignore it the same way.
+		 * x-lws-login-* headers the proxy forwarded to us; everything
+		 * else (the action gate at w-ws-browser.c) keys off auth_state.
 		 */
-		{
-			char admin[8];
-			int a = -1;
-
-			pss->auth_state = SAI_AUTH_STATE_LOGGED_IN_NO_GRANT;
-
-			if (saiw_admin_header_trusted(wsi))
-				a = lws_hdr_custom_copy(wsi, admin,
-							sizeof(admin),
-							"x-lws-login-admin:", 18);
-
-			if (a == 1 && admin[0] == '1')
-				pss->auth_state =
-					SAI_AUTH_STATE_LOGGED_IN_GRANT_ADMIN;
-
-			lwsl_wsi_notice(wsi, "ESTABLISHED WS: x-lws-login-admin=%c (auth_state=%d)",
-					a == 1 ? admin[0] : '-', (int)pss->auth_state);
-		}
+		pss->auth_state = saiw_auth_state(vhd, wsi);
 
 		if (!memcmp((char *)start, "/sai", 4))
 			start += 4;

@@ -53,11 +53,6 @@
 /* the grant lws-login judges fleet log queries by, unless the pvo says */
 #define SAIW_FLEETLOG_SERVICE_DEF	"sai-logs"
 
-/* an lws-login too old to stamp it says nothing, and we refuse */
-#if !defined(LWS_LOGIN_HDR_SERVICE)
-#define LWS_LOGIN_HDR_SERVICE		"x-lws-login-service"
-#endif
-
 enum {
 	SAIW_FLV_WINDOW,
 	SAIW_FLV_FOCUSED,

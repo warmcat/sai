@@ -61,8 +61,8 @@ not modified.
 ## Authorization
 
 Only browsers whose websocket was established with the front-end lws-login
-interceptor's admin verdict (`x-lws-login-admin: 1`, ie, the user holds the
-service's admin grant or the `*` grant) see the context menu entry, and
+interceptor's admin verdict (`x-lws-login-state` 3 for sai's grant, by
+default `lws-sai`, ie, the user holds it at level 2, or 4 for the `*` grant) see the context menu entry, and
 sai-web refuses `com.warmcat.sai.cloneinfo` and `com.warmcat.sai.taskclone`
 from anyone else, the same way it does for task reset and event delete.
 See README-auth.md and the comments in `etc-sai-EXAMPLE/web/conf.d/unixskt`.

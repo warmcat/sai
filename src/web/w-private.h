@@ -25,6 +25,11 @@
 
 #define SAIW_API_VERSION 4
 
+/* an lws-login too old to stamp it says nothing, and we refuse */
+#if !defined(LWS_LOGIN_HDR_SERVICE)
+#define LWS_LOGIN_HDR_SERVICE		"x-lws-login-service"
+#endif
+
 /*
  * How many builder shells one browser connection may have open and so have
  * tracked for ptydata delivery.  Further openshell forwards still work (it
@@ -262,6 +267,8 @@ struct vhd {
 
 	lws_dll2_owner_t		problems_cache; /* see w-problems.c */
 
+	const char			*service; /* pvo, our grant */
+
 	/* fleet logs, see w-fleetlog.c */
 	sqlite3				*pdb_fleetlog; /* read-only */
 	const char			*fleetlog_service; /* pvo, the grant */
@@ -390,6 +397,11 @@ saiw_rss_writeable(struct pss *pss, struct lws *wsi);
 
 void
 saiw_rss_close(struct pss *pss);
+
+/* w-auth.c */
+
+sai_auth_state_t
+saiw_auth_state_cook(const char *state, const char *service, const char *want);
 
 /* w-fleetlog.c */
 

@@ -93,6 +93,14 @@
 			#
 			#"projects":		"libwebsockets, sai",
 
+			# Optional: the grant lws-login judges sai's own
+			# users and admins by, the "service-name" of the
+			# front-end's /lws-login-sai interceptor mount below,
+			# default "lws-sai".  Level 2 of it, or the "*" grant,
+			# is a sai admin.
+			#
+			#"service":		"lws-sai",
+
 			# Optional: the grant lws-login must have judged a
 			# fleet log query at [/sai]/logs by, the "service-name"
 			# of the front-end's /sai/logs mount, default "sai-logs".
@@ -112,8 +120,8 @@
 			# process) injects and the reverse proxy forwards to
 			# us.  So sai-web's /sai mount in the front-end must
 			# be a proxy mount with lws-login wired as its
-			# interceptor, and that interceptor's pmo is the one
-			# place the grant name (eg lws-sai) lives:
+			# interceptor, and that interceptor's pmo names the
+			# grant (eg lws-sai), which must match our "service":
 			#
 			# front-end (lwsws) vhost:
 			#   { "mountpoint": "/sai",
@@ -124,14 +132,17 @@
 			#     "protocol": "lws-login",
 			#     "pmo": [{ "service-name": "lws-sai" }] }
 			#
-			# sai-web then reads x-lws-login-admin:0/1 at WS
-			# establish.  Without the interceptor, sai-web sees no
-			# header and treats the user as not having admin rights.
+			# sai-web then reads x-lws-login-state at WS establish:
+			# 4 (the "*" grant) is admin, 3 (level 2 of the grant)
+			# is admin if x-lws-login-service says the grant was
+			# our "service".  Without the interceptor, sai-web sees
+			# no header and treats the user as not having admin
+			# rights.
 			#
-			# sai-web also fails closed around the header itself:
-			# it is only honoured when exactly one copy is present
-			# (duplicates could be a client-supplied spoof winning
-			# first-match) and the connection arrived on this unix
+			# sai-web also fails closed around the headers
+			# themselves: each is only honoured when exactly one
+			# copy is present (duplicates could be a client-
+			# supplied spoof winning first-match) and the connection arrived on this unix
 			# socket, ie it came through the front-end proxy and
 			# not from something reaching a listen directly.  If
 			# you expose sai-web on a TCP vhost, admin ops will
