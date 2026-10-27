@@ -140,9 +140,10 @@ child_lejp_cb(struct lejp_ctx *ctx, char reason)
 	}
 
 	if (reason == LEJPCB_VAL_STR_END && !strcmp(ctx->path, "delete")) {
+		char full_path[PATH_MAX], pur[96];
 		struct lws_dir_info di;
-		char full_path[PATH_MAX];
 		struct stat st;
+		const char *dp;
 
 		if (!conn->authenticated) {
 			lwsl_warn("%s: delete request without secret, ignoring\n",
@@ -155,19 +156,22 @@ child_lejp_cb(struct lejp_ctx *ctx, char reason)
 		/*
 		 * Security: ctx->buf is the JSON "delete" field received over
 		 * the deletion UDS.  It is joined into a path and recursively
-		 * unlinked below.  Reject anything that could escape the
-		 * intended <home>/jobs/ tree: absolute paths, parent-dir
-		 * traversal, and shell/path metacharacters.  Also apply
-		 * lws_filename_purify_inplace as defense-in-depth (this scrubs
-		 * .., :, \, $, % but not / so we check that explicitly above).
+		 * unlinked below, so it must be exactly one plain component
+		 * of the <home>/jobs/ dir: a job dir, or one moved aside to
+		 * delete, which has a leading '.'.  Refuse anything purifying
+		 * would change, rather than delete whatever it changed it to.
 		 */
-		if (ctx->buf[0] == '/' || strstr(ctx->buf, "..") ||
-		    strchr(ctx->buf, '\\')) {
+		dp = ctx->buf;
+		if (!strncmp(dp, SAIB_JOBDIR_DELETING_PREFIX,
+			     strlen(SAIB_JOBDIR_DELETING_PREFIX)))
+			dp += strlen(SAIB_JOBDIR_DELETING_PREFIX);
+		lws_strncpy(pur, dp, sizeof(pur));
+		lws_filename_purify_inplace(pur);
+		if (!*dp || strlen(dp) >= sizeof(pur) || strcmp(pur, dp)) {
 			lwsl_warn("%s: rejecting unsafe delete path '%s'\n",
 				  __func__, ctx->buf);
 			return -1;
 		}
-		lws_filename_purify_inplace(ctx->buf);
 
 		lws_snprintf(full_path, sizeof(full_path), "%s/jobs/%s", conn->home_dir, ctx->buf);
 

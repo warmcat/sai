@@ -447,14 +447,16 @@ saib_task_jobdir_vn(char *dest, size_t dest_len, const char *task_uuid)
 {
 	size_t l = strlen(task_uuid);
 
-	if (dest_len < 9 || l < 8) {
+	if (dest_len < 9 || l < 8)
 		lws_strncpy(dest, task_uuid, dest_len);
-		return;
+	else {
+		memcpy(dest, task_uuid, 4);
+		memcpy(dest + 4, task_uuid + l - 4, 4);
+		dest[8] = '\0';
 	}
 
-	memcpy(dest, task_uuid, 4);
-	memcpy(dest + 4, task_uuid + l - 4, 4);
-	dest[8] = '\0';
+	/* the uuid came from the server, and this is a path component */
+	lws_filename_purify_inplace(dest);
 }
 
 /*
@@ -1866,7 +1868,6 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 
 	n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "jobs%c",
 			csep);
-	lws_filename_purify_inplace(ns->inp);
 
 	if (mkdir(ns->inp, 0755) && errno != EEXIST) {
 		en = errno;
@@ -1888,7 +1889,6 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 
 	n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
 			  ns->inp_vn, csep);
-	lws_filename_purify_inplace(ns->inp);
 	if (mkdir(ns->inp, 0755) && errno != EEXIST) {
 		en = errno;
 		lwsl_err("%s: mkdir %s -> errno %d\n", __func__, ns->inp, en);
