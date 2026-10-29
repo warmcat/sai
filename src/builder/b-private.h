@@ -580,9 +580,10 @@ unsigned int
 saib_jobdir_holds_live(void);
 
 /*
- * The job dir name for a task: the first 4 and last 4 chars of its uuid.  Both
- * the acceptance path (which must protect the dir before the nspawn exists)
- * and the nspawn setup derive it, so it lives in one place.
+ * The job dir name for a task: the last 8 chars of its uuid, as the fleet logs
+ * name the build (SAI_BUILD_HASH_OFS).  Both the acceptance path (which must
+ * protect the dir before the nspawn exists) and the nspawn setup derive it, so
+ * it lives in one place.
  */
 void
 saib_task_jobdir_vn(char *dest, size_t dest_len, const char *task_uuid);

@@ -749,9 +749,14 @@ const char *git_helper_bat =
 
 
 /*
- * The job dir for a task is named from the first 4 and last 4 chars of its
- * uuid.  Both the acceptance path (which has to protect the dir before any
- * nspawn exists) and the nspawn setup need it.
+ * The job dir for a task is named from the last 8 chars of its uuid.  Both the
+ * acceptance path (which has to protect the dir before any nspawn exists) and
+ * the nspawn setup need it.
+ *
+ * Not from its first ones: they are the event's uuid, which all of its tasks
+ * share.  When they were half the name, two tasks of an event on one builder
+ * could get the same job dir, and the first to finish deleted it under the
+ * other.
  */
 
 void
@@ -759,13 +764,11 @@ saib_task_jobdir_vn(char *dest, size_t dest_len, const char *task_uuid)
 {
 	size_t l = strlen(task_uuid);
 
-	if (dest_len < 9 || l < 8)
+	if (dest_len <= SAI_BUILD_HASH_LEN || l < SAI_BUILD_HASH_LEN)
 		lws_strncpy(dest, task_uuid, dest_len);
-	else {
-		memcpy(dest, task_uuid, 4);
-		memcpy(dest + 4, task_uuid + l - 4, 4);
-		dest[8] = '\0';
-	}
+	else
+		lws_strncpy(dest, task_uuid + l - SAI_BUILD_HASH_LEN,
+			    SAI_BUILD_HASH_LEN + 1);
 
 	/* the uuid came from the server, and this is a path component */
 	lws_filename_purify_inplace(dest);

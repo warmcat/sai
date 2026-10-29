@@ -29,6 +29,11 @@
 #include "../../src/common/include/private.h"
 
 #define UUID	"ABCD0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789EF"
+/*
+ * another task of the same event, whose uuid ends the same 4 hex: its build is
+ * a different one
+ */
+#define UUID2	"ABCD0123456789ABCDEF0123456789AB000000000000000000000000000E89EF"
 /* one hex short */
 #define UUID63	"ABCD0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789E"
 
@@ -40,8 +45,9 @@ static const struct {
 	{ "[b:4d4fedab] allocated",			"4d4fedab" },
 	/* the explicit tag wins over a uuid */
 	{ "[b:11112222] about " UUID,			"11112222" },
-	{ "task " UUID " allocated to bld1",		"abcd89ef" },
-	{ "task " UUID,					"abcd89ef" },
+	{ "task " UUID " allocated to bld1",		"456789ef" },
+	{ "task " UUID,					"456789ef" },
+	{ "task " UUID2,				"000e89ef" },
 	/* 63 or 65 hex isn't a task uuid */
 	{ "task " UUID "0",				NULL },
 	{ "task " UUID63 " allocated",			NULL },

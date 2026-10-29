@@ -129,14 +129,13 @@ saicom_fleetlog_find_task_uuid(const char *line, size_t len, char *uuid,
 		while (p < e && saicom_fleetlog_is_hex(*p))
 			p++;
 
-		if (p - s == 64) {
-			memcpy(uuid, s, 64);
-			uuid[64] = '\0';
-			for (n = 0; n < 4; n++) {
-				hash[n] = saicom_fleetlog_hex_lower(s[n]);
-				hash[4 + n] = saicom_fleetlog_hex_lower(s[60 + n]);
-			}
-			hash[8] = '\0';
+		if (p - s == SAI_TASK_UUID_LEN) {
+			memcpy(uuid, s, SAI_TASK_UUID_LEN);
+			uuid[SAI_TASK_UUID_LEN] = '\0';
+			for (n = 0; n < SAI_BUILD_HASH_LEN; n++)
+				hash[n] = saicom_fleetlog_hex_lower(
+						s[SAI_BUILD_HASH_OFS + n]);
+			hash[SAI_BUILD_HASH_LEN] = '\0';
 
 			return 0;
 		}

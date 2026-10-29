@@ -724,9 +724,9 @@ saiw_sync_run(struct vhd *vhd, const char *task_uuid, int run,
 	memset(r, 0, sizeof(*r));
 	lws_strncpy(r->task_uuid, task_uuid, sizeof(r->task_uuid));
 
-	/* its job dir name: the first and last 4 of the uuid */
-	for (n = 0; n < 8; n++) {
-		char c = task_uuid[n < 4 ? n : 56 + n];
+	/* its job dir name: the last 8 of the uuid */
+	for (n = 0; n < SAI_BUILD_HASH_LEN; n++) {
+		char c = task_uuid[SAI_BUILD_HASH_OFS + n];
 
 		r->hash[n] = (char)(c >= 'A' && c <= 'F' ? c + ('a' - 'A') : c);
 	}

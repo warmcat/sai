@@ -19,9 +19,10 @@ There are usually several builds going on at once, and every daemon logs about
 all of them interleaved, so the common basis for all logs is **UTC**.
 
 On top of that, lines can be **tagged** with the build they are about, using
-the 8-character job dir name, `xxxxxxxx`: the first 4 and last 4 characters of
-the task uuid (`saib_task_jobdir_vn()`).  That's per task, so all runs of a
-task share it, and the run number is kept beside it.
+the 8-character job dir name, `xxxxxxxx`: the last 8 characters of the task
+uuid (`saib_task_jobdir_vn()`).  Not the first ones: they are the event uuid,
+the same for all the event's tasks.  That's per task, so all runs of a task
+share it, and the run number is kept beside it.
 
 A tag lets you turn down the noise from other builds.  It mustn't be the only
 filter, though: the lines that explain a lost build are often not about any
@@ -97,12 +98,12 @@ lost if the daemon dies, but not if its connection to sai-server does.
 ### Tagging
 
 As each line is sent, sai's tagger, `saicom_fleetlog_tagger()`, tags it with
-the build it's about, its job dir name, `xxxxxxxx`: the first 4 and last 4
-characters of the task uuid (`saib_task_jobdir_vn()`).  A line is about a
+the build it's about, its job dir name, `xxxxxxxx`: the last 8 characters of
+the task uuid (`saib_task_jobdir_vn()`).  A line is about a
 build if it has `[b:xxxxxxxx]` or `[b:xxxxxxxx/rN]` in it, eg
 
 ```
-lwsl_notice("[b:%.4s%s/r%d] %s: allocated to %s\n", uuid, uuid + 60, run,
+lwsl_notice("[b:%s/r%d] %s: allocated to %s\n", uuid + SAI_BUILD_HASH_OFS, run,
 	    __func__, builder);
 ```
 

@@ -1482,10 +1482,19 @@ void
 saicom_fleetlog_destroy(void);
 
 /*
+ * A build's 8-hex name, its job dir on the builder and its tag in the fleet
+ * logs, is the last 8 hex of its 64-hex task uuid.  Not any of the first 32:
+ * they are the event's uuid, the same for every task of the event.
+ */
+#define SAI_TASK_UUID_LEN		64
+#define SAI_BUILD_HASH_LEN		8
+#define SAI_BUILD_HASH_OFS		(SAI_TASK_UUID_LEN - SAI_BUILD_HASH_LEN)
+
+/*
  * The lws log shipper tagger for sai: a line is about the build whose job dir
  * name, "xxxxxxxx", is in its "[b:xxxxxxxx]" or "[b:xxxxxxxx/rN]" tag, or
- * the first and last 4 of whose task uuid it mentions.  Every sai process
- * that ships lines, or hosts the ingestor, sets it.
+ * the last 8 of whose task uuid it mentions.  Every sai process that ships
+ * lines, or hosts the ingestor, sets it.
  */
 int
 saicom_fleetlog_tagger(const char *line, size_t len, char *tag,
