@@ -96,9 +96,15 @@ saib_artifact_tx(void *userobj, lws_ss_tx_ordinal_t ord, uint8_t *buf,
 	}
 
 	if (ap->fd == -1) {
+		/*
+		 * We sent it all already, give the server a little while to
+		 * hang up on us once it stored it.  There is nothing more to
+		 * send: returning OK would send *len bytes of whatever is in
+		 * buf as a fragment after the message already ended.
+		 */
 		lwsl_info("%s: completion with fd = -1\n", __func__);
-		lws_ss_start_timeout(ap->ss, 5 * LWS_US_PER_SEC);
-		return LWSSSSRET_OK;
+		lws_ss_start_timeout(ap->ss, 5000); /* ms */
+		return LWSSSSRET_TX_DONT_SEND;
 	}
 
 	n = (int)read(ap->fd, buf,

@@ -1676,7 +1676,7 @@ artifact_glob_cb(void *data, const char *path)
 static void
 saib_start_artifact_upload(struct sai_nspawn *ns)
 {
-	char filt[32], scandir[256];
+	char filt[sizeof(ns->task->artifacts)], scandir[256], toolong = 0;
 	struct lws_tokenize ts;
 	uint8_t *p, *p1, *ps;
 	lws_dir_glob_t g;
@@ -1719,19 +1719,31 @@ saib_start_artifact_upload(struct sai_nspawn *ns)
 	while ((ts.e = (int8_t)lws_tokenize(&ts)) >= 0) {
 		switch (ts.e) {
 		case LWS_TOKZE_ENDED:
-			if (filt[0])
+			if (filt[0] || toolong)
 				goto scan;
 			break;
 		case LWS_TOKZE_DELIMITER:
 			if (*ts.token == ',')
 				goto scan;
-			else
-				filt[m++] = *ts.token;
+			/*
+			 * The list is repo-controlled, keep every piece we
+			 * gather within filt and terminated
+			 */
+			if (m + 1 >= (int)sizeof(filt)) {
+				toolong = 1;
+				break;
+			}
+			filt[m++] = *ts.token;
+			filt[m] = '\0';
 			break;
 		case LWS_TOKZE_TOKEN:
-			lws_strnncpy(&filt[m], ts.token, ts.token_len,
-				     sizeof(filt) - 1u - (unsigned int)m);
-			m = (int)strlen(filt);
+			if (m + (int)ts.token_len >= (int)sizeof(filt)) {
+				toolong = 1;
+				break;
+			}
+			memcpy(&filt[m], ts.token, ts.token_len);
+			m += (int)ts.token_len;
+			filt[m] = '\0';
 			break;
 		}
 		if (ts.e == LWS_TOKZE_ENDED)
@@ -1745,10 +1757,15 @@ scan:
 		 * patterns, or windows drive / UNC shapes).
 		 */
 
-		if (!sai_artifacts_pattern_safe(filt)) {
-			lwsl_err("%s: ignoring artifact glob '%s' that escapes "
-				 "the build dir\n", __func__, filt);
+		if (toolong || !filt[0] || !sai_artifacts_pattern_safe(filt)) {
+			lwsl_err("%s: ignoring artifact glob '%s' that is empty, "
+				 "too long or escapes the build dir\n",
+				 __func__, filt);
+			saib_task_logf(ns->spm, ns, NULL, "Ignoring artifact "
+				       "glob '%s': it is empty, too long or "
+				       "escapes the build dir", filt);
 			filt[0] = '\0';
+			toolong = 0;
 			m = 0;
 
 			if (ts.e == LWS_TOKZE_ENDED)
