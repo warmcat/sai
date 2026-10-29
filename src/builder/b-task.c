@@ -1188,7 +1188,12 @@ saib_set_ns_state(struct sai_nspawn *ns, int state)
 		break;
 
 	case NSSTATE_FAILED:
-		ns->retcode = SAISPRF_EXIT | 254;
+		/*
+		 * Only when nothing said how it ended: the server tells a
+		 * timeout, a signal or a stop apart by what's in here
+		 */
+		if (!ns->retcode)
+			ns->retcode = SAISPRF_EXIT | 254;
 		saib_task_grace(ns);
 		break;
 	default:

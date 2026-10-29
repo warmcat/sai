@@ -612,9 +612,23 @@ fail:
 	if (op->spawn)
 		free(op->spawn);
 
-	if (ns)
-		ns->op = NULL;
+	ns->op = NULL;
 	free(op);
+
+	/*
+	 * A step that ran and failed may have left artifacts that say why,
+	 * eg, a fuzzer's reproducers, so collect them like a passing step's.
+	 * The failure has already gone in the final log above and the ns
+	 * keeps its retcode, so it is still reported as failed when the
+	 * uploads are done and it's destroyed.  Not for a step that we, or
+	 * the server or a user, stopped: there's nothing to learn from that,
+	 * and the builder is wanted for something else.
+	 *
+	 * This may destroy the ns already, if there's nothing to upload.
+	 */
+
+	if (!ns->user_killed && !ns->user_cancel && !ns->idle_yield)
+		saib_set_ns_state(ns, NSSTATE_UPLOADING_ARTIFACTS);
 }
 
 #if defined(WIN32)

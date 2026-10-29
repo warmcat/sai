@@ -95,6 +95,21 @@ You can also give a comma-separated list of build artifacts, these are
 arbitrary binary files which will be uploaded to sai-server and made available
 for download over https.
 
+```
+		"artifacts":	"build/*.rpm, build/libwebsockets-*, build/coverage-summary.json"
+```
+
+Each is a path relative to the dir the build steps start in, whose last part
+is a filename or a glob with one `*` in it.  They're looked for after each
+step, including one that failed, so a failing step can still leave its
+evidence; the step is still reported as failed once they're uploaded.  They
+aren't looked for after a step that was stopped, eg, by a user or to make way
+for real work.
+
+Anyone who can see the task can download its artifacts, so don't make
+anything an artifact that shouldn't be public, eg, the reports about what a
+fuzzer found (see [README-findings.md](README-findings.md) for those).
+
 #### idle
 
 A configuration can also ask for idle tasks, eg for long-running fuzzing, with
