@@ -275,6 +275,8 @@ struct pss {
 	unsigned int		is_power:1;
 	unsigned int		link_authed:1;
 	unsigned int		auth_secret_ok:1;
+	/* it registered platforms, so it's a builder's main link */
+	unsigned int		plats_seen:1;
 
 	uint8_t			ovstate; /* SOS_ substate when doing overview */
 };
@@ -472,6 +474,9 @@ sai_task_uuid_to_event_uuid(char *event_uuid33, const char *task_uuid65);
 
 int
 sais_ws_json_tx_builder(struct vhd *vhd, struct pss *pss);
+
+void
+sais_builder_queue_viewer_state(struct pss *pss, int viewers);
 
 int
 sais_subs_request_writeable(struct vhd *vhd, const char *task_uuid);

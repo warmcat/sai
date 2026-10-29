@@ -1434,6 +1434,17 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 			 * builder is sending us an array of platforms it provides us
 			 */
 
+			if (!pss->plats_seen) {
+				/*
+				 * It's a builder's main link: now it can hear
+				 * about viewers, and if there are some already,
+				 * should start reporting right away
+				 */
+				pss->plats_seen = 1;
+				if (vhd->viewers_are_present)
+					sais_builder_queue_viewer_state(pss, 1);
+			}
+
 			bp_owner = (sai_plat_owner_t *)pss->a.dest;
 
 			lws_start_foreach_dll(struct lws_dll2 *, pb,
@@ -2260,6 +2271,33 @@ afail:
 	sai_event_db_close(&vhd->sqlite3_cache, &pss->pdb_artifact);
 
 	return -1;
+}
+
+/*
+ * Tell a builder whether anyone is watching in sai-web, so it knows whether
+ * to send load reports.
+ *
+ * Only a link that registered platforms is a builder's main link that
+ * understands this.  Pool syncs and artifact uploads come in on /builder too,
+ * and a JSON message arriving in a pool sync's stream of binary records
+ * breaks the sync.
+ */
+
+void
+sais_builder_queue_viewer_state(struct pss *pss, int viewers)
+{
+	sai_viewer_state_t *vs;
+
+	if (!pss->plats_seen)
+		return;
+
+	vs = calloc(1, sizeof(*vs));
+	if (!vs)
+		return;
+
+	vs->viewers = !!viewers;
+	lws_dll2_add_tail(&vs->list, &pss->viewer_state_owner);
+	lws_callback_on_writable(pss->wsi);
 }
 
 /*

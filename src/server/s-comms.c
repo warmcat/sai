@@ -765,17 +765,11 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			lws_dll2_add_head(&pss->same, &vhd->builders);
 
 			/*
-			 * If viewers are already present, tell this new builder to
-			 * start reporting immediately.
+			 * We don't know yet if it's a builder's main link, or a
+			 * pool sync or artifact upload that mustn't be sent
+			 * builder messages: it's told about viewers when it
+			 * registers its platforms
 			 */
-			if (vhd->viewers_are_present) {
-				sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
-				if (vsend) {
-					vsend->viewers = 1; /* true */
-					lws_dll2_add_tail(&vsend->list, &pss->viewer_state_owner);
-					lws_callback_on_writable(pss->wsi);
-				}
-			}
 			break;
 		}
 

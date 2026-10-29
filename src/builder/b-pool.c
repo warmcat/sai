@@ -972,7 +972,9 @@ saib_pool_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		if (h.ns >= SAI_POOL_NS_COUNT ||
 		    h.name_len > SAI_POOL_REC_NAME_MAX ||
 		    h.len > sai_pool_rec_max(h.ns, h.type)) {
-			lwsl_err("%s: bad record from server\n", __func__);
+			lwsl_err("%s: bad record from server: type 0x%x, ns %u, "
+				 "name %u, len %u\n", __func__, h.type, h.ns,
+				 h.name_len, h.len);
 			return LWSSSSRET_DESTROY_ME;
 		}
 

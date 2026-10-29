@@ -671,13 +671,9 @@ websrvss_ws_rx_msg(websrvss_srv_t *m, const uint8_t *buf, size_t len,
 
 			lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
 				struct pss *pss_builder = lws_container_of(p, struct pss, same);
-				sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
 
-				if (vsend) {
-					vsend->viewers = m->vhd->viewers_are_present;
-					lws_dll2_add_tail(&vsend->list, &pss_builder->viewer_state_owner);
-					lws_callback_on_writable(pss_builder->wsi);
-				}
+				sais_builder_queue_viewer_state(pss_builder,
+						m->vhd->viewers_are_present);
 			} lws_end_foreach_dll(p);
 			break;
 		}
@@ -1071,13 +1067,9 @@ websrvss_srv_state(void *userobj, void *sh, lws_ss_constate_t state,
 			/* Broadcast new presence state to builders */
 			lws_start_foreach_dll(struct lws_dll2 *, p, m->vhd->builders.head) {
 				struct pss *pss_builder = lws_container_of(p, struct pss, same);
-				sai_viewer_state_t *vsend = calloc(1, sizeof(*vsend));
 
-				if (vsend) {
-					vsend->viewers = (unsigned int)new_viewers_present;
-					lws_dll2_add_tail(&vsend->list, &pss_builder->viewer_state_owner);
-					lws_callback_on_writable(pss_builder->wsi);
-				}
+				sais_builder_queue_viewer_state(pss_builder,
+								new_viewers_present);
 			} lws_end_foreach_dll(p);
 		}
 
