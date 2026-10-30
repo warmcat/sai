@@ -108,7 +108,7 @@ sai_event_db_ensure_open(struct lws_context *cx, lws_dll2_owner_t *sqlite3_cache
 			  event_uuid, "");
 
 	if (lws_struct_sq3_open(cx, filepath, create_if_needed, ppdb)) {
-		lwsl_err("%s: Unable to open db %s: %s\n", __func__,
+		lwsl_debug("%s: Unable to open db %s: %s\n", __func__,
 			 filepath, sqlite3_errmsg(*ppdb));
 
 		return 2;
