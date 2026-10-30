@@ -4690,6 +4690,20 @@ function createBuilderDiv(plat) {
 		     `</div>`;
 	if (auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN && plat.peer_ip)
 		innerHTML += `<div class="plat-peer-ip">${hsanitize(plat.peer_ip)}</div>`;
+	/*
+	 * What the planner is doing with the machine it's on: waiting for
+	 * it to go quiet so a step can be measured alone, running that step,
+	 * or held back while another platform on the machine does
+	 */
+	if (plat.plan_state > 0 && plat.plan_state < 4) {
+		const plan_names = ["", "waiting", "measuring", "blocked"];
+		const plan_texts = ["", "waiting to measure alone",
+				    "measuring alone", "held for hw" +
+				    plat.hw_index + " measuring"];
+
+		platDiv.className += " plan-" + plan_names[plat.plan_state];
+		innerHTML += `<div class="plan-state">${plan_texts[plat.plan_state]}: ${hsanitize(plat.plan_info || "")}</div>`;
+	}
 	innerHTML +=  `</td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;

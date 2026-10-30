@@ -1503,6 +1503,42 @@ table.comp.adhoc {
 	color: #334;
 }
 
+/*
+ * What the planner is doing with a platform's machine, see "Measuring alone"
+ * in README-planner.md: the platform measuring a step alone, one waiting for
+ * the machine to go quiet so it can, and the others on the machine held back
+ */
+.plan-state {
+	font-size: 6pt;
+	margin-top: 2px;
+	padding: 0 3px;
+	border-radius: 3px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+div.ibuil.plan-measuring {
+	outline: 2px solid #2a8a2a;
+}
+div.ibuil.plan-measuring .plan-state {
+	background: #2a8a2a;
+	color: #ffffff;
+}
+div.ibuil.plan-waiting {
+	outline: 2px dashed #2a8a2a;
+}
+div.ibuil.plan-waiting .plan-state {
+	background: #cfe8cf;
+	color: #164416;
+}
+div.ibuil.plan-blocked {
+	outline: 2px dashed #c08a20;
+}
+div.ibuil.plan-blocked .plan-state {
+	background: #f3e2b8;
+	color: #5a4010;
+}
+
 .login-status-container {
 	margin-top: 6px;
 	width: 100%;

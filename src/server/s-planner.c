@@ -42,6 +42,10 @@
  * refuses a probe because it would need more memory than it has free puts
  * that rung off for a while; one that refuses because it's full says nothing
  * about the rung, and the probe is just forgotten.
+ *
+ * A rung that has never been run alone is worth measuring alone, since that
+ * is what everything about it is compared against: the planner says so, and
+ * s-hardware.c keeps the step's machine quiet for it.
  */
 
 #include <libwebsockets.h>
@@ -70,6 +74,10 @@ static const int sais_plan_ladder[] = { 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64
 #define SAIS_PLAN_PROBE_BACKOFF_US	(3600 * LWS_US_PER_SEC)
 /* ...and one the step failed at, for this long */
 #define SAIS_PLAN_PROBE_FAILED_US	(7 * 24 * 3600 * LWS_US_PER_SEC)
+/* a step that had company although run "alone" isn't run alone again for this long */
+#define SAIS_PLAN_ALONE_TAINTED_US	(24 * 3600 * LWS_US_PER_SEC)
+/* ...nor one whose machine wouldn't go quiet, for this long */
+#define SAIS_PLAN_ALONE_BUSY_US		(3600 * LWS_US_PER_SEC)
 
 /*
  * A probe is a step sent out at a -j the planner has no, or stale, rows for,
@@ -85,6 +93,7 @@ typedef struct sais_plan_probe {
 	lws_usec_t			started;
 	lws_usec_t			backoff_until; /* nonzero: a refused rung */
 	int				parallel;
+	char				alone; /* a backoff on running alone, not a rung */
 } sais_plan_probe_t;
 
 /* what the db says about one rung of a step */
@@ -138,18 +147,19 @@ sais_plan_probes_expire(struct vhd *vhd)
 }
 
 /*
- * Is anything probing this step already, and which rungs are backed off?
- * Returns the active probe if there is one, and sets the bitmap of rungs a
- * builder refused recently.
+ * Is anything probing this step already, which rungs are backed off, and is
+ * running it alone backed off?  Returns the active probe if there is one, and
+ * sets the bitmap of rungs a builder refused recently.
  */
 
 static sais_plan_probe_t *
 sais_plan_probe_find(struct vhd *vhd, const char *key, const char *step_hash,
-		     unsigned int *backed_off)
+		     unsigned int *backed_off, int *alone_backed_off)
 {
 	sais_plan_probe_t *active = NULL;
 
 	*backed_off = 0;
+	*alone_backed_off = 0;
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->planner_probes.head) {
 		sais_plan_probe_t *pr = lws_container_of(p, sais_plan_probe_t,
@@ -158,6 +168,11 @@ sais_plan_probe_find(struct vhd *vhd, const char *key, const char *step_hash,
 
 		if (strcmp(pr->key, key) || strcmp(pr->step_hash, step_hash))
 			continue;
+
+		if (pr->alone) {
+			*alone_backed_off = 1;
+			continue;
+		}
 
 		if (!pr->backoff_until) {
 			active = pr;
@@ -192,6 +207,45 @@ sais_plan_probe_start(struct vhd *vhd, const char *key, const char *step_hash,
 }
 
 /*
+ * Running the step alone didn't work out: it had company anyway, so
+ * something the server can't see is using the machine, or the machine never
+ * went quiet.  Either way, don't ask for it alone again for a while.
+ */
+
+void
+sais_planner_alone_backoff(struct vhd *vhd, const char *key,
+			   const char *step_hash, int tainted)
+{
+	lws_usec_t until = lws_now_usecs() + (tainted ?
+			SAIS_PLAN_ALONE_TAINTED_US : SAIS_PLAN_ALONE_BUSY_US);
+	sais_plan_probe_t *pr;
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->planner_probes.head) {
+		pr = lws_container_of(p, sais_plan_probe_t, list);
+
+		if (pr->alone && !strcmp(pr->key, key) &&
+		    !strcmp(pr->step_hash, step_hash)) {
+			if (until > pr->backoff_until)
+				pr->backoff_until = until;
+			return;
+		}
+	} lws_end_foreach_dll(p);
+
+	pr = malloc(sizeof(*pr));
+	if (!pr)
+		return;
+
+	memset(pr, 0, sizeof(*pr));
+	lws_strncpy(pr->key, key, sizeof(pr->key));
+	lws_strncpy(pr->step_hash, step_hash, sizeof(pr->step_hash));
+	pr->alone = 1;
+	pr->started = lws_now_usecs();
+	pr->backoff_until = until;
+
+	lws_dll2_add_tail(&pr->list, &vhd->planner_probes);
+}
+
+/*
  * A step's row landed: if it was a probe, it did its job.  It's matched on
  * what it measured rather than the task, so a probe that was answered by
  * another route doesn't linger.
@@ -200,6 +254,8 @@ sais_plan_probe_start(struct vhd *vhd, const char *key, const char *step_hash,
 void
 sais_planner_metric_arrived(struct vhd *vhd, const sai_build_metric_t *m)
 {
+	sais_hardware_metric_arrived(vhd, m);
+
 	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
 				   vhd->planner_probes.head) {
 		sais_plan_probe_t *pr = lws_container_of(p, sais_plan_probe_t,
@@ -244,6 +300,8 @@ sais_planner_task_refused(struct vhd *vhd, const char *task_uuid,
 {
 	sais_plan_probe_t *pr = sais_plan_probe_find_task(vhd, task_uuid);
 
+	sais_hardware_task_ended(vhd, task_uuid);
+
 	if (!pr)
 		return;
 
@@ -271,6 +329,8 @@ void
 sais_planner_task_ended(struct vhd *vhd, const char *task_uuid, int failed)
 {
 	sais_plan_probe_t *pr = sais_plan_probe_find_task(vhd, task_uuid);
+
+	sais_hardware_task_ended(vhd, task_uuid);
 
 	if (!pr)
 		return;
@@ -391,21 +451,24 @@ sais_plan_rung_trusted(const struct sais_plan_rung *r)
 
 /*
  * Decide the step's SAI_PARALLEL and set it in the task being offered, along
- * with the memory estimate that goes with it.  build_step is 0-based, as in
- * the task.
+ * with the memory estimate that goes with it, and say in plan whether the
+ * rung it runs at has never been measured alone, so it's worth running alone
+ * this time.  build_step is 0-based, as in the task.
  */
 
 void
 sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
-		       int build_step)
+		       int build_step, sais_plan_t *plan)
 {
 	struct sais_plan_rung rungs[SAIS_PLAN_RUNGS], *r;
 	int n, sampled, best = -1, chosen, top = -1, bottom = -1, probe = -1,
-	    trusted_any = 0;
+	    trusted_any = 0, alone_backed_off;
 	uint64_t best_mean = 0, tie, now = (uint64_t)lws_now_secs();
-	char key[65], sh[65], why[96];
+	char *key = plan->key, *sh = plan->step_hash, why[96];
+	sais_plan_probe_t *active;
 	unsigned int backed_off;
 
+	memset(plan, 0, sizeof(*plan));
 	task->parallel = SAIS_PLAN_DEFAULT_PARALLEL;
 
 	/*
@@ -416,15 +479,27 @@ sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 	    !task->taskname[0] || !task->repo_name)
 		return;
 
-	if (sai_metrics_hash((uint8_t *)key, sizeof(key), sp->name,
+	if (sai_metrics_hash((uint8_t *)key, sizeof(plan->key), sp->name,
 			     task->taskname, task->repo_name) ||
-	    sais_task_step_hash(sh, sizeof(sh), task->build, build_step))
+	    sais_task_step_hash(sh, sizeof(plan->step_hash), task->build,
+				build_step)) {
+		plan->key[0] = '\0';
 		return;
+	}
+
+	sais_plan_probes_expire(vhd);
+	active = sais_plan_probe_find(vhd, key, sh, &backed_off,
+				      &alone_backed_off);
 
 	sampled = sais_plan_rungs_load(vhd, key, sh, rungs);
-	if (!sampled)
-		/* the first run is at the default, and is the first row */
+	if (!sampled) {
+		/*
+		 * The first run is at the default, and is the first row:
+		 * the one everything after it is compared with
+		 */
+		plan->alone = !alone_backed_off;
 		return;
+	}
 
 	/* the fastest rung we can trust, else the fastest we have */
 
@@ -473,8 +548,7 @@ sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 	 * refresh a stale neighbour.
 	 */
 
-	sais_plan_probes_expire(vhd);
-	if (!sais_plan_probe_find(vhd, key, sh, &backed_off)) {
+	if (!active) {
 		if (chosen == top && top + 1 < SAIS_PLAN_RUNGS &&
 		    !rungs[top + 1].n && !(backed_off & (1u << (top + 1)))) {
 			probe = top + 1;
@@ -506,6 +580,10 @@ sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 					     ((now - oldest) / 86400));
 		}
 	}
+
+	/* a rung nothing has run alone at yet is worth running alone now */
+	plan->alone = !rungs[probe >= 0 ? probe : chosen].n_iso &&
+		      !alone_backed_off;
 
 	if (probe >= 0) {
 		/*

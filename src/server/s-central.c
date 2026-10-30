@@ -200,6 +200,12 @@ sais_ensure_tables(struct vhd *vhd)
 	sqlite3_exec(vhd->server.pdb, "ALTER TABLE builders ADD COLUMN hw_index integer;", NULL, NULL, &err);
 	if (err)
 		sqlite3_free(err);
+	sqlite3_exec(vhd->server.pdb, "ALTER TABLE builders ADD COLUMN plan_state integer;", NULL, NULL, &err);
+	if (err)
+		sqlite3_free(err);
+	sqlite3_exec(vhd->server.pdb, "ALTER TABLE builders ADD COLUMN plan_info varchar(128);", NULL, NULL, &err);
+	if (err)
+		sqlite3_free(err);
 
 	sai_sqlite3_statement(vhd->server.pdb,
 		"CREATE TABLE IF NOT EXISTS power_controllers ("

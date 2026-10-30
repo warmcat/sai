@@ -341,8 +341,14 @@ sais_list_builders_cb(lws_sorted_usec_list_t *sul)
 			lws_strncpy(sp->peer_ip, live_builder->peer_ip,
 				    sizeof(sp->peer_ip));
 			sp->stay_on	= live_builder->stay_on;
-		} else
+			sais_hardware_plat_state(live_builder, &sp->plan_state,
+						 sp->plan_info,
+						 sizeof(sp->plan_info));
+		} else {
 			sp->online		= 0;
+			sp->plan_state		= SAIS_PLAN_STATE_FREE;
+			sp->plan_info[0]	= '\0';
+		}
 
 		sp->powering_up			= 0;
 		sp->powering_down		= 0;

@@ -214,7 +214,10 @@ sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task,
 /*
  * A row just arrived: keep only the newest few of its key + step + parallel,
  * which is what the planner compares.  Rows at other parallels stay, they're
- * the other points on the curve.
+ * the other points on the curve.  The newest row from a run alone is kept
+ * whatever its age: it's the rung's reference, the planner would hold the
+ * machine to measure it again if it went, and on a busy machine most rows
+ * after it have company.
  */
 
 int
@@ -231,7 +234,10 @@ sais_metrics_db_prune(struct vhd *vhd, const sai_build_metric_t *m)
 			"AND parallel = ?3 AND rowid NOT IN "
 			"(SELECT rowid FROM build_metrics WHERE key = ?1 AND "
 			"step_hash = ?2 AND parallel = ?3 "
-			"ORDER BY unixtime DESC LIMIT ?4)",
+			"ORDER BY unixtime DESC LIMIT ?4) AND rowid NOT IN "
+			"(SELECT rowid FROM build_metrics WHERE key = ?1 AND "
+			"step_hash = ?2 AND parallel = ?3 AND cotenants = 0 "
+			"ORDER BY unixtime DESC LIMIT 1)",
 		-1, &stmt, NULL);
 	if (rc != SQLITE_OK) {
 		lwsl_err("%s: failed to prepare statement: %s\n", __func__,

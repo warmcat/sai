@@ -153,14 +153,21 @@ sais_prune_inflight_list(struct vhd *vhd)
 
 	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.builder_owner.head) {
 		sai_plat_t *sp = lws_container_of(p, sai_plat_t, sai_plat_list);
+		int pruned = 0;
 
 		lws_start_foreach_dll_safe(struct lws_dll2 *, p1, p2, sp->inflight_owner.head) {
 			sai_uuid_list_t *u = lws_container_of(p1, sai_uuid_list_t, list);
 
-			if (!u->started && (t - u->us_time_listed) > 30 * 1000 * 1000)
+			if (!u->started && (t - u->us_time_listed) > 30 * 1000 * 1000) {
 				sais_inflight_entry_destroy(u);
+				pruned = 1;
+			}
 
 		} lws_end_foreach_dll_safe(p1, p2);
+
+		/* a dead offer counted as running on its machine until now */
+		if (pruned)
+			sais_hardware_step_ended(vhd, sp);
 
 	} lws_end_foreach_dll(p);
 }
@@ -981,6 +988,17 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *sp,
 	}
 
 	/*
+	 * Its machine is being kept quiet so a step can be measured alone,
+	 * see s-hardware.c: nothing new starts on it until that's done, and
+	 * the step being measured is offered from there, not from here
+	 */
+	if (sais_hardware_blocked(sp)) {
+		lwsl_wsi_info(pss->wsi, "not offering %s a task: its machine "
+			      "is held for a measurement", sp->name);
+		return 1;
+	}
+
+	/*
 	 * Look for a task for this platform, on any event that needs building
 	 */
 
@@ -1160,6 +1178,7 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 	sqlite3 *pdb = NULL;
 	sai_event_t *event;
 	int n, build_step;
+	sais_plan_t plan;
 	struct pss *pss;
 	sai_plat_t *sp;
 	int inflight;
@@ -1296,8 +1315,25 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 	sais_get_task_metrics_estimates(vhd, temp_task, sp->name,
 					build_step ? build_step + 1 : 0);
 
-	/* and from that, what -j the step should run at this time */
-	sais_planner_plan_step(vhd, sp, temp_task, build_step);
+	/*
+	 * and from that, what -j the step should run at this time, and
+	 * whether it's worth running with nothing else on its machine
+	 */
+	sais_planner_plan_step(vhd, sp, temp_task, build_step, &plan);
+
+	if (sais_hardware_offer_step(vhd, sp, temp_task, build_step, &plan)) {
+		/*
+		 * The machine is being kept quiet for a measurement, this
+		 * step's own or another task's.  The task waits as it is,
+		 * bound to its builder and at this step, and is offered again
+		 * when the machine is free: it mustn't look in flight
+		 * meanwhile, or the scan for pending work would skip it.
+		 */
+		if (inflight)
+			sais_inflight_entry_destroy(ul);
+		ret = 1;
+		goto bail;
+	}
 
 	if (!inflight) {
 		if (sais_add_to_inflight_list_if_absent(vhd, sp, task_uuid,

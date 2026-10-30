@@ -938,6 +938,8 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 				} lws_end_foreach_dll_safe(p2, p3);
 			}
 
+			sais_hardware_plat_gone(vhd, sp);
+
 			lws_dll2_remove(&sp->sai_plat_list);
 			lws_sul_cancel(&sp->sul_find_jobs);
 			free(sp);
@@ -1277,6 +1279,9 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 	if (rej->reason == SAI_TASK_REASON_DESTROYED && !stale)
 		/* uuid will not be found listed as inflight for this */
 		sais_create_and_offer_task_step(vhd, rej->task_uuid);
+
+	/* if its machine was waiting to go quiet for a measurement, it may have */
+	sais_hardware_step_ended(vhd, sp);
 
 	sais_list_builders(vhd);
 

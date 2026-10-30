@@ -333,9 +333,43 @@ typedef struct sais_repo_turn {
  */
 typedef struct sais_hardware {
 	lws_dll2_t		list;		/* vhd->hardware_owner */
+	lws_sorted_usec_list_t	sul;		/* bounds a hold on it */
+	struct vhd		*vhd;
 	char			name[96];	/* sai_plat_t.hardware */
 	int			index;		/* 1-based */
+
+	/*
+	 * While the planner is measuring a step alone on it: the task and
+	 * step being measured, where its row will be keyed, the platform it
+	 * runs on, and whether it's running yet or waiting for the machine to
+	 * go quiet.  Nothing else is offered to any platform on the machine
+	 * meanwhile.  meas_task is empty when it's free.
+	 */
+	char			meas_task[65];
+	char			meas_key[65];
+	char			meas_sh[65];
+	char			meas_info[128];	/* "step N of taskname" */
+	sai_plat_t		*meas_sp;
+	lws_usec_t		meas_since;
+	int			meas_step;	/* 1-based */
+	char			meas_running;
+	char			meas_logged;	/* the task log knows it waits */
 } sais_hardware_t;
+
+/* sai_plat_t.plan_state: what the planner is doing with a platform's machine */
+enum {
+	SAIS_PLAN_STATE_FREE,
+	SAIS_PLAN_STATE_WAITING,	/* its step waits for the machine to go quiet */
+	SAIS_PLAN_STATE_MEASURING,	/* its step is running alone on the machine */
+	SAIS_PLAN_STATE_BLOCKED,	/* held back while another platform measures */
+};
+
+/* what the planner decided for a step, see sais_planner_plan_step() */
+typedef struct sais_plan {
+	char			key[65];	/* the metrics key, or empty */
+	char			step_hash[65];
+	char			alone;		/* run it with nothing else on its machine */
+} sais_plan_t;
 
 typedef struct sai_shell_session {
 	lws_dll2_t	list;
@@ -749,7 +783,11 @@ sais_metrics_destroy(struct vhd *vhd);
 
 void
 sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
-		       int build_step);
+		       int build_step, sais_plan_t *plan);
+
+void
+sais_planner_alone_backoff(struct vhd *vhd, const char *key,
+			   const char *step_hash, int tainted);
 
 void
 sais_planner_metric_arrived(struct vhd *vhd, const sai_build_metric_t *m);
@@ -771,6 +809,30 @@ sais_hardware_find(struct vhd *vhd, const char *name);
 
 void
 sais_hardware_attach(struct vhd *vhd, sai_plat_t *sp);
+
+int
+sais_hardware_blocked(const sai_plat_t *sp);
+
+int
+sais_hardware_offer_step(struct vhd *vhd, sai_plat_t *sp,
+			 const sai_task_t *task, int build_step,
+			 const sais_plan_t *plan);
+
+void
+sais_hardware_step_ended(struct vhd *vhd, sai_plat_t *sp);
+
+void
+sais_hardware_task_ended(struct vhd *vhd, const char *task_uuid);
+
+void
+sais_hardware_metric_arrived(struct vhd *vhd, const sai_build_metric_t *m);
+
+void
+sais_hardware_plat_gone(struct vhd *vhd, sai_plat_t *sp);
+
+void
+sais_hardware_plat_state(const sai_plat_t *sp, int *state, char *info,
+			 size_t info_len);
 
 void
 sais_hardware_destroy(struct vhd *vhd);

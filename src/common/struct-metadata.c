@@ -118,6 +118,8 @@ const lws_struct_map_t lsm_plat[] = {
 	LSM_JO_UNSIGNED	(sai_plat_t, idle_slice_secs,	"idle_slice_secs"),
 	LSM_CARRAY	(sai_plat_t, hardware,		"hardware"),
 	LSM_SIGNED	(sai_plat_t, hw_index,		"hw_index"),
+	LSM_SIGNED	(sai_plat_t, plan_state,	"plan_state"),
+	LSM_CARRAY	(sai_plat_t, plan_info,		"plan_info"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {

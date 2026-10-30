@@ -919,6 +919,9 @@ typedef struct sai_plat {
 	 */
 	struct sais_hardware		*hw;
 	int				hw_index;
+	/* what the planner is doing with its machine, see s-hardware.c */
+	int				plan_state;
+	char				plan_info[128];
 
 	int				index; /* used to create unique build dir path */
 } sai_plat_t;
@@ -1231,7 +1234,7 @@ extern const lws_struct_map_t
 	lsm_stay_state_update[2],
 	lsm_schema_stay_state_update[1],
 	lsm_build_metric[19],
-	lsm_plat[19], /* +1 for pcon, +1 for hardware, +1 hw_index */
+	lsm_plat[21], /* +1 for pcon, +1 for hardware, +3 planner */
 	lsm_builder_platform[1],
 	lsm_builder_registration[10],
 	lsm_schema_sq3_map_power_controller[1],

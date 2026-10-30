@@ -8,8 +8,9 @@ at each `-j`, all differ per step and per builder platform, and all show in
 the measurements.  So sai measures, and decides from the measurements.
 
 This is the start of it.  Today the planner chooses each step's
-`SAI_PARALLEL`, which was always 2; the builder still decides for itself how
-many steps it runs at once.
+`SAI_PARALLEL`, which was always 2, and has a step measured alone on its
+machine when nothing comparable has been; the builder still decides for
+itself how many steps it runs at once.
 
 ## What's recorded
 
@@ -44,7 +45,10 @@ is, and keying without the ref means a new branch starts with its task's
 history from the branches before it.
 
 The newest 8 rows are kept for each key, step and `SAI_PARALLEL`, so every
-point on a step's `-j` curve is kept, however long ago it was measured.
+point on a step's `-j` curve is kept, however long ago it was measured.  The
+newest row from a run alone is kept as well, whatever its age: it's the
+reference for its `-j`, see "Measuring alone", and on a busy machine the rows
+after it mostly have company.
 
 ## Choosing SAI_PARALLEL
 
@@ -94,6 +98,67 @@ planner: step 4: -j8, fastest of 5 tried (41.2s from 4 runs alone)
 planner: step 4: trying -j12 to measure it, best so far is the highest tried (-j8, 41.2s)
 ```
 
+## Measuring alone
+
+Everything above compares a step's runs at one `-j` with its runs at
+another, and a run that shared the machine with other steps says as much
+about them as about itself.  So the first run of a step at each `-j` is
+made alone, as the reference the rest is compared with, and after that the
+step runs with company like anything else, the later rows supplementing the
+reference.
+
+The server knows which platforms share a machine from the `hardware` each
+builder platform gives when it registers, see "Builder hardware" in the main
+README: it groups the live platforms by it, and sai-web shows each
+platform's group as a badge, eg, `hw3`, so you can see what the planner
+thinks shares what.  The index is just the order the server first saw each
+machine since it started.
+
+When a step is offered at a `-j` that has no row from a run alone on that
+platform, the planner holds the step's machine for it: nothing new is
+offered to any platform on the machine, including idle tasks, while the
+steps already running there finish, then the step is offered by itself.
+Idle slices running on the machine are stopped rather than waited for, as
+the builder would stop them for real work itself; they report as yielded and
+their lanes run again later.
+Its row releases the machine, as does the step ending without one, and every
+platform on the machine looks for work again.  A task whose next step also
+wants measuring keeps the machine from one step to the next, so a cold task
+measures its steps back to back, and the first step that doesn't need it lets
+the machine go.  Other tasks on the machine wait where they are, between
+steps, bound to their builders, and when the machine frees every platform on
+it looks for work again: whichever finds a step first that needs measuring
+takes the machine next, there's no queue.
+
+This is the one-time efficiency hit the clean measurements cost: a machine
+seeing a task for the first time runs it alone, step by step, before the
+other platforms on it get work again.  To keep it from being paid for
+nothing:
+
+ - a machine that hasn't gone quiet after 15 minutes, eg, because a long test
+   step is running on another of its platforms, runs the step with company
+   after all, and isn't asked to go quiet for that step again for an hour
+
+ - a step whose row comes back with company although nothing else was
+   offered to the machine, eg, because another sai-builder on it didn't name
+   the same `hardware`, or one of its own idle slices was still stopping,
+   isn't run alone again for a day; keeping the machine quiet evidently
+   doesn't make it quiet
+
+ - a step that never reports a row releases the machine after 3 hours,
+   whatever became of its task
+
+The builder list in sai-web shows what the planner is doing with each
+machine: the platform measuring a step alone, outlined solid; one waiting for
+its machine to go quiet so it can, outlined dashed; and the other platforms
+on that machine, held back meanwhile, outlined in amber, each saying which
+step they are waiting on.  The task's log says the same from the step's side:
+
+```
+planner: step 3: waiting for l2 to go quiet to measure it alone, 2 steps still running
+planner: step 3: running alone on l2 to measure it
+```
+
 ## What's next
 
 The measurements are kept per builder platform, and the `hardware` column
@@ -102,9 +167,6 @@ says which platforms share a machine.  That's what the rest needs:
  - the server deciding how many steps a machine runs at once, across all its
    platforms, from what those steps took, instead of each platform's fixed
    `instances`
-
- - running a step alone on its machine on purpose when nothing comparable
-   has been measured, so the measurement is clean, and saying so in the UI
 
  - a coarse profile of a step's cpu and memory over its run, so steps whose
    peaks come at different times can be overlapped
