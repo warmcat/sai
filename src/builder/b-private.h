@@ -564,12 +564,13 @@ saib_deletion_free_kib(unsigned int needed_kib, const char *protect_vn);
 
 typedef struct saib_jobdir_hold {
 	lws_dll2_t		list;
+	const sai_plat_t	*sp;		/* the task's platform, or NULL */
 	char			vn[16];
 	lws_usec_t		renewed;	/* lws_now_usecs() */
 } saib_jobdir_hold_t;
 
 void
-saib_jobdir_hold(const char *vn);
+saib_jobdir_hold(const char *vn, const sai_plat_t *sp);
 void
 saib_jobdir_release(const char *vn);
 int
@@ -578,6 +579,8 @@ void
 saib_jobdir_holds_destroy(void);
 unsigned int
 saib_jobdir_holds_live(void);
+unsigned int
+saib_jobdir_holds_between_steps(const sai_plat_t *sp, const char *except_vn);
 
 /*
  * The job dir name for a task: the last 8 chars of its uuid, as the fleet logs

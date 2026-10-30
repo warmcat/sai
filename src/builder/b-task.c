@@ -938,6 +938,32 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 	}
 
 	/*
+	 * Taking a task's first step commits us to all of its steps, but a
+	 * task between two of them has no nspawn, so it isn't counted above.
+	 * If we start new tasks in those gaps, we have more started than we
+	 * can run, and each step that finishes frees a slot that whichever
+	 * offer comes first takes: often not the next step of the task that
+	 * just gave it up, which is refused BUSY and waits for another, while
+	 * its job dir sits on our disk.  So a new task waits until the ones we
+	 * started fit in our slots with it.
+	 */
+
+	if (!task->build_step) {
+		unsigned int between;
+		char vn[16];
+
+		saib_task_jobdir_vn(vn, sizeof(vn), task->uuid);
+		between = saib_jobdir_holds_between_steps(sp, vn);
+
+		if (executing + between >= tc) {
+			lwsl_notice("%s: reject task %s: %u running and %u "
+				    "between steps, of %u\n", __func__,
+				    task->uuid, executing, between, tc);
+			return 1;
+		}
+	}
+
+	/*
 	 * The estimates are what this task or step took the last times it ran
 	 * on this builder.  They are only a guess, and must not be able to
 	 * keep it from running forever: what we hold back for our other work
@@ -1436,7 +1462,7 @@ saib_task_destroy(struct sai_nspawn *ns)
 			 * stopped because the task was paused, or rewound to
 			 * run a step again: it goes on from there later.
 			 */
-			saib_jobdir_hold(ns->inp_vn);
+			saib_jobdir_hold(ns->inp_vn, ns->sp);
 		} else {
 			/*
 			 * Either we're done or we failed.  Failed job dirs are
@@ -2027,7 +2053,7 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 			 * yet, so don't let its hold lapse meanwhile.
 			 */
 			saib_task_jobdir_vn(vn, sizeof(vn), task->uuid);
-			saib_jobdir_hold(vn);
+			saib_jobdir_hold(vn, sp);
 		}
 
 		if (saib_queue_task_status_update(sp, spm, task, 0,
@@ -2222,7 +2248,7 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 	 * Renew the hold on the job dir for as long as this task has steps
 	 * running or pending on us
 	 */
-	saib_jobdir_hold(ns->inp_vn);
+	saib_jobdir_hold(ns->inp_vn, ns->sp);
 
 	n += lws_snprintf(ns->inp + n, sizeof(ns->inp) - (unsigned int)n, "%s%c",
 			  ns->inp_vn, csep);

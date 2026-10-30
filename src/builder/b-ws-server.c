@@ -357,7 +357,7 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 
 		if (can->resume) {
 			/* it goes on from a later step: keep the job dir */
-			saib_jobdir_hold(vn);
+			saib_jobdir_hold(vn, NULL);
 			break;
 		}
 

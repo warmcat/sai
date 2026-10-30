@@ -528,7 +528,7 @@ saib_jobdir_hold_find(const char *vn)
 }
 
 void
-saib_jobdir_hold(const char *vn)
+saib_jobdir_hold(const char *vn, const sai_plat_t *sp)
 {
 	saib_jobdir_hold_t *h;
 
@@ -546,6 +546,8 @@ saib_jobdir_hold(const char *vn)
 		lwsl_info("%s: holding job dir %s\n", __func__, vn);
 	}
 
+	if (sp)
+		h->sp = sp;
 	h->renewed = lws_now_usecs();
 }
 
@@ -605,6 +607,44 @@ saib_jobdir_holds_live(void)
 		saib_jobdir_hold_t *h = lws_container_of(p, saib_jobdir_hold_t, list);
 
 		if (saib_jobdir_is_held(h->vn))
+			n++;
+
+	} lws_end_foreach_dll_safe(p, p1);
+
+	return n;
+}
+
+/*
+ * How many tasks of the platform we started are between two of their steps:
+ * their job dir is held, but no step of theirs is running.  except_vn is a
+ * task not to count, eg, the one being offered.
+ */
+
+unsigned int
+saib_jobdir_holds_between_steps(const sai_plat_t *sp, const char *except_vn)
+{
+	unsigned int n = 0;
+
+	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
+				   builder.jobdir_hold_owner.head) {
+		saib_jobdir_hold_t *h = lws_container_of(p, saib_jobdir_hold_t, list);
+		int running = 0;
+
+		if (h->sp != sp || !strcmp(h->vn, except_vn) ||
+		    !saib_jobdir_is_held(h->vn))
+			continue;
+
+		lws_start_foreach_dll(struct lws_dll2 *, d,
+				      sp->nspawn_owner.head) {
+			struct sai_nspawn *ns = lws_container_of(d,
+						struct sai_nspawn, list);
+
+			if (!strcmp(ns->inp_vn, h->vn))
+				running = 1;
+
+		} lws_end_foreach_dll(d);
+
+		if (!running)
 			n++;
 
 	} lws_end_foreach_dll_safe(p, p1);
