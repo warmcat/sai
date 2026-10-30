@@ -353,6 +353,7 @@ struct vhd {
 	const char		*sqlite3_path_lhs;
 	sqlite3			*pdb_metrics;
 	lws_sorted_usec_list_t	sul_metrics_migrate; /* see s-metrics.c */
+	lws_dll2_owner_t	planner_probes; /* sais_plan_probe_t, s-planner.c */
 
 	lws_dll2_owner_t	sqlite3_cache; /* sais_sqlite_cache_t */
 	lws_dll2_owner_t	tasklog_cache;
@@ -730,6 +731,25 @@ sais_metrics_rekey(struct vhd *vhd, sai_build_metric_t *m);
 
 void
 sais_metrics_destroy(struct vhd *vhd);
+
+/* s-planner.c: decides how a step runs from its metrics */
+
+void
+sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
+		       int build_step);
+
+void
+sais_planner_metric_arrived(struct vhd *vhd, const sai_build_metric_t *m);
+
+void
+sais_planner_task_refused(struct vhd *vhd, const char *task_uuid,
+			  int resources);
+
+void
+sais_planner_task_ended(struct vhd *vhd, const char *task_uuid, int failed);
+
+void
+sais_planner_destroy(struct vhd *vhd);
 
 int
 sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase, int killed);

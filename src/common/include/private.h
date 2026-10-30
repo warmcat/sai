@@ -462,6 +462,12 @@ enum {
 	 * about whether it can take real tasks.
 	 */
 	SAI_TASK_REASON_IDLE_DECLINED = 4,
+	/*
+	 * Builder can't take the step while what it estimates it will need,
+	 * eg, memory, isn't free.  Unlike BUSY, which is about the builder's
+	 * own limits, this is about the size of the step as offered.
+	 */
+	SAI_TASK_REASON_RESOURCES = 5,
 };
 
 typedef struct sai_rejection {

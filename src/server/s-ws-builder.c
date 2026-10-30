@@ -1112,9 +1112,14 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 		break;
 
 	case SAI_TASK_REASON_BUSY:
-		lwsl_notice("%s: SAI_TASK_REASON_BUSY: Set busy: %s\n",
-				__func__, rej->task_uuid);
+	case SAI_TASK_REASON_RESOURCES:
+		lwsl_notice("%s: SAI_TASK_REASON_%s: Set busy: %s\n", __func__,
+			    rej->reason == SAI_TASK_REASON_BUSY ? "BUSY" :
+							      "RESOURCES",
+			    rej->task_uuid);
 		do_remove_uuid = 1;
+		sais_planner_task_refused(vhd, rej->task_uuid,
+				rej->reason == SAI_TASK_REASON_RESOURCES);
 
 		sai_task_uuid_to_event_uuid(event_uuid, rej->task_uuid);
 		if (!sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
@@ -1245,6 +1250,10 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 							"(ecode 0x%x), failing the task",
 							sp->name, rej->ecode);
 			}
+
+		if (n == SAIES_FAIL || n == SAIES_CANCELLED)
+			sais_planner_task_ended(vhd, rej->task_uuid,
+						n == SAIES_FAIL);
 
 		if (sais_set_task_state(vhd, rej->task_uuid, n, 0,
 					lws_now_secs() - pss->first_log_timestamp))
@@ -2251,8 +2260,10 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 						lsm_schema_sq3_map_build_metric,
 							     &o, 0) < 0)
 					lwsl_err("%s: !!!!!!!!!!!!!!!!!! failed to set metrics in db\n", __func__);
-				else
+				else {
+					sais_planner_metric_arrived(vhd, metric);
 					sais_metrics_db_prune(vhd, metric);
+				}
 
 				break;
 			}

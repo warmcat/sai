@@ -1296,6 +1296,9 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 	sais_get_task_metrics_estimates(vhd, temp_task, sp->name,
 					build_step ? build_step + 1 : 0);
 
+	/* and from that, what -j the step should run at this time */
+	sais_planner_plan_step(vhd, sp, temp_task, build_step);
+
 	if (!inflight) {
 		if (sais_add_to_inflight_list_if_absent(vhd, sp, task_uuid,
 							temp_task->idle)) {

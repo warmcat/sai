@@ -12,7 +12,9 @@ environment.  Instead they start with a small base set:
 
 The step scripts then add sai's own variables on top, like `HOME`, `CI`,
 `SAI_PROJECT`, `SAI_PARALLEL`, `SAI_LOGPROXY` etc; those always have sai's
-values.
+values.  `SAI_PARALLEL` is chosen by sai-server for each step from how the
+step ran before on that builder platform, see
+[README-planner.md](README-planner.md).
 
 ## Adding to it from the builder conf
 

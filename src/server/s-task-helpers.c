@@ -92,6 +92,7 @@ sais_task_insert(struct lws_context *cx, sqlite3 *pdb, sai_event_t *e,
 	t->git_ref		= e->ref;
 	t->git_hash		= e->hash;
 	t->build_step_count	= sais_task_build_step_count(t->build);
+	/* the planner sets each step's own when it's offered, see s-planner.c */
 	t->parallel		= 2;
 
 	e->last_updated = (unsigned long long)lws_now_secs();
@@ -641,6 +642,9 @@ sais_task_clear_build_and_logs(struct vhd *vhd, const char *task_uuid, int from_
 	if (!task_uuid[0])
 		return SAI_DB_RESULT_OK;
 
+	/* whatever step it was on isn't going to report */
+	sais_planner_task_ended(vhd, task_uuid, 0);
+
 	if (!from_rejection)
 		/*
 		 * logs we're holding for the last run must go there, not the
@@ -811,6 +815,8 @@ sais_task_rebuild_last_step(struct vhd *vhd, const char *task_uuid)
 
 	lwsl_notice("%s: received request to rebuild last step of task %s\n",
 		    __func__, task_uuid);
+
+	sais_planner_task_ended(vhd, task_uuid, 0);
 
 	sai_task_uuid_to_event_uuid(event_uuid, task_uuid);
 

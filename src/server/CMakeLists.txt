@@ -12,6 +12,7 @@ set(SRCS
 	s-task.c
 	s-task-helpers.c
 	s-metrics.c
+	s-planner.c
 	s-idle.c
 	s-pool.c
 	s-findings.c

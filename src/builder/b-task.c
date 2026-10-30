@@ -996,7 +996,7 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 					(unsigned long long)(budget / 1024),
 					(unsigned long long)(whole / 1024));
 			saib_reintroduce_later();
-			return 1;
+			return 2; /* nope, not as big as that */
 		}
 	}
 
@@ -2037,7 +2037,8 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 		saib_idletask_yield_all();
 	}
 
-	if (saib_can_accept_task(spm, task, sp)) {
+	n = saib_can_accept_task(spm, task, sp);
+	if (n) {
 		if (task->idle)
 			goto idle_decline;
 
@@ -2056,7 +2057,12 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 			saib_jobdir_hold(vn, sp);
 		}
 
-		if (saib_queue_task_status_update(sp, spm, task, 0,
+		/*
+		 * Refused for the size of the step rather than our own limits:
+		 * the server's planner may have sized it, and wants to know
+		 */
+		if (saib_queue_task_status_update(sp, spm, task, 0, n == 2 ?
+						  SAI_TASK_REASON_RESOURCES :
 						  SAI_TASK_REASON_BUSY)) {
 			lwsl_notice("TRAP: saib_queue_task_status_update failed (BUSY)\n");
 			return -1;
