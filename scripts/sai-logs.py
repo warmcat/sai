@@ -26,10 +26,14 @@ logins against the account.
 
 import base64
 import hashlib
+import errno
 import hmac
+import http.client
 import http.cookiejar
 import json
 import os
+import select
+import socket
 import struct
 import sys
 import time
@@ -38,6 +42,10 @@ import urllib.parse
 import urllib.request
 
 SERVICE = "sai-logs"
+STAGGER = 0.25             # start on the next address after this
+CONNECT_LIMIT = 60         # connecting, when there's no timeout
+IN_FLIGHT = (errno.EINPROGRESS, errno.EWOULDBLOCK,
+             getattr(errno, "WSAEWOULDBLOCK", errno.EWOULDBLOCK))
 
 
 def usage(why=None):
@@ -69,13 +77,76 @@ def totp(secret):
                      1000000)
 
 
+def connect(host, port, timeout):
+    """
+    A TCP connection to the first of host's addresses that answers, with
+    timeout set on it for io.  socket.create_connection() tries them one
+    after another, waiting out the whole timeout on each, so an address with
+    no route to it, eg, an IPv6 one advertised where IPv6 goes nowhere, costs
+    that long every time.  Like a browser (RFC 8305), start on the next
+    address if one hasn't connected after STAGGER seconds, and take
+    whichever connects first.
+    """
+    if not isinstance(timeout, (int, float)):
+        timeout = None          # urllib's "the default", no timeout
+    end = time.monotonic() + (timeout or CONNECT_LIMIT)
+    ais = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    pending = []
+    err = None
+    try:
+        while ais or pending:
+            if ais:
+                af, st, pr, _, sa = ais.pop(0)
+                s = socket.socket(af, st, pr)
+                s.setblocking(False)
+                e = s.connect_ex(sa)
+                if e and e not in IN_FLIGHT:
+                    s.close()
+                    err = OSError(e, os.strerror(e))
+                    continue
+                pending.append(s)
+            left = end - time.monotonic()
+            if left <= 0:
+                break
+            # a failed connect is writable on POSIX, exceptional on Windows
+            _, w, x = select.select([], pending, pending,
+                                    min(STAGGER, left) if ais else left)
+            for s in set(w + x):
+                pending.remove(s)
+                e = s.getsockopt(socket.SOL_SOCKET, socket.SO_ERROR)
+                if not e:
+                    s.settimeout(timeout)
+                    return s
+                s.close()
+                err = OSError(e, os.strerror(e))
+    finally:
+        for s in pending:
+            s.close()
+    raise err or socket.timeout("%s: no address answered" % host)
+
+
+class HttpsConn(http.client.HTTPSConnection):
+    """urllib's https, making its connections with connect()"""
+
+    def __init__(self, *a, **k):
+        super().__init__(*a, **k)
+        # HTTPConnection's own seam for what makes its socket
+        self._create_connection = \
+            lambda addr, timeout, *_: connect(addr[0], addr[1], timeout)
+
+
+class Https(urllib.request.HTTPSHandler):
+    def https_open(self, req):
+        return self.do_open(HttpsConn, req)
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, *a, **k):
         return None
 
 
 def opener(jar, follow=True):
-    hs = [urllib.request.HTTPCookieProcessor(jar)]
+    hs = [Https(), urllib.request.HTTPCookieProcessor(jar)]
     if not follow:
         hs.append(NoRedirect())
     return urllib.request.build_opener(*hs)
