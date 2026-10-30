@@ -1584,6 +1584,26 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				 */
 
 				live_sp = sais_builder_from_uuid(vhd, build->name);
+				if (live_sp && live_sp->wsi &&
+				    live_sp->wsi != pss->wsi &&
+				    ((struct pss *)lws_wsi_user(live_sp->wsi))->
+						us_established > pss->us_established) {
+					/*
+					 * The platform is already on a newer link
+					 * from the same builder, and this is a stale
+					 * one whose rx we are still working through:
+					 * a builder reintroduces its platforms each
+					 * time a task of its ends.  Taking the
+					 * platform back onto a link about to close
+					 * would lose every task it has going when it
+					 * does, so leave it where it is; this link's
+					 * own close then resets nothing.
+					 */
+					lwsl_notice("%s: %s announced on an older "
+						    "link, staying on the newer\n",
+						    __func__, build->name);
+					continue;
+				}
 				if (live_sp) {
 					/* Already exists (reconnect), just update dynamic info */
 					// lwsl_info("%s: found live builder for %s\n", __func__, build->name);
