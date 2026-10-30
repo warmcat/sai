@@ -313,6 +313,15 @@ saib_m_rx(void *userobj, const uint8_t *in, size_t len, int flags)
 					else
 						ns->user_cancel = 1;
 					/*
+					 * An idle slice the server stops, eg,
+					 * to quieten the machine for a
+					 * measurement, is yielded like one
+					 * we stop ourselves, not a failed or
+					 * cancelled run of the lane
+					 */
+					if (ns->task->idle && !can->killed)
+						ns->idle_yield = 1;
+					/*
 					 * what becomes of the job dir is for
 					 * saib_task_destroy() once the step
 					 * has stopped
