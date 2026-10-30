@@ -196,6 +196,10 @@ sais_ensure_tables(struct vhd *vhd)
 	sqlite3_exec(vhd->server.pdb, "ALTER TABLE builders ADD COLUMN hardware varchar(96);", NULL, NULL, &err);
 	if (err)
 		sqlite3_free(err);
+	/* the index of its hardware group, filled in live, see s-hardware.c */
+	sqlite3_exec(vhd->server.pdb, "ALTER TABLE builders ADD COLUMN hw_index integer;", NULL, NULL, &err);
+	if (err)
+		sqlite3_free(err);
 
 	sai_sqlite3_statement(vhd->server.pdb,
 		"CREATE TABLE IF NOT EXISTS power_controllers ("

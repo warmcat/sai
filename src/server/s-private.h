@@ -325,6 +325,18 @@ typedef struct sais_repo_turn {
 	char		repo_name[65];
 } sais_repo_turn_t;
 
+/*
+ * The platforms that run on one machine, see s-hardware.c.  Whatever runs on
+ * any of them takes cpu, memory and disk from the others.  They're grouped by
+ * the hardware name their builder gives, and numbered in the order the server
+ * first saw them, so the web can show which platforms share a machine.
+ */
+typedef struct sais_hardware {
+	lws_dll2_t		list;		/* vhd->hardware_owner */
+	char			name[96];	/* sai_plat_t.hardware */
+	int			index;		/* 1-based */
+} sais_hardware_t;
+
 typedef struct sai_shell_session {
 	lws_dll2_t	list;
 	char		task_uuid[65];
@@ -354,6 +366,7 @@ struct vhd {
 	sqlite3			*pdb_metrics;
 	lws_sorted_usec_list_t	sul_metrics_migrate; /* see s-metrics.c */
 	lws_dll2_owner_t	planner_probes; /* sais_plan_probe_t, s-planner.c */
+	lws_dll2_owner_t	hardware_owner; /* sais_hardware_t, s-hardware.c */
 
 	lws_dll2_owner_t	sqlite3_cache; /* sais_sqlite_cache_t */
 	lws_dll2_owner_t	tasklog_cache;
@@ -750,6 +763,17 @@ sais_planner_task_ended(struct vhd *vhd, const char *task_uuid, int failed);
 
 void
 sais_planner_destroy(struct vhd *vhd);
+
+/* s-hardware.c: which platforms share a machine */
+
+sais_hardware_t *
+sais_hardware_find(struct vhd *vhd, const char *name);
+
+void
+sais_hardware_attach(struct vhd *vhd, sai_plat_t *sp);
+
+void
+sais_hardware_destroy(struct vhd *vhd);
 
 int
 sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase, int killed);

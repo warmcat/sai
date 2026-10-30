@@ -1660,6 +1660,9 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					lws_dll2_add_tail(&live_sp->sai_plat_list, &vhd->server.builder_owner);
 				}
 
+				/* which machine it's on, by what it just said */
+				sais_hardware_attach(vhd, live_sp);
+
 				/* and what it wants to do with its idle time */
 				sais_idle_plat_update(vhd, build);
 

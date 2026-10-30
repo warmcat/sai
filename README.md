@@ -584,6 +584,11 @@ in both confs, at the top level next to `"host"`:
 A VM with its own reserved cores and memory is its own hardware, and needs
 nothing.
 
+sai-web shows each platform with the index sai-server gave its hardware, eg,
+`hw3`: platforms showing the same index are on the same machine as far as the
+server is concerned.  The index is just the order the server first saw each
+machine since it started.
+
 ## Builder git caching
 
 For each `<saiserver-project>`, the builder maintains a local git cache.  This is

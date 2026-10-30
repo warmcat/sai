@@ -4671,8 +4671,14 @@ function createBuilderDiv(plat) {
 
 	let innerHTML = `<table class="nomar"><tbody><tr><td class="bn">`;
 	innerHTML += `<div class="builder-name-row">` +
-		     `<div class="builder-short-name">${hsanitize(short_name)}</div>` +
-		     `<div class="builder-icons">` +
+		     `<div class="builder-short-name">${hsanitize(short_name)}</div>`;
+	/*
+	 * The machine the server has it on: platforms with the same index
+	 * share one, so what runs on one takes from the others
+	 */
+	if (plat.hw_index)
+		innerHTML += `<div class="hw-badge" title="hardware ${plat.hw_index}: ${hsanitize(plat.hardware || "")}">hw${plat.hw_index}</div>`;
+	innerHTML += `<div class="builder-icons">` +
 		     `<img class="ip1 zup" data-sai-src="/sai/${plat_os}.svg">` +
 		     `<img class="ip1 tread1" data-sai-src="/sai/arch-${plat_arch}.svg">` +
 		     `<img class="ip1 tread2" data-sai-src="/sai/tc-${plat_tc}.svg">` +

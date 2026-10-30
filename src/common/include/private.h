@@ -245,6 +245,7 @@ typedef struct sai_platform_load {
 
 
 struct sai_nspawn;
+struct sais_hardware;
 
 typedef struct sai_plat sai_plat_t;
 
@@ -911,6 +912,13 @@ typedef struct sai_plat {
 	 * It's the builder's host name unless the conf says otherwise.
 	 */
 	char				hardware[96];
+	/*
+	 * server side only: the group of platforms on that hardware, see
+	 * s-hardware.c, and its index, which is what the web shows so the
+	 * platforms that share a machine can be seen to
+	 */
+	struct sais_hardware		*hw;
+	int				hw_index;
 
 	int				index; /* used to create unique build dir path */
 } sai_plat_t;
@@ -1223,7 +1231,7 @@ extern const lws_struct_map_t
 	lsm_stay_state_update[2],
 	lsm_schema_stay_state_update[1],
 	lsm_build_metric[19],
-	lsm_plat[18], /* +1 for pcon, +1 for hardware */
+	lsm_plat[19], /* +1 for pcon, +1 for hardware, +1 hw_index */
 	lsm_builder_platform[1],
 	lsm_builder_registration[10],
 	lsm_schema_sq3_map_power_controller[1],

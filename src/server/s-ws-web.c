@@ -305,6 +305,7 @@ sais_list_builders_cb(lws_sorted_usec_list_t *sul)
 	lws_struct_serialize_t *js;
 	struct lwsac *ac = NULL;
 	lws_wsmsg_info_t info;
+	sais_hardware_t *hw;
 	sai_plat_t *sp;
 	size_t w;
 
@@ -345,6 +346,14 @@ sais_list_builders_cb(lws_sorted_usec_list_t *sul)
 
 		sp->powering_up			= 0;
 		sp->powering_down		= 0;
+
+		/*
+		 * The machine it's on, by the hardware it last said: a group
+		 * we have seen since we started keeps its index while we run,
+		 * so an offline platform shows it too
+		 */
+		hw = sais_hardware_find(vhd, sp->hardware);
+		sp->hw_index = hw ? hw->index : 0;
 
 		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->server.power_state_owner.head) {
 			sai_power_state_t *ps = lws_container_of(p, sai_power_state_t, list);

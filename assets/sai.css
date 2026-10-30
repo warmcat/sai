@@ -1490,6 +1490,19 @@ table.comp.adhoc {
 	flex-shrink: 0;
 }
 
+/* the index of the machine a platform is on: same index, same machine */
+.hw-badge {
+	flex-shrink: 0;
+	font-size: 6pt;
+	font-weight: normal;
+	line-height: 1.4;
+	padding: 0 3px;
+	margin: 0 3px;
+	border-radius: 3px;
+	background: #d8dce8;
+	color: #334;
+}
+
 .login-status-container {
 	margin-top: 6px;
 	width: 100%;
