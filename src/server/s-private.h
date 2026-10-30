@@ -352,6 +352,7 @@ struct vhd {
 
 	const char		*sqlite3_path_lhs;
 	sqlite3			*pdb_metrics;
+	lws_sorted_usec_list_t	sul_metrics_migrate; /* see s-metrics.c */
 
 	lws_dll2_owner_t	sqlite3_cache; /* sais_sqlite_cache_t */
 	lws_dll2_owner_t	tasklog_cache;
@@ -711,9 +712,24 @@ sai_pcon_destroy_cb(struct lws_dll2 *d, void *user);
 void
 sais_server_destroy(struct vhd *vhd, sais_t *server);
 
+/* s-metrics.c: the build_metrics db */
+
 void
 sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task,
 				const char *builder_name, int step);
+
+const char *
+sais_task_step_text(const char *build, int build_step, size_t *len);
+
+int
+sais_task_step_hash(char *hex, size_t hex_len, const char *build,
+		    int build_step);
+
+int
+sais_metrics_rekey(struct vhd *vhd, sai_build_metric_t *m);
+
+void
+sais_metrics_destroy(struct vhd *vhd);
 
 int
 sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase, int killed);
@@ -771,7 +787,7 @@ int
 sais_metrics_db_init(struct vhd *vhd);
 
 int
-sais_metrics_db_prune(struct vhd *vhd, const char *key);
+sais_metrics_db_prune(struct vhd *vhd, const sai_build_metric_t *m);
 
 int
 sais_power_tx(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t bl);

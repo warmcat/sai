@@ -220,3 +220,53 @@ saib_get_free_disk_kib(const char *path)
 	return 0;
 #endif
 }
+
+/*
+ * Called when a step starts running.  Every step running on any of this
+ * process's platforms, the new one included, is sharing the machine with the
+ * others at this moment: let each remember the most company it has had, and
+ * the most SAI_PARALLEL that company added up to.  The set only changes when
+ * a step starts, since the maxima can't rise when one ends, so this is the
+ * only place that needs to look.
+ */
+
+void
+saib_cotenancy_update(void)
+{
+	int running = 0, par_sum = 0;
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, builder.sai_plat_owner.head) {
+		sai_plat_t *sp = lws_container_of(p, sai_plat_t, sai_plat_list);
+
+		lws_start_foreach_dll(struct lws_dll2 *, q, sp->nspawn_owner.head) {
+			struct sai_nspawn *ns = lws_container_of(q,
+						struct sai_nspawn, list);
+
+			if (!ns->op || !ns->task)
+				continue;
+
+			running++;
+			par_sum += ns->task->parallel > 0 ? ns->task->parallel : 1;
+		} lws_end_foreach_dll(q);
+	} lws_end_foreach_dll(p);
+
+	lws_start_foreach_dll(struct lws_dll2 *, p, builder.sai_plat_owner.head) {
+		sai_plat_t *sp = lws_container_of(p, sai_plat_t, sai_plat_list);
+
+		lws_start_foreach_dll(struct lws_dll2 *, q, sp->nspawn_owner.head) {
+			struct sai_nspawn *ns = lws_container_of(q,
+						struct sai_nspawn, list);
+			int own;
+
+			if (!ns->op || !ns->task)
+				continue;
+
+			own = ns->task->parallel > 0 ? ns->task->parallel : 1;
+
+			if (running - 1 > ns->cot_max)
+				ns->cot_max = running - 1;
+			if (par_sum - own > ns->cot_par_max)
+				ns->cot_par_max = par_sum - own;
+		} lws_end_foreach_dll(q);
+	} lws_end_foreach_dll(p);
+}

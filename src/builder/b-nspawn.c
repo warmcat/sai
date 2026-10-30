@@ -506,8 +506,10 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	lws_humanize_pad(h9, sizeof(h9), us_wallclock,     humanize_schema_us);
 
 	n = lws_snprintf(s, sizeof(s),
-		 ">saib> Step %d: [ %s (%s U / %s S), Mem: %sB, Stg: %sB ]\n",
-		 ns->task->build_step + 1, h9, h5, h6, h7, h8);
+		 ">saib> Step %d: [ %s (%s U / %s S), Mem: %sB, Stg: %sB, "
+		 "-j%d, with up to %d other steps ]\n",
+		 ns->task->build_step + 1, h9, h5, h6, h7, h8,
+		 ns->task->parallel > 0 ? ns->task->parallel : 1, ns->cot_max);
 	saib_log_chunk_create(ns, s, (size_t)n, 3);
 
 	/*
@@ -530,14 +532,17 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	 * steps of the task under the one key.
 	 */
 	if (sai_metrics_hash((uint8_t *)m.key, sizeof(m.key),
-			     ns->sp->name, ns->task->taskname, ns->project_name,
-			     ns->ref)) {
+			     ns->sp->name, ns->task->taskname, ns->project_name) ||
+	    sai_step_hash(m.step_hash, sizeof(m.step_hash),
+			  ns->task->build_step, ns->task->script)) {
 		lwsl_notice("%s: unable to hash metrics key\n", __func__);
 		goto skip;
 	}
 
 	lws_strncpy(m.builder_name, ns->sp->name,	sizeof(m.builder_name));
+	lws_strncpy(m.hardware,	    ns->sp->hardware,	sizeof(m.hardware));
 	lws_strncpy(m.project_name, ns->project_name,	sizeof(m.project_name));
+	lws_strncpy(m.taskname,	    ns->task->taskname,	sizeof(m.taskname));
 	lws_strncpy(m.ref,	    ns->ref,		sizeof(m.ref));
 	lws_strncpy(m.task_uuid,    ns->task->uuid,	sizeof(m.task_uuid));
 
@@ -549,6 +554,8 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	m.stg_bytes	= du.size_in_bytes;
 	m.parallel	= ns->task->parallel;
 	m.step		= ns->task->build_step + 1;
+	m.cotenants	= ns->cot_max;
+	m.cotenant_parallel = ns->cot_par_max;
 
 	/*
 	 * Likewise: if we can't get the metrics away, complete the step
@@ -930,6 +937,11 @@ saib_spawn_script(struct sai_nspawn *ns)
 	op->spawn		= strdup(one_step);
 #endif
 	op->start_time		= lws_now_usecs();
+
+	/* from now until it's reaped, it's company for every other step */
+	ns->cot_max		= 0;
+	ns->cot_par_max		= 0;
+	saib_cotenancy_update();
 
 	info.opaque		= op;
 	info.owner		= &builder.lsp_owner;

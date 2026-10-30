@@ -1463,10 +1463,11 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				 * additionally pass each through lws_sql_purify as
 				 * defense-in-depth before interpolation.
 				 */
-				char q[1024];
+				char q[1200];
 				char esc_name[192], esc_platform[192],
 				     esc_pcon[192], esc_sai_hash[192],
-				     esc_lws_hash[192], esc_peer_ip[96];
+				     esc_lws_hash[192], esc_peer_ip[96],
+				     esc_hardware[192];
 
 				/*
 				 * A platform the builder couldn't name (eg,
@@ -1479,12 +1480,32 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					continue;
 				}
 
+				/*
+				 * A builder from before "hardware" doesn't
+				 * say: its platforms run on its host, which
+				 * is the first part of their names
+				 */
+				if (!build->hardware[0]) {
+					const char *dot = strchr(build->name, '.');
+
+					if (dot)
+						lws_strnncpy(build->hardware,
+							     build->name,
+							     dot - build->name,
+							     sizeof(build->hardware));
+					else
+						lws_strncpy(build->hardware,
+							    build->name,
+							    sizeof(build->hardware));
+				}
+
 				if (sai_str_has_shell_metachars(build->name)	||
 				    sai_str_has_shell_metachars(build->platform) ||
 				    (build->pcon &&
 				     sai_str_has_shell_metachars(build->pcon)) ||
 				    sai_str_has_shell_metachars(build->sai_hash) ||
 				    sai_str_has_shell_metachars(build->lws_hash) ||
+				    sai_str_has_shell_metachars(build->hardware) ||
 				    sai_str_has_shell_metachars(pss->peer_ip)) {
 					lwsl_notice("%s: rejecting builder plats "
 						    "with unsafe chars\n",
@@ -1504,19 +1525,22 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					       sizeof(esc_lws_hash));
 				lws_sql_purify(esc_peer_ip, pss->peer_ip,
 					       sizeof(esc_peer_ip));
+				lws_sql_purify(esc_hardware, build->hardware,
+					       sizeof(esc_hardware));
 
 				lws_snprintf(q, sizeof(q),
-					     "INSERT INTO builders (name, platform, pcon, last_seen, peer_ip, sai_hash, lws_hash, windows) "
-					     "VALUES ('%s', '%s', %s%s%s, %llu, '%s', '%s', '%s', %d) "
+					     "INSERT INTO builders (name, platform, pcon, last_seen, peer_ip, sai_hash, lws_hash, windows, hardware) "
+					     "VALUES ('%s', '%s', %s%s%s, %llu, '%s', '%s', '%s', %d, '%s') "
 					     "ON CONFLICT(name) DO UPDATE SET pcon=COALESCE(NULLIF(excluded.pcon, ''), pcon), last_seen=excluded.last_seen, "
-					     "peer_ip=excluded.peer_ip, sai_hash=excluded.sai_hash, lws_hash=excluded.lws_hash",
+					     "peer_ip=excluded.peer_ip, sai_hash=excluded.sai_hash, lws_hash=excluded.lws_hash, hardware=excluded.hardware",
 					     esc_name, esc_platform,
 					     build->pcon ? "'" : "NULL",
 					     build->pcon ? esc_pcon : "",
 					     build->pcon ? "'" : "",
 					     (unsigned long long)lws_now_secs(),
 					     esc_peer_ip, esc_sai_hash,
-					     esc_lws_hash, build->windows);
+					     esc_lws_hash, build->windows,
+					     esc_hardware);
 
 				if (sai_sqlite3_statement(vhd->server.pdb, q, "upsert builder"))
 					lwsl_err("%s: Failed to upsert builder %s\n",
@@ -1562,6 +1586,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 						    sizeof(live_sp->sai_hash));
 					lws_strncpy(live_sp->lws_hash, build->lws_hash,
 						    sizeof(live_sp->lws_hash));
+					lws_strncpy(live_sp->hardware, build->hardware,
+						    sizeof(live_sp->hardware));
 					live_sp->windows			= build->windows;
 					live_sp->online				= 1;
 					live_sp->avail_mem_kib			= (unsigned int)-1;
@@ -1590,6 +1616,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 						    sizeof(live_sp->sai_hash));
 					lws_strncpy(live_sp->lws_hash, build->lws_hash,
 						    sizeof(live_sp->lws_hash));
+					lws_strncpy(live_sp->hardware, build->hardware,
+						    sizeof(live_sp->hardware));
 					live_sp->windows			= build->windows;
 					live_sp->avail_mem_kib			= (unsigned int)-1;
 					live_sp->avail_sto_kib			= (unsigned int)-1;
@@ -2159,6 +2187,18 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 			metric = (sai_build_metric_t *)pss->a.dest;
 
 			/*
+			 * From a builder that predates step hashes: key it
+			 * from its task, as the migration did the rows from
+			 * before.  If its event is gone nothing could find
+			 * it, so it isn't kept.
+			 */
+			if (!metric->step_hash[0] &&
+			    sais_metrics_rekey(vhd, metric)) {
+				lwsac_free(&pss->a.ac);
+				break;
+			}
+
+			/*
 			 * We have serialized the incoming JSON representation
 			 * into a sai_build_metric_t *metric.
 			 *
@@ -2211,6 +2251,8 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 						lsm_schema_sq3_map_build_metric,
 							     &o, 0) < 0)
 					lwsl_err("%s: !!!!!!!!!!!!!!!!!! failed to set metrics in db\n", __func__);
+				else
+					sais_metrics_db_prune(vhd, metric);
 
 				break;
 			}

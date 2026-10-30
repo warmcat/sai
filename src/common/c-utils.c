@@ -46,33 +46,79 @@ sai_uuid16_create(struct lws_context *context, char *dest33)
 
 /*
  * The key build metrics are stored and looked up under: the builder instance
- * ("host.platform") the task ran on, the task's name, the repo and the short
- * ref.  The builder makes it when it reports a step's metrics, and the server
- * when it estimates what a task will need from them, so both must hash the
- * same things.
+ * ("host.platform") the task ran on, the task's name and the repo.  The ref
+ * isn't in it: the same task on another branch builds much the same, and
+ * keying on the ref left every new branch with no history at all.  The
+ * builder makes it when it reports a step's metrics, and the server when it
+ * plans a step from them, so both must hash the same things.
  */
 
 int
 sai_metrics_hash(uint8_t *key, size_t key_len, const char *sp_name,
-		 const char *taskname, const char *project_name,
-		 const char *ref)
+		 const char *taskname, const char *project_name)
 {
 	struct lws_genhash_ctx ctx;
 	uint8_t hash[32];
-
-//	lwsl_notice("%s: }}}}}}}}}}}}}}}}}}}}} '%s' '%s' '%s' '%s'\n", __func__,
-//	sp_name, taskname, project_name, ref);
 
 	if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256)		 ||
 	    lws_genhash_update(&ctx, sp_name,	   strlen(sp_name))	 ||
 	    lws_genhash_update(&ctx, taskname,	   strlen(taskname))	 ||
 	    lws_genhash_update(&ctx, project_name, strlen(project_name)) ||
-	    lws_genhash_update(&ctx, ref,	   strlen(ref))		 ||
 	    lws_genhash_destroy(&ctx, hash))
 		return 1;
 
 	lws_hex_from_byte_array(hash, sizeof(hash), (char *)key, key_len);
 	key[key_len - 1] = '\0';
+
+	return 0;
+}
+
+/*
+ * Steps 0 and 1 are sai's own git mirror and checkout, whose script names the
+ * repo, ref and hash, so they get fixed names.  The rest hash their line of
+ * the build, with the whitespace around it ignored: the step's own text is
+ * what decides what it costs, not which line it is on.
+ */
+
+int
+sai_step_hash(char *hex, size_t hex_len, int build_step, const char *script)
+{
+	struct lws_genhash_ctx ctx;
+	uint8_t hash[32];
+	size_t len;
+
+	if (hex_len < 65)
+		return 1;
+
+	switch (build_step) {
+	case 0:
+		lws_strncpy(hex, "git-mirror", hex_len);
+		return 0;
+	case 1:
+		lws_strncpy(hex, "git-checkout", hex_len);
+		return 0;
+	default:
+		break;
+	}
+
+	if (!script)
+		return 1;
+
+	while (*script == ' ' || *script == '\t' || *script == '\r' ||
+	       *script == '\n')
+		script++;
+	len = strlen(script);
+	while (len && (script[len - 1] == ' ' || script[len - 1] == '\t' ||
+		       script[len - 1] == '\r' || script[len - 1] == '\n'))
+		len--;
+
+	if (lws_genhash_init(&ctx, LWS_GENHASH_TYPE_SHA256) ||
+	    lws_genhash_update(&ctx, script, len) ||
+	    lws_genhash_destroy(&ctx, hash))
+		return 1;
+
+	lws_hex_from_byte_array(hash, sizeof(hash), hex, hex_len);
+	hex[hex_len - 1] = '\0';
 
 	return 0;
 }

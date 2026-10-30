@@ -82,6 +82,11 @@ const lws_struct_map_t lsm_build_metric[] = {
 	LSM_UNSIGNED	(sai_build_metric_t, stg_bytes,		"stg_bytes"),
 	LSM_SIGNED	(sai_build_metric_t, parallel,		"parallel"),
 	LSM_UNSIGNED	(sai_build_metric_t, step,		"step"),
+	LSM_CARRAY	(sai_build_metric_t, hardware,		"hardware"),
+	LSM_CARRAY	(sai_build_metric_t, taskname,		"taskname"),
+	LSM_CARRAY	(sai_build_metric_t, step_hash,		"step_hash"),
+	LSM_SIGNED	(sai_build_metric_t, cotenants,		"cotenants"),
+	LSM_SIGNED	(sai_build_metric_t, cotenant_parallel,	"cotenant_parallel"),
 };
 
 const lws_struct_map_t lsm_schema_map_build_metric[] = {
@@ -111,6 +116,7 @@ const lws_struct_map_t lsm_plat[] = {
 	LSM_JO_UNSIGNED	(sai_plat_t, idle_share,	"idle_share"),
 	LSM_JO_UNSIGNED	(sai_plat_t, idle_instances,	"idle_instances"),
 	LSM_JO_UNSIGNED	(sai_plat_t, idle_slice_secs,	"idle_slice_secs"),
+	LSM_CARRAY	(sai_plat_t, hardware,		"hardware"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {

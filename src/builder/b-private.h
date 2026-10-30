@@ -281,6 +281,7 @@ struct sai_builder {
 	const char		*perms;		/* user:group */
 
 	const char		*host;		/* prepended before hostname */
+	const char		*hardware;	/* conf "hardware", else host: see sai_plat_t */
 	const char		*rebuild_script_user;
 	const char		*rebuild_script_root;
 
@@ -447,6 +448,10 @@ int
 saib_get_system_cpu(struct sai_builder *b);
 
 int saib_get_cpu_count(void);
+
+/* a step just started: note what else is running for the metrics' co-tenancy */
+void
+saib_cotenancy_update(void);
 
 unsigned int
 saib_get_free_ram_kib(void);

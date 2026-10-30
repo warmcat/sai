@@ -563,6 +563,27 @@ For network related tests, `SAI_INSTANCE_IDX` should be referred to when
 choosing, eg, a test server port so it will not conflict with what other
 builders may be doing in parallel.
 
+## Builder hardware
+
+All the platforms of one sai-builder process run on the one machine, so
+whatever is running on any of them is taking cpu, memory and disk from the
+others, even though sai-server sees them as separate platforms.  The builder
+tells the server which machine each platform runs on, so the server can
+account for that, and it's recorded with every step's build metrics.
+
+By default it's the builder's `"host"` name.  When two sai-builder processes
+share one machine, eg, one in a container and one on its host, or a VM that
+isn't given reserved cores and memory of its own, name the machine the same
+in both confs, at the top level next to `"host"`:
+
+```
+	"host":		"l2-esp32",
+	"hardware":	"l2",
+```
+
+A VM with its own reserved cores and memory is its own hardware, and needs
+nothing.
+
 ## Builder git caching
 
 For each `<saiserver-project>`, the builder maintains a local git cache.  This is

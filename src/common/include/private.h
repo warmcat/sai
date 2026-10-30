@@ -398,6 +398,13 @@ struct sai_nspawn {
 	uint64_t			us_cpu_sys;
 	uint64_t			worst_mem;
 	uint64_t			worst_stg;
+	/*
+	 * The most other steps that ran on this builder at once while this
+	 * step ran, and the most their SAI_PARALLELs added up to: see
+	 * saib_cotenancy_update() and sai_build_metric_t
+	 */
+	int				cot_max;
+	int				cot_par_max;
 
 	const char			*server_name;	/* sai-server name who triggered this, eg, 'warmcat' */
 	const char			*project_name;	/* name of the git project, eg, 'libwebsockets' */
@@ -890,6 +897,15 @@ typedef struct sai_plat {
 	unsigned int			stay_on;
 	char				busy;
 
+	/*
+	 * The physical machine this platform's steps consume cpu, memory and
+	 * disk from.  Platforms of one sai-builder process share it, since
+	 * they are the one machine; the builder conf names it when two
+	 * sai-builder processes share one, eg, a container and its host.
+	 * It's the builder's host name unless the conf says otherwise.
+	 */
+	char				hardware[96];
+
 	int				index; /* used to create unique build dir path */
 } sai_plat_t;
 
@@ -975,6 +991,23 @@ typedef struct sai_power_state {
 	int				powering_down;
 } sai_power_state_t;
 
+/*
+ * What one step of a task took on one builder platform.
+ *
+ * key is the hash of the builder platform name, the task name and the
+ * project, so every step of every run of that task on that platform is under
+ * the one key, whatever ref it built.  The ref is kept as a column to prefer
+ * rows from the same ref when there are any.
+ *
+ * step_hash identifies the step by what it ran, not where it came in the
+ * build, so editing the build doesn't mix up the history of the steps that
+ * didn't change, see sai_step_hash().
+ *
+ * cotenants is the most other steps that were running on the builder at any
+ * time while this one ran, over all the platforms of that sai-builder process,
+ * and cotenant_parallel the most their SAI_PARALLELs added up to.  Both zero
+ * means the step had the builder to itself, so its times mean what they say.
+ */
 typedef struct sai_build_metric {
 	lws_dll2_t			list;
 	char				key[65];
@@ -982,6 +1015,9 @@ typedef struct sai_build_metric {
 	char				builder_name[96];
 	char				project_name[96];
 	char				ref[96];
+	char				hardware[96]; /* sai_plat_t.hardware */
+	char				taskname[96];
+	char				step_hash[65];
 	uint64_t			unixtime;/* actually autoincrement index in sql3 */
 	uint64_t			unix_time;
 	uint64_t			us_cpu_user;
@@ -991,6 +1027,8 @@ typedef struct sai_build_metric {
 	uint64_t			stg_bytes;
 	int				parallel;
 	int				step;
+	int				cotenants;
+	int				cotenant_parallel;
 } sai_build_metric_t;
 
 /*
@@ -1178,8 +1216,8 @@ extern const lws_struct_map_t
 	lsm_schema_json_task_rej[1],
 	lsm_stay_state_update[2],
 	lsm_schema_stay_state_update[1],
-	lsm_build_metric[14],
-	lsm_plat[17], /* +1 for pcon */
+	lsm_build_metric[19],
+	lsm_plat[18], /* +1 for pcon, +1 for hardware */
 	lsm_builder_platform[1],
 	lsm_builder_registration[10],
 	lsm_schema_sq3_map_power_controller[1],
@@ -1224,10 +1262,22 @@ sai_uuid16_create(struct lws_context *context, char *dest33);
 const char *
 sai_task_describe(sai_task_t *task, char *buf, size_t len);
 
+/*
+ * The build_metrics key: all the steps of all the runs of a task on a builder
+ * platform, whatever ref they built, see sai_build_metric_t
+ */
 int
 sai_metrics_hash(uint8_t *key, size_t key_len, const char *sp_name,
-		 const char *taskname, const char *project_name,
-		 const char *ref);
+		 const char *taskname, const char *project_name);
+
+/*
+ * The identity of a build step for build_metrics: a fixed name for the git
+ * mirror and checkout steps (0 and 1), else the hash of the step's own line
+ * of the build, which is the task's script when that step is offered.  Both
+ * ends compute it from what they have, nothing crosses the wire.
+ */
+int
+sai_step_hash(char *hex, size_t hex_len, int build_step, const char *script);
 
 const char *
 sai_get_ref(const char *fullref);

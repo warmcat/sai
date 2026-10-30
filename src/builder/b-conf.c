@@ -34,6 +34,7 @@ static const char * const paths_global[] = {
 	"home",
 	"perms",
 	"host",
+	"hardware",
 	"metrics_uri",
 	"metrics_path",
 	"metrics_secret",
@@ -57,6 +58,7 @@ enum enum_paths_global {
 	LEJPM_HOME,
 	LEJPM_PERMS,
 	LEJPM_HOST,
+	LEJPM_HARDWARE,
 	LEJPM_METRICS_URI,
 	LEJPM_METRICS_PATH,
 	LEJPM_METRICS_SECRET,
@@ -354,6 +356,10 @@ saib_conf_global_cb(struct lejp_ctx *ctx, char reason)
 		pp = &a->builder->host;
 		break;
 
+	case LEJPM_HARDWARE:
+		pp = &a->builder->hardware;
+		break;
+
 	case LEJPM_SAI_POWER:
 		pp = &a->builder->url_sai_power;
 		break;
@@ -506,6 +512,20 @@ saib_config(struct sai_builder *builder, const char *d)
 			 lejp_error_to_string(m));
 		return 2;
 	}
+
+	/*
+	 * The platforms all run on this process's machine: name it on each so
+	 * the server can see which of its platforms share one.  The conf can
+	 * say what to call it when, eg, a container and its host each run a
+	 * sai-builder, else it's our host name.
+	 */
+	lws_start_foreach_dll(struct lws_dll2 *, p, builder->sai_plat_owner.head) {
+		sai_plat_t *sp = lws_container_of(p, sai_plat_t, sai_plat_list);
+
+		lws_strncpy(sp->hardware, builder->hardware ? builder->hardware :
+					  (builder->host ? builder->host : ""),
+			    sizeof(sp->hardware));
+	} lws_end_foreach_dll(p);
 
 	lwsl_notice("%s: parsing completed\n", __func__);
 

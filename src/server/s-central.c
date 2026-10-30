@@ -192,6 +192,10 @@ sais_ensure_tables(struct vhd *vhd)
 		/* lwsl_notice("%s: (stateless) %s\n", __func__, err); */
 		sqlite3_free(err);
 	}
+	/* the machine a platform runs on, see sai_plat_t */
+	sqlite3_exec(vhd->server.pdb, "ALTER TABLE builders ADD COLUMN hardware varchar(96);", NULL, NULL, &err);
+	if (err)
+		sqlite3_free(err);
 
 	sai_sqlite3_statement(vhd->server.pdb,
 		"CREATE TABLE IF NOT EXISTS power_controllers ("

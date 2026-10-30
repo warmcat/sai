@@ -5510,6 +5510,8 @@ function ws_open_sai()
 						"Mem: " + humanize(jso.peak_mem_rss) + "B; " +
 						"Stg: " + humanize(jso.stg_bytes) + "B; " +
 						"Parallel: " + jso.parallel +
+						(jso.cotenants !== undefined && jso.cotenants >= 0 ?
+							"; Other steps alongside: " + jso.cotenants : "") +
 						"</div>";
 					summaryDiv.innerHTML += s;
 				}
