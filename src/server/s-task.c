@@ -142,6 +142,14 @@ sais_inflight_entry_destroy(sai_uuid_list_t *ul)
 {
 	lwsl_info("%s: removing uuid_list entry for %s\n", __func__, ul->uuid);
 
+	/* whatever it was counting on its machine, it isn't now */
+	if (ul->demand && ul->list.owner) {
+		sai_plat_t *sp = lws_container_of(ul->list.owner, sai_plat_t,
+						  inflight_owner);
+
+		sais_hardware_step_ended((struct vhd *)sp->vhd, sp, ul);
+	}
+
 	lws_dll2_remove(&ul->list);
 	free(ul);
 }
@@ -165,10 +173,7 @@ sais_prune_inflight_list(struct vhd *vhd)
 
 		} lws_end_foreach_dll_safe(p1, p2);
 
-		/* a dead offer counted as running on its machine until now */
-		if (pruned)
-			sais_hardware_step_ended(vhd, sp);
-
+		(void)pruned;
 	} lws_end_foreach_dll(p);
 }
 
@@ -890,13 +895,13 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *sp,
 	}
 
 	/*
-	 * Its machine is being kept quiet so a step can be measured alone,
-	 * see s-hardware.c: nothing new starts on it until that's done, and
-	 * the step being measured is offered from there, not from here
+	 * Is there room on its machine for anything more?  The planner says,
+	 * from what the machine gets done at its load, see s-planner.c.  The
+	 * platforms on it look again when a step there ends.
 	 */
-	if (sais_hardware_blocked(sp)) {
+	if (!sais_planner_room(vhd, sp, 0)) {
 		lwsl_wsi_info(pss->wsi, "not offering %s a task: its machine "
-			      "is held for a measurement", sp->name);
+			      "is as loaded as it should be", sp->name);
 		return 1;
 	}
 
@@ -1238,18 +1243,17 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 					build_step ? build_step + 1 : 0, NULL);
 
 	/*
-	 * and from that, what -j the step should run at this time, and
-	 * whether it's worth running with nothing else on its machine
+	 * and from that, whether the step starts now, and at what -j
 	 */
 	sais_planner_plan_step(vhd, sp, temp_task, build_step, &plan);
 
-	if (sais_hardware_offer_step(vhd, sp, temp_task, build_step, &plan)) {
+	if (plan.wait) {
 		/*
-		 * The machine is being kept quiet for a measurement, this
-		 * step's own or another task's.  The task waits as it is,
-		 * bound to its builder and at this step, and is offered again
-		 * when the machine is free: it mustn't look in flight
-		 * meanwhile, or the scan for pending work would skip it.
+		 * Its machine gets more done without it just now.  The task
+		 * waits as it is, bound to its builder and at this step, and
+		 * is offered again when a step on the machine ends: it mustn't
+		 * look in flight meanwhile, or the scan for pending work would
+		 * skip it.
 		 */
 		if (inflight)
 			sais_inflight_entry_destroy(ul);
@@ -1378,6 +1382,11 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 			goto bail;
 		}
 	}
+
+	/* from here until its row lands, the step is load on its machine */
+	if (sais_is_task_inflight(vhd, NULL, temp_task->uuid, &ul))
+		sais_hardware_step_started(vhd, sp, ul, build_step + 1,
+					   plan.demand);
 
 	/*
 	 * Offer this task step to the builder

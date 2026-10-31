@@ -587,10 +587,11 @@ nothing.
 sai-web shows each platform with the index sai-server gave its hardware, eg,
 `hw3`: platforms showing the same index are on the same machine as far as the
 server is concerned.  The index is just the order the server first saw each
-machine since it started.  The planner uses the grouping to have a step
-measured with nothing else on its machine, holding the other platforms on it
-back while it does, which the builder list also shows: see "Measuring alone"
-in READMEs/README-planner.md.
+machine since it started.  The planner decides how much to run on each
+machine at once, across all its platforms, from what the machine gets done
+at each load, and the builder list shows each machine's load and how far the
+planner lets it go: see "How much to run at once" in
+READMEs/README-planner.md.
 
 ## Builder git caching
 

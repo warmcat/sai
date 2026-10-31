@@ -87,6 +87,9 @@ const lws_struct_map_t lsm_build_metric[] = {
 	LSM_CARRAY	(sai_build_metric_t, step_hash,		"step_hash"),
 	LSM_SIGNED	(sai_build_metric_t, cotenants,		"cotenants"),
 	LSM_SIGNED	(sai_build_metric_t, cotenant_parallel,	"cotenant_parallel"),
+	LSM_SIGNED	(sai_build_metric_t, demand,		"demand"),
+	LSM_SIGNED	(sai_build_metric_t, load_x100,		"load_x100"),
+	LSM_SIGNED	(sai_build_metric_t, eff_x1000,		"eff_x1000"),
 };
 
 const lws_struct_map_t lsm_schema_map_build_metric[] = {
@@ -149,7 +152,7 @@ const lws_struct_map_t lsm_plan_entry[] = {
 
 const lws_struct_map_t lsm_plan_platform[] = {
 	LSM_CARRAY	(sai_plan_platform_t, platform,		"platform"),
-	LSM_CARRAY	(sai_plan_platform_t, held,		"held"),
+	LSM_CARRAY	(sai_plan_platform_t, machine,		"machine"),
 	LSM_LIST	(sai_plan_platform_t, next, sai_plan_entry_t, list,
 			 NULL, lsm_plan_entry,			"next"),
 	LSM_UNSIGNED	(sai_plan_platform_t, drain,		"drain"),

@@ -804,6 +804,15 @@ typedef struct sai_uuid_list {
 	char				uuid[65];
 	char				started;
 	char				idle; /* server: it's an idle task */
+	/*
+	 * server: the step in flight's demand on its machine, 0 between
+	 * steps, when it was offered, and the machine's load integral then,
+	 * see s-hardware.c
+	 */
+	int				demand;
+	int				step;		/* 1-based, that the demand is for */
+	lws_usec_t			step_started;
+	uint64_t			load_at_start;
 } sai_uuid_list_t;
 
 /*
@@ -956,7 +965,7 @@ typedef struct sai_plan_entry {
 typedef struct sai_plan_platform {
 	lws_dll2_t			list;
 	char				platform[96];
-	char				held[128];	/* why nothing starts on it */
+	char				machine[128];	/* its machine's load and limit */
 	lws_dll2_owner_t		next;		/* sai_plan_entry_t, in order */
 	uint64_t			drain;		/* when its queue is done */
 	int				concurrency;	/* tasks it runs at once */
@@ -1103,6 +1112,16 @@ typedef struct sai_build_metric {
 	int				step;
 	int				cotenants;
 	int				cotenant_parallel;
+	/*
+	 * Added by sai-server as the row lands, see s-planner.c: what the
+	 * step counted as on its machine, the mean demand the machine
+	 * carried while it ran (x100), and how much of a core each unit of
+	 * its demand delivered (x1000), 0 when it isn't a measure of the
+	 * machine, eg, a git step or an idle task
+	 */
+	int				demand;
+	int				load_x100;
+	int				eff_x1000;
 } sai_build_metric_t;
 
 /*
@@ -1295,7 +1314,7 @@ extern const lws_struct_map_t
 	lsm_schema_json_task_rej[1],
 	lsm_stay_state_update[2],
 	lsm_schema_stay_state_update[1],
-	lsm_build_metric[19],
+	lsm_build_metric[22],
 	lsm_plat[22], /* +1 for pcon, +1 for hardware, +3 planner, +1 job_limit */
 	lsm_builder_platform[1],
 	lsm_builder_registration[10],

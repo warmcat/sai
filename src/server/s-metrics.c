@@ -217,12 +217,10 @@ sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task,
 }
 
 /*
- * A row just arrived: keep only the newest few of its key + step + parallel,
- * which is what the planner compares.  Rows at other parallels stay, they're
- * the other points on the curve.  The newest row from a run alone is kept
- * whatever its age: it's the rung's reference, the planner would hold the
- * machine to measure it again if it went, and on a busy machine most rows
- * after it have company.
+ * A row just arrived: keep only the newest few of its key + step + parallel.
+ * Rows at other parallels stay, they're the other points on the step's own
+ * curve, see s-planner.c.  The newest row from a run alone is kept whatever
+ * its age, on a busy machine most rows after it have company.
  */
 
 int
@@ -569,6 +567,9 @@ sais_metrics_db_init(struct vhd *vhd)
 		"ALTER TABLE build_metrics ADD COLUMN step_hash varchar(65)",
 		"ALTER TABLE build_metrics ADD COLUMN cotenants integer",
 		"ALTER TABLE build_metrics ADD COLUMN cotenant_parallel integer",
+		"ALTER TABLE build_metrics ADD COLUMN demand integer",
+		"ALTER TABLE build_metrics ADD COLUMN load_x100 integer",
+		"ALTER TABLE build_metrics ADD COLUMN eff_x1000 integer",
 	};
 	char db_path[PATH_MAX];
 	size_t n;
@@ -627,6 +628,13 @@ sais_metrics_db_init(struct vhd *vhd)
 			      "CREATE INDEX IF NOT EXISTS build_metrics_key_sh "
 			      "ON build_metrics (key, step_hash, unixtime)",
 			      "create build_metrics index");
+
+	/* a machine's curve is read from its rows by hardware name */
+
+	sai_sqlite3_statement(vhd->pdb_metrics,
+			      "CREATE INDEX IF NOT EXISTS build_metrics_hw "
+			      "ON build_metrics (hardware, unix_time)",
+			      "create build_metrics hardware index");
 
 	/* re-key whatever rows are from before, a few tasks at a time */
 	lws_sul_schedule(vhd->context, 0, &vhd->sul_metrics_migrate,

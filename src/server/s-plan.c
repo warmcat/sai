@@ -788,12 +788,10 @@ sais_plan_recompute(struct vhd *vhd)
 		if (!pl->builder)
 			pl->builder = sp;
 
-		if (sais_hardware_blocked(sp) && !pl->pub.held[0]) {
-			int st;
-
-			sais_hardware_plat_state(sp, &st, pl->pub.held,
-						 sizeof(pl->pub.held));
-		}
+		/* its machine's load and how far the planner lets it go */
+		if (!pl->pub.machine[0])
+			sais_hardware_describe(sp, pl->pub.machine,
+					       sizeof(pl->pub.machine));
 	} lws_end_foreach_dll(p);
 
 	/* the open events, and every unfinished task of each */
