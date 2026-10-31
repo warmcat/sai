@@ -544,18 +544,44 @@ function renderPconHierarchy(container) {
     }
 }
 
+/*
+ * Mark the tasks whose logs are flowing, by how fast, from the last
+ * com.warmcat.sai.taskactivity.  Called after every message, since any
+ * message may have rebuilt the elements; it only touches a class that
+ * differs, so a message that changed nothing costs no style work.
+ */
+var shown_task_activities = {};
+
 function update_task_activities() {
-	for (const uuid in ongoing_task_activities) {
-		const cat = ongoing_task_activities[uuid];
+	var uuid, want = {};
+
+	for (uuid in ongoing_task_activities)
+		if (ongoing_task_activities[uuid] > 0)
+			want[uuid] = "activity-" + ongoing_task_activities[uuid];
+
+	for (uuid in shown_task_activities)
+		if (!want[uuid])
+			want[uuid] = "";
+
+	for (uuid in want) {
+		var cls = want[uuid], seen = false;
+
 		[ document.getElementById("taskstate_" + uuid),
 		  document.getElementById("tt_" + uuid) ].forEach(function(el) {
 			if (!el)
 				return;
+			seen = true;
+			if (cls && el.classList.contains(cls))
+				return;
 			el.classList.remove("activity-1", "activity-2", "activity-3");
-			if (cat > 0) {
-				el.classList.add("activity-" + cat);
-			}
+			if (cls)
+				el.classList.add(cls);
 		});
+
+		if (cls && seen)
+			shown_task_activities[uuid] = cls;
+		else
+			delete shown_task_activities[uuid];
 	}
 }
 
@@ -2703,36 +2729,6 @@ function sai_tt_refresh_row(t)
 	tr.cells[4].innerHTML = sai_tt_step_html(t);
 
 	sai_tt_schedule_resort();
-}
-
-/*
- * Periodic: keep the duration of ongoing tasks ticking, and if that's the
- * sort key, keep them in order too
- */
-function sai_tt_tick()
-{
-	var rows = document.querySelectorAll("tr.tt-row");
-	if (!rows.length)
-		return;
-
-	var now_ut = Math.round((new Date().getTime() / 1000));
-	var live = 0;
-
-	rows.forEach(function(tr) {
-		var d = tr.dataset;
-
-		if (!(parseInt(d.started) > 0) ||
-		    !sai_tt_is_ongoing(parseInt(d.state)))
-			return;
-
-		var txt = sai_tt_fmt_dur(now_ut - parseInt(d.started));
-		if (tr.cells[3].textContent !== txt)
-			tr.cells[3].textContent = txt;
-		live++;
-	});
-
-	if (live && sai_tt_sort_get().key === "duration")
-		sai_tt_schedule_resort();
 }
 
 function sai_tt_set_selected(uuid)
@@ -6705,6 +6701,8 @@ function ws_open_sai()
 
 		break;
 	} /* switch */
+
+			update_task_activities();
 	} /* onmessage */
 		sai.onerror = function(ev) {
 			console.log("WebSocket error:", ev);
@@ -7013,19 +7011,6 @@ window.addEventListener("load", function() {
 		ws_open_sai();
 		aging();
 	});
-
-	setInterval(function() {
-		update_task_activities();
-		sai_tt_tick();
-
-	    var locked = document.body.scrollHeight -
-		document.body.clientHeight <= document.body.scrollTop + 1;
-
-	    if (locked)
-	     document.body.scrollTop = document.body.scrollHeight -
-		document.body.clientHeight;
-
-	}, 500)
 
 	document.addEventListener("contextmenu", function(event) {
 		let target = event.target;

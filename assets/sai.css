@@ -847,7 +847,7 @@ div.bdr {
 	position: relative; /* Needed for the ::after pseudo-element */
 }
 
-/* The spinner pseudo-element */
+/* The ring: a static quarter-arc, nothing animates (see activity-1) */
 .powering-up::after {
 	content: '';
 	position: absolute;
@@ -860,18 +860,15 @@ div.bdr {
 	border: 3px solid rgba(0, 0, 0, 0.2);
 	border-top-color: #007bff; /* Spinner color */
 	border-radius: 50%;
-	animation: spin 1s linear infinite;
 	z-index: 10; /* Ensure it's on top */
 }
-
-@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Style for the powering-down state */
 .powering-down {
 	position: relative; /* Needed for the ::after pseudo-element */
 }
 
-/* The spinner pseudo-element */
+/* The ring: a static quarter-arc, nothing animates (see activity-1) */
 .powering-down::after {
 	content: '';
 	position: absolute;
@@ -884,7 +881,6 @@ div.bdr {
 	border: 3px solid rgba(0, 0, 0, 0.2);
 	border-top-color: #ff4136; /* Spinner color */
 	border-radius: 50%;
-	animation: spin 1s linear infinite;
 	z-index: 10; /* Ensure it's on top */
 }
 
@@ -912,24 +908,29 @@ img.branch {
 	transition: height 0.2s ease-out; /* Smoothly animate height changes */
 }
 
-@keyframes flash-slow {
-  50% { opacity: 0.8; }
+/*
+ * A task whose log is flowing gets a ring, stronger the faster it flows.
+ * Nothing here animates: an animation has the page composited every vsync
+ * for as long as it runs, which cost viewers a core
+ */
+div.taskstate.activity-1 {
+	box-shadow: 0 0 0 1px rgba(0, 110, 230, 0.35);
 }
-@keyframes flash-medium {
-  50% { opacity: 0.8; }
+div.taskstate.activity-2 {
+	box-shadow: 0 0 0 1px rgba(0, 110, 230, 0.65);
 }
-@keyframes flash-fast {
-  50% { opacity: 0.8; }
+div.taskstate.activity-3 {
+	box-shadow: 0 0 0 2px rgba(0, 110, 230, 0.9);
 }
 
-.activity-1 {
-	animation: flash-slow 4s infinite;
+tr.tt-row.activity-1 > td:first-child {
+	box-shadow: inset 3px 0 0 rgba(0, 110, 230, 0.35);
 }
-.activity-2 {
-	animation: flash-medium 2s infinite;
+tr.tt-row.activity-2 > td:first-child {
+	box-shadow: inset 3px 0 0 rgba(0, 110, 230, 0.65);
 }
-.activity-3 {
-	animation: flash-fast 1s infinite;
+tr.tt-row.activity-3 > td:first-child {
+	box-shadow: inset 3px 0 0 rgba(0, 110, 230, 0.9);
 }
 
 .context-menu {
