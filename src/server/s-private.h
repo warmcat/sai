@@ -325,50 +325,57 @@ typedef struct sais_failed_task {
 	const char	*taskname;
 } sais_failed_task_t;
 
+/* the demands the planner works in, see s-planner.c */
+#define SAIS_PLAN_RUNGS		12
+extern const int sais_plan_ladder[SAIS_PLAN_RUNGS];
+
 /*
  * The platforms that run on one machine, see s-hardware.c.  Whatever runs on
  * any of them takes cpu, memory and disk from the others.  They're grouped by
  * the hardware name their builder gives, and numbered in the order the server
  * first saw them, so the web can show which platforms share a machine.
+ *
+ * The machine's load is the demand of the steps in flight on all its
+ * platforms, see sai_uuid_list_t.demand, and its load integral, demand x us
+ * since the server started, lets a step's mean load over its run be found
+ * when its row lands.  What the rows say the machine does at each load is
+ * its curve: see s-planner.c for how it's read and what it decides.
  */
 typedef struct sais_hardware {
 	lws_dll2_t		list;		/* vhd->hardware_owner */
-	lws_sorted_usec_list_t	sul;		/* bounds a hold on it */
 	struct vhd		*vhd;
 	char			name[96];	/* sai_plat_t.hardware */
 	int			index;		/* 1-based */
 
-	/*
-	 * While the planner is measuring a step alone on it: the task and
-	 * step being measured, where its row will be keyed, the platform it
-	 * runs on, and whether it's running yet or waiting for the machine to
-	 * go quiet.  Nothing else is offered to any platform on the machine
-	 * meanwhile.  meas_task is empty when it's free.
-	 */
-	char			meas_task[65];
-	char			meas_key[65];
-	char			meas_sh[65];
-	char			meas_info[128];	/* "step N of taskname" */
-	sai_plat_t		*meas_sp;
-	lws_usec_t		meas_since;
-	int			meas_step;	/* 1-based */
-	char			meas_running;
-	char			meas_logged;	/* the task log knows it waits */
+	int			load;		/* demand in flight now */
+	int			load_idle;	/*   ... of which idle slices */
+	lws_usec_t		load_since;
+	uint64_t		load_integral;	/* demand x us */
+
+	/* its curve: per load bucket, rows and their efficiency x1000 */
+	int			n[SAIS_PLAN_RUNGS];
+	uint64_t		eff_sum[SAIS_PLAN_RUNGS];
+	char			curve_loaded;
+	int			best;		/* bucket with most work done, -1 none */
+	int			ceiling;	/* the most demand we'll put on it */
+
+	/* so a step's wait is logged once */
+	char			wait_task[65];
+	int			wait_step;
 } sais_hardware_t;
 
 /* sai_plat_t.plan_state: what the planner is doing with a platform's machine */
 enum {
 	SAIS_PLAN_STATE_FREE,
-	SAIS_PLAN_STATE_WAITING,	/* its step waits for the machine to go quiet */
-	SAIS_PLAN_STATE_MEASURING,	/* its step is running alone on the machine */
-	SAIS_PLAN_STATE_BLOCKED,	/* held back while another platform measures */
+	SAIS_PLAN_STATE_WAITING,	/* a step of its waits for the machine's load to drop */
 };
 
 /* what the planner decided for a step, see sais_planner_plan_step() */
 typedef struct sais_plan {
 	char			key[65];	/* the metrics key, or empty */
 	char			step_hash[65];
-	char			alone;		/* run it with nothing else on its machine */
+	int			demand;		/* what it counts as on its machine */
+	char			wait;		/* don't start it yet */
 } sais_plan_t;
 
 typedef struct sai_shell_session {
@@ -413,7 +420,6 @@ struct vhd {
 	const char		*sqlite3_path_lhs;
 	sqlite3			*pdb_metrics;
 	lws_sorted_usec_list_t	sul_metrics_migrate; /* see s-metrics.c */
-	lws_dll2_owner_t	planner_probes; /* sais_plan_probe_t, s-planner.c */
 	lws_dll2_owner_t	hardware_owner; /* sais_hardware_t, s-hardware.c */
 
 	lws_dll2_owner_t	sqlite3_cache; /* sais_sqlite_cache_t */
@@ -812,24 +818,19 @@ void
 sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 		       int build_step, sais_plan_t *plan);
 
+int
+sais_planner_room(struct vhd *vhd, sai_plat_t *sp, int for_idle);
+
 void
-sais_planner_alone_backoff(struct vhd *vhd, const char *key,
-			   const char *step_hash, int tainted);
+sais_planner_row_annotate(struct vhd *vhd, sai_build_metric_t *m);
 
 void
 sais_planner_metric_arrived(struct vhd *vhd, const sai_build_metric_t *m);
 
 void
-sais_planner_task_refused(struct vhd *vhd, const char *task_uuid,
-			  int resources);
-
-void
 sais_planner_task_ended(struct vhd *vhd, const char *task_uuid, int failed);
 
-void
-sais_planner_destroy(struct vhd *vhd);
-
-/* s-hardware.c: which platforms share a machine */
+/* s-hardware.c */
 
 sais_hardware_t *
 sais_hardware_find(struct vhd *vhd, const char *name);
@@ -837,22 +838,22 @@ sais_hardware_find(struct vhd *vhd, const char *name);
 void
 sais_hardware_attach(struct vhd *vhd, sai_plat_t *sp);
 
+void
+sais_hardware_touch(struct vhd *vhd, sais_hardware_t *hw);
+
+void
+sais_hardware_kick(struct vhd *vhd, sais_hardware_t *hw);
+
+void
+sais_hardware_step_started(struct vhd *vhd, sai_plat_t *sp,
+			   sai_uuid_list_t *ul, int step, int demand);
+
 int
-sais_hardware_blocked(const sai_plat_t *sp);
-
-int
-sais_hardware_offer_step(struct vhd *vhd, sai_plat_t *sp,
-			 const sai_task_t *task, int build_step,
-			 const sais_plan_t *plan);
+sais_hardware_step_load(struct vhd *vhd, sai_plat_t *sp,
+			const sai_uuid_list_t *ul);
 
 void
-sais_hardware_step_ended(struct vhd *vhd, sai_plat_t *sp);
-
-void
-sais_hardware_task_ended(struct vhd *vhd, const char *task_uuid);
-
-void
-sais_hardware_metric_arrived(struct vhd *vhd, const sai_build_metric_t *m);
+sais_hardware_step_ended(struct vhd *vhd, sai_plat_t *sp, sai_uuid_list_t *ul);
 
 void
 sais_hardware_plat_gone(struct vhd *vhd, sai_plat_t *sp);
@@ -860,6 +861,9 @@ sais_hardware_plat_gone(struct vhd *vhd, sai_plat_t *sp);
 void
 sais_hardware_plat_state(const sai_plat_t *sp, int *state, char *info,
 			 size_t info_len);
+
+void
+sais_hardware_describe(const sai_plat_t *sp, char *info, size_t info_len);
 
 void
 sais_hardware_destroy(struct vhd *vhd);

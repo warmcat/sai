@@ -616,7 +616,7 @@ sais_idle_allocate(struct vhd *vhd, struct pss *pss, sai_plat_t *sp)
 	unsigned int running;
 
 	if (!b || !b->share || b->debt_us || sp->idle_backoff_until > now ||
-	    sais_hardware_blocked(sp))
+	    !sais_planner_room(vhd, sp, 1))
 		return 1;
 
 	running = sais_idle_running(sp, NULL);

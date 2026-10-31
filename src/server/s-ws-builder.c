@@ -1121,8 +1121,6 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 							      "RESOURCES",
 			    rej->task_uuid);
 		do_remove_uuid = 1;
-		sais_planner_task_refused(vhd, rej->task_uuid,
-				rej->reason == SAI_TASK_REASON_RESOURCES);
 
 		sai_task_uuid_to_event_uuid(event_uuid, rej->task_uuid);
 		if (!sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
@@ -1280,9 +1278,6 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 	if (rej->reason == SAI_TASK_REASON_DESTROYED && !stale)
 		/* uuid will not be found listed as inflight for this */
 		sais_create_and_offer_task_step(vhd, rej->task_uuid);
-
-	/* if its machine was waiting to go quiet for a measurement, it may have */
-	sais_hardware_step_ended(vhd, sp);
 
 	sais_list_builders(vhd);
 
@@ -2238,6 +2233,13 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 				lwsac_free(&pss->a.ac);
 				break;
 			}
+
+			/*
+			 * What the server knows about the step that the
+			 * builder can't: its demand, the load its machine
+			 * carried while it ran, and so its efficiency
+			 */
+			sais_planner_row_annotate(vhd, metric);
 
 			/*
 			 * We have serialized the incoming JSON representation
