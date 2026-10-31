@@ -153,7 +153,7 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 			lws_strncpy(a->sai_plat->lws_hash, LWS_BUILD_HASH,
 				    sizeof(a->sai_plat->lws_hash));
 
-			a->sai_plat->job_limit = 0;
+			a->sai_plat->job_limit = SAIB_DEF_JOB_LIMIT;
 			a->sai_plat->idle_instances = 1;
 			a->sai_plat->idle_slice_secs = SAIB_IDLE_DEF_SLICE_SECS;
 			a->sai_plat->idle_settle_secs = SAIB_IDLE_DEF_SETTLE_SECS;

@@ -867,7 +867,8 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 {
 	uint64_t yield_ram_kib, yield_disk_kib, ram_reserved_kib,
 		 disk_reserved_kib;
-	unsigned int tc = sp->job_limit ? sp->job_limit : 6u;
+	unsigned int tc = sp->job_limit ? sp->job_limit :
+					  SAIB_DEF_JOB_LIMIT;
 #if 0
 	unsigned int free_ram = saib_get_free_ram_kib();
 	unsigned int total_ram = saib_get_total_ram_kib();

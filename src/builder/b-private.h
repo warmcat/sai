@@ -175,6 +175,8 @@ struct saib_opaque_spawn {
  * server offers a task's steps one at a time with gaps between)
  */
 #define SAIB_IDLE_DEF_SLICE_SECS		(15 * 60)
+/* tasks a platform runs at once when "instances" isn't configured */
+#define SAIB_DEF_JOB_LIMIT			6
 #define SAIB_IDLE_DEF_SETTLE_SECS		120
 /* how much longer than its slice an idle task step may run before we stop it */
 #define SAIB_IDLE_SLICE_GRACE_SECS		120
