@@ -224,6 +224,7 @@ struct pss {
 	sai_task_t		alloc_task;
 	struct lwsac		*ac_alloc_task;
 	char			alloc_repo[65]; /* repo_name of alloc_task */
+	char			alloc_reason[160]; /* why the planner chose it */
 
 	char			peer_ip[48];
 	/* the pending platforms report we last sent, heap, NUL-terminated */
@@ -315,15 +316,14 @@ typedef struct sais_idle_host {
 } sais_idle_host_t;
 
 /*
- * When a builder platform was last given a task from a repo, so the repos with
- * tasks pending for the platform can take turns, see s-task.c
+ * A task that failed in the previous event on the same repo and ref, and
+ * platform: the one like it in the current event goes first, see s-task.c
  */
-typedef struct sais_repo_turn {
-	lws_dll2_t	list;		/* vhd->repo_turns */
-	lws_usec_t	last_served;
-	char		platform[96];
-	char		repo_name[65];
-} sais_repo_turn_t;
+typedef struct sais_failed_task {
+	lws_dll2_t	list;
+	/* over-allocated */
+	const char	*taskname;
+} sais_failed_task_t;
 
 /*
  * The platforms that run on one machine, see s-hardware.c.  Whatever runs on
@@ -392,7 +392,21 @@ struct vhd {
 	struct lws_dll2_owner	pending_plats;
 	lws_dll2_owner_t	powering_up_list; /* sai_powering_up_plat_t */
 	lws_dll2_owner_t	shell_sessions; /* sai_shell_session_t */
-	lws_dll2_owner_t	repo_turns; /* sais_repo_turn_t */
+
+	/* the planner's plan, see s-plan.c */
+	sai_plan_t		plan;		/* what sai-web is sent */
+	struct lwsac		*plan_ac;	/* it and its working lists */
+	struct lwsac		*plan_ac_ev;	/* the events it refers to */
+	lws_dll2_owner_t	plan_ests;	/* sais_plan_est_t */
+	lws_dll2_owner_t	plan_prevfails;	/* sais_plan_prevfail_t */
+	lws_dll2_owner_t	plan_heads;	/* sais_plan_head_t */
+	lws_sorted_usec_list_t	sul_plan;	/* coalesced recompute */
+	lws_sorted_usec_list_t	sul_plan_tick;	/* while something runs */
+	lws_sorted_usec_list_t	sul_plan_send;	/* rate-limited broadcast */
+	lws_usec_t		plan_made;	/* when it was last computed */
+	lws_usec_t		plan_sent;
+	char			plan_dirty;
+	char			plan_unsent;
 
 	struct lwsac		*ac_plats;
 
@@ -583,8 +597,20 @@ int
 sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		   const char *cns_name);
 
+/*
+ * A task row that isn't its uuid's latest run is marked deleted: nonzero if so
+ */
+int
+sais_check_and_fix_stale_task(sqlite3 *pdb, sai_task_t *t);
+
+/*
+ * The tasks that failed on the platform in the previous event of e's repo and
+ * ref, as sais_failed_task_t in *owner, allocated in *ac.  No rows is fine.
+ */
 void
-sais_repo_turns_destroy(struct vhd *vhd);
+sais_prev_event_failures(struct vhd *vhd, const sai_event_t *e,
+			 const char *esc_plat, lws_dll2_owner_t *owner,
+			 struct lwsac **ac);
 
 int
 sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid);
@@ -764,7 +790,8 @@ sais_server_destroy(struct vhd *vhd, sais_t *server);
 
 void
 sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task,
-				const char *builder_name, int step);
+				const char *builder_name, int step,
+				int *steps_known);
 
 const char *
 sais_task_step_text(const char *build, int build_step, size_t *len);
@@ -836,6 +863,25 @@ sais_hardware_plat_state(const sai_plat_t *sp, int *state, char *info,
 
 void
 sais_hardware_destroy(struct vhd *vhd);
+
+/* s-plan.c: what each platform runs next, and when events should finish */
+
+/* something changed: recompute the plan soon */
+void
+sais_plan_schedule(struct vhd *vhd);
+/* a metrics row landed: what we thought its task would take is stale */
+void
+sais_plan_metric_arrived(struct vhd *vhd, const sai_build_metric_t *m);
+/*
+ * The next task for sp from the plan, into pss->alloc_task like
+ * sais_task_pending(): 0 and the task, or nonzero when the plan has nothing
+ * startable for it
+ */
+int
+sais_plan_next_task(struct vhd *vhd, struct pss *pss, sai_plat_t *sp,
+		    const char *platform);
+void
+sais_plan_destroy(struct vhd *vhd);
 
 int
 sais_task_cancel(struct vhd *vhd, const char *task_uuid, int erase, int killed);

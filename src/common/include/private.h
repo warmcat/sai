@@ -922,9 +922,66 @@ typedef struct sai_plat {
 	/* what the planner is doing with its machine, see s-hardware.c */
 	int				plan_state;
 	char				plan_info[128];
+	/*
+	 * server side only: the most tasks seen running on it at once, which
+	 * is what the planner takes its capacity to be when the builder is
+	 * too old to say its job_limit, see s-plan.c
+	 */
+	unsigned int			plan_hwm;
 
 	int				index; /* used to create unique build dir path */
 } sai_plat_t;
+
+/*
+ * The planner's plan: what each platform will run next and why, and when
+ * each open event should finish.  Made by sai-server (s-plan.c), passed to
+ * sai-web and on to browsers as "com.warmcat.sai.plan", see "What runs
+ * next" in README-planner.md.  Times are unix seconds, 0 when unknown.
+ */
+
+typedef struct sai_plan_entry {
+	lws_dll2_t			list;
+	char				uuid[65];	/* task */
+	char				taskname[96];
+	char				event_uuid[33];
+	char				repo_name[65];
+	char				reason[160];	/* why it's here */
+	uint64_t			start;
+	uint64_t			end;
+	unsigned int			est_ms;		/* what it should take */
+	int				quality;	/* % of its steps with rows */
+	int				running;	/* already going */
+} sai_plan_entry_t;
+
+typedef struct sai_plan_platform {
+	lws_dll2_t			list;
+	char				platform[96];
+	char				held[128];	/* why nothing starts on it */
+	lws_dll2_owner_t		next;		/* sai_plan_entry_t, in order */
+	uint64_t			drain;		/* when its queue is done */
+	int				concurrency;	/* tasks it runs at once */
+	int				online;		/* builders for it */
+	int				running;
+	int				queued;		/* all of them, not just .next */
+} sai_plan_platform_t;
+
+typedef struct sai_plan_event {
+	lws_dll2_t			list;
+	char				uuid[33];
+	char				bottleneck[96];	/* the platform it waits on */
+	char				why[128];
+	uint64_t			eta;
+	int				left;		/* tasks not finished */
+	int				running;
+	int				unknown;	/* tasks with no history */
+} sai_plan_event_t;
+
+typedef struct sai_plan {
+	lws_dll2_owner_t		platforms;	/* sai_plan_platform_t */
+	lws_dll2_owner_t		events;		/* sai_plan_event_t */
+	uint64_t			generated;
+	char				strategy[400];	/* the policy, in words */
+} sai_plan_t;
 
 typedef struct sai_plat_owner {
 	lws_dll2_owner_t		plat_owner;
@@ -1206,6 +1263,11 @@ extern const lws_struct_map_t
 	lsm_log[9],
 	lsm_artifact[9],
 	lsm_plat_list[1],
+	lsm_plan_entry[10],
+	lsm_plan_platform[8],
+	lsm_plan_event[7],
+	lsm_plan[3],
+	lsm_schema_map_plan[1],
 	lsm_schema_map_plat[1],
 	lsm_task_rej[5],
 	lsm_task_cancel[4],
@@ -1234,7 +1296,7 @@ extern const lws_struct_map_t
 	lsm_stay_state_update[2],
 	lsm_schema_stay_state_update[1],
 	lsm_build_metric[19],
-	lsm_plat[21], /* +1 for pcon, +1 for hardware, +3 planner */
+	lsm_plat[22], /* +1 for pcon, +1 for hardware, +3 planner, +1 job_limit */
 	lsm_builder_platform[1],
 	lsm_builder_registration[10],
 	lsm_schema_sq3_map_power_controller[1],

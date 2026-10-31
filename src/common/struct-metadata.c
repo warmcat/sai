@@ -120,6 +120,7 @@ const lws_struct_map_t lsm_plat[] = {
 	LSM_SIGNED	(sai_plat_t, hw_index,		"hw_index"),
 	LSM_SIGNED	(sai_plat_t, plan_state,	"plan_state"),
 	LSM_CARRAY	(sai_plat_t, plan_info,		"plan_info"),
+	LSM_UNSIGNED	(sai_plat_t, job_limit,		"job_limit"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {
@@ -129,6 +130,55 @@ const lws_struct_map_t lsm_schema_map_plat_simple[] = {
 const lws_struct_map_t lsm_plat_list[] = {
 	LSM_LIST	(sai_plat_owner_t, plat_owner, sai_plat_t,
 			 sai_plat_list, NULL, lsm_plat, "builders"),
+};
+
+/* the planner's plan, see s-plan.c and "What runs next" in README-planner */
+
+const lws_struct_map_t lsm_plan_entry[] = {
+	LSM_CARRAY	(sai_plan_entry_t, uuid,		"uuid"),
+	LSM_CARRAY	(sai_plan_entry_t, taskname,		"taskname"),
+	LSM_CARRAY	(sai_plan_entry_t, event_uuid,		"event_uuid"),
+	LSM_CARRAY	(sai_plan_entry_t, repo_name,		"repo_name"),
+	LSM_CARRAY	(sai_plan_entry_t, reason,		"reason"),
+	LSM_UNSIGNED	(sai_plan_entry_t, start,		"start"),
+	LSM_UNSIGNED	(sai_plan_entry_t, end,			"end"),
+	LSM_UNSIGNED	(sai_plan_entry_t, est_ms,		"est_ms"),
+	LSM_SIGNED	(sai_plan_entry_t, quality,		"quality"),
+	LSM_SIGNED	(sai_plan_entry_t, running,		"running"),
+};
+
+const lws_struct_map_t lsm_plan_platform[] = {
+	LSM_CARRAY	(sai_plan_platform_t, platform,		"platform"),
+	LSM_CARRAY	(sai_plan_platform_t, held,		"held"),
+	LSM_LIST	(sai_plan_platform_t, next, sai_plan_entry_t, list,
+			 NULL, lsm_plan_entry,			"next"),
+	LSM_UNSIGNED	(sai_plan_platform_t, drain,		"drain"),
+	LSM_SIGNED	(sai_plan_platform_t, concurrency,	"concurrency"),
+	LSM_SIGNED	(sai_plan_platform_t, online,		"online"),
+	LSM_SIGNED	(sai_plan_platform_t, running,		"running"),
+	LSM_SIGNED	(sai_plan_platform_t, queued,		"queued"),
+};
+
+const lws_struct_map_t lsm_plan_event[] = {
+	LSM_CARRAY	(sai_plan_event_t, uuid,		"uuid"),
+	LSM_CARRAY	(sai_plan_event_t, bottleneck,		"bottleneck"),
+	LSM_CARRAY	(sai_plan_event_t, why,			"why"),
+	LSM_UNSIGNED	(sai_plan_event_t, eta,			"eta"),
+	LSM_SIGNED	(sai_plan_event_t, left,		"left"),
+	LSM_SIGNED	(sai_plan_event_t, running,		"running"),
+	LSM_SIGNED	(sai_plan_event_t, unknown,		"unknown"),
+};
+
+const lws_struct_map_t lsm_plan[] = {
+	LSM_LIST	(sai_plan_t, platforms, sai_plan_platform_t, list,
+			 NULL, lsm_plan_platform,		"platforms"),
+	LSM_LIST	(sai_plan_t, events, sai_plan_event_t, list,
+			 NULL, lsm_plan_event,			"events"),
+	LSM_CARRAY	(sai_plan_t, strategy,			"strategy"),
+};
+
+const lws_struct_map_t lsm_schema_map_plan[] = {
+	LSM_SCHEMA	(sai_plan_t, NULL, lsm_plan,	"com.warmcat.sai.plan"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat[] = {

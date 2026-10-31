@@ -13,6 +13,7 @@ set(SRCS
 	s-task-helpers.c
 	s-metrics.c
 	s-planner.c
+	s-plan.c
 	s-hardware.c
 	s-idle.c
 	s-pool.c

@@ -195,6 +195,7 @@ sais_hardware_release(struct vhd *vhd, sais_hardware_t *hw)
 
 	sais_hardware_kick(vhd, hw);
 	sais_list_builders(vhd);
+	sais_plan_schedule(vhd);
 }
 
 /*
@@ -310,6 +311,7 @@ sais_hardware_offer_step(struct vhd *vhd, sai_plat_t *sp,
 					 SAIS_HW_DRAIN_MAX_US);
 			sais_hardware_stop_idle(vhd, hw);
 			sais_list_builders(vhd);
+	sais_plan_schedule(vhd);
 		}
 
 		return 1;
@@ -321,6 +323,7 @@ sais_hardware_offer_step(struct vhd *vhd, sai_plat_t *sp,
 	lws_sul_schedule(vhd->context, 0, &hw->sul, sais_hardware_sul_cb,
 			 SAIS_HW_RUN_MAX_US);
 	sais_list_builders(vhd);
+	sais_plan_schedule(vhd);
 
 	return 0;
 }

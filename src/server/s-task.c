@@ -176,7 +176,7 @@ sais_prune_inflight_list(struct vhd *vhd)
 /*
  * Helper to identify and fix stale corrupted legacy tasks
  */
-static int
+int
 sais_check_and_fix_stale_task(sqlite3 *pdb, sai_task_t *t)
 {
 	int max_run = -1;
@@ -197,125 +197,30 @@ sais_check_and_fix_stale_task(sqlite3 *pdb, sai_task_t *t)
 }
 
 /*
- * How many of the newest unfinished events we look through for one with
- * something startable on the platform.  Each repo's newest event with work for
- * the platform competes for its turn, so this has to reach back past a burst
- * of pushes on one busy repo to whatever else is pending
+ * How many of the newest unfinished events the fallback path looks through
+ * for something startable on the platform, when the plan has nothing for it.
+ * It has to reach back past a burst of pushes on one busy repo to whatever
+ * else is pending
  */
 #define SAIS_PENDING_EVENTS		32
-/* forget a repo's turn on a platform if it hasn't been served for this long */
-#define SAIS_REPO_TURN_EXPIRY_US	(24ll * 3600 * LWS_US_PER_SEC)
-
-static sais_repo_turn_t *
-sais_repo_turn_find(struct vhd *vhd, const char *platform, const char *repo)
-{
-	lws_usec_t now = lws_now_usecs();
-	sais_repo_turn_t *found = NULL;
-
-	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
-				   vhd->repo_turns.head) {
-		sais_repo_turn_t *rt = lws_container_of(p, sais_repo_turn_t,
-							list);
-
-		if (now - rt->last_served > SAIS_REPO_TURN_EXPIRY_US) {
-			lws_dll2_remove(&rt->list);
-			free(rt);
-			continue;
-		}
-
-		if (!strcmp(rt->platform, platform) &&
-		    !strcmp(rt->repo_name, repo))
-			found = rt;
-
-	} lws_end_foreach_dll_safe(p, p1);
-
-	return found;
-}
-
 /*
- * When did platform last get a task from repo... 0 if not recently, which
- * puts it at the front of the queue
+ * The tasks that failed on the platform the last time e's repo and ref were
+ * built: the newest earlier event on the same branch that ran the platform is
+ * found and its failed tasks listed, so the ones like them can go first this
+ * time, a regression showing as early as it can.
  */
-
-static lws_usec_t
-sais_repo_turn_last_served(struct vhd *vhd, const char *platform,
-			   const char *repo)
-{
-	sais_repo_turn_t *rt = sais_repo_turn_find(vhd, platform, repo);
-
-	return rt ? rt->last_served : 0;
-}
-
-/*
- * The platform was just given a task from repo, so it goes to the back of the
- * queue for that platform
- */
-
-static void
-sais_repo_turn_served(struct vhd *vhd, const char *platform, const char *repo)
-{
-	sais_repo_turn_t *rt = sais_repo_turn_find(vhd, platform, repo);
-
-	if (!rt) {
-		rt = malloc(sizeof(*rt));
-		if (!rt)
-			return;
-		memset(rt, 0, sizeof(*rt));
-		lws_strncpy(rt->platform, platform, sizeof(rt->platform));
-		lws_strncpy(rt->repo_name, repo, sizeof(rt->repo_name));
-		lws_dll2_add_tail(&rt->list, &vhd->repo_turns);
-	}
-
-	rt->last_served = lws_now_usecs();
-}
 
 void
-sais_repo_turns_destroy(struct vhd *vhd)
+sais_prev_event_failures(struct vhd *vhd, const sai_event_t *e,
+			 const char *esc_plat, lws_dll2_owner_t *owner,
+			 struct lwsac **ac)
 {
-	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
-				   vhd->repo_turns.head) {
-		sais_repo_turn_t *rt = lws_container_of(p, sais_repo_turn_t,
-							list);
-
-		lws_dll2_remove(&rt->list);
-		free(rt);
-
-	} lws_end_foreach_dll_safe(p, p1);
-}
-
-/*
- * Pick a startable task for platform from event e, preferring ones that failed
- * the last time this repo / ref was built on the platform.
- *
- * Returns 0 with the task in pss->alloc_task, 1 if nothing startable, or -1 if
- * we found and cleaned up a stale task, and the caller should give up this
- * time around.
- */
-
-static int
-sais_task_pending_on_event(struct vhd *vhd, struct pss *pss,
-			   const sai_event_t *e, const char *esc_plat,
-			   const char *esc_bname)
-{
-	typedef struct sai_failed_task_info {
-		lws_dll2_t      list;
-		/* over-allocated */
-		const char      *taskname;
-	} sai_failed_task_info_t;
 	char prev_event_uuid[33] = "", checked_uuid[33] = "";
-	char esc_repo[96], esc_ref[96], pf[2048], query[384];
-	sqlite3 *pdb = NULL, *prev_pdb = NULL;
-	lws_dll2_owner_t failed_tasks_owner, owner;
-	struct lwsac *failed_ac = NULL;
+	char esc_repo[96], esc_ref[96], query[384];
+	sqlite3 *prev_pdb = NULL;
 	uint64_t last_created;
-	sai_task_t *t;
-	int n, r = 1;
 
-	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
-			      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb))
-		return 1;
-
-	lws_dll2_owner_clear(&failed_tasks_owner);
+	lws_dll2_owner_clear(owner);
 
 	lws_sql_purify(esc_repo, e->repo_name, sizeof(esc_repo));
 	lws_sql_purify(esc_ref, e->ref, sizeof(esc_ref));
@@ -350,17 +255,17 @@ sais_task_pending_on_event(struct vhd *vhd, struct pss *pss,
 
 			last_created = (uint64_t)sqlite3_column_int64(sm, 1);
 		} else
-			lwsl_notice("%s: no results from event check %s %s\n", __func__, esc_repo, esc_ref);
+			lwsl_info("%s: no results from event check %s %s\n", __func__, esc_repo, esc_ref);
 
 		sqlite3_finalize(sm);
 
 		if (!prev_event_uuid[0]) {
-			lwsl_notice("%s: breaking due to NUL prev_event_uuid\n", __func__);
+			lwsl_info("%s: breaking due to NUL prev_event_uuid\n", __func__);
 			break;
 		}
 
 		if (!sais_event_check_for_plat_tasks(vhd, prev_event_uuid, esc_plat)) {
-			lwsl_notice("%s: continuing due to event_ran_platform 0\n", __func__);
+			lwsl_info("%s: continuing due to event_ran_platform 0\n", __func__);
 			continue;
 		}
 
@@ -382,7 +287,7 @@ sais_task_pending_on_event(struct vhd *vhd, struct pss *pss,
 
 		if (sqlite3_prepare_v2(prev_pdb, query, -1, &sm, NULL) == SQLITE_OK) {
 			const unsigned char *tn;
-			sai_failed_task_info_t *fti;
+			sais_failed_task_t *fti;
 
 			sqlite3_bind_text(sm, 1, esc_plat, -1, SQLITE_TRANSIENT);
 
@@ -404,13 +309,13 @@ sais_task_pending_on_event(struct vhd *vhd, struct pss *pss,
 				 * event first
 				 */
 
-				fti = lwsac_use_zero(&failed_ac, sizeof(*fti) +
+				fti = lwsac_use_zero(ac, sizeof(*fti) +
 						strlen((const char *)tn) + 1, 256);
 				if (fti) {
 					fti->taskname = (const char *)&fti[1];
 					memcpy((char *)fti->taskname, tn,
 					       strlen((const char *)tn) + 1);
-					lws_dll2_add_tail(&fti->list, &failed_tasks_owner);
+					lws_dll2_add_tail(&fti->list, owner);
 				}
 			}
 			sqlite3_finalize(sm);
@@ -419,6 +324,52 @@ sais_task_pending_on_event(struct vhd *vhd, struct pss *pss,
 
 		sai_event_db_close(&vhd->sqlite3_cache, &prev_pdb);
 	}
+}
+
+/*
+ * Pick a startable task for platform from event e, preferring ones that failed
+ * the last time this repo / ref was built on the platform.  The fallback when
+ * the plan has nothing for the platform.
+ *
+ * Returns 0 with the task in pss->alloc_task, 1 if nothing startable, or -1 if
+ * we found and cleaned up a stale task, and the caller should give up this
+ * time around.
+ */
+
+static int
+sais_task_pending_on_event(struct vhd *vhd, struct pss *pss,
+			   const sai_event_t *e, const char *esc_plat,
+			   const char *esc_bname)
+{
+	lws_dll2_owner_t failed_tasks_owner, owner;
+	struct lwsac *failed_ac = NULL;
+	unsigned int pending = 0;
+	sqlite3 *pdb = NULL;
+	char pf[2048];
+	sai_task_t *t;
+	int n, r = 1;
+
+	if (sai_event_db_ensure_open(vhd->context, &vhd->sqlite3_cache,
+			      vhd->sqlite3_path_lhs, e->uuid, 0, &pdb))
+		return 1;
+
+	/*
+	 * Is there anything startable here for this platform at all?  Most
+	 * open events have nothing, and looking up what failed last time
+	 * costs queries on the main db for each one
+	 */
+
+	lws_snprintf(pf, sizeof(pf), "select count(state) from tasks t1 where "
+		     "state IN(0,9) and idle=0 and platform='%s' and "
+		     "(builder_name IS NULL or builder_name IN('','%s'))"
+		     " and run = (select max(run) from tasks t2 where "
+		     "t1.uuid = t2.uuid)", esc_plat, esc_bname);
+	if (sqlite3_exec(pdb, pf, sql3_get_integer_cb, &pending, NULL) !=
+							SQLITE_OK || !pending)
+		goto bail;
+
+	sais_prev_event_failures(vhd, e, esc_plat, &failed_tasks_owner,
+				 &failed_ac);
 
 	/*
 	 * Let's go through the tasks that failed last time we built this repo / branch, and see
@@ -426,7 +377,7 @@ sais_task_pending_on_event(struct vhd *vhd, struct pss *pss,
 	 */
 
 	lws_start_foreach_dll(struct lws_dll2 *, p_fail, failed_tasks_owner.head) {
-		sai_failed_task_info_t *fti = lws_container_of(p_fail, sai_failed_task_info_t, list);
+		sais_failed_task_t *fti = lws_container_of(p_fail, sais_failed_task_t, list);
 		char esc_taskname[256];
 
 		lws_sql_purify(esc_taskname, fti->taskname, sizeof(esc_taskname));
@@ -492,23 +443,19 @@ bail:
  * Find a task that still needs doing for platform, on any event.
  *
  * A task the builder already started and that is waiting for its next step
- * comes first.  Otherwise, each repo with something startable for the
- * platform puts forward its newest event that has some, and the repos take
- * turns: the one the platform was least recently given a task from goes
- * first.  So a big push on one repo doesn't hold up a push on another until
- * every one of its tasks is done.
+ * comes first.  Otherwise the plan says which of the tasks pending for the
+ * platform, on any open event, should go next and why, see s-plan.c.  If the
+ * plan has nothing for the platform, the newest event with something
+ * startable on it is tried, oldest-first within it.
  */
 static const sai_task_t *
 sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 		  const char *platform)
 {
-	const sai_event_t *cand[SAIS_PENDING_EVENTS];
-	lws_usec_t cand_served[SAIS_PENDING_EVENTS];
-	char esc_plat[96], esc_bname[128], pf[512], query[384];
+	char esc_plat[96], esc_bname[128], pf[512];
 	struct lwsac *ac = NULL;
-	unsigned int pending_count;
-	int n, m, i, cands = 0;
 	lws_dll2_owner_t o;
+	int n;
 
 	lws_sql_purify(esc_plat, platform, sizeof(esc_plat));
 	lws_sql_purify(esc_bname, cb->name, sizeof(esc_bname));
@@ -589,90 +536,42 @@ sais_task_pending(struct vhd *vhd, struct pss *pss, sai_plat_t *cb,
 			memcpy(&pss->alloc_task, t, sizeof(pss->alloc_task));
 			lws_strncpy(pss->alloc_repo, e->repo_name,
 				    sizeof(pss->alloc_repo));
+			pss->alloc_reason[0] = '\0';
 			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 			lwsac_free(&ac);
 
 			return &pss->alloc_task;
 		}
 
-		for (i = 0; i < cands; i++)
-			if (!strcmp(cand[i]->repo_name, e->repo_name))
-				break;
-		if (i != cands) {
-			/* this repo already has a newer candidate */
-			sai_event_db_close(&vhd->sqlite3_cache, &pdb);
-			continue;
-		}
-
-		/*
-		 * Find out how many tasks in startable state for this platform,
-		 * on this event
-		 */
-
-		lws_snprintf(query, sizeof(query), "select count(state) from tasks t1 where "
-						   "state IN(0,9) and idle=0 and platform='%s' and "
-						   "(builder_name IS NULL or builder_name IN('','%s'))"
-						   " and run = (select max(run) from tasks t2 where t1.uuid = t2.uuid)",
-						   esc_plat, esc_bname);
-		m = sqlite3_exec(pdb, query, sql3_get_integer_cb, &pending_count, NULL);
 		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
-
-		if (m != SQLITE_OK) {
-			pending_count = 0;
-			lwsl_err("%s: query failed: %d\n", __func__, m);
-		}
-
-		// lwsl_notice("%s: %s: platform: '%s' startable tasks: %d\n", __func__, e->uuid, esc_plat, pending_count);
-
-		if (pending_count <= 0)
-			continue;
-
-		cand_served[cands] = sais_repo_turn_last_served(vhd, platform,
-								e->repo_name);
-		cand[cands++] = e;
-
 	} lws_end_foreach_dll(p);
 
-	if (!cands) {
-		lwsl_info("%s: platform %s: no pending count\n", __func__, platform);
-		goto bail;
+	/* what the plan says should go next on this platform */
+
+	if (!sais_plan_next_task(vhd, pss, cb, platform)) {
+		lwsac_free(&ac);
+
+		return &pss->alloc_task;
 	}
 
-	/*
-	 * Try the candidates least recently served first, ties going to the
-	 * newer event
-	 */
+	/* nothing planned for it: the newest event with something startable */
 
-	while (cands) {
-		int best = 0;
+	lws_start_foreach_dll(struct lws_dll2 *, p, o.head) {
+		sai_event_t *e = lws_container_of(p, sai_event_t, list);
 
-		for (i = 1; i < cands; i++)
-			if (cand_served[i] < cand_served[best])
-				best = i;
-
-		lwsl_info("%s: plat %s: trying repo %s, event %s\n", __func__,
-			  platform, cand[best]->repo_name, cand[best]->uuid);
-
-		n = sais_task_pending_on_event(vhd, pss, cand[best], esc_plat,
+		n = sais_task_pending_on_event(vhd, pss, e, esc_plat,
 					       esc_bname);
 		if (n < 0)
 			/* we cleaned up something stale, try again later */
 			goto bail;
 
 		if (!n) {
+			pss->alloc_reason[0] = '\0';
 			lwsac_free(&ac);
 
 			return &pss->alloc_task;
 		}
-
-		/* nothing usable after all, drop it, keeping the order */
-
-		cands--;
-		memmove(&cand[best], &cand[best + 1],
-			(size_t)(cands - best) * sizeof(cand[0]));
-		memmove(&cand_served[best], &cand_served[best + 1],
-			(size_t)(cands - best) * sizeof(cand_served[0]));
-	}
+	} lws_end_foreach_dll(p);
 
 bail:
 	lwsac_free(&ac);
@@ -924,6 +823,9 @@ sais_platforms_with_tasks_pending_cb(lws_sorted_usec_list_t *sul)
 
 	sais_notify_all_sai_power(vhd);
 
+	/* the plan of what goes next is made from the same changes */
+	sais_plan_schedule(vhd);
+
 	/*
 	 * Wake up any builders that are slacking, since there are new tasks
 	 */
@@ -1037,12 +939,14 @@ sais_allocate_task(struct vhd *vhd, struct pss *pss, sai_plat_t *sp,
 	lwsl_info("%s: %s: task %s found for %s\n", __func__,
 		    platform_name, task_template->uuid, sp->name);
 
+	/* and the task's log says why it was picked, see s-plan.c */
+
+	if (pss->alloc_reason[0])
+		sais_task_logf(vhd, task_template->uuid, "planner: %s",
+			       pss->alloc_reason);
+
 	if (sais_create_and_offer_task_step(vhd, task_template->uuid))
 		return 1;
-
-	/* the platform's next task should come from a different repo, if any */
-
-	sais_repo_turn_served(vhd, platform_name, pss->alloc_repo);
 
 	/* yes, we will offer it to him */
 
@@ -1313,7 +1217,7 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 	 */
 
 	sais_get_task_metrics_estimates(vhd, temp_task, sp->name,
-					build_step ? build_step + 1 : 0);
+					build_step ? build_step + 1 : 0, NULL);
 
 	/*
 	 * and from that, what -j the step should run at this time, and

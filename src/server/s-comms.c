@@ -542,7 +542,7 @@ s_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 		sais_metrics_destroy(vhd);
 		sais_planner_destroy(vhd);
 		sais_hardware_destroy(vhd);
-		sais_repo_turns_destroy(vhd);
+		sais_plan_destroy(vhd);
 		goto passthru;
 
 	/*

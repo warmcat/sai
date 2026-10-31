@@ -255,6 +255,7 @@ void
 sais_planner_metric_arrived(struct vhd *vhd, const sai_build_metric_t *m)
 {
 	sais_hardware_metric_arrived(vhd, m);
+	sais_plan_metric_arrived(vhd, m);
 
 	lws_start_foreach_dll_safe(struct lws_dll2 *, p, p1,
 				   vhd->planner_probes.head) {

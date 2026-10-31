@@ -8,9 +8,10 @@ at each `-j`, all differ per step and per builder platform, and all show in
 the measurements.  So sai measures, and decides from the measurements.
 
 This is the start of it.  Today the planner chooses each step's
-`SAI_PARALLEL`, which was always 2, and has a step measured alone on its
-machine when nothing comparable has been; the builder still decides for
-itself how many steps it runs at once.
+`SAI_PARALLEL`, which was always 2, has a step measured alone on its machine
+when nothing comparable has been, and decides which task each platform takes
+next across every open event, saying why and when each event should finish;
+the builder still decides for itself how many tasks it runs at once.
 
 ## What's recorded
 
@@ -158,6 +159,85 @@ step they are waiting on.  The task's log says the same from the step's side:
 planner: step 3: waiting for l2 to go quiet to measure it alone, 2 steps still running
 planner: step 3: running alone on l2 to measure it
 ```
+
+## What runs next
+
+Each builder platform runs one task at a time per instance, and asks
+sai-server for another when one finishes.  Which of the tasks pending for the
+platform it gets, across every open event, is decided by the plan, which
+sai-server recomputes when tasks change state, rows land or builders come and
+go, coalesced, and at least once a minute while anything runs.
+
+The plan starts from how long each unfinished task should take on its
+platform: the newest row of each of its steps there added up, as the builder
+is told when offered the task, and a flat 5 minutes for a task with no rows
+yet, which the plan marks as a guess.  A task part way through counts only
+the steps it has left, and a running one what should be left of it.  From
+that each open event has a known amount left on each platform, and since an
+event is finished when its slowest platform is, the platform it will finish
+last on is its bottleneck and the time left there its critical path.  That
+is also the event's ETA.
+
+A platform's queue is then made in this order:
+
+ - **the event with the shortest critical path first.**  It's the push that
+   can be finished soonest, so the most pushes get their result soonest, and
+   a small push on one repo isn't held up by a big one on another.  This
+   replaces the repos taking turns on a platform, which did the same job
+   with less to go on.
+
+ - **a task of a later event goes ahead only where it fits.**  An event whose
+   finish waits on some other platform has that long to spare here, and a
+   task that runs here first in that time doesn't delay it, so the slack of
+   every event ahead is spent on tasks that fit in it.  Spending it brings
+   the later event's finish forward for nothing.
+
+ - **within an event:** a task this builder already started and is waiting
+   to continue, since its earlier steps' work is in the job dir; then the
+   tasks that failed on this branch last time, so a regression shows as early
+   as it can; then the longest first when the platform runs several at once,
+   else in task order.
+
+ - **the head stays put.**  The event at the head of a platform's queue stays
+   there until another's critical path beats it by 10%, so the head doesn't
+   change between events that are close every time a row lands.
+
+A task this builder already started and that is waiting for its next step is
+offered before the plan is consulted, as before.  Nothing new is offered to
+a platform whose machine is held for a measurement, see above, and the plan
+says so against it.  Idle tasks are not planned: they run when nothing else
+will, and yield when something will.
+
+How many tasks a platform runs at once is what its builder's `instances`
+says, 6 when it isn't configured, which a builder new enough sends with its
+platforms; for an older one it's the most the server has seen running there
+since it started.  Several
+builders serving one platform add up.  The ETAs assume that: a platform's
+queue drains that many at a time, each task taking what it took before.
+
+sai-web shows the plan in two places.  Under each builder in the builder list
+is what its platform will get next: up to three tasks with the time each
+should start and take, a `?` on a guess, the reason as the row's tooltip,
+and a line with how many are queued and when the queue should be done, whose
+tooltip is the policy above in a sentence.  Against each event, in the
+sidebar and in its header, is when the planner expects it to finish and, as
+the tooltip, how many tasks it has left, how many are running and how many
+are guesses; an event waiting on a platform nothing serves says that instead
+of a time.  None of it ticks: it changes when a new plan arrives, which is
+at most every 5 seconds.
+
+The reason a task was chosen goes in its log when it's offered, eg
+
+```
+planner: libwebsockets 5f39aa48: shortest to finish, 12m left, waiting on freertos-espidf/xl6-esp32/gcc; failed last time on this branch
+planner: fits ahead of libwebsockets 0c5b0d5f, which waits on rocky9/x86_64-amd/gcc for 25m anyway; longest first, 2 run at once
+```
+
+What makes a plan change: a task starting, finishing or failing, a metrics
+row landing for a task in it, which also replaces what that task is expected
+to take, a builder connecting or going away, and a machine being held or
+released for a measurement.  The estimates behind it are otherwise kept for
+an hour.
 
 ## What's next
 

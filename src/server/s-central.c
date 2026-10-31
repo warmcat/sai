@@ -206,6 +206,10 @@ sais_ensure_tables(struct vhd *vhd)
 	sqlite3_exec(vhd->server.pdb, "ALTER TABLE builders ADD COLUMN plan_info varchar(128);", NULL, NULL, &err);
 	if (err)
 		sqlite3_free(err);
+	/* how many tasks the builder runs on it at once, see s-plan.c */
+	sqlite3_exec(vhd->server.pdb, "ALTER TABLE builders ADD COLUMN job_limit integer;", NULL, NULL, &err);
+	if (err)
+		sqlite3_free(err);
 
 	sai_sqlite3_statement(vhd->server.pdb,
 		"CREATE TABLE IF NOT EXISTS power_controllers ("

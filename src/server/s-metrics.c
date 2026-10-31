@@ -122,10 +122,11 @@ sais_metric_scale(uint64_t v, unsigned int div)
 
 void
 sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task,
-				const char *builder_name, int step)
+				const char *builder_name, int step,
+				int *steps_known)
 {
 	uint64_t mem = 0, stg = 0, stg_prev = 0, wall = 0, cpu = 0, v;
-	int first, last, s, count;
+	int first, last, s, count, known = 0;
 	sqlite3_stmt *stmt;
 	char key[65], sh[65];
 	const char *ref;
@@ -188,6 +189,7 @@ sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task,
 			continue;
 		}
 
+		known++;
 		v = (uint64_t)sqlite3_column_int64(stmt, 0);
 		if (v > mem)
 			mem = v;
@@ -209,6 +211,9 @@ sais_get_task_metrics_estimates(struct vhd *vhd, sai_task_t *task,
 	task->est_disk_kib	= sais_metric_scale(stg, 1024);
 	task->est_wallclock_ms	= sais_metric_scale(wall, 1000);
 	task->est_compute_ms	= sais_metric_scale(cpu, 1000);
+
+	if (steps_known)
+		*steps_known = known;
 }
 
 /*

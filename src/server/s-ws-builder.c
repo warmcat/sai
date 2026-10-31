@@ -939,6 +939,7 @@ sais_builder_disconnected(struct vhd *vhd, struct lws *wsi)
 			}
 
 			sais_hardware_plat_gone(vhd, sp);
+			sais_plan_schedule(vhd);
 
 			lws_dll2_remove(&sp->sai_plat_list);
 			lws_sul_cancel(&sp->sul_find_jobs);
@@ -1623,6 +1624,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					lws_strncpy(live_sp->hardware, build->hardware,
 						    sizeof(live_sp->hardware));
 					live_sp->windows			= build->windows;
+					live_sp->job_limit			= build->job_limit;
 					live_sp->online				= 1;
 					live_sp->avail_mem_kib			= (unsigned int)-1;
 					live_sp->avail_sto_kib			= (unsigned int)-1;
@@ -1653,6 +1655,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 					lws_strncpy(live_sp->hardware, build->hardware,
 						    sizeof(live_sp->hardware));
 					live_sp->windows			= build->windows;
+					live_sp->job_limit			= build->job_limit;
 					live_sp->avail_mem_kib			= (unsigned int)-1;
 					live_sp->avail_sto_kib			= (unsigned int)-1;
 					live_sp->powering_down			= build->powering_down;
@@ -1667,6 +1670,7 @@ sais_ws_json_rx_builder(struct vhd *vhd, struct pss *pss, uint8_t *buf, size_t b
 
 				/* which machine it's on, by what it just said */
 				sais_hardware_attach(vhd, live_sp);
+				sais_plan_schedule(vhd);
 
 				/* and what it wants to do with its idle time */
 				sais_idle_plat_update(vhd, build);
