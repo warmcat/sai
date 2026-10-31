@@ -877,6 +877,7 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 //	int cpu_load = saib_get_system_cpu(&builder);
 #endif
 
+	uint64_t whole = builder.ram_limit_kib, est_mem_guess = 0;
 	unsigned int executing = 0, est_mem_was = 0;
 
 	if (builder.one_shot_active) {
@@ -971,10 +972,25 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 	 * comes back when it finishes, so it's worth waiting for, but if the
 	 * estimate is more than we can have even with nothing else going on,
 	 * no amount of waiting will get it.
+	 *
+	 * The budget is what was free when we started, not more: the steps'
+	 * peaks are counted as if they all come at once, because when a push
+	 * starts a dozen tasks together, they do.  Overcommitting it by a
+	 * third let 12 steps on to a 4GB machine and the OOM killer took 10.
 	 */
 
 	{
-		uint64_t whole = (builder.ram_limit_kib * 4) / 3, budget;
+		uint64_t budget, avail;
+
+		/*
+		 * A step we know nothing about would reserve nothing, so any
+		 * number of them could start at once: count it as an eighth
+		 * of the machine until it has run here
+		 */
+		if (!task->est_peak_mem_kib) {
+			est_mem_guess = whole / 8;
+			task->est_peak_mem_kib = (unsigned int)est_mem_guess;
+		}
 
 		/*
 		 * Bigger than our whole budget: it wants all of it, then, and
@@ -998,6 +1014,29 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 					(unsigned long long)(whole / 1024));
 			saib_reintroduce_later();
 			return 2; /* nope, not as big as that */
+		}
+
+		/*
+		 * The reservations are estimates, and what else is on the
+		 * machine isn't in them at all.  Whatever they add up to, a
+		 * step can't start on a machine that doesn't have what it
+		 * needs free right now, with an eighth to spare: when the
+		 * steps already running are eating more than they were
+		 * estimated at, each new one would be admitted and die on
+		 * arrival, as fast as the deaths freed the slots.
+		 */
+
+		avail = saib_get_free_ram_kib();
+		if (avail && avail < task->est_peak_mem_kib + whole / 8) {
+			if (saib_refusal_loggable(task->uuid))
+				saib_task_logf(spm, NULL, task->uuid,
+					"Builder %s can't take this step yet: "
+					"needs %uMiB RAM and only %lluMiB is "
+					"free right now", sp->name,
+					(unsigned int)(task->est_peak_mem_kib / 1024),
+					(unsigned long long)(avail / 1024));
+			saib_reintroduce_later();
+			return 2;
 		}
 	}
 
@@ -1065,7 +1104,15 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 			"Builder %s is taking this step although it peaked at "
 			"%uMiB RAM before, more than its whole %lluMiB budget: "
 			"it may run short", sp->name, est_mem_was / 1024,
-			(unsigned long long)((builder.ram_limit_kib * 4) / 3 / 1024));
+			(unsigned long long)(whole / 1024));
+
+	if (est_mem_guess)
+		saib_task_logf(spm, NULL, task->uuid,
+			"Builder %s has no memory history for this step, "
+			"counting it as %lluMiB, an eighth of its %lluMiB "
+			"budget", sp->name,
+			(unsigned long long)(est_mem_guess / 1024),
+			(unsigned long long)(whole / 1024));
 
 	return 0; /* acceptable */
 }

@@ -153,9 +153,15 @@ per job, or what it took at a higher `-j`, which is a safe ceiling.  A step
 with no rows here at all, or a task none of whose steps have run here, is
 counted as the most any step ever took on its machine until it has: left at
 nothing, any number of them could start at once, and when a push starts a
-dozen tasks together they do.  A builder that refuses the step for its
-memory, or because it's full, just ends the offer; the step is offered again
-later as anything else is.
+dozen tasks together they do.  The builder adds the estimates of the steps
+it has running and admits another only while they all fit in what was free
+when it started, peaks counted as if they come together, since they do; a
+step it has no estimate for at all counts as an eighth of that.  Whatever
+the estimates add up to, it won't take a step the machine doesn't have the
+memory for right now, with an eighth to spare, so steps already running past
+their estimates stop new ones rather than the OOM killer stopping them all.
+A builder that refuses the step for its memory, or because it's full, just
+ends the offer; the step is offered again later as anything else is.
 
 ## What runs next
 
