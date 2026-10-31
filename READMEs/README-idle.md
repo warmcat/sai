@@ -127,8 +127,8 @@ may be unfixed security bugs.
 
 An event's idle tasks are shown before its real tasks, in their own group per
 configuration named "idle: <configuration>".  While a slice is running, the
-lane is shown at full strength and gently "breathing"; the rest of the time,
-including when a slice yields to real work, it fades back.  Idle tasks aren't
+lane is shown at full strength on green; the rest of the time, including when
+a slice yields to real work, it fades back.  Idle tasks aren't
 included in the event's task counts or progress bar.
 
 A lane with runs that failed or overran isn't faded back, and is ringed in

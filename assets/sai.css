@@ -414,8 +414,13 @@ img.bico {
 
 /*
  * Idle tasks ("lanes") run in time the builders would otherwise spend idle.
- * While a slice runs they are shown at full strength, gently breathing; the
- * rest of the time, including when real work makes them yield, they fade back.
+ * While a slice runs they are shown at full strength on green; the rest of
+ * the time, including when real work makes them yield, they fade back.
+ *
+ * Nothing about a running lane animates.  A "breathing" overlay on it, even
+ * one animating only opacity, was run on the main thread by Firefox, which
+ * then rebuilt the whole page's display list every vsync for as long as a
+ * slice ran, which is all the time: a core per viewer, continuously.
  */
 div.taskstate.idle-lane, tr.tt-row.idle-lane {
 	opacity: 0.35;
@@ -431,48 +436,7 @@ tr.tt-row.idle-lane.taskstate9 {
 
 div.taskstate.idle-lane.taskstate1, div.taskstate.idle-lane.taskstate2,
 div.taskstate.idle-lane.taskstate9 {
-	position: relative;
 	background: #9fd8b8;
-}
-
-/*
- * The breathing is a white layer over it fading in and out: animating only
- * opacity lets the browser's compositor do it on its own.  Animating a filter
- * on the lane itself had the page restyled and repainted on every frame for
- * as long as a slice ran, which is all the time, keeping a core busy.
- */
-div.taskstate.idle-lane.taskstate1::after,
-div.taskstate.idle-lane.taskstate2::after,
-div.taskstate.idle-lane.taskstate9::after {
-	content: "";
-	position: absolute;
-	top: 0;
-	right: 0;
-	bottom: 0;
-	left: 0;
-	border-radius: inherit;
-	background: #ffffff;
-	opacity: 0;
-	pointer-events: none;
-	will-change: opacity;
-	animation: idle-breathe 4s ease-in-out infinite;
-}
-
-@keyframes idle-breathe {
-	0%, 100% {
-		opacity: 0;
-	}
-	50% {
-		opacity: 0.25;
-	}
-}
-
-@media (prefers-reduced-motion: reduce) {
-	div.taskstate.idle-lane.taskstate1::after,
-	div.taskstate.idle-lane.taskstate2::after,
-	div.taskstate.idle-lane.taskstate9::after {
-		animation: none;
-	}
 }
 
 /*
