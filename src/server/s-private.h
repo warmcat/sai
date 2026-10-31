@@ -358,6 +358,7 @@ typedef struct sais_hardware {
 	char			curve_loaded;
 	int			best;		/* bucket with most work done, -1 none */
 	int			ceiling;	/* the most demand we'll put on it */
+	int			oom_load;	/* it ran out of memory at this load, -1 never */
 	uint64_t		mem_max;	/* the most any step peaked at on it */
 
 	/* so a step's wait is logged once */
@@ -833,6 +834,8 @@ sais_planner_metric_arrived(struct vhd *vhd, const sai_build_metric_t *m);
 
 void
 sais_planner_task_ended(struct vhd *vhd, const char *task_uuid, int failed);
+void
+sais_planner_task_oom(struct vhd *vhd, sai_plat_t *sp, const char *task_uuid);
 
 /* s-hardware.c */
 

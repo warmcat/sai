@@ -123,6 +123,11 @@ enum {
 	SAISPRF_YIELDED			= 0x10000,
 	/* with SAISPRF_YIELDED: ... because it ran past the end of the slice */
 	SAISPRF_OVERRAN			= 0x20000,
+	/*
+	 * the OOM killer took part of the step: its machine ran out of memory,
+	 * which is the plan's doing, not the step's
+	 */
+	SAISPRF_OOM			= 0x40000,
 };
 
 typedef enum {

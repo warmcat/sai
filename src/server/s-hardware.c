@@ -78,6 +78,7 @@ sais_hardware_attach(struct vhd *vhd, sai_plat_t *sp)
 		memset(hw, 0, sizeof(*hw));
 		hw->vhd		= vhd;
 		hw->best	= -1;
+		hw->oom_load	= -1;
 		hw->load_since	= lws_now_usecs();
 		lws_strncpy(hw->name, sp->hardware, sizeof(hw->name));
 		hw->index = (int)vhd->hardware_owner.count + 1;
@@ -277,13 +278,15 @@ sais_hardware_describe(const sai_plat_t *sp, char *info, size_t info_len)
 
 	if (hw->load_idle)
 		lws_snprintf(info, info_len, "hw%d: load %d (%d idle) of up "
-			     "to %d%s", hw->index, hw->load, hw->load_idle,
+			     "to %d%s%s", hw->index, hw->load, hw->load_idle,
 			     hw->ceiling,
-			     hw->best < 0 ? " (nothing measured yet)" : "");
+			     hw->best < 0 ? " (nothing measured yet)" : "",
+			     hw->oom_load >= 0 ? " (ran out of memory)" : "");
 	else
-		lws_snprintf(info, info_len, "hw%d: load %d of up to %d%s",
+		lws_snprintf(info, info_len, "hw%d: load %d of up to %d%s%s",
 			     hw->index, hw->load, hw->ceiling,
-			     hw->best < 0 ? " (nothing measured yet)" : "");
+			     hw->best < 0 ? " (nothing measured yet)" : "",
+			     hw->oom_load >= 0 ? " (ran out of memory)" : "");
 }
 
 /* what the platform's machine is doing for the planner, for the web */

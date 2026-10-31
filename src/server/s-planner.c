@@ -223,6 +223,22 @@ sais_plan_curve_recalc(sais_hardware_t *hw)
 	else
 		hw->ceiling = sais_plan_ladder[hw->best + 1 < SAIS_PLAN_RUNGS ?
 					       hw->best + 1 : hw->best];
+
+	/*
+	 * Whatever the rows say about its cpu, a load that ran it out of
+	 * memory isn't going to be put on it again: the rung below that is
+	 * as far as it goes, until the server restarts
+	 */
+	if (hw->oom_load >= 0) {
+		int cap = 1;
+
+		for (n = 0; n < SAIS_PLAN_RUNGS; n++)
+			if (sais_plan_ladder[n] < hw->oom_load)
+				cap = sais_plan_ladder[n];
+
+		if (hw->ceiling > cap)
+			hw->ceiling = cap;
+	}
 }
 
 static void
@@ -1004,4 +1020,44 @@ sais_planner_task_ended(struct vhd *vhd, const char *task_uuid, int failed)
 	if (sais_is_task_inflight(vhd, NULL, task_uuid, &ul) && ul->list.owner)
 		sais_hardware_step_ended(vhd, lws_container_of(ul->list.owner,
 						sai_plat_t, inflight_owner), ul);
+}
+
+/*
+ * The OOM killer took part of a step on the platform's machine.  That says
+ * nothing about the task, which goes back in the queue, and everything about
+ * the machine: the load it carried at the time is more than it can hold,
+ * whatever its rows say about its cpu, so it isn't put there again.  The
+ * builder caps what it admits too, in memory terms; this is the planner's
+ * end of the same lesson.  Called before the task's demand comes off.
+ */
+
+void
+sais_planner_task_oom(struct vhd *vhd, sai_plat_t *sp, const char *task_uuid)
+{
+	sais_hardware_t *hw = sp->hw;
+	int load;
+
+	if (!hw)
+		return;
+
+	sais_plan_curve(vhd, hw);
+	sais_hardware_touch(vhd, hw);
+
+	load = hw->load - hw->load_idle;
+	if (load < 2)
+		load = 2; /* so the cap below it is at least 1 */
+
+	if (hw->oom_load >= 0 && load >= hw->oom_load)
+		return;
+
+	hw->oom_load = load;
+	sais_plan_curve_recalc(hw);
+
+	lwsl_warn("%s: hw%d (%s): ran out of memory at load %d, allowing up "
+		  "to %d from now\n", __func__, hw->index, hw->name, load,
+		  hw->ceiling);
+	sais_task_logf(vhd, task_uuid, "planner: hw%d ran out of memory at "
+		       "load %d: allowing up to %d from now", hw->index, load,
+		       hw->ceiling);
+	sais_list_builders(vhd);
 }

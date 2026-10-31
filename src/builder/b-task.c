@@ -861,6 +861,45 @@ saib_reintroduce_later(void)
 			 saib_reintroduce_cb, SAIB_REINTRODUCE_US);
 }
 
+/*
+ * The OOM killer took part of a step.  The reservations we admitted on
+ * added up to more than the machine could really hold: they're estimates,
+ * and the OS, the page cache and whatever else is on the machine aren't in
+ * them.  What they added up to when it struck is a demonstrated limit, so
+ * from now on they may add up to nine tenths of that at most, until we're
+ * restarted.  Each time it strikes the limit can only come down.
+ */
+
+void
+saib_ram_oom_noted(void)
+{
+	uint64_t reserved = builder.ram_reserved_kib;
+	lws_usec_t now = lws_now_usecs();
+
+	if (!reserved)
+		return;
+
+	/*
+	 * One incident, one lesson: its victims reap one by one as their
+	 * artifacts upload, each seeing fewer reservations still held than
+	 * the one before, and the last would set the budget to a fraction of
+	 * what the machine demonstrably carried.  The first to report says
+	 * what was on the machine when it struck.
+	 */
+	if (builder.ram_oom_at && now - builder.ram_oom_at < 60 * LWS_US_PER_SEC)
+		return;
+	builder.ram_oom_at = now;
+
+	if (!builder.ram_oom_kib || reserved < builder.ram_oom_kib)
+		builder.ram_oom_kib = reserved;
+
+	lwsl_warn("%s: the OOM killer struck with %lluMiB reserved by our "
+		  "steps: admitting up to %lluMiB from now, not %lluMiB\n",
+		  __func__, (unsigned long long)(reserved / 1024),
+		  (unsigned long long)((builder.ram_oom_kib * 9) / 10 / 1024),
+		  (unsigned long long)(builder.ram_limit_kib / 1024));
+}
+
 static int
 saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 		     sai_plat_t *sp)
@@ -879,6 +918,10 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 
 	uint64_t whole = builder.ram_limit_kib, est_mem_guess = 0;
 	unsigned int executing = 0, est_mem_was = 0;
+
+	/* what proved too much, if the OOM killer has struck since we started */
+	if (builder.ram_oom_kib && (builder.ram_oom_kib * 9) / 10 < whole)
+		whole = (builder.ram_oom_kib * 9) / 10;
 
 	if (builder.one_shot_active) {
 		if (!builder.one_shot_task_uuid[0]) {

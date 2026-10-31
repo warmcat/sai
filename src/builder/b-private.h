@@ -317,6 +317,8 @@ struct sai_builder {
 
 	uint64_t		ram_limit_kib;
 	uint64_t		ram_reserved_kib;
+	uint64_t		ram_oom_kib; /* reserved when the OOM killer struck, 0 never */
+	lws_usec_t		ram_oom_at;
 	uint64_t		disk_total_kib;
 	uint64_t		disk_reserved_kib;
 
@@ -457,6 +459,8 @@ saib_cotenancy_update(void);
 
 unsigned int
 saib_get_free_ram_kib(void);
+void
+saib_ram_oom_noted(void);
 
 unsigned int
 saib_get_total_ram_kib(void);

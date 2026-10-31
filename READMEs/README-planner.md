@@ -163,6 +163,23 @@ their estimates stop new ones rather than the OOM killer stopping them all.
 A builder that refuses the step for its memory, or because it's full, just
 ends the offer; the step is offered again later as anything else is.
 
+**When the OOM killer strikes anyway**, the builder sees it in the step's
+cgroup and says so: the step is reported killed for memory rather than
+failed, and the task goes back in the queue as a new run instead of failing
+the push, since it was the plan that ran the machine out, not the code.  The
+old run keeps its log, which says what happened.  A step it took with
+nothing else on the machine wants more than the machine has, and fails as
+any step does, rather than being requeued to die alone again.  Both ends
+learn from it.
+The builder's reservations added up to more than the machine could hold, so
+from then on it admits steps only while they add up to nine tenths of what
+they did when it struck, until it's restarted.  And the planner caps the
+machine's load a rung below what it carried at the time, until the server
+restarts, since whatever the rows say about its cpu, that load ran it out of
+memory; the builder list says `(ran out of memory)` against its platforms.
+The point is not to see it again: a step the OOM killer took means the plan
+was bad.
+
 ## What runs next
 
 Each builder platform runs one task at a time per instance, and asks

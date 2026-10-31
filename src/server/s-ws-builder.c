@@ -1014,7 +1014,8 @@ static int
 sais_process_rej(struct vhd *vhd, struct pss *pss,
 		 sai_plat_t *sp, sai_rejection_t *rej)
 {
-	char event_uuid[33], do_remove_uuid = 0, q[384], esc_uuid[129];
+	char event_uuid[33], do_remove_uuid = 0, requeued = 0, q[384],
+	     esc_uuid[129];
 	int n, build_step = -1, stale = 0;
 	sqlite3 *pdb = NULL;
 	sai_uuid_list_t *ul;
@@ -1191,6 +1192,29 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 
 		do_remove_uuid = 1;
 
+		if (rej->ecode & SAISPRF_OOM) {
+			/*
+			 * The OOM killer took part of the step: its machine
+			 * ran out of memory, which is the plan's doing, not
+			 * the task's.  The machine learns from it, and the
+			 * task goes back in the queue as a new run rather than
+			 * failing the push.  The old run keeps its log, which
+			 * says what happened.
+			 */
+			lwsl_notice("%s: |||| OOM: %s\n", __func__,
+				    rej->task_uuid);
+			sais_task_logf(vhd, rej->task_uuid,
+				       "builder %s reported the OOM killer took "
+				       "part of this step: its machine ran out "
+				       "of memory, the plan's fault and not this "
+				       "task's; it will run again", sp->name);
+			sais_planner_task_oom(vhd, sp, rej->task_uuid);
+			sais_task_clear_build_and_logs(vhd, rej->task_uuid, 0);
+			sais_plat_busy(sp, 0);
+			requeued = 1;
+			break;
+		}
+
 		if (rej->ecode & SAISPRF_YIELDED) {
 			/*
 			 * The builder stopped an idle task's slice, to make
@@ -1275,7 +1299,7 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 		// sais_task_clear_build_and_logs(vhd, rej->task_uuid, 1);
 	}
 
-	if (rej->reason == SAI_TASK_REASON_DESTROYED && !stale)
+	if (rej->reason == SAI_TASK_REASON_DESTROYED && !stale && !requeued)
 		/* uuid will not be found listed as inflight for this */
 		sais_create_and_offer_task_step(vhd, rej->task_uuid);
 

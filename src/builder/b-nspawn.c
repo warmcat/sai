@@ -473,6 +473,36 @@ sai_lsp_reap_cb(void *opaque, const lws_spawn_resource_us_t *res, siginfo_t *si,
 	ns->retcode_set = 1;
 #endif
 
+#if defined(__linux__)
+	/*
+	 * The OOM killer took part of it.  With other steps on the machine,
+	 * that's how much we admitted on to it, not this step's doing: say
+	 * so, flag it so the server doesn't fail the task for it, and learn
+	 * what proved too much.  With nothing else running, the step wants
+	 * more than the machine has, and it fails as any step does, or it
+	 * would be requeued to run alone and die again for ever.
+	 */
+	if (exit_code && res->oom_kills && ns->cot_max > 0) {
+		saib_task_logf(ns->spm, ns, NULL,
+			       "The OOM killer took %llu process%s of this "
+			       "step: the machine ran out of memory, with "
+			       "%lluMiB reserved by the steps on it.  That's "
+			       "the builder's admission, not this step's fault",
+			       (unsigned long long)res->oom_kills,
+			       res->oom_kills == 1 ? "" : "es",
+			       (unsigned long long)(builder.ram_reserved_kib /
+								1024));
+		ns->retcode |= SAISPRF_OOM;
+		saib_ram_oom_noted();
+	} else if (exit_code && res->oom_kills)
+		saib_task_logf(ns->spm, ns, NULL,
+			       "The OOM killer took %llu process%s of this "
+			       "step with nothing else running on the machine: "
+			       "it needs more memory than the machine has",
+			       (unsigned long long)res->oom_kills,
+			       res->oom_kills == 1 ? "" : "es");
+#endif
+
 	if (exit_code)
 		goto fail;
 
