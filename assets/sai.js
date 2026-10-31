@@ -1888,11 +1888,13 @@ function sai_plan_next_html(platform)
 	if (!pl)
 		return "";
 
-	if (pl.held)
-		return "<div class=\"plan-next-held\">held: " + san(pl.held) + "</div>";
+	/* what its machine is carrying, and how far the planner lets it go */
+	if (pl.machine)
+		s += "<div class=\"plan-next-machine\">" + san(pl.machine) +
+		     "</div>";
 
 	if (!pl.queued)
-		return "";
+		return s;
 
 	for (i = 0; pl.next && i < pl.next.length && n < 3; i++) {
 		e = pl.next[i];
@@ -4863,18 +4865,12 @@ function createBuilderDiv(plat) {
 	if (auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN && plat.peer_ip)
 		innerHTML += `<div class="plat-peer-ip">${hsanitize(plat.peer_ip)}</div>`;
 	/*
-	 * What the planner is doing with the machine it's on: waiting for
-	 * it to go quiet so a step can be measured alone, running that step,
-	 * or held back while another platform on the machine does
+	 * A step on its machine is waiting for the load there to drop, see
+	 * "How much to run at once" in README-planner.md
 	 */
-	if (plat.plan_state > 0 && plat.plan_state < 4) {
-		const plan_names = ["", "waiting", "measuring", "blocked"];
-		const plan_texts = ["", "waiting to measure alone",
-				    "measuring alone", "held for hw" +
-				    plat.hw_index + " measuring"];
-
-		platDiv.className += " plan-" + plan_names[plat.plan_state];
-		innerHTML += `<div class="plan-state">${plan_texts[plat.plan_state]}: ${hsanitize(plat.plan_info || "")}</div>`;
+	if (plat.plan_state === 1) {
+		platDiv.className += " plan-waiting";
+		innerHTML += `<div class="plan-state">a step waits, ${hsanitize(plat.plan_info || "")}</div>`;
 	}
 	/* what the planner has lined up for its platform, filled from the plan */
 	innerHTML += `<div class="plan-next" id="plannext-${hsanitize(plat.name)}">` +

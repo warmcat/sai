@@ -1469,9 +1469,8 @@ table.comp.adhoc {
 }
 
 /*
- * What the planner is doing with a platform's machine, see "Measuring alone"
- * in README-planner.md: the platform measuring a step alone, one waiting for
- * the machine to go quiet so it can, and the others on the machine held back
+ * A step on the platform's machine is waiting for the load there to drop,
+ * see "How much to run at once" in README-planner.md
  */
 .plan-state {
 	font-size: 6pt;
@@ -1482,24 +1481,10 @@ table.comp.adhoc {
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
-div.ibuil.plan-measuring {
-	outline: 2px solid #2a8a2a;
-}
-div.ibuil.plan-measuring .plan-state {
-	background: #2a8a2a;
-	color: #ffffff;
-}
 div.ibuil.plan-waiting {
-	outline: 2px dashed #2a8a2a;
-}
-div.ibuil.plan-waiting .plan-state {
-	background: #cfe8cf;
-	color: #164416;
-}
-div.ibuil.plan-blocked {
 	outline: 2px dashed #c08a20;
 }
-div.ibuil.plan-blocked .plan-state {
+div.ibuil.plan-waiting .plan-state {
 	background: #f3e2b8;
 	color: #5a4010;
 }
@@ -1540,8 +1525,8 @@ div.ibuil.plan-blocked .plan-state {
 	border-top: 1px solid #dde;
 	margin-top: 1px;
 }
-.plan-next-held {
-	color: #5a4010;
+.plan-next-machine {
+	color: #567;
 }
 
 /* when the planner expects an event to finish */
