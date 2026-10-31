@@ -1195,6 +1195,24 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 
 	event = lws_container_of(o_event.head, sai_event_t, list);
 
+	/*
+	 * Every step of a task comes through here, whichever path asked for
+	 * it: the builder finishing the step before, a machine freeing for a
+	 * measurement, an offer that was refused.  None of them look at the
+	 * event.  If it was deleted meanwhile, the task ends here, whatever
+	 * step it had reached, else a builder goes on building it for hours.
+	 */
+	if (event->state == SAIES_DELETED) {
+		lwsl_notice("%s: %s: its event was deleted, not continuing\n",
+			    __func__, task_uuid);
+		sais_planner_task_ended(vhd, task_uuid, 0);
+		sais_set_task_state(vhd, task_uuid, SAIES_CANCELLED, 0, 0);
+		if (sais_is_task_inflight(vhd, NULL, task_uuid, &ul))
+			sais_inflight_entry_destroy(ul);
+		ret = 1;
+		goto bail;
+	}
+
 	temp_task->one_event		= event;
 	temp_task->repo_name		= event->repo_name;
 	temp_task->git_ref		= event->ref;
