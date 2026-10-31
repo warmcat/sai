@@ -118,6 +118,8 @@ typedef struct sais_plan_pplat {
 	lws_dll2_owner_t	running;	/* sais_plan_ptask_t.aux_list */
 	lws_dll2_owner_t	cands;		/* placing: not yet in the queue */
 	sai_plat_t		*builder;	/* one online, for estimates */
+	uint64_t		known_us;	/* tasks here with history: total */
+	int			known_n;	/*   ... and how many */
 	int			idx;
 } sais_plan_pplat_t;
 
@@ -136,6 +138,7 @@ typedef struct sais_plan_ptask {
 	int			build_step_count;
 	char			failed_before;
 	char			continuing;
+	char			guess;		/* no history: estimated from its neighbours */
 } sais_plan_ptask_t;
 
 typedef struct sais_plan_pevent {
@@ -381,6 +384,54 @@ sais_plan_pplat(struct vhd *vhd, const char *platform)
 	lws_dll2_add_tail(&pl->pub.list, &vhd->plan.platforms);
 
 	return pl;
+}
+
+static sais_plan_pplat_t *
+sais_plan_pplat_find(struct vhd *vhd, const char *platform)
+{
+	lws_start_foreach_dll(struct lws_dll2 *, p, vhd->plan.platforms.head) {
+		sais_plan_pplat_t *pl = lws_container_of(p, sais_plan_pplat_t,
+							 pub.list);
+
+		if (!strcmp(pl->pub.platform, platform))
+			return pl;
+	} lws_end_foreach_dll(p);
+
+	return NULL;
+}
+
+/*
+ * est is for the whole task: scale it to the steps the task has left, and
+ * for a running task, to what should be left of it
+ */
+static void
+sais_plan_task_set_est(sais_plan_ptask_t *pt, uint64_t est, uint64_t now)
+{
+	if (pt->build_step > 0 && pt->build_step_count > 0 &&
+	    pt->build_step < pt->build_step_count)
+		est = (est * (uint64_t)(pt->build_step_count -
+					pt->build_step)) /
+		      (uint64_t)pt->build_step_count;
+
+	pt->est_us	= est;
+	pt->pub.est_ms	= (unsigned int)(est / 1000);
+
+	if (!pt->pub.running)
+		return;
+
+	{
+		uint64_t gone = pt->started && now > pt->started ?
+				(now - pt->started) * LWS_US_PER_SEC : 0;
+
+		/*
+		 * Past its estimate, it's given a tenth of what it has taken
+		 * so far: that grows with the overrun instead of being the
+		 * same few minutes from "now" every pass, which had the ETA
+		 * creeping forward tick by tick
+		 */
+		pt->remaining_us = gone < est ? est - gone :
+				   gone / SAIS_PLAN_OVERRUN_DIV;
+	}
 }
 
 /*
@@ -846,31 +897,22 @@ sais_plan_recompute(struct vhd *vhd)
 				est = 0;
 
 			if (!est) {
-				est = SAIS_PLAN_UNKNOWN_US;
+				/* guessed from its neighbours once all are in */
+				pt->guess = 1;
 				quality = 0;
 				pev->pub.unknown++;
+			} else {
+				pt->pl->known_us += est;
+				pt->pl->known_n++;
 			}
 
-			if (pt->build_step > 0 && pt->build_step_count > 0 &&
-			    pt->build_step < pt->build_step_count)
-				est = (est * (uint64_t)(pt->build_step_count -
-							pt->build_step)) /
-				      (uint64_t)pt->build_step_count;
-
-			pt->est_us	= est;
-			pt->pub.est_ms	= (unsigned int)(est / 1000);
 			pt->pub.quality	= quality;
 
 			if (pt->state == SAIES_PASSED_TO_BUILDER ||
 			    pt->state == SAIES_BEING_BUILT ||
 			    sais_is_task_inflight(vhd, NULL, pt->pub.uuid,
 						  NULL)) {
-				uint64_t gone = pt->started && now > pt->started ?
-					(now - pt->started) * LWS_US_PER_SEC : 0;
-
 				pt->pub.running = 1;
-				pt->remaining_us = gone < est ? est - gone :
-						   est / SAIS_PLAN_OVERRUN_DIV;
 				lws_dll2_add_tail(&pt->aux_list,
 						  &pt->pl->running);
 				pt->pl->pub.running++;
@@ -885,10 +927,41 @@ sais_plan_recompute(struct vhd *vhd)
 				pt->pl->pub.queued++;
 			}
 
+			if (!pt->guess)
+				sais_plan_task_set_est(pt, est, now);
+
 			pev->pub.left++;
 		}
 
 		sqlite3_finalize(sm);
+
+		/*
+		 * What this event's finished tasks took on each platform: the
+		 * best guide there is for a task with no history of its own
+		 * there, eg, a platform building this repo for the first time
+		 */
+		if (sqlite3_prepare_v2(pdb, "select platform, count(*), "
+			"sum(duration) from tasks t1 where idle=0 and "
+			"state IN (3,4) and duration > 0 and run = (select "
+			"max(run) from tasks t2 where t1.uuid = t2.uuid) "
+			"group by platform", -1, &sm, NULL) == SQLITE_OK) {
+			while (sqlite3_step(sm) == SQLITE_ROW) {
+				const char *plat = (const char *)
+						sqlite3_column_text(sm, 0);
+				sais_plan_pplat_t *pl = plat && plat[0] ?
+					sais_plan_pplat_find(vhd, plat) : NULL;
+
+				if (!pl)
+					continue;
+
+				pl->known_n += sqlite3_column_int(sm, 1);
+				pl->known_us += (uint64_t)
+					sqlite3_column_int64(sm, 2) *
+							LWS_US_PER_SEC;
+			}
+			sqlite3_finalize(sm);
+		}
+
 		sai_event_db_close(&vhd->sqlite3_cache, &pdb);
 
 		if (!pev->tasks.count)
@@ -897,6 +970,49 @@ sais_plan_recompute(struct vhd *vhd)
 
 		lws_dll2_add_tail(&pev->pub.list, &vhd->plan.events);
 	} lws_end_foreach_dll(p);
+
+	/*
+	 * A task with no history on its platform: it should take what the
+	 * tasks around it take, the mean of those with history on the same
+	 * platform, else across every platform, else 5 minutes.  It stays
+	 * marked a guess either way.
+	 */
+
+	{
+		uint64_t all_us = 0;
+		int all_n = 0;
+
+		lws_start_foreach_dll(struct lws_dll2 *, p,
+				      vhd->plan.platforms.head) {
+			sais_plan_pplat_t *pl = lws_container_of(p,
+						sais_plan_pplat_t, pub.list);
+
+			all_us += pl->known_us;
+			all_n += pl->known_n;
+		} lws_end_foreach_dll(p);
+
+		lws_start_foreach_dll(struct lws_dll2 *, p, vhd->plan.events.head) {
+			sais_plan_pevent_t *pev = lws_container_of(p,
+						sais_plan_pevent_t, pub.list);
+
+			lws_start_foreach_dll(struct lws_dll2 *, q, pev->tasks.head) {
+				sais_plan_ptask_t *pt = lws_container_of(q,
+						sais_plan_ptask_t, ev_list);
+				uint64_t est = SAIS_PLAN_UNKNOWN_US;
+
+				if (!pt->guess)
+					continue;
+
+				if (pt->pl->known_n)
+					est = pt->pl->known_us /
+						(uint64_t)pt->pl->known_n;
+				else if (all_n)
+					est = all_us / (uint64_t)all_n;
+
+				sais_plan_task_set_est(pt, est, now);
+			} lws_end_foreach_dll(q);
+		} lws_end_foreach_dll(p);
+	}
 
 	/*
 	 * Each event's time left on each platform, and so its critical path:

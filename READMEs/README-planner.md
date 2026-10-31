@@ -179,9 +179,13 @@ go, coalesced, and at least once a minute while anything runs.
 
 The plan starts from how long each unfinished task should take on its
 platform: the newest row of each of its steps there added up, as the builder
-is told when offered the task, and a flat 5 minutes for a task with no rows
-yet, which the plan marks as a guess.  A task part way through counts only
-the steps it has left, and a running one what should be left of it.  From
+is told when offered the task.  A task with no rows yet is guessed from its
+neighbours: the mean of the tasks with history on the same platform, counting
+what the open events' finished tasks took there, else across every platform,
+else 5 minutes; the plan marks it a guess whichever it got.  A task part way
+through counts only the steps it has left, and a running one what should be
+left of it; one past its estimate is given a tenth of what it has taken so
+far.  From
 that each open event has a known amount left on each platform, and since an
 event is finished when its slowest platform is, the platform it will finish
 last on is its bottleneck and the time left there its critical path.  That
