@@ -56,6 +56,18 @@
 
 /* the -j values the planner tries, in order */
 static const int sais_plan_ladder[] = { 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64 };
+/*
+ * Whether the planner explores: tries rungs a step hasn't run at, and holds
+ * the step's machine to measure a rung alone.  Off: climbing each step's own
+ * -j ladder a rung per run, each first run alone, had a cold builder with 40
+ * tasks running every step of every task one at a time, and still knew
+ * nothing about the machine that the next step could use.  What replaces it
+ * learns the machine's throughput under load from the rows that land anyway,
+ * see README-planner.md.  Until then each step runs at the best -j its rows
+ * show, -j2 when there are none, and nothing is held.
+ */
+static const int sais_plan_explore = 0;
+
 #define SAIS_PLAN_RUNGS		((int)LWS_ARRAY_SIZE(sais_plan_ladder))
 
 /* what a step runs at with nothing to go on, as it always did */
@@ -498,7 +510,7 @@ sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 		 * The first run is at the default, and is the first row:
 		 * the one everything after it is compared with
 		 */
-		plan->alone = !alone_backed_off;
+		plan->alone = sais_plan_explore && !alone_backed_off;
 		return;
 	}
 
@@ -549,7 +561,7 @@ sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 	 * refresh a stale neighbour.
 	 */
 
-	if (!active) {
+	if (sais_plan_explore && !active) {
 		if (chosen == top && top + 1 < SAIS_PLAN_RUNGS &&
 		    !rungs[top + 1].n && !(backed_off & (1u << (top + 1)))) {
 			probe = top + 1;
@@ -583,7 +595,8 @@ sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 	}
 
 	/* a rung nothing has run alone at yet is worth running alone now */
-	plan->alone = !rungs[probe >= 0 ? probe : chosen].n_iso &&
+	plan->alone = sais_plan_explore &&
+		      !rungs[probe >= 0 ? probe : chosen].n_iso &&
 		      !alone_backed_off;
 
 	if (probe >= 0) {

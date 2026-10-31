@@ -53,6 +53,15 @@ after it mostly have company.
 
 ## Choosing SAI_PARALLEL
 
+**Exploring is switched off** (`sais_plan_explore` in `s-planner.c`): a step
+runs at the best `-j` its rows on the platform show, `-j2` when it has none,
+and no machine is held to measure anything.  Climbing each step's own ladder
+a rung per run, with the first run at each rung alone, had a cold builder with
+40 tasks running every step of every task one at a time, and what it learned
+about one step said nothing about the next.  The sections below describe the
+ladder and the holds as built; what replaces them learns the machine's
+throughput under load from the rows every step sends anyway.
+
 A step's `-j` curve is unknown to begin with: the planner finds it by trying.
 When a step is offered to a builder platform, the planner looks at the rows
 for that step on that platform:
