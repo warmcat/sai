@@ -515,6 +515,9 @@ w_callback_ws(struct lws *wsi, enum lws_callback_reasons reason, void *user,
 			sqlite3_close(vhd->pdb_fleetlog);
 			vhd->pdb_fleetlog = NULL;
 		}
+		lwsac_free(&vhd->plan_ac);
+		lwsac_free(&vhd->pcons);
+		lwsac_free(&vhd->builders);
 		saiw_visible_destroy(vhd);
 		goto passthru;
 
@@ -1007,7 +1010,7 @@ http_resp:
 		lws_sul_cancel(&pss->sul_overview);
 		saiw_problems_pss_close(pss);
 
-		for (n = 0; n < 4; n++) {
+		for (n = 0; n < (int)LWS_ARRAY_SIZE(pss->last_bps); n++) {
 			if (pss->last_bps[n]) {
 				free(pss->last_bps[n]);
 				pss->last_bps[n] = NULL;

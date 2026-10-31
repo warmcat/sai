@@ -520,6 +520,7 @@ saiw_pss_schedule_eventinfo(struct pss *pss, const char *event_uuid)
 
 	saiw_browser_queue_overview(pss->vhd, pss);
 	saiw_browser_broadcast_queue_builders(pss->vhd, pss);
+	saiw_browser_queue_plan(pss->vhd, pss);
 }
 
 /*
@@ -1188,7 +1189,8 @@ saiw_ws_json_rx_browser(struct vhd *vhd, struct pss *pss, uint8_t *buf,
 				    sizeof(pss->selected_ref));
 
 			saiw_browser_broadcast_queue_builders(pss->vhd, pss);
- 
+			saiw_browser_queue_plan(pss->vhd, pss);
+
 			{
 				uint8_t buf[LWS_PRE + 4096], *start = buf + LWS_PRE, *p = start, *end = buf + sizeof(buf);
 				
@@ -2576,6 +2578,31 @@ saiw_browser_broadcast_queue_pcons(struct vhd *vhd, struct pss *pss)
 	}
 
 	return saiw_dedup_and_queue(pss, 1, &jb);
+}
+
+/*
+ * The planner's plan: what each platform runs next and when each event
+ * should finish.  Everyone sees it, the event ETAs are part of the overview
+ */
+
+int
+saiw_browser_queue_plan(struct vhd *vhd, struct pss *pss)
+{
+	sai_json_buf_t jb;
+
+	if (!vhd || !vhd->plan || !pss)
+		return 0;
+
+	memset(&jb, 0, sizeof(jb));
+
+	if (sai_json_buf_serialize(&jb, lsm_schema_map_plan,
+				   LWS_ARRAY_SIZE(lsm_schema_map_plan),
+				   vhd->plan)) {
+		sai_json_buf_free(&jb);
+		return 1;
+	}
+
+	return saiw_dedup_and_queue(pss, 4, &jb);
 }
 
 int

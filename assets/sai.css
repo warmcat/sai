@@ -1503,6 +1503,59 @@ div.ibuil.plan-blocked .plan-state {
 	color: #5a4010;
 }
 
+/*
+ * What the planner has lined up for a builder's platform, see "What runs next"
+ * in README-planner.md: a few rows of task, start time and expected length,
+ * each with its reason as a tooltip, and a summary line
+ */
+.plan-next {
+	font-size: 6pt;
+	margin-top: 2px;
+	color: #334;
+}
+.plan-next-row {
+	display: flex;
+	gap: 3px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.plan-next-n {
+	flex-shrink: 0;
+	color: #778;
+}
+.plan-next-task {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+.plan-next-when {
+	flex-shrink: 0;
+	color: #556;
+}
+.plan-next-sum {
+	color: #778;
+	border-top: 1px solid #dde;
+	margin-top: 1px;
+}
+.plan-next-held {
+	color: #5a4010;
+}
+
+/* when the planner expects an event to finish */
+.ev-eta {
+	font-size: 8pt;
+	font-weight: normal;
+	color: #456;
+	margin-left: 8px;
+}
+.sb-event-eta {
+	font-size: 7pt;
+	color: #456;
+	white-space: nowrap;
+}
+
 .login-status-container {
 	margin-top: 6px;
 	width: 100%;
@@ -2250,7 +2303,7 @@ div.ibuil.vm-builder {
  */
 .sb-event-row {
 	display: grid;
-	grid-template-columns: 150px 96px minmax(60px, auto) 250px;
+	grid-template-columns: 150px 96px minmax(60px, auto) 250px max-content;
 	align-items: center;
 	column-gap: 10px;
 	padding: 2px 10px;

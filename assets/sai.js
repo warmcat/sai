@@ -427,6 +427,8 @@ window.addEventListener('beforeunload', () => {
 var pcon_topology = {};
 var pcon_energy_cache = {};
 var last_builder_list = [];
+/* the planner's plan as it last arrived: what runs next, and event ETAs */
+var plan_cache = null;
 var current_overview_offset = 0;
 
 window.change_page = function(new_offset) {
@@ -1782,6 +1784,8 @@ function render_sb_events()
 			s += "<span class=\"sb-event-status\" id=\"sbsum-" + san(e.uuid) + "\"></span>";
 			/* progress bar slot (inline, takes remaining width), filled by sai_sb_render_event_summary() */
 			s += "<span class=\"sb-event-bar\" id=\"sbbar-" + san(e.uuid) + "\"></span>";
+			/* when the plan expects it to finish, after the bar */
+			s += "<span class=\"sb-event-eta\" id=\"sbeta-" + san(e.uuid) + "\"></span>";
 			s += "</div>";
 		});
 	}
@@ -1799,6 +1803,174 @@ function render_sb_events()
 	matching.forEach(function(o) {
 		sai_sb_render_event_summary(o.e.uuid);
 	});
+
+	sai_plan_apply_events();
+}
+
+/*
+ * The planner's plan, see "What runs next" in README-planner.md: under each
+ * builder, the next few tasks its platform will get and why, and against
+ * each event, when it should finish.  Nothing here ticks: it changes when a
+ * new plan arrives, which is rate-limited by the server.
+ */
+
+function sai_plan_fmt_clock(secs)
+{
+	var d, now;
+
+	if (!secs)
+		return "";
+	d = new Date(secs * 1000);
+	now = new Date();
+	function p(n) { return (n < 10 ? "0" : "") + n; }
+	if (d.getDate() !== now.getDate() || d.getMonth() !== now.getMonth())
+		return ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()] +
+		       " " + p(d.getHours()) + ":" + p(d.getMinutes());
+	return p(d.getHours()) + ":" + p(d.getMinutes());
+}
+
+function sai_plan_fmt_dur(ms)
+{
+	var s = Math.round(ms / 1000), m;
+
+	if (s < 60)
+		return s + "s";
+	if (s < 3600)
+		return Math.round(s / 60) + "m";
+	m = Math.round((s % 3600) / 60);
+	return Math.floor(s / 3600) + "h" + (m < 10 ? "0" : "") + m + "m";
+}
+
+function sai_plan_platform(platform)
+{
+	var i;
+
+	if (!plan_cache || !plan_cache.platforms)
+		return null;
+	for (i = 0; i < plan_cache.platforms.length; i++)
+		if (plan_cache.platforms[i].platform === platform)
+			return plan_cache.platforms[i];
+
+	return null;
+}
+
+/* the inside of a builder's plan-next block, for its platform */
+function sai_plan_next_html(platform)
+{
+	var pl = sai_plan_platform(platform), s = "", n = 0, i, e;
+
+	if (!pl)
+		return "";
+
+	if (pl.held)
+		return "<div class=\"plan-next-held\">held: " + san(pl.held) + "</div>";
+
+	if (!pl.queued)
+		return "";
+
+	for (i = 0; pl.next && i < pl.next.length && n < 3; i++) {
+		e = pl.next[i];
+		if (e.running)
+			continue;
+		n++;
+		s += "<div class=\"plan-next-row\" title=\"" + san(e.reason || "") +
+		     (e.quality ? "" : " (no history for it here, a guess)") + "\">" +
+		     "<span class=\"plan-next-n\">" + n + ".</span>" +
+		     "<span class=\"plan-next-task\">" + san(e.taskname) + "</span>" +
+		     "<span class=\"plan-next-when\">" +
+		     (e.start ? san(sai_plan_fmt_clock(e.start)) : "") +
+		     (e.est_ms ? " ~" + san(sai_plan_fmt_dur(e.est_ms)) : "") +
+		     (e.quality ? "" : "?") + "</span></div>";
+	}
+
+	s += "<div class=\"plan-next-sum\" title=\"" + san(plan_cache.strategy || "") + "\">" +
+	     pl.queued + " queued" +
+	     (pl.concurrency > 1 ? ", " + pl.concurrency + " at once" : "") +
+	     (pl.drain ? ", done " + san(sai_plan_fmt_clock(pl.drain)) : "") + "</div>";
+
+	return s;
+}
+
+/* what an event's ETA span should say, and its title */
+function sai_plan_event_text(ev)
+{
+	var t = "", title = "";
+
+	if (!ev.left)
+		return null;
+
+	if (ev.eta)
+		t = "ETA " + sai_plan_fmt_clock(ev.eta);
+	else if (ev.why)
+		t = ev.why;
+
+	title = ev.left + " task" + (ev.left === 1 ? "" : "s") + " left" +
+		(ev.running ? ", " + ev.running + " running" : "") +
+		(ev.unknown ? ", " + ev.unknown + " with no history" : "") +
+		(ev.why && ev.eta ? "; " + ev.why : "");
+
+	return { text: t, title: title };
+}
+
+function sai_plan_apply_events()
+{
+	var i, ev, r, seen = {};
+
+	if (!plan_cache || !plan_cache.events)
+		return;
+
+	for (i = 0; i < plan_cache.events.length; i++) {
+		ev = plan_cache.events[i];
+		seen[ev.uuid] = 1;
+		r = sai_plan_event_text(ev);
+		[ "eveta-", "sbeta-" ].forEach(function(prefix) {
+			var el = document.getElementById(prefix + ev.uuid);
+
+			if (!el)
+				return;
+			if (!r) {
+				if (el.textContent !== "")
+					el.textContent = "";
+				return;
+			}
+			if (el.textContent !== r.text)
+				el.textContent = r.text;
+			if (el.title !== r.title)
+				el.title = r.title;
+		});
+	}
+
+	/* events the plan no longer mentions are finished, or closed */
+	document.querySelectorAll(".ev-eta, .sb-event-eta").forEach(function(el) {
+		var u = el.id.substring(el.id.indexOf("-") + 1);
+
+		if (!seen[u] && el.textContent !== "")
+			el.textContent = "";
+	});
+}
+
+function sai_plan_apply()
+{
+	document.querySelectorAll(".plan-next").forEach(function(el) {
+		var name = el.id.substring(9), b = null, i, h;
+
+		for (i = 0; i < last_builder_list.length; i++)
+			if (last_builder_list[i].name === name) {
+				b = last_builder_list[i];
+				break;
+			}
+		if (!b)
+			return;
+
+		h = sai_plan_next_html(b.platform);
+		/* only touch the DOM when what it should show has changed */
+		if (el.dataset.plan !== h) {
+			el.dataset.plan = h;
+			el.innerHTML = h;
+		}
+	});
+
+	sai_plan_apply_events();
 }
 
 function selectSbProject(name)
@@ -3438,6 +3610,8 @@ function render_selected_event_tasks(o) {
 			     sai_event_hash_display(e.hash)) +
 	     (e.adhoc ? " <span class=\"adhoc-tag\">ad-hoc</span>" : "") +
 	     "</span>";
+	/* when the planner expects it to finish, filled from the plan */
+	s += "<span class=\"ev-eta\" id=\"eveta-" + san(e.uuid) + "\"></span>";
 	/* admin-only restart-all / delete-event controls live here now */
 	if (!gitohashi_integ && auth_state === SaiAuthState.LOGGED_IN_GRANT_ADMIN) {
 		s += "<img class=\"rebuild\" alt=\"rebuild all\" src=\"/sai/rebuild.png\" " +
@@ -3579,6 +3753,8 @@ function render_selected_event_tasks(o) {
 		}
 		update_summary_and_progress(e.uuid);
 	}
+
+	sai_plan_apply_events();
 }
 
 function sai_event_result_name(state)
@@ -4704,6 +4880,9 @@ function createBuilderDiv(plat) {
 		platDiv.className += " plan-" + plan_names[plat.plan_state];
 		innerHTML += `<div class="plan-state">${plan_texts[plat.plan_state]}: ${hsanitize(plat.plan_info || "")}</div>`;
 	}
+	/* what the planner has lined up for its platform, filled from the plan */
+	innerHTML += `<div class="plan-next" id="plannext-${hsanitize(plat.name)}">` +
+		     sai_plan_next_html(plat.platform) + `</div>`;
 	innerHTML +=  `</td></tr></tbody></table>`;
 
 	platDiv.innerHTML = innerHTML;
@@ -5452,6 +5631,11 @@ function ws_open_sai()
 					const container = document.getElementById("sai_builders");
 					if (container) renderPconHierarchy(container);
 				}
+				break;
+
+			case "com.warmcat.sai.plan":
+				plan_cache = jso;
+				sai_plan_apply();
 				break;
 
 			case "com.warmcat.sai.pcon_energy":

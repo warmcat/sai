@@ -209,8 +209,8 @@ struct pss {	struct vhd		*vhd;
 	uint64_t		artifact_offset;
 	uint64_t		artifact_length;
 
-	char			*last_bps[4];
-	size_t			last_bps_len[4];
+	char			*last_bps[5];
+	size_t			last_bps_len[5];
 
 	unsigned int		spa_failed:1;
 	unsigned int		dry:1;
@@ -238,6 +238,10 @@ struct vhd {
 
 	struct lws_dll2_owner		pcons_owner;
 	struct lwsac			*pcons;
+
+	/* the planner's plan as sai-server last sent it, see s-plan.c */
+	sai_plan_t			*plan;
+	struct lwsac			*plan_ac;
 
 	lws_dll2_owner_t		subs_owner;
 	sqlite3				*pdb;
@@ -424,6 +428,8 @@ int
 saiw_browser_broadcast_queue_builders(struct vhd *vhd, struct pss *pss);
 int
 saiw_browser_broadcast_queue_pcons(struct vhd *vhd, struct pss *pss);
+int
+saiw_browser_queue_plan(struct vhd *vhd, struct pss *pss);
 int
 saiw_browser_broadcast_queue_pcon_energy(struct vhd *vhd, struct pss *pss, sai_pcon_energy_report_t *energy);
 void

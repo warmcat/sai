@@ -91,6 +91,8 @@ const lws_struct_map_t lsm_schema_json_map[] = {
 			 "com.warmcat.sai.ptydata"),
 	LSM_SCHEMA	(sai_browse_rx_evinfo_t, NULL, lsm_websrv_evinfo,
 			/* shares struct */   "sai-problems"),
+	LSM_SCHEMA	(sai_plan_t, NULL, lsm_plan,
+			 "com.warmcat.sai.plan"),
 };
 
 enum {
@@ -106,6 +108,7 @@ enum {
 	SAIS_WS_WEBSRV_RX_PCON_ENERGY,
 	SAIS_WS_WEBSRV_RX_PTYDATA,
 	SAIS_WS_WEBSRV_RX_PROBLEMS,	/* found more problems in an event */
+	SAIS_WS_WEBSRV_RX_PLAN,		/* what each platform runs next */
 };
 
 /*
@@ -556,6 +559,21 @@ saiw_lp_rx(void *userobj, const uint8_t *buf, size_t len, int flags)
 		case SAIS_WS_WEBSRV_RX_PROBLEMS:
 			ei = (sai_browse_rx_evinfo_t *)m->a.dest;
 			saiw_problems_changed(vhd, ei->event_hash);
+			break;
+
+		case SAIS_WS_WEBSRV_RX_PLAN:
+			/* keep it as it came, every browser gets the same */
+			lwsac_free(&vhd->plan_ac);
+			vhd->plan_ac = m->a.ac;
+			m->a.ac = NULL;
+			vhd->plan = (sai_plan_t *)m->a.dest;
+
+			lws_start_foreach_dll(struct lws_dll2 *, p, vhd->browsers.head) {
+				struct pss *pss = lws_container_of(p, struct pss, same);
+
+				if (!pss->is_gitohashi)
+					saiw_browser_queue_plan(vhd, pss);
+			} lws_end_foreach_dll(p);
 			break;
 
 		case SAIS_WS_WEBSRV_RX_TASKLOGS:
