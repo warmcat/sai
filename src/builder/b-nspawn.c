@@ -920,7 +920,14 @@ saib_spawn_script(struct sai_nspawn *ns)
 	cmd[0] = ns->script_path;
 
 #if defined(__linux__)
-	lws_snprintf(cgroup, sizeof(cgroup), "inst-%s", ns->task->uuid);
+	/*
+	 * Each step gets its own cgroup: named by the task alone, a process
+	 * one step left behind would keep the dir, and the next step would
+	 * find it taken and run with no cgroup, so no memory or cpu
+	 * measurement and no OOM detection
+	 */
+	lws_snprintf(cgroup, sizeof(cgroup), "inst-%s-%d", ns->task->uuid,
+		     ns->task->build_step + 1);
 #endif
 
 	memset(&info, 0, sizeof(info));
