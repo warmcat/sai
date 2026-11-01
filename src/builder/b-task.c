@@ -52,7 +52,13 @@ const char *git_helper_sh =
 	"    echo \"git_helper_sh: fetching $REF from $REMOTE_URL into $1\"\n"
 	"    diag_start\n"
 	"    SECONDS=0\n"
-	"    git -C \"$1\" fetch -q \"$REMOTE_URL\" \"+$REF:refs/heads/ref-$HASH\"\n"
+	/*
+	 * The auto gc a fetch may need runs detached by default, on after the
+	 * fetch returned: here that would outlive the step, in its cgroup, and
+	 * be killed with it, so the mirror would never get its gc.  It runs
+	 * inside the step instead, and the step waits for it.
+	 */
+	"    git -c gc.autoDetach=false -C \"$1\" fetch -q \"$REMOTE_URL\" \"+$REF:refs/heads/ref-$HASH\"\n"
 	"    r=$?\n"
 	"    diag_stop $r\n"
 	"    if [ $r -eq 0 ]; then\n"
@@ -126,11 +132,15 @@ const char *git_helper_sh =
 	"        done\n"
 	"    fi\n"
 	"    if [ -n \"$DIAG_SSF\" ] && command -v ss >/dev/null 2>&1; then\n"
-	"        while :; do\n"
+	"        # the sleep is a child of the loop: killing the loop alone would\n"
+	"        # leave it running on, in the step's cgroup, for up to a second\n"
+	"        ( trap 'kill $s 2>/dev/null; exit' TERM\n"
+	"          while :; do\n"
 	"            echo \"--- $(date +%T.%N | cut -c1-12)\"\n"
 	"            ss -tino \"( $DIAG_SSF )\" | sed 1d\n"
-	"            sleep 1\n"
-	"        done >\"$DIAG/ss\" 2>&1 &\n"
+	"            sleep 1 & s=$!\n"
+	"            wait $s\n"
+	"          done ) >\"$DIAG/ss\" 2>&1 &\n"
 	"        DIAG_SS=$!\n"
 	"    fi\n"
 	"    export GIT_TRACE_CURL=\"$DIAG/curl\" GIT_TRACE_CURL_NO_DATA=1 GIT_TRACE_PACKET=\"$DIAG/pkt\"\n"
