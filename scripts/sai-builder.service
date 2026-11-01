@@ -14,6 +14,8 @@ ExecStart=/usr/local/bin/sai-builder
 #
 Restart=on-failure
 RestartSec=10
+# We need this so sai-builder can use cgroups to track resource usage
+Delegate=y
 
 [Install]
 WantedBy=multi-user.target
