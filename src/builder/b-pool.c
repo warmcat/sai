@@ -676,9 +676,14 @@ saib_pool_scan_sub_cb(const char *dirpath, void *user,
 	lws_snprintf(path, sizeof(path), "%s/%s", dirpath, lde->name);
 	sc->sub = lde->name;
 
-	return lws_dir(path, sc, sc->ns == SAI_POOL_NS_CORPUS ?
-				 saib_pool_offer_file_cb :
-				 saib_pool_scan_file_cb);
+	/*
+	 * lws_dir() returns 0 only when a file cb told it to stop, which
+	 * stops us going on to the next sub too; it returns 1 when it went
+	 * through them all, or couldn't open the dir, and then we go on
+	 */
+	return !lws_dir(path, sc, sc->ns == SAI_POOL_NS_CORPUS ?
+				  saib_pool_offer_file_cb :
+				  saib_pool_scan_file_cb);
 }
 
 /*
