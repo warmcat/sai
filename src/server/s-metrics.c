@@ -302,7 +302,7 @@ sais_metrics_delete_task_rows(struct vhd *vhd, const char *task_uuid)
  * or the uuid is no good.  The task is in *ac, which the caller frees.
  */
 
-static sai_task_t *
+sai_task_t *
 sais_metrics_row_task(struct vhd *vhd, const char *task_uuid,
 		      struct lwsac **ac)
 {

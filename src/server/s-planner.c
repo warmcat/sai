@@ -98,6 +98,7 @@ enum {
 /* what the db says about a step on a builder platform */
 struct sais_plan_step {
 	uint64_t	ref_cpu;		/* its work: the least cpu it took */
+	uint64_t	ref_wall;		/* the least it took, fairly loaded */
 	uint64_t	mem[SAIS_PLAN_RUNGS];	/* peak rss seen at each -j */
 	uint64_t	eff_sum[SAIS_PLAN_RUNGS];
 	int		n[SAIS_PLAN_RUNGS];
@@ -225,15 +226,16 @@ sais_plan_curve_recalc(sais_hardware_t *hw)
 					       hw->best + 1 : hw->best];
 
 	/*
-	 * Whatever the rows say about its cpu, a load that ran it out of
-	 * memory isn't going to be put on it again: the rung below that is
-	 * as far as it goes, until the server restarts
+	 * Whatever the rows say about its cpu, a load that hurt it, ran it
+	 * out of memory or had its steps timed out, isn't going to be put on
+	 * it again: the rung below that is as far as it goes, until the
+	 * server restarts
 	 */
-	if (hw->oom_load >= 0) {
+	if (hw->hurt_load >= 0) {
 		int cap = 1;
 
 		for (n = 0; n < SAIS_PLAN_RUNGS; n++)
-			if (sais_plan_ladder[n] < hw->oom_load)
+			if (sais_plan_ladder[n] < hw->hurt_load)
 				cap = sais_plan_ladder[n];
 
 		if (hw->ceiling > cap)
@@ -435,6 +437,8 @@ sais_plan_step_load(struct vhd *vhd, const char *key, const char *sh,
 			st->ref_cpu = rows[n].cpu;
 		if (!rows[n].fair)
 			continue;
+		if (!st->ref_wall || rows[n].wall < st->ref_wall)
+			st->ref_wall = rows[n].wall;
 		if (cores > st->cores_x1000)
 			st->cores_x1000 = cores;
 		if (rows[n].par > st->max_parallel)
@@ -1023,41 +1027,140 @@ sais_planner_task_ended(struct vhd *vhd, const char *task_uuid, int failed)
 }
 
 /*
- * The OOM killer took part of a step on the platform's machine.  That says
- * nothing about the task, which goes back in the queue, and everything about
- * the machine: the load it carried at the time is more than it can hold,
- * whatever its rows say about its cpu, so it isn't put there again.  The
- * builder caps what it admits too, in memory terms; this is the planner's
- * end of the same lesson.  Called before the task's demand comes off.
+ * The load the platform's machine carried while the task's step ran hurt
+ * it, in the way \p what says.  That says nothing about the task, which goes
+ * back in the queue, and everything about the machine: that load is more
+ * than it can hold, whatever its rows say about its cpu, so it isn't put
+ * there again, until the server restarts.
+ *
+ * The load is the mean over the step's run, from the integral, not what's
+ * left now: when a dozen steps die of the same thing their ends are
+ * processed one by one, each with fewer left, and the last would record a
+ * load that never hurt anything.  Called before the step's demand comes off.
  */
 
-void
-sais_planner_task_oom(struct vhd *vhd, sai_plat_t *sp, const char *task_uuid)
+static void
+sais_plan_hw_hurt(struct vhd *vhd, sai_plat_t *sp, const char *task_uuid,
+		  const char *what)
 {
 	sais_hardware_t *hw = sp->hw;
-	int load;
+	sai_uuid_list_t *ul;
+	int load = -1;
 
 	if (!hw)
 		return;
 
 	sais_plan_curve(vhd, hw);
-	sais_hardware_touch(vhd, hw);
 
-	load = hw->load - hw->load_idle;
+	if (sais_is_task_inflight(vhd, NULL, task_uuid, &ul))
+		load = sais_hardware_step_load(vhd, sp, ul);
+	if (load >= 0)
+		load = (load + 50) / 100;
+	else {
+		sais_hardware_touch(vhd, hw);
+		load = hw->load - hw->load_idle;
+	}
 	if (load < 2)
 		load = 2; /* so the cap below it is at least 1 */
 
-	if (hw->oom_load >= 0 && load >= hw->oom_load)
+	if (hw->hurt_load >= 0 && load >= hw->hurt_load)
 		return;
 
-	hw->oom_load = load;
+	hw->hurt_load = load;
+	lws_strncpy(hw->hurt, what, sizeof(hw->hurt));
 	sais_plan_curve_recalc(hw);
 
-	lwsl_warn("%s: hw%d (%s): ran out of memory at load %d, allowing up "
-		  "to %d from now\n", __func__, hw->index, hw->name, load,
+	lwsl_warn("%s: hw%d (%s): %s at load %d, allowing up to %d from "
+		  "now\n", __func__, hw->index, hw->name, what, load,
 		  hw->ceiling);
-	sais_task_logf(vhd, task_uuid, "planner: hw%d ran out of memory at "
-		       "load %d: allowing up to %d from now", hw->index, load,
-		       hw->ceiling);
+	sais_task_logf(vhd, task_uuid, "planner: hw%d %s at load %d: allowing "
+		       "up to %d from now", hw->index, what, load, hw->ceiling);
 	sais_list_builders(vhd);
+}
+
+/*
+ * The OOM killer took part of a step on the platform's machine.  The builder
+ * caps what it admits too, in memory terms; this is the planner's end of the
+ * same lesson.
+ */
+
+void
+sais_planner_task_oom(struct vhd *vhd, sai_plat_t *sp, const char *task_uuid)
+{
+	sais_plan_hw_hurt(vhd, sp, task_uuid, "ran out of memory");
+}
+
+/*
+ * The builder timed the task's step out.  A step that hangs is the task's
+ * failure, and so is one that takes longer than the builder allows when it
+ * has the machine to itself.  But a step that has been seen to finish in
+ * well under what it was given this time, timed out while other steps shared
+ * its machine, was starved by them: the machine was thrashing, or there was
+ * no cpu left for it, and that's the plan's doing.  The machine learns from
+ * it as it does from running out of memory, and the task runs again.
+ * Returns 1 if that's what it was, before the task's demand comes off.
+ */
+
+int
+sais_planner_task_timeout(struct vhd *vhd, sai_plat_t *sp,
+			  const char *task_uuid, int build_step)
+{
+	char key[65], sh[65], h1[24], h2[24];
+	sais_hardware_t *hw = sp->hw;
+	struct sais_plan_step st;
+	struct lwsac *ac = NULL;
+	sai_uuid_list_t *ul;
+	lws_usec_t ran;
+	sai_task_t *task;
+	int company, n;
+
+	if (!hw || !vhd->pdb_metrics || build_step < 0)
+		return 0;
+
+	if (!sais_is_task_inflight(vhd, NULL, task_uuid, &ul) ||
+	    !ul->step_started)
+		return 0;
+
+	ran = lws_now_usecs() - ul->step_started;
+
+	/* what else was on the machine, this step and idle slices aside */
+	sais_hardware_touch(vhd, hw);
+	company = hw->load - hw->load_idle - ul->demand;
+	if (company <= 0)
+		return 0;
+
+	task = sais_metrics_row_task(vhd, task_uuid, &ac);
+	if (!task || !task->taskname[0] || !task->repo_name) {
+		lwsac_free(&ac);
+		return 0;
+	}
+
+	n = sai_metrics_hash((uint8_t *)key, sizeof(key), sp->name,
+			     task->taskname, task->repo_name) ||
+	    sais_task_step_hash(sh, sizeof(sh), task->build, build_step);
+	lwsac_free(&ac);
+	if (n)
+		return 0;
+
+	sais_plan_curve(vhd, hw);
+	sais_plan_step_load(vhd, key, sh, &st, hw->ceiling * 100);
+
+	/*
+	 * It's only starvation if the step has been seen to finish, when
+	 * fairly loaded, in under a third of what it ran for this time
+	 */
+	if (!st.ref_wall || st.ref_wall * 3 > (uint64_t)ran)
+		return 0;
+
+	lws_humanize(h1, sizeof(h1), (uint64_t)ran, humanize_schema_us);
+	lws_humanize(h2, sizeof(h2), st.ref_wall, humanize_schema_us);
+	sais_task_logf(vhd, task_uuid, "planner: step %d ran for %s before "
+		       "the builder timed it out, sharing hw%d with %d other "
+		       "steps' worth of load; it has taken %s here: starved "
+		       "by the load, the plan's fault and not this task's; it "
+		       "will run again", build_step + 1, h1, hw->index,
+		       company, h2);
+	sais_plan_hw_hurt(vhd, sp, task_uuid, "timed steps out");
+
+	return 1;
 }

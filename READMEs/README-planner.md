@@ -180,6 +180,16 @@ memory; the builder list says `(ran out of memory)` against its platforms.
 The point is not to see it again: a step the OOM killer took means the plan
 was bad.
 
+**A step the builder times out** is the task's failure when it hangs, or
+when it takes longer than the builder allows with the machine to itself.  But
+when other steps shared the machine, and the step has been seen to finish,
+fairly loaded, in under a third of what it ran for this time, it was starved
+by them: the machine was thrashing, or there was no cpu left for it.  That's
+the plan's doing in the same way, so the task runs again as a new run, and
+the planner caps the machine's load a rung below what it carried, with
+`(timed steps out)` in the builder list.  A step that genuinely hangs is
+capped down to running alone within a few runs, and fails there.
+
 ## What runs next
 
 Each builder platform runs one task at a time per instance, and asks

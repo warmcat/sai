@@ -1215,6 +1215,28 @@ sais_process_rej(struct vhd *vhd, struct pss *pss,
 			break;
 		}
 
+		/*
+		 * The task's build_step was moved past the step when it was
+		 * accepted, see SAI_TASK_REASON_ACCEPTED: the step that just
+		 * ended is the one before it, the step the planner planned
+		 */
+		if ((rej->ecode & SAISPRF_TIMEDOUT) &&
+		    sais_planner_task_timeout(vhd, sp, rej->task_uuid,
+					      build_step - 1)) {
+			/*
+			 * The step was starved by the load the plan put
+			 * beside it: the planner said so in the task log and
+			 * took the lesson, and the task goes back in the queue
+			 * as a new run, as after the OOM killer
+			 */
+			lwsl_notice("%s: |||| starved: %s\n", __func__,
+				    rej->task_uuid);
+			sais_task_clear_build_and_logs(vhd, rej->task_uuid, 0);
+			sais_plat_busy(sp, 0);
+			requeued = 1;
+			break;
+		}
+
 		if (rej->ecode & SAISPRF_YIELDED) {
 			/*
 			 * The builder stopped an idle task's slice, to make
