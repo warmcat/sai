@@ -18,17 +18,6 @@ else()
  set(CMAKE_SKIP_RPATH 1)
 endif()
 
-find_package(Git)
-if(GIT_EXECUTABLE)
-        execute_process(
-                WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
-                COMMAND "${GIT_EXECUTABLE}" describe --tags --always
-                OUTPUT_VARIABLE GIT_HASH
-                OUTPUT_STRIP_TRAILING_WHITESPACE
-                )
-endif()
-
-
 set(PACKAGE "sai")
 set(CPACK_PACKAGE_NAME "${PACKAGE}")
 set(CPACK_PACKAGE_VERSION_MAJOR "0")
@@ -41,8 +30,6 @@ else()
 	set(CPACK_GENERATOR "RPM")
 endif()
 set(CPACK_PACKAGE_VERSION "${CPACK_PACKAGE_VERSION_MAJOR}.${CPACK_PACKAGE_VERSION_MINOR}.${CPACK_PACKAGE_VERSION_PATCH}")
-set(LWS_BUILD_HASH ${CPACK_PACKAGE_VERSION}-${GIT_HASH})
-message("Git commit hash: ${LWS_BUILD_HASH}")
 
 set(CPACK_PACKAGE_VENDOR "andy@warmcat.com")
 set(CPACK_PACKAGE_CONTACT "andy@warmcat.com")

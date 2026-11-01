@@ -2303,7 +2303,7 @@ saib_consider_allocating_task(struct sai_plat_server *spm, lws_struct_args_t *a,
 
 		ml = lws_snprintf(mb, sizeof(mb),
 				  ">saib> Sai Builder Version: %s, lws: %s\n",
-				  SAI_BUILD_INFO, LWS_BUILD_HASH);
+				  SAI_BUILD_INFO, lws_get_library_version());
 		saib_log_chunk_create(ns, mb, (unsigned int)ml, 3);
 	}
 

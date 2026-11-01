@@ -150,7 +150,9 @@ saib_conf_cb(struct lejp_ctx *ctx, char reason)
 
 			lws_strncpy(a->sai_plat->sai_hash, SAI_BUILD_INFO,
 				    sizeof(a->sai_plat->sai_hash));
-			lws_strncpy(a->sai_plat->lws_hash, LWS_BUILD_HASH,
+			/* the lws actually loaded, not the headers we built with */
+			lws_strncpy(a->sai_plat->lws_hash,
+				    lws_get_library_version(),
 				    sizeof(a->sai_plat->lws_hash));
 
 			a->sai_plat->job_limit = SAIB_DEF_JOB_LIMIT;
