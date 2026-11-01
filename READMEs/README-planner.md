@@ -236,8 +236,15 @@ step it has no estimate for at all counts as an eighth of that.  Whatever
 the estimates add up to, it won't take a step the machine doesn't have the
 memory for right now, with an eighth to spare, so steps already running past
 their estimates stop new ones rather than the OOM killer stopping them all.
-A builder that refuses the step for its memory, or because it's full, just
-ends the offer; the step is offered again later as anything else is.
+That wait is for a running step to end and give its memory back: with
+nothing of the builder's running, what's free is all there will be, and the
+step is taken on it, the log saying it may run short when that's less than
+it's counted as.  Otherwise a step counted as the most any step took on a
+small machine, more than it has free when idle, would be refused every 15s
+for the two hours the task keeps its job dir and then failed for not
+finishing.  A builder that refuses the step for its memory, or because it's
+full, just ends the offer; the step is offered again later as anything else
+is.
 
 **When the OOM killer strikes anyway**, the builder sees it in the step's
 cgroup and says so: the step is reported killed for memory rather than

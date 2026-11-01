@@ -926,7 +926,8 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 //	int cpu_load = saib_get_system_cpu(&builder);
 #endif
 
-	uint64_t whole = builder.ram_limit_kib, est_mem_guess = 0;
+	uint64_t whole = builder.ram_limit_kib, est_mem_guess = 0,
+		 est_mem_short = 0;
 	unsigned int executing = 0, est_mem_was = 0;
 
 	/* what proved too much, if the OOM killer has struck since we started */
@@ -1081,15 +1082,32 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 
 		avail = saib_get_free_ram_kib();
 		if (avail && avail < task->est_peak_mem_kib + whole / 8) {
-			if (saib_refusal_loggable(task->uuid))
-				saib_task_logf(spm, NULL, task->uuid,
-					"Builder %s can't take this step yet: "
-					"needs %uMiB RAM and only %lluMiB is "
-					"free right now", sp->name,
-					(unsigned int)(task->est_peak_mem_kib / 1024),
-					(unsigned long long)(avail / 1024));
-			saib_reintroduce_later();
-			return 2;
+			/*
+			 * That's worth waiting for while something of ours is
+			 * running, to end and give its memory back.  With
+			 * nothing of ours on the machine, this is what there
+			 * is, and a step counted as the most any step took
+			 * here, on a machine with less than that and the
+			 * eighth free when idle, was refused every 15s for
+			 * the two hours it had the job dir and then failed
+			 * for not finishing.  It runs on what there is, and
+			 * the log says so when that's less than it's counted
+			 * as.
+			 */
+			if (builder.ram_reserved_kib) {
+				if (saib_refusal_loggable(task->uuid))
+					saib_task_logf(spm, NULL, task->uuid,
+						"Builder %s can't take this step yet: "
+						"needs %uMiB RAM and only %lluMiB is "
+						"free right now", sp->name,
+						(unsigned int)(task->est_peak_mem_kib / 1024),
+						(unsigned long long)(avail / 1024));
+				saib_reintroduce_later();
+				return 2;
+			}
+
+			if (avail < task->est_peak_mem_kib)
+				est_mem_short = avail;
 		}
 	}
 
@@ -1158,6 +1176,14 @@ saib_can_accept_task(struct sai_plat_server *spm, sai_task_t *task,
 			"%uMiB RAM before, more than its whole %lluMiB budget: "
 			"it may run short", sp->name, est_mem_was / 1024,
 			(unsigned long long)(whole / 1024));
+
+	if (est_mem_short)
+		saib_task_logf(spm, NULL, task->uuid,
+			"Builder %s is taking this step although it is counted "
+			"as %uMiB RAM and only %lluMiB is free, with nothing "
+			"else of its own running to wait for: it may run short",
+			sp->name, (unsigned int)(task->est_peak_mem_kib / 1024),
+			(unsigned long long)(est_mem_short / 1024));
 
 	if (est_mem_guess)
 		saib_task_logf(spm, NULL, task->uuid,

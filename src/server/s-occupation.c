@@ -32,7 +32,9 @@
  *
  * A step that has not finished by the time the occupation runs out has taken
  * too long: the task fails, and its builder is told to kill the step and, once
- * it has stopped, erase the job dir.  A paused task is left alone, it is
+ * it has stopped, erase the job dir.  So does a task whose builder has been
+ * refusing its next step for that long, which the log says as that rather
+ * than as the finished step overrunning.  A paused task is left alone, it is
  * waiting for someone to resume or cancel it.
  *
  * A run that was replaced by a newer one, eg, retried after its builder
@@ -54,6 +56,7 @@ typedef struct {
 	char			builder_name[96];
 	uint64_t		occupied_until;
 	int			step;
+	int			state;
 } sais_overdue_t;
 
 uint64_t
@@ -86,8 +89,8 @@ sais_occupation_event(struct vhd *vhd, const char *event_uuid,
 	sai_sqlite3_statement(pdb, q, "end superseded runs");
 
 	lws_snprintf(q, sizeof(q),
-		     "SELECT uuid, builder_name, build_step, occupied_until "
-		     "FROM tasks WHERE "
+		     "SELECT uuid, builder_name, build_step, occupied_until, "
+		     "state FROM tasks WHERE "
 		     "occupied_until != 0 AND occupied_until < %llu AND "
 		     "state IN (%d, %d, %d, %d) AND run=(SELECT max(run) "
 		     "FROM tasks t2 WHERE t2.uuid = tasks.uuid)",
@@ -114,6 +117,7 @@ sais_occupation_event(struct vhd *vhd, const char *event_uuid,
 					    sizeof(od->builder_name));
 			od->step = sqlite3_column_int(sm, 2);
 			od->occupied_until = (uint64_t)sqlite3_column_int64(sm, 3);
+			od->state = sqlite3_column_int(sm, 4);
 			lws_dll2_add_tail(&od->list, overdue);
 		}
 		sqlite3_finalize(sm);
@@ -172,18 +176,42 @@ sais_occupation_cb(lws_sorted_usec_list_t *sul)
 		if (lws_http_date_render_from_unix(now, sizeof(now), &t))
 			lws_strncpy(now, "?", sizeof(now));
 
-		lwsl_notice("%s: task %s step %d on %s overran its job dir "
-			    "occupation (taken %s, until %s, now %s), failing "
-			    "it\n", __func__, od->uuid, od->step,
-			    od->builder_name, taken, until, now);
+		/*
+		 * Between steps, the step it took finished; it's the next one
+		 * its builder has been refusing all this time, which is what
+		 * to say, not that the finished step overran
+		 */
+		if (od->state == SAIES_STEP_SUCCESS) {
+			lwsl_notice("%s: task %s between steps %d and %d on %s "
+				    "overran its job dir occupation (taken %s, "
+				    "until %s, now %s), failing it\n", __func__,
+				    od->uuid, od->step, od->step + 1,
+				    od->builder_name, taken, until, now);
 
-		sais_task_logf(vhd, od->uuid,
-			"builder %s took step %d at %s, which gave it this "
-			"task's job dir until %s; at %s the step still has not "
-			"finished: failing the task, and having the builder "
-			"stop it and erase the job dir",
-			od->builder_name[0] ? od->builder_name : "(none)",
-			od->step, taken, until, now);
+			sais_task_logf(vhd, od->uuid,
+				"builder %s took step %d at %s, which gave it "
+				"this task's job dir until %s; at %s it has not "
+				"taken step %d, refusing it each time it was "
+				"offered: failing the task, and having the "
+				"builder erase the job dir",
+				od->builder_name[0] ? od->builder_name : "(none)",
+				od->step, taken, until, now, od->step + 1);
+		} else {
+			lwsl_notice("%s: task %s step %d on %s overran its job "
+				    "dir occupation (taken %s, until %s, now "
+				    "%s), failing it\n", __func__, od->uuid,
+				    od->step, od->builder_name, taken, until,
+				    now);
+
+			sais_task_logf(vhd, od->uuid,
+				"builder %s took step %d at %s, which gave it "
+				"this task's job dir until %s; at %s the step "
+				"still has not finished: failing the task, and "
+				"having the builder stop it and erase the job "
+				"dir",
+				od->builder_name[0] ? od->builder_name : "(none)",
+				od->step, taken, until, now);
+		}
 
 		sais_task_stop_on_builders(vhd, od->uuid,
 					   SAIS_STOP_KILLED | SAIS_STOP_ERASE);
