@@ -327,6 +327,7 @@ typedef struct sais_failed_task {
 
 /* the demands the planner works in, see s-planner.c */
 #define SAIS_PLAN_RUNGS		12
+#define SAIS_PLAN_CAP_RING	64	/* newest rows kept to add up those that ran together */
 extern const int sais_plan_ladder[SAIS_PLAN_RUNGS];
 
 /*
@@ -352,12 +353,23 @@ typedef struct sais_hardware {
 	lws_usec_t		load_since;
 	uint64_t		load_integral;	/* demand x us */
 
-	/* its curve: per load bucket, rows and their efficiency x1000 */
+	/*
+	 * its curve: per load bucket, rows filed there and the most cores of
+	 * reference work it was seen getting done at once there, x1000
+	 */
 	int			n[SAIS_PLAN_RUNGS];
-	uint64_t		eff_sum[SAIS_PLAN_RUNGS];
+	int			seen[SAIS_PLAN_RUNGS];
 	char			curve_loaded;
-	int			best;		/* bucket with most work done, -1 none */
-	int			ceiling;	/* the most demand we'll put on it */
+	/* the most cores it was seen delivering at once, x1000, 0 unknown */
+	int			cap_x1000;
+	/* the newest rows, to add up those that ran together */
+	struct {
+		lws_usec_t	start, end;
+		int		rate;		/* cores x1000 it delivered to it */
+		int		useful;		/* ... of which were its reference work */
+	}			ring[SAIS_PLAN_CAP_RING];
+	int			ring_next;
+	int			ceiling;	/* the most demand it may carry, 0 no limit */
 	int			hurt_load;	/* a load that hurt it, -1 never */
 	char			hurt[24];	/* how: "ran out of memory" */
 	uint64_t		mem_max;	/* the most any step peaked at on it */
@@ -368,6 +380,11 @@ typedef struct sais_hardware {
 	/* so a step's memory floor is logged once */
 	char			floor_task[65];
 	int			floor_step;
+	/* so a start that the builder refused isn't logged again unchanged */
+	char			start_task[65];
+	int			start_step;
+	int			start_demand;
+	int			start_load;
 } sais_hardware_t;
 
 /* sai_plat_t.plan_state: what the planner is doing with a platform's machine */
@@ -381,6 +398,8 @@ typedef struct sais_plan {
 	char			key[65];	/* the metrics key, or empty */
 	char			step_hash[65];
 	int			demand;		/* what it counts as on its machine */
+	int			own;		/* the cores it can use, x1000 */
+	uint64_t		work_us;	/* its work, us of a core, 0 unknown */
 	lws_usec_t		wall_us;	/* how long it should take, 0 unknown */
 	char			wait;		/* don't start it yet */
 } sais_plan_t;
@@ -831,6 +850,18 @@ sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 int
 sais_planner_room(struct vhd *vhd, sai_plat_t *sp, int for_idle);
 
+/* the steps on the machine have had their shares of it for dt */
+void
+sais_plan_account(struct vhd *vhd, sais_hardware_t *hw, lws_usec_t dt);
+
+/* what the machine is delivering to what's on it now, cores x1000 */
+int
+sais_plan_delivered(struct vhd *vhd, const sais_hardware_t *hw);
+
+/* "5.6" from 5600 */
+const char *
+sais_plan_fmt_cores(char *buf, size_t len, int x1000);
+
 void
 sais_planner_row_annotate(struct vhd *vhd, sai_build_metric_t *m);
 
@@ -861,8 +892,8 @@ sais_hardware_kick(struct vhd *vhd, sais_hardware_t *hw);
 
 void
 sais_hardware_step_started(struct vhd *vhd, sai_plat_t *sp,
-			   sai_uuid_list_t *ul, int step, int demand,
-			   lws_usec_t plan_wall);
+			   sai_uuid_list_t *ul, int step,
+			   const sais_plan_t *plan);
 
 int
 sais_hardware_step_load(struct vhd *vhd, sai_plat_t *sp,

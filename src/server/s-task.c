@@ -1386,7 +1386,7 @@ sais_create_and_offer_task_step(struct vhd *vhd, const char *task_uuid)
 	/* from here until its row lands, the step is load on its machine */
 	if (sais_is_task_inflight(vhd, NULL, temp_task->uuid, &ul))
 		sais_hardware_step_started(vhd, sp, ul, build_step + 1,
-					   plan.demand, plan.wall_us);
+					   &plan);
 
 	/*
 	 * Offer this task step to the builder

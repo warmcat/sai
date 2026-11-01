@@ -77,7 +77,6 @@ sais_hardware_attach(struct vhd *vhd, sai_plat_t *sp)
 
 		memset(hw, 0, sizeof(*hw));
 		hw->vhd		= vhd;
-		hw->best	= -1;
 		hw->hurt_load	= -1;
 		hw->load_since	= lws_now_usecs();
 		lws_strncpy(hw->name, sp->hardware, sizeof(hw->name));
@@ -133,9 +132,11 @@ sais_hardware_demand(struct vhd *vhd, const sais_hardware_t *hw, int *idle)
 }
 
 /*
- * Bring the load integral up to now at the load we had, then take the load
- * as it is now.  Called whenever the load may have changed; calling it when
- * nothing changed costs nothing but the sum.
+ * Bring the load integral up to now at the load we had, and give each step
+ * on the machine its share of the machine for that long, then take the load
+ * as it is now.  Called whenever the load may have changed, before the
+ * change is made, so what ran until now is accounted at the shares it had;
+ * calling it when nothing changed costs nothing but the sums.
  */
 
 void
@@ -143,9 +144,11 @@ sais_hardware_touch(struct vhd *vhd, sais_hardware_t *hw)
 {
 	lws_usec_t now = lws_now_usecs();
 
-	if (now > hw->load_since)
+	if (now > hw->load_since) {
 		hw->load_integral += (uint64_t)hw->load *
 				     (uint64_t)(now - hw->load_since);
+		sais_plan_account(vhd, hw, now - hw->load_since);
+	}
 	hw->load_since	= now;
 	hw->load	= sais_hardware_demand(vhd, hw, &hw->load_idle);
 }
@@ -175,15 +178,22 @@ sais_hardware_kick(struct vhd *vhd, sais_hardware_t *hw)
 
 void
 sais_hardware_step_started(struct vhd *vhd, sai_plat_t *sp,
-			   sai_uuid_list_t *ul, int step, int demand,
-			   lws_usec_t plan_wall)
+			   sai_uuid_list_t *ul, int step,
+			   const sais_plan_t *plan)
 {
 	sais_hardware_t *hw = sp->hw;
 
-	ul->demand		= demand;
+	/* what ran until now had the shares it had */
+	if (hw)
+		sais_hardware_touch(vhd, hw);
+
+	ul->demand		= plan->demand;
+	ul->own			= plan->own > 0 ? plan->own : 1000;
+	ul->work		= plan->work_us;
+	ul->work_done		= 0;
 	ul->step		= step;
 	ul->step_started	= lws_now_usecs();
-	ul->plan_wall		= plan_wall;
+	ul->plan_wall		= plan->wall_us;
 
 	if (!hw)
 		return;
@@ -231,9 +241,15 @@ sais_hardware_step_ended(struct vhd *vhd, sai_plat_t *sp, sai_uuid_list_t *ul)
 	if (!ul->demand)
 		return;
 
+	/* what ran until now had the shares it had */
+	if (hw)
+		sais_hardware_touch(vhd, hw);
+
 	ul->demand		= 0;
 	ul->step_started	= 0;
 	ul->plan_wall		= 0;
+	ul->work		= 0;
+	ul->work_done		= 0;
 
 	if (!hw)
 		return;
@@ -250,24 +266,27 @@ sais_hardware_plat_gone(struct vhd *vhd, sai_plat_t *sp)
 {
 	sais_hardware_t *hw = sp->hw;
 
-	/* so the kick doesn't reach the platform being freed */
-	sp->hw = NULL;
-
 	if (!hw)
 		return;
+
+	/* what ran until now had the shares it had */
+	sais_hardware_touch(vhd, hw);
+
+	/* so the kick doesn't reach the platform being freed */
+	sp->hw = NULL;
 
 	/* whatever it was running is gone from the machine's load */
 	sais_hardware_touch(vhd, hw);
 	sais_hardware_kick(vhd, hw);
 }
 
-/* "hw3: load 6 of up to 8", for the web and the logs */
+/* "hw3: load 6, 3.9 of 4.1 cores", for the web and the logs */
 
 void
 sais_hardware_describe(const sai_plat_t *sp, char *info, size_t info_len)
 {
 	const sais_hardware_t *hw = sp->hw;
-	char hurt[32];
+	char idle[24], upto[24], cores[48], hurt[32], c1[16], c2[16];
 
 	if (!hw) {
 		info[0] = '\0';
@@ -280,21 +299,29 @@ sais_hardware_describe(const sai_plat_t *sp, char *info, size_t info_len)
 		return;
 	}
 
+	idle[0] = '\0';
+	if (hw->load_idle)
+		lws_snprintf(idle, sizeof(idle), " (%d idle)", hw->load_idle);
+
+	upto[0] = '\0';
+	if (hw->ceiling)
+		lws_snprintf(upto, sizeof(upto), " of up to %d", hw->ceiling);
+
+	if (hw->cap_x1000)
+		lws_snprintf(cores, sizeof(cores), ", %s of %s cores",
+			     sais_plan_fmt_cores(c1, sizeof(c1),
+					sais_plan_delivered(hw->vhd, hw)),
+			     sais_plan_fmt_cores(c2, sizeof(c2),
+						 hw->cap_x1000));
+	else
+		lws_strncpy(cores, " (nothing measured yet)", sizeof(cores));
+
 	hurt[0] = '\0';
 	if (hw->hurt_load >= 0)
 		lws_snprintf(hurt, sizeof(hurt), " (%s)", hw->hurt);
 
-	if (hw->load_idle)
-		lws_snprintf(info, info_len, "hw%d: load %d (%d idle) of up "
-			     "to %d%s%s", hw->index, hw->load, hw->load_idle,
-			     hw->ceiling,
-			     hw->best < 0 ? " (nothing measured yet)" : "",
-			     hurt);
-	else
-		lws_snprintf(info, info_len, "hw%d: load %d of up to %d%s%s",
-			     hw->index, hw->load, hw->ceiling,
-			     hw->best < 0 ? " (nothing measured yet)" : "",
-			     hurt);
+	lws_snprintf(info, info_len, "hw%d: load %d%s%s%s%s", hw->index,
+		     hw->load, idle, upto, cores, hurt);
 }
 
 /* what the platform's machine is doing for the planner, for the web */

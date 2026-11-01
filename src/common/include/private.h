@@ -818,6 +818,9 @@ typedef struct sai_uuid_list {
 	int				step;		/* 1-based, that the demand is for */
 	lws_usec_t			step_started;
 	lws_usec_t			plan_wall;	/* how long the plan gave it, 0 unknown */
+	int				own;		/* the cores it can use, x1000 */
+	uint64_t			work;		/* its work, us of a core, 0 unknown */
+	uint64_t			work_done;	/* what it has had of that, x1000 */
 	uint64_t			load_at_start;
 } sai_uuid_list_t;
 
@@ -1129,6 +1132,8 @@ typedef struct sai_build_metric {
 	int				demand;
 	int				load_x100;
 	int				eff_x1000;
+	/* server only, not stored: the least cpu the step was done in here */
+	uint64_t			ref_cpu;
 } sai_build_metric_t;
 
 /*

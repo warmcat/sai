@@ -33,9 +33,12 @@ db, `<sqlite3-path>-build-metrics.sqlite3`, with
 |`cotenant_parallel`|the most those other steps' `SAI_PARALLEL`s added up to, or -1|
 |`demand`|added by sai-server: what the step counted as on its machine, its `-j` if it uses `-j`, else 1|
 |`load_x100`|added by sai-server: the mean demand the machine carried while the step ran, x100, or -1 if it couldn't say|
-|`eff_x1000`|added by sai-server: how fast the machine ran the step, x1000: its work over its wallclock, over the cores it can use; 0 for a row that says nothing about the machine, a git step or an idle slice|
+|`eff_x1000`|added by sai-server: what each unit of the step's demand got of a core, x1000, its work over its wallclock over its demand, for a step known to use `-j` and given `-j2` or more; 0 for a row that says nothing about how the machine was shared, a step that doesn't use `-j`, a first run, a git step or an idle slice|
 
-The last three are what the planner reads, see below.  `load_x100` comes
+The last three are the row's account of itself, see below; the planner
+reads `demand` and `load_x100`, and draws the machine's curve from the
+rows' cpu and wallclocks together rather than from `eff_x1000`.
+`load_x100` comes
 from the server's own account of what it had running on the machine, not
 from the builder: `cotenants` is a peak, and a long step's company changes
 while it runs.
@@ -68,31 +71,80 @@ a thrashing machine with more work for the same build; the reference is the
 same whatever the run.  A step's first row stands in for its reference until
 a smaller one comes.
 
-**The machine's curve.**  Each row says the mean load the machine carried
-while the step ran, where load is the demand of every step in flight on
-every platform of the machine, counted from the server's own offers and the
-rows that end them, idle slices included.  A step's demand is the `-j` it was
-given if it uses `-j`, else 1.  The row also says how fast the machine ran
-the step: for a step known to use `-j`, its work over its wallclock over its
-demand, what it got of what it asked for; for one known not to, how fast it
-ran against the fastest it has run.  A step whose earlier rows can't say
-which it is, its first run above all, says nothing about the machine, since
-that run alone can't tell a step that doesn't want its `-j` from a machine
-that couldn't give it.  Filed by load, rounded to the nearest of 1, 2, 3, 4, 6, 8, 12, 16,
-24, 32, 48 and 64, the rows give the machine's efficiency at each load, and
-load x efficiency is the work rate it gets done at that load.  The load with
-the best rate is where its knee is: a 2-core machine's rate is flat from 2
-up, a 16-core machine's climbs to 16 or a little past it.  The planner lets
-the load go one rung above the best known, so the rung above is measured too
-and the knee is found from both sides; a higher load has to beat a lower
-one's rate by 5% to become the best, so a flat top isn't climbed on noise.
-A machine with no rows filed by load is allowed a load of 4, or, when its
-older rows show a step getting most of a bigger `-j`, that `-j`, since it
-demonstrably delivered it; what the step's company asked for at the time
-doesn't count, nothing says they got it.  Rows only at loads above 4, with
-none below, say where the machine was run rather than where its knee is, so
-such a machine also starts from 4 until a lower load has rows.  Rows older
-than 14 days don't shape the curve when the server starts.
+**The machine's capacity.**  Cpu time can't exceed cores x wallclock, so a
+row's cpu over its wallclock is cores the machine delivered to that step at
+once, a floor under what it has; rows that ran alongside each other for at
+least half of both their lengths add up, since averages summed over a
+lesser overlap could come to more than the machine has.  The most seen is
+the machine's capacity, and the planner never has to be told it: it's found
+by modulating `SAI_PARALLEL`.  A step that uses `-j` may run at any `-j` up
+to the most it has run with, and at the rung above that when its biggest
+`-j` delivered 10% more cores than the rung below did, so `-j` climbs a rung
+at a time while climbing pays, and stops where it doesn't, whether that's
+the step running out of parallelism or the machine out of cores.  The rung
+above is only taken when nothing running has a finish to lose by it.  A
+step never run with `-j2` or more runs the biggest rung within the
+machine's capacity, or `-j2` when nothing has been measured on it, to find
+out.
+
+**The machine's curve.**  Each row also says the mean load the machine
+carried while the step ran, where load is the demand of every step in
+flight on every platform of the machine, counted from the server's own
+offers and the rows that end them, idle slices included.  A step's demand
+is the `-j` it was given if it uses `-j`, else 1.  For a step known to use
+`-j` and given `-j2` or more, the row says what each unit of its demand got
+of a core, its work over its wallclock over its demand; a step that doesn't
+use `-j` says how fast it ran, which is its own affair, and a step's first
+run can't tell the two apart, so neither says anything about the machine.
+That is the row's own account of itself, and it's kept with the row.  What
+the machine's curve is drawn from is the rows together: a row's reference
+work over its wallclock is the cores of work the machine got done for it,
+and with the rows that ran alongside it, added up as for the capacity, it's
+the cores of work the machine got done at once at the load the row ran at.
+That and not the cpu burned, because a thrashing machine burns as much cpu
+as ever and gets less done with it; the capacity is right to count the cpu,
+the curve isn't.  No one step's share says much, a `-j16` step that only
+turns a third of its jobs into work shows a third of the machine on its
+own, but the sum of what was running does.  Filed by load, rounded to the
+nearest of 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48 and 64, each load keeps the
+most work the machine was seen getting done at once there, since each sum
+is a floor, the rows beside it that hadn't landed yet aren't in it, and the
+most of the floors is nearest the truth; that over the load is what each
+unit gets there, and load x that is what the machine delivers at the load:
+at most its capacity, and less where the rows show the load made it
+thrash.  A load with no rows is assumed as good as the nearest load below
+it that has some, and a load seen few times a little better than it was: a
+tenth better once, less with more.  Rows older than 14 days don't shape the
+curve when the server starts.
+
+**How far the load goes.**  The machine carries at most twice its capacity
+in demand, so each unit has half a core: the steps on a machine are never
+all busy at once, one waits on the network while another waits on the
+disk, so a load past the core count gets more done than the core count
+would, and twice it is as far as that is taken.  Within that, the curve
+says: a load whose rows show the machine delivering under three quarters
+of what it delivered at a lower load is thrashing, and the rung below it is
+as far as the load goes until rows at the lower loads say otherwise.  A
+machine nothing has been measured on carries 4, and no machine is held to
+less than that by its capacity alone, since the capacity is a floor a quiet
+machine has yet to climb.  The task's log says when a row moves the limit,
+and the builder list says what it is.
+
+**Shares.**  Besides its demand, each step in flight has an appetite, the
+cores it can use: `-j` x s(`-j`) for a step that uses `-j`, where s is how
+much of each unit of `-j` it turns into work, the cores it was seen using
+for one that doesn't, and half a core for a checkout until its rows say.
+What the machine delivers at its load is shared out in proportion to
+appetite, as the kernel shares cores among runnable processes, since a
+step's appetite is what it keeps runnable: a `-j16` compile that turns a
+third of each job into work has three or four of them runnable on average,
+not 16.  No step gets more than its appetite, so either the machine covers
+every appetite on it or every step gets the same fraction of its own.
+That is what lets the load go well past the core count: a git step waiting
+on the network, or a test suite sleeping on a socket, asks for little and
+leaves the rest to the compile beside it, and the compile is admitted on
+the strength of it.  The server keeps account of what each running step
+has had of its share, so it knows how much of its work is left.
 
 **The step's curve.**  The same rows, by the step's `-j`, say how much of
 each unit of `-j` the step turns into work: a compile near all of it until
@@ -100,63 +152,73 @@ its dependency chains run out, a test suite none.  A step seen using more
 than 1.3 cores uses `-j`; one given `-j2` or more that didn't is fixed, and
 from then on runs `-j1` and counts 1, so a step that ignores `SAI_PARALLEL`
 isn't counted as if it used it.  A step never run with `-j2` or more runs
-the default `-j2` to find out.  Only rows taken while the machine was at or
-under its ceiling count towards this: a `-j2` run that got a third of a
-core on a machine at load 12 says nothing about the step.  And a step found
+the default `-j2` to find out.  Only rows taken while the step had a fair share
+of the machine count towards this: at a load of no more than twice the
+machine's capacity in units, so each had at least half a core, or, whatever
+the load, where the step got at least half the most cores it has ever
+shown there, since a load of io-bound steps is no contention and the row
+says so itself.  A `-j2` run that got a third of a core on a machine at
+load 12 says nothing about the step.  And a step found
 fixed is only ever given `-j1` again, so nothing could change the verdict:
 when its newest run at `-j2` or more is older than 14 days it's given `-j2`
 once more, in case it has learned to use it or the run that decided was
 unlucky.
 
-**The decision.**  With the machine at load L, waiting keeps a work rate of
-L x eff(L).  Starting the step with demand d makes it (L + d x s(d)) x
-eff(L + d), where s(d) is how much of `-j`d the step itself turns into work,
-relative to its best `-j`; a fixed step is counted as the cores it was seen
-using.  Every `-j` that fits under the machine's ceiling is scored, the best
-start is taken if it gets within 2% of waiting, and among starts that tie
-the smaller `-j` wins, so nothing is spent on no gain.  A load no row has
-been filed at is assumed as good as the nearest load below it that has rows,
-and a load with few rows a little better than they say, which is what gets
-the rung above the best tried.  A machine with nothing running always starts
-something.
-
-**Finishing in time.**  The step itself gets d x s(d) x eff(L + d) of a
-core, and its work divided by that is how long it will take.  The builder
-stops a step at its limit, which it tells the server with its platforms
-(`step_timeout_secs`, 30 minutes when it doesn't say), and the most work per
-unit of time is no use to a step that won't finish: a `-j` at which the step
-wouldn't be done in half the limit isn't scored, unless the step couldn't
-manage that even alone, when it's held to the limit itself; a step that
-would overrun the limit alone fails wherever it runs, and isn't held at all.
-A bigger `-j` gets a bigger share, so a step that can't make it at `-j1` may
-at `-j8`, and a machine with nothing running can always start it.  The
-prediction is logged with the start, and quoted if the builder times the
-step out anyway.
+**The decision.**  Each `-j` the step could start at is tried.  The shares
+of everything on the machine with it added say what the machine would get
+done, and the best start is taken if it gets within 2% of waiting; among
+starts that tie the smaller `-j` wins, so nothing is spent on no gain,
+except the probe rung above when nothing running has a finish to lose.  A
+step's work over its share is how long it will take, and the builder stops
+a step at its limit, which it tells the server with its platforms
+(`step_timeout_secs`, 30 minutes when it doesn't say): a `-j` at which the
+step wouldn't be done in half the limit isn't scored, unless the step
+couldn't manage that even alone, when it's held to the limit itself; a step
+that would overrun the limit alone fails wherever it runs, and isn't held
+at all.  Nor is a `-j` scored at which a step already running, with what it
+has left to do at the share it would have left, couldn't finish inside
+three quarters of its limit: what a step was given when it started is kept
+when others arrive.  Nor is a `-j` scored at which a build step that counts
+1, this one or one running, would have less than seven tenths of the cores
+it can use: it can't make that up with `-j`, it just takes that much
+longer, and what it costs the compiles beside it is small.  A step's first
+run here, whose work isn't known, isn't started on less than a core, or
+half the machine's capacity when that's less, since it would only time
+out.  The prediction is logged with the
+start, and quoted if the builder times the step out anyway.  A machine
+with nothing measured on it carries a load of 4 until a row lands, and a
+machine that ran out of memory or timed steps out at a load isn't put there
+again, see below.
 
 Nothing is ever run alone to be measured, and no machine is held: a step
-that waits does so because every way of starting it would get less done or
-it wouldn't finish, and it is offered again when a step on the machine
-ends.  A new task's git
-steps count 1 and are admitted while that fits under the ceiling.  Idle
-slices are load on the machine, and the rows filed while they run say so,
-but real work doesn't count them when deciding: they fill time real work
-doesn't want and give way to it.  When a real step starting would put the
-machine over its ceiling with the slices counted, one is told to stop, as
-the builder would stop it for real work itself.  An idle slice asking to
-start counts everything, so idle can't push out idle.
+that waits does so because every way of starting it would get less done,
+it wouldn't finish, or something running wouldn't, and it is offered again
+when a step on the machine ends.  A new task's git steps count 1 and are
+admitted while that takes no running step's finish.  Idle slices are load
+on the machine and share its cores like anything else, but they fill time
+real work doesn't want and give way to it: when a real step starting would
+get less than it can use with the slices on the cores, one is told to stop,
+as the builder would stop it for real work itself.  An idle slice asking to
+start needs a whole core nothing wants, so idle can't push out idle.
 
 The task's log says what was decided for each step, in those terms:
 
 ```
-planner: step 3: -j4 (uses -j), hw2 load 2 of up to 8 -> 6, doing 1.9 cores of work -> 5.6
-planner: step 4: -j1 (doesn't use -j), hw2 load 6 of up to 8 -> 7, doing 5.6 cores of work -> 5.9
-planner: step 3: waits for hw2: load 8 of up to 8, nothing more fits
-planner: step 3: waits for hw2: load 6 of up to 8 is doing 5.6 cores of work, starting this at -j2 would make it 5.4
-planner: step 5: from this, hw2 gets most done at load 8, allowing up to 12
+planner: step 3: -j4 (uses -j), hw2 load 2 -> 6, gets 3.8 of 7.9 cores, 1:12min
+planner: step 4: -j1 (doesn't use -j), hw2 load 6 -> 7, gets 0.9 of 7.9 cores, 41.2s
+planner: step 4: -j6 (uses -j), hw2 load 0 -> 6, gets 5.1 of 5.1 cores, 58.0s to see if more -j pays
+planner: step 3: waits for hw2: at load 23 it would get 0.3 of 7.9 cores at -j1 and take 35:22min, the builder stops it at 30:00min
+planner: step 3: waits for hw2: starting this at -j4 would leave a step that has run for 9:10min finishing at 26:40min of the 30:00min its builder allows
+planner: step 3: waits for hw2: load 6 is getting 7.6 of 7.9 cores, starting this at -j2 would make it 7.1
+planner: step 3: waits for hw2: at load 14 it would get 0.5 of the 1.0 cores it can use, and can't use -j to make that up
+planner: step 4: waits for hw2: starting this at -j8 would leave a step that counts 1 with 0.4 of the 0.9 cores it can use
+planner: step 5: from this, hw2 is seen delivering 8.3 cores
+planner: step 5: from this, hw2 is allowed up to 17
+planner: step 4: from this, hw2 is seen delivering 5.1 cores at load 24, against 8.2 at load 12: allowing up to 16 from now
 ```
 
 The builder list in sai-web says against each platform what its machine is
-carrying and how far the planner lets it go, eg, `hw2: load 6 of up to 8`,
+carrying and delivering, eg, `hw2: load 6 of up to 17, 7.6 of 7.9 cores`,
 and when a step on the machine is waiting for the load to drop, the
 platforms on it say so.
 
@@ -197,8 +259,10 @@ was bad.
 **A step the builder times out** is the task's failure when it hangs, or
 when it takes longer than the builder allows with the machine to itself.  But
 when other steps shared the machine, and the step has been seen to finish,
-fairly loaded, in under a third of what it ran for this time, it was starved
-by them: the machine was thrashing, or there was no cpu left for it.  That's
+fairly loaded, in under a third of what it ran for this time, or it ran for
+twice what the plan gave it, it was starved by them: the machine was
+thrashing, or there was no cpu left for it, and either way it didn't
+deliver what the plan counted on.  That's
 the plan's doing in the same way, so the task runs again as a new run, and
 the planner caps the machine's load a rung below what it carried, with
 `(timed steps out)` in the builder list.  The deadline above should keep it
