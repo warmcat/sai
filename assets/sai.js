@@ -6873,17 +6873,10 @@ window.addEventListener("load", function() {
 			console.log(rs);
 			sai.send(rs);
 
-			// Remove / hide the event row in the sidebar
+			/* the event row goes from the sidebar at once: nothing fades */
 			var card = document.querySelector(".sb-event-row[data-uuid='" + uuid + "']");
-			if (card) {
-				card.style.transition = 'opacity 0.3s';
-				card.style.opacity = '0';
-				setTimeout(function() {
-					if (card.parentNode) {
-						card.parentNode.removeChild(card);
-					}
-				}, 300);
-			}
+			if (card && card.parentNode)
+				card.parentNode.removeChild(card);
 
 			// Clean up selected state if the deleted event was currently selected
 			if (selected_event_uuid === uuid) {

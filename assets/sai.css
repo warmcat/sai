@@ -1,3 +1,11 @@
+/*
+ * Nothing here transitions or animates (the one exception is the terminal's
+ * connecting spinner, shown only while it waits).  A transition has the page
+ * restyled, and for width or height laid out, and painted again every vsync
+ * for as long as it runs: with the builders' loadreports arriving many times
+ * a second, the 200ms bars never stopped, and it cost viewers half a core.
+ * A change shows at once instead.
+ */
 @font-face {
   font-family: 'OpenSans';
   src: url('OpenSans-Light.ttf') format('truetype');
@@ -216,14 +224,14 @@ div.taskinfo {
 	margin-top: -3px;
 }
 
-#sai_task_logs_container div.taskinfo.taskstate1, div.taskinfo.taskstate1 { background: #d0d0d0; border-color: #d0d0d0; transition: background-color 500ms linear; }
-#sai_task_logs_container div.taskinfo.taskstate2, div.taskinfo.taskstate2 { background: #a0a0a0; border-color: #a0a0a0; transition: background-color 500ms linear; }
-#sai_task_logs_container div.taskinfo.taskstate3, div.taskinfo.taskstate3 { background: #01ff70; border-color: #01ff70; transition: background-color 500ms linear; }
-#sai_task_logs_container div.taskinfo.taskstate4, div.taskinfo.taskstate4 { background: #ff851b; border-color: #ff851b; transition: background-color 500ms linear; }
-#sai_task_logs_container div.taskinfo.taskstate5, div.taskinfo.taskstate5 { background: #808080; border-color: #808080; transition: background-color 500ms linear; }
-#sai_task_logs_container div.taskinfo.taskstate6, div.taskinfo.taskstate6 { background: #df3030; border-color: #df3030; transition: background-color 500ms linear; }
-#sai_task_logs_container div.taskinfo.taskstate10, div.taskinfo.taskstate10 { background: #ffdc00; border-color: #ffdc00; transition: background-color 500ms linear; }
-#sai_task_logs_container div.taskinfo.taskstate11, div.taskinfo.taskstate11 { background: #b0c4de; border-color: #b0c4de; transition: background-color 500ms linear; }
+#sai_task_logs_container div.taskinfo.taskstate1, div.taskinfo.taskstate1 { background: #d0d0d0; border-color: #d0d0d0; }
+#sai_task_logs_container div.taskinfo.taskstate2, div.taskinfo.taskstate2 { background: #a0a0a0; border-color: #a0a0a0; }
+#sai_task_logs_container div.taskinfo.taskstate3, div.taskinfo.taskstate3 { background: #01ff70; border-color: #01ff70; }
+#sai_task_logs_container div.taskinfo.taskstate4, div.taskinfo.taskstate4 { background: #ff851b; border-color: #ff851b; }
+#sai_task_logs_container div.taskinfo.taskstate5, div.taskinfo.taskstate5 { background: #808080; border-color: #808080; }
+#sai_task_logs_container div.taskinfo.taskstate6, div.taskinfo.taskstate6 { background: #df3030; border-color: #df3030; }
+#sai_task_logs_container div.taskinfo.taskstate10, div.taskinfo.taskstate10 { background: #ffdc00; border-color: #ffdc00; }
+#sai_task_logs_container div.taskinfo.taskstate11, div.taskinfo.taskstate11 { background: #b0c4de; border-color: #b0c4de; }
 
 #sai_task_logs_container div.taskinfo.taskstate6, #sai_task_logs_container div.taskinfo.taskstate6 span.ti1, #sai_task_logs_container div.taskinfo.taskstate6 span.ti5, #sai_task_logs_container div.taskinfo.taskstate6 div.sai_arts,
 div.taskinfo.taskstate6, div.taskinfo.taskstate6 span.ti1, div.taskinfo.taskstate6 span.ti5, div.taskinfo.taskstate6 div.sai_arts {
@@ -282,7 +290,6 @@ div.gi_popup {
 	z-index: -2;
 	background: #ffe;
 	opacity: 0.0;
-	transition: opacity 1s ease;
 	display: block;
 	position: absolute;
 	margin-top: 35px
@@ -336,72 +343,46 @@ img.bico {
 	vertical-align:middle;
 }
 
-@keyframes stretch {
-  0%, 100% {
-    opacity: 0.8;
-  }
-  0% {
-    opacity: 0.3;
-  }
-}
-
 .taskstate1 {
 	background: #d0d0d0;
 	color:#000000;
 	opacity:1;
-	transition: background-color 500ms linear;
 }
 
 .taskstate2 {
 	background:#a0a0a0;
 	color:#000000;
 	opacity:1;
-	transition: background-color 500ms linear;
 }
 
 .taskstate3 {
 	background:#01ff70;
 	color:#003000;
 	opacity:1;
-	transition: background-color 500ms linear;
 }
-
-@keyframes fadeInOpacity {
-	0% {
-		opacity: 0;
-	}
-	100% {
-		opacity: 1;
-	}
-}
-
 
 .taskstate4 {
 	background:#ff851b;
 	color:#300000;
 	opacity:1;
-	transition: background-color 500ms linear;
 }
 
 .taskstate5 {
 	background:#808080;
 	color:#202020;
 	opacity:1;
-	transition: background-color 500ms linear;
 }
 
 .taskstate6 {
 	background:#df3030;
 	color:#ffffff;
 	opacity:1;
-	transition: background-color 500ms linear;
 }
 
 .taskstate10 {
 	background:#ffdc00;
 	color:#302000;
 	opacity:1;
-	transition: background-color 500ms linear;
 }
 
 /* an idle task's slice that the builder stopped, eg, for real work */
@@ -409,7 +390,6 @@ img.bico {
 	background:#b0c4de;
 	color:#202830;
 	opacity:1;
-	transition: background-color 500ms linear;
 }
 
 /*
@@ -424,7 +404,6 @@ img.bico {
  */
 div.taskstate.idle-lane, tr.tt-row.idle-lane {
 	opacity: 0.35;
-	transition: opacity 1.5s ease-in-out, background-color 500ms linear;
 }
 
 div.taskstate.idle-lane.taskstate1, div.taskstate.idle-lane.taskstate2,
@@ -832,7 +811,6 @@ div.awaiting {
 div.bdr {
 	display: inline-block;
 	opacity: 1;
-       transition: opacity 2s ease;
 }
 
 .bdr.offline {
@@ -905,7 +883,6 @@ img.branch {
 	position: absolute;
 	bottom: 0;
 	left: 0;
-	transition: height 0.2s ease-out; /* Smoothly animate height changes */
 }
 
 /*
@@ -1279,7 +1256,6 @@ table.comp.adhoc {
   text-align: left;
 }
 .spreadsheet tr {
-	transition: opacity 3s linear;
 }
 .spreadsheet th {
   background-color: #f2f2f2;
@@ -1365,7 +1341,6 @@ table.comp.adhoc {
 
 .res-bar-inner {
 	height: 100%;
-	transition: width 0.2s ease-out;
 }
 
 .res-bar-cpu {
@@ -2635,7 +2610,6 @@ td.e6 a:hover {
 	align-self: center;
 	font-weight: bold;
 	height: fit-content;
-	transition: all 0.2s;
 	color: #334155;
 	user-select: none;
 }
@@ -2762,7 +2736,6 @@ table.tt td.tt-num {
 /* rows take their colour from the shared .taskstateN rules */
 tr.tt-row {
 	cursor: pointer;
-	transition: background-color 500ms linear;
 }
 
 tr.tt-row:hover td {
