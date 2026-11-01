@@ -52,7 +52,15 @@
  * allowed one rung above the load its rows say is best, and a machine with
  * no rows yet is allowed a load of 4.  No step is run alone to be measured,
  * and nothing is held: a step that waits does so because every way of
- * starting it would get less done.
+ * starting it would get less done, or because it wouldn't finish.
+ *
+ * The step itself gets d x s(d) x eff(L + d) of a core, and its work divided
+ * by that is how long it will take.  The builder stops a step at its limit,
+ * and the most work per unit of time is no use to a step that won't finish:
+ * a start that wouldn't be done in half the limit isn't one of the ways,
+ * unless the step couldn't manage that even alone, when it's held to the
+ * limit itself; one that would overrun the limit alone fails wherever it
+ * runs, and isn't held at all.
  *
  * The task's log says what was decided for each step and why, in those
  * terms, see sais_planner_plan_step().
@@ -88,6 +96,10 @@ const int sais_plan_ladder[SAIS_PLAN_RUNGS] =
 #define SAIS_PLAN_STEP_ROWS		64
 /* an old row got this much of its -j (x1000): a load the machine delivered */
 #define SAIS_PLAN_SEED_X1000		750
+/* a builder that doesn't say stops a step after this long */
+#define SAIS_PLAN_STEP_LIMIT_SECS	(30 * 60)
+/* a step is started only where it should finish in this much of that */
+#define SAIS_PLAN_DEADLINE_PCT		50
 
 enum {
 	SAIS_PLAN_KIND_UNKNOWN,		/* never run with -j2 or more */
@@ -645,8 +657,10 @@ void
 sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 		       int build_step, sais_plan_t *plan)
 {
-	int load, wait_rate, best_rate = -1, best_r = -1, n, cands = 0;
-	char *key = plan->key, *sh = plan->step_hash, d1[16], d2[16];
+	int load, wait_rate, best_rate = -1, best_r = -1, n, cands = 0,
+	    fits = 0, slow_r = -1, slow_share = 0;
+	char *key = plan->key, *sh = plan->step_hash, d1[16], d2[16], d3[24];
+	lws_usec_t limit, tight, best_wall = 0, slow_wall = 0;
 	sais_hardware_t *hw = sp->hw;
 	struct sais_plan_step st;
 	sai_uuid_list_t *ul;
@@ -737,35 +751,82 @@ sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 	/* what waiting keeps: the work rate at the load as it is, x1000 */
 	wait_rate = load ? load * sais_plan_eff_opt(hw, load) : 0;
 
+	/* the builder stops a step at this; a start should be done in half */
+	limit = (lws_usec_t)(sp->step_timeout_secs ? sp->step_timeout_secs :
+				SAIS_PLAN_STEP_LIMIT_SECS) * LWS_US_PER_SEC;
+	tight = (limit * SAIS_PLAN_DEADLINE_PCT) / 100;
+
 	/*
 	 * Each way of starting it: with -j of each rung that fits under the
-	 * ceiling, or just 1 for a step that doesn't use -j.  The smaller
-	 * demand wins a tie, so nothing is spent on no gain.
+	 * ceiling, or just 1 for a step that doesn't use -j, and that it
+	 * would finish in time at.  The smaller demand wins a tie, so nothing
+	 * is spent on no gain.
 	 */
 
 	for (n = 0; n < SAIS_PLAN_RUNGS; n++) {
-		int d = sais_plan_ladder[n], rate;
+		int d = sais_plan_ladder[n], rate, own, share;
+		lws_usec_t wall = 0;
 
 		if (st.kind == SAIS_PLAN_KIND_FIXED && d > 1)
 			break;
 		if (load + d > hw->ceiling)
 			break;
 
-		cands++;
+		fits++;
+
+		/* the cores it asks for, x1000 */
 		if (st.kind == SAIS_PLAN_KIND_FIXED)
 			/* it delivers what it was seen using, at most a core */
-			rate = load * 1000 + (st.cores_x1000 > 1000 ? 1000 :
-					      st.cores_x1000 ? st.cores_x1000 :
-					      1000);
+			own = st.cores_x1000 > 1000 ? 1000 :
+			      st.cores_x1000 ? st.cores_x1000 : 1000;
 		else
-			rate = load * 1000 + d * sais_plan_step_scaling(&st, n);
+			own = d * sais_plan_step_scaling(&st, n);
 
-		rate = (int)(((int64_t)rate * sais_plan_eff_opt(hw, load + d))
+		/* and the cores it would get, at the load it would make */
+		share = (int)(((int64_t)own * sais_plan_eff_opt(hw, load + d))
 								/ 1000);
 
+		/*
+		 * How long its work would take at that: a step that would be
+		 * done in half the builder's limit may start.  One that
+		 * wouldn't be even alone can't be held to that, only to the
+		 * limit itself; and one that would overrun the limit alone
+		 * fails wherever it runs, so it isn't held at all.  More -j
+		 * gets a bigger share, so a rung above may pass where this
+		 * one doesn't.
+		 */
+		if (st.ref_cpu && share > 0) {
+			lws_usec_t alone, bound;
+			int alone_share;
+
+			wall = (lws_usec_t)((st.ref_cpu * 1000) /
+							(uint64_t)share);
+
+			alone_share = (int)(((int64_t)own *
+					     sais_plan_eff_opt(hw, d)) / 1000);
+			alone = alone_share > 0 ? (lws_usec_t)((st.ref_cpu *
+					1000) / (uint64_t)alone_share) : 0;
+			bound = alone <= tight ? tight :
+				alone <= limit ? limit : 0;
+
+			if (bound && wall > bound) {
+				if (slow_r < 0 || d > sais_plan_ladder[slow_r]) {
+					slow_r		= n;
+					slow_wall	= wall;
+					slow_share	= share;
+				}
+				continue;
+			}
+		}
+
+		cands++;
+		rate = (int)(((int64_t)(load * 1000 + own) *
+			      sais_plan_eff_opt(hw, load + d)) / 1000);
+
 		if (rate > best_rate) {
-			best_rate = rate;
-			best_r = n;
+			best_rate	= rate;
+			best_r		= n;
+			best_wall	= wall;
 		}
 	}
 
@@ -793,7 +854,20 @@ sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 					sais_plan_ladder[best_r],
 					sais_plan_fmt_cores(d2, sizeof(d2),
 							    best_rate));
-			else
+			else if (fits) {
+				lws_humanize(d3, sizeof(d3), (uint64_t)slow_wall,
+					     humanize_schema_us);
+				lws_humanize(d2, sizeof(d2), (uint64_t)limit,
+					     humanize_schema_us);
+				sais_task_logf(vhd, task->uuid,
+					"planner: step %d: waits for hw%d: at "
+					"load %d it would get %s of a core at "
+					"-j%d and take %s, the builder stops "
+					"it at %s", build_step + 1, hw->index,
+					load, sais_plan_fmt_cores(d1,
+						sizeof(d1), slow_share),
+					sais_plan_ladder[slow_r], d3, d2);
+			} else
 				sais_task_logf(vhd, task->uuid,
 					"planner: step %d: waits for hw%d: "
 					"load %d of up to %d, nothing more "
@@ -812,6 +886,7 @@ sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 
 	task->parallel	= sais_plan_ladder[best_r];
 	plan->demand	= task->parallel;
+	plan->wall_us	= best_wall;
 
 	/* over the ceiling with the idle slices counted: one gives way */
 	if (load + plan->demand + hw->load_idle > hw->ceiling &&
@@ -825,13 +900,21 @@ sais_planner_plan_step(struct vhd *vhd, sai_plat_t *sp, sai_task_t *task,
 		task->est_peak_mem_kib = mem / 1024 > UINT_MAX ?
 				UINT_MAX : (unsigned int)(mem / 1024);
 
+	d3[0] = '\0';
+	if (best_wall) {
+		d3[0] = ',';
+		d3[1] = ' ';
+		lws_humanize(d3 + 2, sizeof(d3) - 2, (uint64_t)best_wall,
+			     humanize_schema_us);
+	}
+
 	sais_task_logf(vhd, task->uuid, "planner: step %d: -j%d (%s), hw%d "
 		       "load %d of up to %d -> %d, doing %s cores of work -> "
-		       "%s%s", build_step + 1, task->parallel,
+		       "%s%s%s", build_step + 1, task->parallel,
 		       sais_plan_kind_name(st.kind), hw->index, load,
 		       hw->ceiling, load + plan->demand,
 		       sais_plan_fmt_cores(d1, sizeof(d1), wait_rate),
-		       sais_plan_fmt_cores(d2, sizeof(d2), best_rate),
+		       sais_plan_fmt_cores(d2, sizeof(d2), best_rate), d3,
 		       hw->n[sais_plan_bucket((load + plan->demand) * 100)] ?
 				"" : ", a load not measured yet");
 }
@@ -1105,7 +1188,7 @@ int
 sais_planner_task_timeout(struct vhd *vhd, sai_plat_t *sp,
 			  const char *task_uuid, int build_step)
 {
-	char key[65], sh[65], h1[24], h2[24];
+	char key[65], sh[65], h1[24], h2[24], h3[48];
 	sais_hardware_t *hw = sp->hw;
 	struct sais_plan_step st;
 	struct lwsac *ac = NULL;
@@ -1154,12 +1237,20 @@ sais_planner_task_timeout(struct vhd *vhd, sai_plat_t *sp,
 
 	lws_humanize(h1, sizeof(h1), (uint64_t)ran, humanize_schema_us);
 	lws_humanize(h2, sizeof(h2), st.ref_wall, humanize_schema_us);
+	h3[0] = '\0';
+	if (ul->plan_wall) {
+		char h4[24];
+
+		lws_humanize(h4, sizeof(h4), (uint64_t)ul->plan_wall,
+			     humanize_schema_us);
+		lws_snprintf(h3, sizeof(h3), ", the plan gave it %s", h4);
+	}
 	sais_task_logf(vhd, task_uuid, "planner: step %d ran for %s before "
 		       "the builder timed it out, sharing hw%d with %d other "
-		       "steps' worth of load; it has taken %s here: starved "
+		       "steps' worth of load; it has taken %s here%s: starved "
 		       "by the load, the plan's fault and not this task's; it "
 		       "will run again", build_step + 1, h1, hw->index,
-		       company, h2);
+		       company, h2, h3);
 	sais_plan_hw_hurt(vhd, sp, task_uuid, "timed steps out");
 
 	return 1;

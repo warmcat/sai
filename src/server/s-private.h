@@ -381,6 +381,7 @@ typedef struct sais_plan {
 	char			key[65];	/* the metrics key, or empty */
 	char			step_hash[65];
 	int			demand;		/* what it counts as on its machine */
+	lws_usec_t		wall_us;	/* how long it should take, 0 unknown */
 	char			wait;		/* don't start it yet */
 } sais_plan_t;
 
@@ -860,7 +861,8 @@ sais_hardware_kick(struct vhd *vhd, sais_hardware_t *hw);
 
 void
 sais_hardware_step_started(struct vhd *vhd, sai_plat_t *sp,
-			   sai_uuid_list_t *ul, int step, int demand);
+			   sai_uuid_list_t *ul, int step, int demand,
+			   lws_usec_t plan_wall);
 
 int
 sais_hardware_step_load(struct vhd *vhd, sai_plat_t *sp,

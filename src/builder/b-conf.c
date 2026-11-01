@@ -525,6 +525,9 @@ saib_config(struct sai_builder *builder, const char *d)
 		lws_strncpy(sp->hardware, builder->hardware ? builder->hardware :
 					  (builder->host ? builder->host : ""),
 			    sizeof(sp->hardware));
+
+		/* the server plans each step to finish well inside this */
+		sp->step_timeout_secs = builder->build_timeout_secs;
 	} lws_end_foreach_dll(p);
 
 	lwsl_notice("%s: parsing completed\n", __func__);

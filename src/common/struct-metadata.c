@@ -124,6 +124,7 @@ const lws_struct_map_t lsm_plat[] = {
 	LSM_SIGNED	(sai_plat_t, plan_state,	"plan_state"),
 	LSM_CARRAY	(sai_plat_t, plan_info,		"plan_info"),
 	LSM_UNSIGNED	(sai_plat_t, job_limit,		"job_limit"),
+	LSM_UNSIGNED	(sai_plat_t, step_timeout_secs,	"step_timeout_secs"),
 };
 
 const lws_struct_map_t lsm_schema_map_plat_simple[] = {

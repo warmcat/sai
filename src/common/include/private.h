@@ -817,6 +817,7 @@ typedef struct sai_uuid_list {
 	int				demand;
 	int				step;		/* 1-based, that the demand is for */
 	lws_usec_t			step_started;
+	lws_usec_t			plan_wall;	/* how long the plan gave it, 0 unknown */
 	uint64_t			load_at_start;
 } sai_uuid_list_t;
 
@@ -894,6 +895,7 @@ typedef struct sai_plat {
 	int				powering_up; /* 1 = sai-power is booting it */
 	int				powering_down;
 	unsigned int			job_limit;
+	unsigned int			step_timeout_secs; /* the most a step may run */
 
 	/*
 	 * Idle tasks: from the builder conf "idle" object on the platform,
@@ -1320,7 +1322,7 @@ extern const lws_struct_map_t
 	lsm_stay_state_update[2],
 	lsm_schema_stay_state_update[1],
 	lsm_build_metric[22],
-	lsm_plat[22], /* +1 for pcon, +1 for hardware, +3 planner, +1 job_limit */
+	lsm_plat[23], /* +1 for pcon, +1 for hardware, +3 planner, +1 job_limit, +1 step_timeout_secs */
 	lsm_builder_platform[1],
 	lsm_builder_registration[10],
 	lsm_schema_sq3_map_power_controller[1],

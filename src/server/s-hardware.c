@@ -175,13 +175,15 @@ sais_hardware_kick(struct vhd *vhd, sais_hardware_t *hw)
 
 void
 sais_hardware_step_started(struct vhd *vhd, sai_plat_t *sp,
-			   sai_uuid_list_t *ul, int step, int demand)
+			   sai_uuid_list_t *ul, int step, int demand,
+			   lws_usec_t plan_wall)
 {
 	sais_hardware_t *hw = sp->hw;
 
 	ul->demand		= demand;
 	ul->step		= step;
 	ul->step_started	= lws_now_usecs();
+	ul->plan_wall		= plan_wall;
 
 	if (!hw)
 		return;
@@ -231,6 +233,7 @@ sais_hardware_step_ended(struct vhd *vhd, sai_plat_t *sp, sai_uuid_list_t *ul)
 
 	ul->demand		= 0;
 	ul->step_started	= 0;
+	ul->plan_wall		= 0;
 
 	if (!hw)
 		return;

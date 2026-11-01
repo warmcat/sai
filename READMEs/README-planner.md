@@ -120,9 +120,23 @@ and a load with few rows a little better than they say, which is what gets
 the rung above the best tried.  A machine with nothing running always starts
 something.
 
+**Finishing in time.**  The step itself gets d x s(d) x eff(L + d) of a
+core, and its work divided by that is how long it will take.  The builder
+stops a step at its limit, which it tells the server with its platforms
+(`step_timeout_secs`, 30 minutes when it doesn't say), and the most work per
+unit of time is no use to a step that won't finish: a `-j` at which the step
+wouldn't be done in half the limit isn't scored, unless the step couldn't
+manage that even alone, when it's held to the limit itself; a step that
+would overrun the limit alone fails wherever it runs, and isn't held at all.
+A bigger `-j` gets a bigger share, so a step that can't make it at `-j1` may
+at `-j8`, and a machine with nothing running can always start it.  The
+prediction is logged with the start, and quoted if the builder times the
+step out anyway.
+
 Nothing is ever run alone to be measured, and no machine is held: a step
-that waits does so because every way of starting it would get less done,
-and it is offered again when a step on the machine ends.  A new task's git
+that waits does so because every way of starting it would get less done or
+it wouldn't finish, and it is offered again when a step on the machine
+ends.  A new task's git
 steps count 1 and are admitted while that fits under the ceiling.  Idle
 slices are load on the machine, and the rows filed while they run say so,
 but real work doesn't count them when deciding: they fill time real work
@@ -187,7 +201,8 @@ fairly loaded, in under a third of what it ran for this time, it was starved
 by them: the machine was thrashing, or there was no cpu left for it.  That's
 the plan's doing in the same way, so the task runs again as a new run, and
 the planner caps the machine's load a rung below what it carried, with
-`(timed steps out)` in the builder list.  A step that genuinely hangs is
+`(timed steps out)` in the builder list.  The deadline above should keep it
+from happening where the curve is known; the cap is for where it wasn't.  A step that genuinely hangs is
 capped down to running alone within a few runs, and fails there.
 
 ## What runs next
